@@ -1,0 +1,72 @@
+from dataclasses import dataclass, asdict
+from typing import List, Optional
+import yaml
+from pathlib import Path
+
+
+@dataclass
+class BotConfig:
+    """Main configuration for XLedgerMate.
+    All defaults are safe and ready-to-go for your 11,254 XRP Bot Account."""
+
+    # === RISK CAPITAL (ONLY the rolled-in slice from Flare) ===
+    risk_capital_xrp: float = 11254.0
+    bot_account_address: str = ""          # ← Fill this in (your Bot Account)
+    bot_secret_key: str = ""               # ← NEVER commit this to git!
+
+    # === TRADING PAIR ===
+    trading_pair: str = "XRP-RLUSD"
+
+    # === ORDER BOOK STRATEGY (your 3-level layered brackets) ===
+    order_levels: int = 3
+    order_sizes: List[float] = [150.0, 500.0, 1000.0]   # Level 1, 2, 3
+    base_spread: float = 0.0010          # 0.10% base
+    level_spread_increment: float = 0.0005  # +0.05% per level
+
+    # === TIMING ===
+    order_refresh_time_seconds: int = 60
+
+    # === RISK MANAGEMENT (GUI-adjustable 2%–5% drawdown) ===
+    max_daily_drawdown_percent: float = 3.5   # Default (you can slide 2.0–5.0 in GUI)
+    min_drawdown_percent: float = 2.0
+    max_drawdown_percent: float = 5.0
+    inventory_target_xrp_ratio: float = 0.55   # Slightly XRP-heavy (supports your $27 thesis)
+
+    # === AUTO ROLLOVER (risk capital rule) ===
+    auto_rollover_enabled: bool = True
+
+    # === MONITORING ===
+    telegram_enabled: bool = False
+    telegram_token: str = ""
+    telegram_chat_id: str = ""
+
+    # === OTHER ===
+    testnet: bool = True                    # Start on testnet by default
+    private_node_url: Optional[str] = None  # e.g. your own node for no rate limits
+
+    def to_dict(self):
+        return asdict(self)
+
+    def save(self, filepath: str = "config/config.yaml"):
+        """Save current config to YAML"""
+        Path("config").mkdir(exist_ok=True)
+        with open(filepath, "w") as f:
+            yaml.dump(self.to_dict(), f, default_flow_style=False, sort_keys=False)
+
+    @classmethod
+    def load(cls, filepath: str = "config/config.yaml"):
+        """Load from YAML or return defaults"""
+        if Path(filepath).exists():
+            with open(filepath, "r") as f:
+                data = yaml.safe_load(f) or {}
+            return cls(**data)
+        config = cls()
+        config.save()
+        return config
+
+
+# Auto-create default config when module is imported
+if __name__ == "__main__" or not Path("config/config.yaml").exists():
+    config = BotConfig()
+    config.save()
+    print("✅ Default config created at config/config.yaml")
