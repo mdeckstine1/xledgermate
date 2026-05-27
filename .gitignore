@@ -1,5 +1,17 @@
+# Python
 __pycache__/
 *.py[cod]
-*.log
+*.egg-info/
 .venv/
+
+# Local secrets and runtime data
 config/config.yaml
+.env
+logs/
+*.log
+
+# IDE / OS
+.idea/
+.vscode/*.log
+.DS_Store
+Thumbs.db

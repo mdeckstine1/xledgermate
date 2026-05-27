@@ -67,8 +67,7 @@ class BotConfig:
         return config
 
 
-# Auto-create default config when module is imported
-if __name__ == "__main__" or not Path("config/config.yaml").exists():
+if __name__ == "__main__":
     config = BotConfig()
     config.save()
-    print("✅ Default config created at config/config.yaml")
+    print("Default config created at config/config.yaml")

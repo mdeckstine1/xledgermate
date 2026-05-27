@@ -1,0 +1,34 @@
+# Copy to config.yaml and fill in your Bot Account credentials.
+# config.yaml is gitignored and never committed.
+
+risk_capital_xrp: 11254.0
+bot_account_address: ""
+bot_secret_key: ""
+
+trading_pair: XRP-RLUSD
+active_profile: safe
+
+order_levels: 3
+order_sizes:
+  - 150.0
+  - 500.0
+  - 1000.0
+base_spread: 0.0010
+level_spread_increment: 0.0005
+
+order_refresh_time_seconds: 60
+
+max_daily_drawdown_percent: 3.5
+min_drawdown_percent: 2.0
+max_drawdown_percent: 5.0
+inventory_target_xrp_ratio: 0.55
+
+auto_rollover_enabled: true
+
+telegram_enabled: false
+telegram_token: ""
+telegram_chat_id: ""
+
+testnet: true
+private_node_url: null
+xrpl_testnet_rpc_url: https://s.altnet.rippletest.net:51234

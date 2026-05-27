@@ -1,3 +1,5 @@
 def is_testnet_mode() -> bool:
-    """Returns True if the bot should run on XRPL Testnet first (strongly recommended)."""
-    return True
+    """Returns True when config is set to XRPL Testnet (recommended for development)."""
+    from config.settings import BotConfig
+
+    return BotConfig.load().testnet
