@@ -14,4 +14,4 @@ def setup_logging():
             logging.StreamHandler()
         ]
     )
-    logging.info("🚀 XLedgerMate logging initialized")
+    logging.info("XLedgerMate logging initialized")

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import List, Optional
 import yaml
 from pathlib import Path
@@ -20,7 +20,7 @@ class BotConfig:
 
     # === ORDER BOOK STRATEGY (your 3-level layered brackets) ===
     order_levels: int = 3
-    order_sizes: List[float] = [150.0, 500.0, 1000.0]   # Level 1, 2, 3
+    order_sizes: List[float] = field(default_factory=lambda: [150.0, 500.0, 1000.0])   # Level 1, 2, 3
     base_spread: float = 0.0010          # 0.10% base
     level_spread_increment: float = 0.0005  # +0.05% per level
 
