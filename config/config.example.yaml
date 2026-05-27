@@ -7,6 +7,8 @@ bot_secret_key: ""
 
 trading_pair: XRP-RLUSD
 active_profile: safe
+rlusd_currency: RLUSD
+rlusd_issuer: rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De
 
 order_levels: 3
 order_sizes:
@@ -17,6 +19,9 @@ base_spread: 0.0010
 level_spread_increment: 0.0005
 
 order_refresh_time_seconds: 60
+
+dry_run: true
+trading_enabled: true
 
 max_daily_drawdown_percent: 3.5
 min_drawdown_percent: 2.0
@@ -32,3 +37,4 @@ telegram_chat_id: ""
 testnet: true
 private_node_url: null
 xrpl_testnet_rpc_url: https://s.altnet.rippletest.net:51234
+xrpl_mainnet_rpc_url: https://xrplcluster.com

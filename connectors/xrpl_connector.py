@@ -1,26 +1,39 @@
 from __future__ import annotations
 
+import logging
 import math
+from collections import deque
 from dataclasses import dataclass
 from statistics import pstdev
 from typing import Deque, Dict, List, Optional
-from collections import deque
 
 from core.perception import LiquidityMetrics
+from core.runtime_state import QuoteIntent
+
+logger = logging.getLogger(__name__)
 
 try:
     from xrpl.clients import JsonRpcClient
     from xrpl.models.amounts import IssuedCurrencyAmount
-    from xrpl.models.requests import AccountInfo, BookOffers
-    from xrpl.utils import drops_to_xrp
+    from xrpl.models.requests import AccountInfo, AccountLines, AccountOffers, BookOffers
+    from xrpl.models.transactions import OfferCancel, OfferCreate
+    from xrpl.transaction import autofill_and_sign, submit_and_wait
+    from xrpl.utils import drops_to_xrp, xrp_to_drops
     from xrpl.wallet import Wallet
 except ImportError:  # pragma: no cover - handled at runtime
     JsonRpcClient = None
     IssuedCurrencyAmount = None
     AccountInfo = None
+    AccountLines = None
+    AccountOffers = None
     BookOffers = None
+    OfferCancel = None
+    OfferCreate = None
+    autofill_and_sign = None
+    submit_and_wait = None
     Wallet = None
     drops_to_xrp = None
+    xrp_to_drops = None
 
 
 @dataclass(frozen=True)
@@ -28,20 +41,32 @@ class XRPLNetworkConfig:
     json_rpc_url: str = "https://s.altnet.rippletest.net:51234"
 
 
+@dataclass(frozen=True)
+class OpenOffer:
+    sequence: int
+    side: str
+    price: float
+    size_xrp: float
+
+
 class XRPLConnector:
-    """XRPL market data + wallet access for XRP/RLUSD."""
+    """XRPL market data, balances, and offer management for XRP/RLUSD."""
 
     def __init__(
         self,
         *,
         account_address: str,
         secret: Optional[str],
+        rlusd_issuer: str,
+        rlusd_currency: str = "RLUSD",
         network: XRPLNetworkConfig | None = None,
         volatility_window: int = 120,
     ) -> None:
         self._ensure_xrpl_py_available()
         self.account_address = account_address
         self.secret = secret
+        self.rlusd_issuer = rlusd_issuer
+        self.rlusd_currency = rlusd_currency
         self.network = network or XRPLNetworkConfig()
         self.client = JsonRpcClient(self.network.json_rpc_url)
         self._mid_prices: Deque[float] = deque(maxlen=max(10, volatility_window))
@@ -56,7 +81,13 @@ class XRPLConnector:
     def load_wallet(self) -> Wallet:
         if not self.secret:
             raise ValueError("Bot secret key is required to load wallet.")
-        return Wallet.from_seed(seed=self.secret)
+        wallet = Wallet.from_seed(seed=self.secret)
+        if wallet.classic_address != self.account_address:
+            raise ValueError(
+                "bot_secret_key does not match bot_account_address. "
+                "Use credentials for the Bot Account only."
+            )
+        return wallet
 
     def get_xrp_balance(self) -> float:
         req = AccountInfo(account=self.account_address, ledger_index="validated")
@@ -64,12 +95,23 @@ class XRPLConnector:
         drops_balance = result["account_data"]["Balance"]
         return float(drops_to_xrp(drops_balance))
 
+    def get_rlusd_balance(self) -> float:
+        req = AccountLines(
+            account=self.account_address,
+            peer=self.rlusd_issuer,
+            ledger_index="validated",
+        )
+        lines = self.client.request(req).result.get("lines", [])
+        for line in lines:
+            if line.get("currency") == self.rlusd_currency:
+                return float(line.get("balance", 0.0))
+        return 0.0
+
     def fetch_xrp_rlusd_order_book(self, limit: int = 40) -> Dict[str, List[Dict[str, float]]]:
-        # XRP is represented in drops as a plain string for BookOffers takes/gets.
         taker_gets_xrp = "1000000"
         taker_pays_rlusd = IssuedCurrencyAmount(
-            currency="RLUSD",
-            issuer="rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De",
+            currency=self.rlusd_currency,
+            issuer=self.rlusd_issuer,
             value="1",
         )
 
@@ -86,9 +128,83 @@ class XRPLConnector:
 
         asks_raw = self.client.request(asks_req).result.get("offers", [])
         bids_raw = self.client.request(bids_req).result.get("offers", [])
-        asks = self._normalize_offers(asks_raw)
-        bids = self._normalize_offers(bids_raw)
-        return {"bids": bids, "asks": asks}
+        return {
+            "asks": self._normalize_offers(asks_raw),
+            "bids": self._normalize_offers(bids_raw),
+        }
+
+    def get_open_offers(self) -> List[OpenOffer]:
+        req = AccountOffers(account=self.account_address, ledger_index="validated")
+        offers = self.client.request(req).result.get("offers", [])
+        parsed: List[OpenOffer] = []
+        for offer in offers:
+            seq = int(offer.get("seq", 0))
+            gets = offer.get("TakerGets") or offer.get("taker_gets")
+            pays = offer.get("TakerPays") or offer.get("taker_pays")
+            if not seq or gets is None or pays is None:
+                continue
+            side, price, size_xrp = self._parse_offer_legs(gets, pays)
+            if side:
+                parsed.append(OpenOffer(sequence=seq, side=side, price=price, size_xrp=size_xrp))
+        return parsed
+
+    def cancel_all_offers(self) -> int:
+        wallet = self.load_wallet()
+        cancelled = 0
+        for offer in self.get_open_offers():
+            tx = OfferCancel(account=self.account_address, offer_sequence=offer.sequence)
+            signed = autofill_and_sign(tx, self.client, wallet)
+            submit_and_wait(signed, self.client)
+            cancelled += 1
+        return cancelled
+
+    def place_quote(self, intent: QuoteIntent) -> str:
+        wallet = self.load_wallet()
+        rlusd_amount = intent.size_xrp * intent.price
+        if intent.side == "ask":
+            taker_gets = str(xrp_to_drops(intent.size_xrp))
+            taker_pays = IssuedCurrencyAmount(
+                currency=self.rlusd_currency,
+                issuer=self.rlusd_issuer,
+                value=f"{rlusd_amount:.6f}",
+            )
+        elif intent.side == "bid":
+            taker_gets = IssuedCurrencyAmount(
+                currency=self.rlusd_currency,
+                issuer=self.rlusd_issuer,
+                value=f"{rlusd_amount:.6f}",
+            )
+            taker_pays = str(xrp_to_drops(intent.size_xrp))
+        else:
+            raise ValueError(f"Unsupported quote side: {intent.side}")
+
+        tx = OfferCreate(
+            account=self.account_address,
+            taker_gets=taker_gets,
+            taker_pays=taker_pays,
+        )
+        signed = autofill_and_sign(tx, self.client, wallet)
+        response = submit_and_wait(signed, self.client)
+        tx_hash = response.result.get("hash", "")
+        logger.info(
+            "Placed %s L%s offer | size=%.4f XRP price=%.6f hash=%s",
+            intent.side,
+            intent.level,
+            intent.size_xrp,
+            intent.price,
+            tx_hash,
+        )
+        return tx_hash
+
+    def _parse_offer_legs(self, gets, pays) -> tuple[Optional[str], float, float]:
+        if isinstance(gets, str) and isinstance(pays, dict):
+            return "ask", float(pays.get("value", 0.0)) / max(float(drops_to_xrp(gets)), 1e-9), float(
+                drops_to_xrp(gets)
+            )
+        if isinstance(gets, dict) and isinstance(pays, str):
+            xrp_size = float(drops_to_xrp(pays))
+            return "bid", float(gets.get("value", 0.0)) / max(xrp_size, 1e-9), xrp_size
+        return None, 0.0, 0.0
 
     def _normalize_offers(self, offers: List[dict]) -> List[Dict[str, float]]:
         normalized: List[Dict[str, float]] = []
@@ -102,10 +218,8 @@ class XRPLConnector:
             try:
                 price = float(quality)
                 if isinstance(funded, dict):
-                    # Issued asset amount represented as decimal string.
                     size = float(funded.get("value", 0.0))
                 else:
-                    # XRP amount in drops.
                     size = float(drops_to_xrp(funded))
             except (TypeError, ValueError):
                 continue
@@ -157,12 +271,10 @@ class XRPLConnector:
             return LiquidityMetrics()
 
         imbalance = (bid_depth - ask_depth) / total_depth
-        # Smooth score: depth supports score, imbalance penalizes score.
         depth_component = min(1.0, total_depth / 15000.0)
         imbalance_penalty = min(1.0, abs(imbalance))
         score = max(0.0, (0.75 * depth_component) + (0.25 * (1.0 - imbalance_penalty)))
 
-        # Rough "time-to-fill": how many refresh cycles for L1 default size.
         default_target_size = 150.0
         top_depth = 0.0
         if bids:

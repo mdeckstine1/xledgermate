@@ -17,6 +17,8 @@ class BotConfig:
     # === TRADING PAIR ===
     trading_pair: str = "XRP-RLUSD"
     active_profile: str = "safe"
+    rlusd_currency: str = "RLUSD"
+    rlusd_issuer: str = "rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De"
 
     # === ORDER BOOK STRATEGY (your 3-level layered brackets) ===
     order_levels: int = 3
@@ -26,6 +28,10 @@ class BotConfig:
 
     # === TIMING ===
     order_refresh_time_seconds: int = 60
+
+    # === EXECUTION ===
+    dry_run: bool = True
+    trading_enabled: bool = True
 
     # === RISK MANAGEMENT (GUI-adjustable 2%–5% drawdown) ===
     max_daily_drawdown_percent: float = 3.5   # Default (you can slide 2.0–5.0 in GUI)
@@ -45,9 +51,18 @@ class BotConfig:
     testnet: bool = True                    # Start on testnet by default
     private_node_url: Optional[str] = None  # e.g. your own node for no rate limits
     xrpl_testnet_rpc_url: str = "https://s.altnet.rippletest.net:51234"
+    xrpl_mainnet_rpc_url: str = "https://xrplcluster.com"
 
     def to_dict(self):
         return asdict(self)
+
+    def network_name(self) -> str:
+        return "testnet" if self.testnet else "mainnet"
+
+    def resolved_rpc_url(self) -> str:
+        if self.private_node_url:
+            return self.private_node_url
+        return self.xrpl_testnet_rpc_url if self.testnet else self.xrpl_mainnet_rpc_url
 
     def save(self, filepath: str = "config/config.yaml"):
         """Save current config to YAML"""

@@ -17,6 +17,7 @@ xledgermate/
 ├── core/                   # Perception, profiles, decision log, version
 ├── connectors/             # XRPL connectivity (testnet)
 ├── strategy/               # Spread engine
+├── engine/                 # Trading loop + quote planning
 ├── risk/                   # Drawdown + inventory controls
 ├── monitoring/             # Alerts + CSV logging
 ├── gui/                    # Streamlit operator UI
@@ -42,13 +43,29 @@ xledgermate/
 
    - `bot_account_address`
    - `bot_secret_key` (never commit real secrets)
+   - network mode:
+     - `testnet: true` for development
+     - `testnet: false` for mainnet
+   - RPC endpoints:
+     - `xrpl_testnet_rpc_url`
+     - `xrpl_mainnet_rpc_url`
+     - optional `private_node_url` (overrides both)
 
-3. Run:
+3. Run (two terminals recommended):
 
-   - Bot: `python main.py`
-   - GUI: `streamlit run gui/streamlit_gui.py`
+   - Trading engine (continuous loop): `python main.py --mode engine`
+   - Single test cycle: `python main.py --mode once`
+   - GUI (control panel): `python main.py --mode gui`
 
-   In Cursor, use **Terminal → Run Task** and pick **XLedgerMate: Run Bot** or **XLedgerMate: Run GUI**.
+   In Cursor, use **Terminal → Run Task**:
+   - **XLedgerMate: Run Engine**
+   - **XLedgerMate: Run One Cycle**
+   - **XLedgerMate: Run GUI**
+
+4. Safety defaults:
+
+   - `dry_run: true` logs quote intents without submitting orders
+   - Set `dry_run: false` only when ready for live order placement on Bot Account
 
 ## Branches
 
