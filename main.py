@@ -2,45 +2,56 @@
 """
 XLedgerMate - XRPL Avellaneda Market Maker Bot
 Built for mdeckstine1
-Airtight, modular, risk-capital-only bot with auto rollover.
-Main bag (Mangie) is never touched.
+
+Core Rules:
+- Main "Mangie" bag is NEVER touched
+- Only risk capital in the Bot Account is used
+- All profits auto-rollover and compound inside the Bot Account
+- Everything runs on pure XRPL
 """
 
 import logging
+import asyncio
+import sys
+
 from config.settings import BotConfig
 from utils.logging_setup import setup_logging
 from utils.testnet import is_testnet_mode
+
 from risk.drawdown import DrawdownMonitor, KillSwitch
 from risk.inventory import InventorySkew
 from strategy.avellaneda_strategy import AvellanedaStrategy
 from monitoring.telegram_alerts import TelegramAlerts
 from monitoring.csv_logger import CSVLogger
+
 from gui.streamlit_gui import run_gui
-import asyncio
-import sys
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
+
 async def main():
     config = BotConfig.load()
-    
+
+    logger.info("=" * 60)
+    logger.info("🚀 XLedgerMate Starting")
+    logger.info(f"Risk Capital: {config.risk_capital_xrp:,.2f} XRP (Bot Account only)")
+    logger.info(f"Auto Rollover: ENABLED — profits compound in Bot Account")
+    logger.info(f"Main Mangie bag: 100% ISOLATED and untouched")
+    logger.info("=" * 60)
+
     if is_testnet_mode():
-        logger.info("🚀 Running in TESTNET mode for safety")
+        logger.warning("⚠️  Running in TESTNET mode. Change config.testnet to False when ready for mainnet.")
 
-    logger.info(f"Starting XLedgerMate with {config.risk_capital_xrp:,} XRP risk capital")
-    logger.info("Auto rollover ENABLED - all profits compound in Bot Account only")
-    logger.info("Main Mangie bag is 100% isolated and untouched")
-
-    # Risk systems
+    # Initialize risk systems
     drawdown_monitor = DrawdownMonitor(max_drawdown_percent=config.max_daily_drawdown_percent)
     kill_switch = KillSwitch()
     inventory_skew = InventorySkew(target_xrp_ratio=config.inventory_target_xrp_ratio)
 
-    # Strategy
+    # Initialize strategy
     strategy = AvellanedaStrategy(config)
 
-    # Monitoring
+    # Initialize monitoring
     alerts = TelegramAlerts(
         token=config.telegram_token,
         chat_id=config.telegram_chat_id,
@@ -48,10 +59,13 @@ async def main():
     )
     csv_logger = CSVLogger()
 
-    logger.info("✅ All modules loaded - bot is ready")
-    logger.info("Use the GUI (streamlit run gui/streamlit_gui.py) to tune live")
+    logger.info("✅ All modules loaded successfully")
+    logger.info("Use the GUI to adjust settings live: streamlit run gui/streamlit_gui.py")
 
+    # Launch the GUI (this is the current entry point)
+    # In a full production version, this would start the Hummingbot Avellaneda strategy instead
     run_gui()
+
 
 if __name__ == "__main__":
     try:
@@ -59,5 +73,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
-        logger.critical(f"Bot crashed: {e}")
+        logger.critical(f"Fatal error: {e}")
         sys.exit(1)
