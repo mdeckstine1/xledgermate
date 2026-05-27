@@ -1,6 +1,6 @@
 import streamlit as st
 from config.settings import BotConfig
-from risk.drawdown import DrawdownMonitor
+from core.perception import BUILT_IN_PROFILES
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,9 @@ def run_gui():
     st.sidebar.header("Spreads & Timing")
     config.base_spread = st.sidebar.number_input("Base Spread (%)", value=config.base_spread * 100, step=0.01, format="%.2f") / 100
     config.order_refresh_time_seconds = st.sidebar.number_input("Refresh Time (seconds)", value=config.order_refresh_time_seconds, step=10)
+    profile_names = list(BUILT_IN_PROFILES.keys())
+    active_idx = profile_names.index(config.active_profile) if config.active_profile in profile_names else 0
+    config.active_profile = st.sidebar.selectbox("Active Profile", options=profile_names, index=active_idx)
 
     st.sidebar.header("Risk Management")
     config.max_daily_drawdown_percent = st.sidebar.slider(
@@ -37,10 +40,11 @@ def run_gui():
         st.sidebar.success("✅ Config saved")
 
     st.header("Live Bot Status")
-    st.info("Avellaneda Market Making is running with your layered brackets + volatility + trailing sell-side logic.")
+    st.info("Custom XRPL spread engine is running with profile-driven volatility + liquidity adjustments.")
     st.write(f"Risk Capital: **{config.risk_capital_xrp:,} XRP**")
     st.write(f"Drawdown Kill-Switch: **{config.max_daily_drawdown_percent}%**")
     st.write(f"Auto Rollover: **Enabled** (pure risk capital)")
+    st.write(f"Active Profile: **{config.active_profile}**")
 
     if st.button("🚨 Emergency Stop"):
         st.error("Kill switch activated - bot stopped")

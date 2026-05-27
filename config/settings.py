@@ -16,6 +16,7 @@ class BotConfig:
 
     # === TRADING PAIR ===
     trading_pair: str = "XRP-RLUSD"
+    active_profile: str = "safe"
 
     # === ORDER BOOK STRATEGY (your 3-level layered brackets) ===
     order_levels: int = 3
@@ -43,6 +44,7 @@ class BotConfig:
     # === OTHER ===
     testnet: bool = True                    # Start on testnet by default
     private_node_url: Optional[str] = None  # e.g. your own node for no rate limits
+    xrpl_testnet_rpc_url: str = "https://s.altnet.rippletest.net:51234"
 
     def to_dict(self):
         return asdict(self)

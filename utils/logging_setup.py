@@ -14,5 +14,4 @@ def setup_logging():
             logging.StreamHandler()
         ]
     )
-    logging.getLogger("hummingbot").setLevel(logging.WARNING)
     logging.info("🚀 XLedgerMate logging initialized")
