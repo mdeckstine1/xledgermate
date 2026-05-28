@@ -79,6 +79,29 @@ xledgermate/
 
 - `main` — stable baseline on GitHub
 - `development` — active build branch for phased work
+- `testnet` — testnet hardening (preflight, kill switch, portfolio drawdown, trust line tools)
+
+## Testnet branch (`testnet`)
+
+Hardening for testnet dry-run and small live tests:
+
+1. **Preflight** each cycle (trust line, balances, mid price, order sizes). Dry-run allows missing trust line with a warning.
+2. **Portfolio drawdown** (XRP + RLUSD at mid), persistent **kill switch** (`logs/kill_switch.json`).
+3. **Kill switch cancels** open offers when live trading is enabled.
+4. **Balance caps** on quote sizes vs XRP reserve and RLUSD balance.
+5. **TX validation** (`tesSUCCESS` required on submit).
+6. **Portfolio log**: `logs/portfolio_snapshots.csv` each cycle.
+
+CLI helpers:
+
+```powershell
+python main.py --mode once
+python main.py --mode setup-trust
+python main.py --mode cancel-offers
+python main.py --mode clear-kill
+```
+
+Before **live** testnet (`dry_run: false`): run `setup-trust`, fund RLUSD, set non-zero `order_sizes` in config.
 
 ## Versioning
 

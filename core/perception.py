@@ -51,6 +51,10 @@ class DecisionLog:
             return []
         return list(self._entries)[-limit:]
 
+    def recent_newest_first(self, limit: int = 50) -> List[DecisionEvent]:
+        """Most recent events first (for GUI display)."""
+        return list(reversed(self.recent(limit)))
+
     def __len__(self) -> int:
         return len(self._entries)
 

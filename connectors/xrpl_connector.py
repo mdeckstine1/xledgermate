@@ -12,13 +12,22 @@ from core.runtime_state import QuoteIntent
 
 logger = logging.getLogger(__name__)
 
+# RLUSD/XRP on ledger is typically ~0.5–5; raw XRPL "quality" is ~1e8+.
+_MAX_PLAUSIBLE_RLUSD_PER_XRP = 100.0
+
+
+def is_plausible_rlusd_per_xrp(price: Optional[float]) -> bool:
+    if price is None:
+        return False
+    return 1e-8 < price <= _MAX_PLAUSIBLE_RLUSD_PER_XRP
+
 try:
     from xrpl.asyncio.clients import AsyncJsonRpcClient
     from xrpl.asyncio.transaction import autofill_and_sign, submit_and_wait
     from xrpl.models.amounts import IssuedCurrencyAmount
     from xrpl.models.currencies import IssuedCurrency, XRP
     from xrpl.models.requests import AccountInfo, AccountLines, AccountOffers, BookOffers
-    from xrpl.models.transactions import OfferCancel, OfferCreate
+    from xrpl.models.transactions import OfferCancel, OfferCreate, TrustSet
     from xrpl.utils import drops_to_xrp, xrp_to_drops
     from xrpl.wallet import Wallet
 except ImportError:  # pragma: no cover - handled at runtime
@@ -50,6 +59,13 @@ class OpenOffer:
     side: str
     price: float
     size_xrp: float
+
+
+@dataclass(frozen=True)
+class TrustLineInfo:
+    exists: bool
+    balance: float = 0.0
+    limit: float = 0.0
 
 
 class XRPLConnector:
@@ -98,7 +114,7 @@ class XRPLConnector:
         drops_balance = result["account_data"]["Balance"]
         return float(drops_to_xrp(drops_balance))
 
-    async def get_rlusd_balance(self) -> float:
+    async def get_rlusd_trust_line(self) -> TrustLineInfo:
         req = AccountLines(
             account=self.account_address,
             peer=self.rlusd_issuer,
@@ -108,8 +124,43 @@ class XRPLConnector:
         for line in lines:
             currency = line.get("currency", "")
             if currency == self.rlusd_currency or currency.startswith("524C555344"):
-                return float(line.get("balance", 0.0))
-        return 0.0
+                return TrustLineInfo(
+                    exists=True,
+                    balance=float(line.get("balance", 0.0)),
+                    limit=float(line.get("limit", 0.0)),
+                )
+        return TrustLineInfo(exists=False)
+
+    async def get_rlusd_balance(self) -> float:
+        return (await self.get_rlusd_trust_line()).balance
+
+    @staticmethod
+    def _validate_tx_response(response) -> str:
+        result = response.result if hasattr(response, "result") else {}
+        meta = result.get("meta", {})
+        if isinstance(meta, dict):
+            tx_result = meta.get("TransactionResult")
+            if tx_result and tx_result != "tesSUCCESS":
+                raise RuntimeError(f"XRPL transaction failed: {tx_result}")
+        tx_hash = result.get("hash", "")
+        if not tx_hash:
+            raise RuntimeError("XRPL transaction returned no hash")
+        return tx_hash
+
+    async def setup_rlusd_trust_line(self, limit: str = "1000000000") -> str:
+        """Create or increase RLUSD trust line (testnet/mainnet)."""
+        wallet = self.load_wallet()
+        tx = TrustSet(
+            account=self.account_address,
+            limit_amount=IssuedCurrencyAmount(
+                currency=self.rlusd_currency,
+                issuer=self.rlusd_issuer,
+                value=limit,
+            ),
+        )
+        signed = await autofill_and_sign(tx, self.client, wallet)
+        response = await submit_and_wait(signed, self.client)
+        return self._validate_tx_response(response)
 
     async def fetch_xrp_rlusd_order_book(
         self, limit: int = 40
@@ -134,8 +185,8 @@ class XRPLConnector:
         asks_raw = (await self.client.request(asks_req)).result.get("offers", [])
         bids_raw = (await self.client.request(bids_req)).result.get("offers", [])
         return {
-            "asks": self._normalize_offers(asks_raw),
-            "bids": self._normalize_offers(bids_raw),
+            "asks": self._normalize_offers(asks_raw, side="ask"),
+            "bids": self._normalize_offers(bids_raw, side="bid"),
         }
 
     async def get_open_offers(self) -> List[OpenOffer]:
@@ -161,7 +212,8 @@ class XRPLConnector:
         for offer in await self.get_open_offers():
             tx = OfferCancel(account=self.account_address, offer_sequence=offer.sequence)
             signed = await autofill_and_sign(tx, self.client, wallet)
-            await submit_and_wait(signed, self.client)
+            response = await submit_and_wait(signed, self.client)
+            self._validate_tx_response(response)
             cancelled += 1
         return cancelled
 
@@ -192,7 +244,7 @@ class XRPLConnector:
         )
         signed = await autofill_and_sign(tx, self.client, wallet)
         response = await submit_and_wait(signed, self.client)
-        tx_hash = response.result.get("hash", "")
+        tx_hash = self._validate_tx_response(response)
         logger.info(
             "Placed %s L%s offer | size=%.4f XRP price=%.6f hash=%s",
             intent.side,
@@ -215,36 +267,74 @@ class XRPLConnector:
             return "bid", float(gets.get("value", 0.0)) / max(xrp_size, 1e-9), xrp_size
         return None, 0.0, 0.0
 
-    def _normalize_offers(self, offers: List[dict]) -> List[Dict[str, float]]:
+    def _normalize_offers(self, offers: List[dict], *, side: str) -> List[Dict[str, float]]:
+        """Convert BookOffers entries to RLUSD-per-XRP price and XRP size."""
         normalized: List[Dict[str, float]] = []
         for offer in offers:
-            quality = offer.get("quality")
-            funded = offer.get("taker_gets_funded") or offer.get("TakerGets")
-
-            if quality is None or funded is None:
+            gets = offer.get("TakerGets") or offer.get("taker_gets")
+            pays = offer.get("TakerPays") or offer.get("taker_pays")
+            if gets is None or pays is None:
                 continue
 
-            try:
-                price = float(quality)
-                if isinstance(funded, dict):
-                    size = float(funded.get("value", 0.0))
-                else:
-                    size = float(drops_to_xrp(funded))
-            except (TypeError, ValueError):
+            price, size_xrp = self._book_offer_price_and_size(gets, pays)
+            if price is None or price <= 0 or size_xrp <= 0:
                 continue
 
-            normalized.append({"price": price, "size": size})
+            normalized.append({"price": price, "size": size_xrp, "side": side})
         return normalized
+
+    def _book_offer_price_and_size(self, gets, pays) -> tuple[Optional[float], float]:
+        """
+        Return (RLUSD per 1 XRP, XRP size) from offer legs.
+        """
+        try:
+            if isinstance(gets, str) and isinstance(pays, dict):
+                # Taker receives XRP, pays RLUSD (buy XRP with RLUSD).
+                xrp = float(drops_to_xrp(gets))
+                rlusd = float(pays.get("value", 0.0))
+                if xrp <= 0:
+                    return None, 0.0
+                return rlusd / xrp, xrp
+
+            if isinstance(gets, dict) and isinstance(pays, str):
+                # Taker receives RLUSD, pays XRP (sell XRP for RLUSD).
+                rlusd = float(gets.get("value", 0.0))
+                xrp = float(drops_to_xrp(pays))
+                if xrp <= 0:
+                    return None, 0.0
+                return rlusd / xrp, xrp
+        except (TypeError, ValueError):
+            return None, 0.0
+        return None, 0.0
+
+    def compute_best_prices(
+        self, order_book: Dict[str, List[Dict[str, float]]]
+    ) -> tuple[Optional[float], Optional[float]]:
+        """Return (best_bid, best_ask) as RLUSD per 1 XRP."""
+        bids = order_book.get("bids", [])
+        asks = order_book.get("asks", [])
+        best_bid = max(bids, key=lambda x: x["price"])["price"] if bids else None
+        best_ask = min(asks, key=lambda x: x["price"])["price"] if asks else None
+        return best_bid, best_ask
 
     def compute_mid_price(self, order_book: Dict[str, List[Dict[str, float]]]) -> Optional[float]:
         bids = order_book.get("bids", [])
         asks = order_book.get("asks", [])
         if not bids or not asks:
             return None
+        # RLUSD per XRP: highest bid, lowest ask.
         best_bid = max(bids, key=lambda x: x["price"])["price"]
         best_ask = min(asks, key=lambda x: x["price"])["price"]
         if best_bid <= 0 or best_ask <= 0:
             return None
+        # Ignore crossed/invalid books (testnet often has stale liquidity).
+        if best_bid > best_ask * 1.05:
+            logger.warning(
+                "Order book crossed or stale (bid=%.6f ask=%.6f); using ask as mid.",
+                best_bid,
+                best_ask,
+            )
+            return best_ask
         return (best_bid + best_ask) / 2.0
 
     def update_and_estimate_volatility_pct(self, mid_price: Optional[float]) -> float:

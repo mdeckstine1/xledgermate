@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field, fields
 from typing import List, Optional
 import yaml
 from pathlib import Path
@@ -34,6 +34,8 @@ class BotConfig:
     # === EXECUTION ===
     dry_run: bool = True
     trading_enabled: bool = True
+    xrp_reserve: float = 12.0
+    min_order_size_xrp: float = 1.0
 
     # === RISK MANAGEMENT (GUI-adjustable 2%–5% drawdown) ===
     max_daily_drawdown_percent: float = 3.5   # Default (you can slide 2.0–5.0 in GUI)
@@ -67,9 +69,14 @@ class BotConfig:
         return self.xrpl_testnet_rpc_url if self.testnet else self.xrpl_mainnet_rpc_url
 
     def resolved_rlusd_issuer(self) -> str:
-        if self.rlusd_issuer:
-            return self.rlusd_issuer
-        return self.rlusd_issuer_testnet if self.testnet else self.rlusd_issuer_mainnet
+        from utils.xrpl_currency import RLUSD_ISSUER_MAINNET, RLUSD_ISSUER_TESTNET
+
+        issuer_override = (self.rlusd_issuer or "").strip()
+        if issuer_override:
+            return issuer_override
+        testnet_issuer = getattr(self, "rlusd_issuer_testnet", RLUSD_ISSUER_TESTNET)
+        mainnet_issuer = getattr(self, "rlusd_issuer_mainnet", RLUSD_ISSUER_MAINNET)
+        return testnet_issuer if self.testnet else mainnet_issuer
 
     def resolved_rlusd_currency_code(self) -> str:
         from utils.xrpl_currency import RLUSD_CURRENCY_HEX, encode_currency_code
@@ -85,14 +92,40 @@ class BotConfig:
             yaml.dump(self.to_dict(), f, default_flow_style=False, sort_keys=False)
 
     @classmethod
-    def load(cls, filepath: str = "config/config.yaml"):
-        """Load from YAML or return defaults"""
-        if Path(filepath).exists():
-            with open(filepath, "r") as f:
-                data = yaml.safe_load(f) or {}
-            return cls(**data)
+    def load(cls, filepath: str = "config/config.yaml") -> "BotConfig":
+        """Load from YAML, merging with defaults (never cls(**yaml) — avoids legacy key crashes)."""
         config = cls()
-        config.save()
+        path = Path(filepath)
+
+        if not path.exists():
+            config.save(filepath)
+            return config
+
+        with path.open("r", encoding="utf-8") as handle:
+            data = yaml.safe_load(handle) or {}
+
+        if not isinstance(data, dict):
+            data = {}
+
+        allowed = {item.name for item in fields(cls)}
+        updated = False
+
+        for key, value in data.items():
+            if key not in allowed:
+                continue
+            setattr(config, key, value)
+            updated = True
+
+        # Legacy configs used mainnet issuer while on testnet — prefer auto-select.
+        if config.testnet and config.rlusd_issuer == config.rlusd_issuer_mainnet:
+            config.rlusd_issuer = ""
+            updated = True
+
+        if allowed - set(data.keys()):
+            config.save(filepath)
+        elif updated:
+            config.save(filepath)
+
         return config
 
 

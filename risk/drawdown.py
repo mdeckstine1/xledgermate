@@ -4,41 +4,48 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def portfolio_value_xrp(xrp_balance: float, rlusd_balance: float, mid_rlusd_per_xrp: float) -> float:
+    """Total book value expressed in XRP (RLUSD converted at mid)."""
+    if mid_rlusd_per_xrp <= 0:
+        return xrp_balance
+    return xrp_balance + (rlusd_balance / mid_rlusd_per_xrp)
+
+
 class DrawdownMonitor:
+    """Daily drawdown on portfolio value (XRP + RLUSD at mid)."""
+
     def __init__(self, max_drawdown_percent: float = 3.5):
         self.max_drawdown_percent = max_drawdown_percent
-        self.daily_start_balance: Optional[float] = None
+        self.daily_start_value: Optional[float] = None
         self.daily_start_time = datetime.utcnow()
-        self.current_balance: Optional[float] = None
+        self.current_value: Optional[float] = None
 
-    def update_balance(self, balance: float):
+    def update_portfolio(self, xrp_balance: float, rlusd_balance: float, mid_rlusd_per_xrp: float) -> float:
+        value = portfolio_value_xrp(xrp_balance, rlusd_balance, mid_rlusd_per_xrp)
         now = datetime.utcnow()
-        if self.daily_start_balance is None or now.date() > self.daily_start_time.date():
-            self.daily_start_balance = balance
+        if self.daily_start_value is None or now.date() > self.daily_start_time.date():
+            self.daily_start_value = value
             self.daily_start_time = now
-            logger.info(f"New daily baseline set: {balance:.2f} XRP")
-        self.current_balance = balance
+            logger.info("New daily portfolio baseline: %.4f XRP equiv.", value)
+        self.current_value = value
+        return value
 
     def get_drawdown_percent(self) -> float:
-        if self.daily_start_balance is None or self.current_balance is None:
+        if self.daily_start_value is None or self.current_value is None:
             return 0.0
-        loss = self.daily_start_balance - self.current_balance
-        return (loss / self.daily_start_balance) * 100
+        if self.daily_start_value <= 0:
+            return 0.0
+        loss = self.daily_start_value - self.current_value
+        return max(0.0, (loss / self.daily_start_value) * 100)
 
     def is_kill_switch_triggered(self) -> bool:
         drawdown = self.get_drawdown_percent()
         if drawdown >= self.max_drawdown_percent:
-            logger.warning(f"🚨 KILL SWITCH TRIGGERED! Drawdown: {drawdown:.2f}% (max: {self.max_drawdown_percent}%)")
+            logger.warning(
+                "Drawdown kill threshold: %.2f%% (max %.2f%%)",
+                drawdown,
+                self.max_drawdown_percent,
+            )
             return True
         return False
-
-class KillSwitch:
-    def __init__(self):
-        self.activated = False
-
-    def activate(self, reason: str = "Drawdown limit exceeded"):
-        self.activated = True
-        logger.critical(f"🚨 KILL SWITCH ACTIVATED: {reason}")
-
-    def is_active(self) -> bool:
-        return self.activated

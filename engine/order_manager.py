@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from config.settings import BotConfig
 from core.runtime_state import QuoteIntent
@@ -32,26 +32,63 @@ class OrderManager:
         if mid_price <= 0:
             return QuotePlan(intents=[], reason="No valid mid price; skipping quote generation.")
 
+        spendable_xrp = max(0.0, xrp_balance - self.config.xrp_reserve)
+        min_size = max(0.0, self.config.min_order_size_xrp)
+        risk_cap = max(min_size, self.config.risk_capital_xrp)
+
         total_value = xrp_balance + (rlusd_balance / mid_price if mid_price > 0 else 0.0)
         xrp_ratio = xrp_balance / total_value if total_value > 0 else 0.5
         skew = self.inventory_skew.get_skew_factor(xrp_ratio)
 
+        bid_budget_xrp = min(spendable_xrp, risk_cap * 0.5)
+        ask_budget_rlusd = rlusd_balance
+
         intents: List[QuoteIntent] = []
+        skipped = 0
+        bid_levels = 0
+        ask_levels = 0
+
         for level in range(1, self.config.order_levels + 1):
+            configured_size = self.config.order_sizes[level - 1]
+            if configured_size <= 0:
+                skipped += 1
+                continue
+
             spread = spreads_pct.get(level, self.config.base_spread * 100.0) / 100.0
-            size = self.config.order_sizes[level - 1]
+            size = min(configured_size, risk_cap)
+
             bid_size = size * skew if self.inventory_skew.should_increase_ask_size(xrp_ratio) else size
             ask_size = size / skew if not self.inventory_skew.should_increase_ask_size(xrp_ratio) else size
 
             bid_price = mid_price * (1.0 - spread)
             ask_price = mid_price * (1.0 + spread)
-            intents.append(QuoteIntent(level=level, side="bid", price=bid_price, size_xrp=bid_size))
-            intents.append(QuoteIntent(level=level, side="ask", price=ask_price, size_xrp=ask_size))
 
-        return QuotePlan(
-            intents=intents,
-            reason=(
-                f"Generated {len(intents)} quotes from mid={mid_price:.6f} "
-                f"with inventory skew={skew:.3f}"
-            ),
-        )
+            if bid_size >= min_size:
+                remaining_bids = max(1, self.config.order_levels - bid_levels)
+                capped_bid = min(bid_size, bid_budget_xrp / remaining_bids)
+                if capped_bid >= min_size:
+                    intents.append(
+                        QuoteIntent(level=level, side="bid", price=bid_price, size_xrp=capped_bid)
+                    )
+                    bid_budget_xrp -= capped_bid
+                    bid_levels += 1
+                else:
+                    skipped += 1
+            else:
+                skipped += 1
+
+            ask_rlusd_needed = ask_size * ask_price
+            if ask_size >= min_size and ask_rlusd_needed <= ask_budget_rlusd:
+                intents.append(
+                    QuoteIntent(level=level, side="ask", price=ask_price, size_xrp=ask_size)
+                )
+                ask_budget_rlusd -= ask_rlusd_needed
+                ask_levels += 1
+            else:
+                skipped += 1
+
+        note = f"Generated {len(intents)} quotes from mid={mid_price:.6f} RLUSD/XRP skew={skew:.3f}"
+        if skipped:
+            note += f" ({skipped} legs skipped: size/balance/reserve)"
+
+        return QuotePlan(intents=intents, reason=note)

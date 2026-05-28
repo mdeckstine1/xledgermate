@@ -14,9 +14,11 @@ rlusd_issuer_mainnet: rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De
 
 order_levels: 3
 order_sizes:
+  - 50.0
   - 150.0
   - 500.0
-  - 1000.0
+xrp_reserve: 12.0
+min_order_size_xrp: 1.0
 base_spread: 0.0010
 level_spread_increment: 0.0005
 

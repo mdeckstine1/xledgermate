@@ -26,6 +26,11 @@ $py = $python -replace "'", "''"
 
 Write-Host "XLedgerMate - starting engine + GUI..." -ForegroundColor Cyan
 
+# Stop any leftover engine processes (avoids duplicate bots / stale pricing)
+Write-Host "Stopping any existing engine processes..." -ForegroundColor Yellow
+& $python -c "from gui.engine_control import stop_all_engines; c,m=stop_all_engines(); print(m)"
+Start-Sleep -Seconds 1
+
 # Trading engine (separate window)
 Start-Process powershell -ArgumentList @(
     "-NoExit",
