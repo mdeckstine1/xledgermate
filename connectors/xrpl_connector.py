@@ -13,15 +13,15 @@ from core.runtime_state import QuoteIntent
 logger = logging.getLogger(__name__)
 
 try:
-    from xrpl.clients import JsonRpcClient
+    from xrpl.asyncio.clients import AsyncJsonRpcClient
+    from xrpl.asyncio.transaction import autofill_and_sign, submit_and_wait
     from xrpl.models.amounts import IssuedCurrencyAmount
     from xrpl.models.requests import AccountInfo, AccountLines, AccountOffers, BookOffers
     from xrpl.models.transactions import OfferCancel, OfferCreate
-    from xrpl.transaction import autofill_and_sign, submit_and_wait
     from xrpl.utils import drops_to_xrp, xrp_to_drops
     from xrpl.wallet import Wallet
 except ImportError:  # pragma: no cover - handled at runtime
-    JsonRpcClient = None
+    AsyncJsonRpcClient = None
     IssuedCurrencyAmount = None
     AccountInfo = None
     AccountLines = None
@@ -50,7 +50,7 @@ class OpenOffer:
 
 
 class XRPLConnector:
-    """XRPL market data, balances, and offer management for XRP/RLUSD."""
+    """Async XRPL access for market data, balances, and offers (xrpl-py 4.x compatible)."""
 
     def __init__(
         self,
@@ -68,12 +68,12 @@ class XRPLConnector:
         self.rlusd_issuer = rlusd_issuer
         self.rlusd_currency = rlusd_currency
         self.network = network or XRPLNetworkConfig()
-        self.client = JsonRpcClient(self.network.json_rpc_url)
+        self.client = AsyncJsonRpcClient(self.network.json_rpc_url)
         self._mid_prices: Deque[float] = deque(maxlen=max(10, volatility_window))
 
     @staticmethod
     def _ensure_xrpl_py_available() -> None:
-        if JsonRpcClient is None:
+        if AsyncJsonRpcClient is None:
             raise RuntimeError(
                 "xrpl-py is not installed. Install with: pip install xrpl-py"
             )
@@ -89,25 +89,27 @@ class XRPLConnector:
             )
         return wallet
 
-    def get_xrp_balance(self) -> float:
+    async def get_xrp_balance(self) -> float:
         req = AccountInfo(account=self.account_address, ledger_index="validated")
-        result = self.client.request(req).result
+        result = (await self.client.request(req)).result
         drops_balance = result["account_data"]["Balance"]
         return float(drops_to_xrp(drops_balance))
 
-    def get_rlusd_balance(self) -> float:
+    async def get_rlusd_balance(self) -> float:
         req = AccountLines(
             account=self.account_address,
             peer=self.rlusd_issuer,
             ledger_index="validated",
         )
-        lines = self.client.request(req).result.get("lines", [])
+        lines = (await self.client.request(req)).result.get("lines", [])
         for line in lines:
             if line.get("currency") == self.rlusd_currency:
                 return float(line.get("balance", 0.0))
         return 0.0
 
-    def fetch_xrp_rlusd_order_book(self, limit: int = 40) -> Dict[str, List[Dict[str, float]]]:
+    async def fetch_xrp_rlusd_order_book(
+        self, limit: int = 40
+    ) -> Dict[str, List[Dict[str, float]]]:
         taker_gets_xrp = "1000000"
         taker_pays_rlusd = IssuedCurrencyAmount(
             currency=self.rlusd_currency,
@@ -126,16 +128,16 @@ class XRPLConnector:
             limit=limit,
         )
 
-        asks_raw = self.client.request(asks_req).result.get("offers", [])
-        bids_raw = self.client.request(bids_req).result.get("offers", [])
+        asks_raw = (await self.client.request(asks_req)).result.get("offers", [])
+        bids_raw = (await self.client.request(bids_req)).result.get("offers", [])
         return {
             "asks": self._normalize_offers(asks_raw),
             "bids": self._normalize_offers(bids_raw),
         }
 
-    def get_open_offers(self) -> List[OpenOffer]:
+    async def get_open_offers(self) -> List[OpenOffer]:
         req = AccountOffers(account=self.account_address, ledger_index="validated")
-        offers = self.client.request(req).result.get("offers", [])
+        offers = (await self.client.request(req)).result.get("offers", [])
         parsed: List[OpenOffer] = []
         for offer in offers:
             seq = int(offer.get("seq", 0))
@@ -145,20 +147,22 @@ class XRPLConnector:
                 continue
             side, price, size_xrp = self._parse_offer_legs(gets, pays)
             if side:
-                parsed.append(OpenOffer(sequence=seq, side=side, price=price, size_xrp=size_xrp))
+                parsed.append(
+                    OpenOffer(sequence=seq, side=side, price=price, size_xrp=size_xrp)
+                )
         return parsed
 
-    def cancel_all_offers(self) -> int:
+    async def cancel_all_offers(self) -> int:
         wallet = self.load_wallet()
         cancelled = 0
-        for offer in self.get_open_offers():
+        for offer in await self.get_open_offers():
             tx = OfferCancel(account=self.account_address, offer_sequence=offer.sequence)
-            signed = autofill_and_sign(tx, self.client, wallet)
-            submit_and_wait(signed, self.client)
+            signed = await autofill_and_sign(tx, self.client, wallet)
+            await submit_and_wait(signed, self.client)
             cancelled += 1
         return cancelled
 
-    def place_quote(self, intent: QuoteIntent) -> str:
+    async def place_quote(self, intent: QuoteIntent) -> str:
         wallet = self.load_wallet()
         rlusd_amount = intent.size_xrp * intent.price
         if intent.side == "ask":
@@ -183,8 +187,8 @@ class XRPLConnector:
             taker_gets=taker_gets,
             taker_pays=taker_pays,
         )
-        signed = autofill_and_sign(tx, self.client, wallet)
-        response = submit_and_wait(signed, self.client)
+        signed = await autofill_and_sign(tx, self.client, wallet)
+        response = await submit_and_wait(signed, self.client)
         tx_hash = response.result.get("hash", "")
         logger.info(
             "Placed %s L%s offer | size=%.4f XRP price=%.6f hash=%s",
@@ -198,8 +202,10 @@ class XRPLConnector:
 
     def _parse_offer_legs(self, gets, pays) -> tuple[Optional[str], float, float]:
         if isinstance(gets, str) and isinstance(pays, dict):
-            return "ask", float(pays.get("value", 0.0)) / max(float(drops_to_xrp(gets)), 1e-9), float(
-                drops_to_xrp(gets)
+            return (
+                "ask",
+                float(pays.get("value", 0.0)) / max(float(drops_to_xrp(gets)), 1e-9),
+                float(drops_to_xrp(gets)),
             )
         if isinstance(gets, dict) and isinstance(pays, str):
             xrp_size = float(drops_to_xrp(pays))
@@ -260,7 +266,9 @@ class XRPLConnector:
         *,
         depth_levels: int = 12,
     ) -> LiquidityMetrics:
-        bids = sorted(order_book.get("bids", []), key=lambda x: x["price"], reverse=True)[:depth_levels]
+        bids = sorted(order_book.get("bids", []), key=lambda x: x["price"], reverse=True)[
+            :depth_levels
+        ]
         asks = sorted(order_book.get("asks", []), key=lambda x: x["price"])[:depth_levels]
 
         bid_depth = sum(level["size"] for level in bids)
@@ -281,7 +289,9 @@ class XRPLConnector:
             top_depth += bids[0]["size"]
         if asks:
             top_depth += asks[0]["size"]
-        est_fill_seconds = 999.0 if top_depth <= 0 else max(1.0, default_target_size / top_depth) * 60.0
+        est_fill_seconds = (
+            999.0 if top_depth <= 0 else max(1.0, default_target_size / top_depth) * 60.0
+        )
 
         return LiquidityMetrics(
             bid_depth_xrp=bid_depth,

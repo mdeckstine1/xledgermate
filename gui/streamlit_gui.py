@@ -6,6 +6,13 @@ import streamlit as st
 
 from config.settings import BotConfig
 from core.perception import BUILT_IN_PROFILES
+from gui.engine_control import (
+    is_engine_running,
+    run_single_cycle,
+    start_engine,
+    stop_engine,
+)
+
 logger = logging.getLogger(__name__)
 RUNTIME_STATE_PATH = Path("logs/runtime_state.json")
 
@@ -25,6 +32,26 @@ def run_gui() -> None:
 
     config = BotConfig.load()
     runtime = _load_runtime_state()
+
+    if not config.bot_account_address:
+        st.error(
+            "Bot account not configured. Enter your **Bot Account** address and secret "
+            "in the sidebar under **Bot Account (required)**, then click **Save Config**."
+        )
+
+    st.sidebar.header("Bot Account (required)")
+    config.bot_account_address = st.sidebar.text_input(
+        "Bot Account Address (r...)",
+        value=config.bot_account_address,
+        placeholder="rYourBotAccountAddress...",
+    )
+    config.bot_secret_key = st.sidebar.text_input(
+        "Bot Secret Key (never commit to git)",
+        value=config.bot_secret_key,
+        type="password",
+        placeholder="s...",
+    )
+    st.sidebar.caption("Use the dedicated Bot Account only — not your Mangie bag.")
 
     st.sidebar.header("Risk Capital Settings")
     config.risk_capital_xrp = st.sidebar.number_input(
@@ -95,17 +122,64 @@ def run_gui() -> None:
         config.save()
         st.sidebar.success("Config saved")
 
+    st.header("Bot Control")
+    engine_running = is_engine_running()
+    if engine_running:
+        st.success("Engine status: **RUNNING**")
+    else:
+        st.warning("Engine status: **STOPPED**")
+
+    col_start, col_stop, col_once = st.columns(3)
+    with col_start:
+        start_clicked = st.button("Start Bot", type="primary", disabled=engine_running)
+    with col_stop:
+        stop_clicked = st.button("Stop Bot", disabled=not engine_running)
+    with col_once:
+        once_clicked = st.button("Run One Cycle")
+
+    if start_clicked:
+        if not config.bot_account_address.strip():
+            st.error("Save your Bot Account address and secret first, then click Start Bot.")
+        else:
+            config.save()
+            ok, msg = start_engine()
+            if ok:
+                st.success(msg)
+            else:
+                st.warning(msg)
+            st.rerun()
+
+    if stop_clicked:
+        ok, msg = stop_engine()
+        if ok:
+            st.success(msg)
+        else:
+            st.warning(msg)
+        st.rerun()
+
+    if once_clicked:
+        if not config.bot_account_address.strip():
+            st.error("Configure Bot Account first, then click Save Config.")
+        else:
+            config.save()
+            with st.spinner("Running one market cycle..."):
+                ok, msg = run_single_cycle()
+            if ok:
+                st.success(msg)
+            else:
+                st.error(msg)
+
     st.header("Live Bot Status")
-    st.info(
-        "Run the trading engine in a separate terminal: "
-        "`python main.py --mode engine`"
-    )
     st.write(f"Risk Capital: **{config.risk_capital_xrp:,} XRP**")
     st.write(f"Drawdown Kill-Switch: **{config.max_daily_drawdown_percent}%**")
     st.write(f"Active Profile: **{config.active_profile}**")
     st.write(f"Network: **{config.network_name()}**")
     st.write(f"RPC: **{config.resolved_rpc_url()}**")
     st.write(f"Dry Run: **{config.dry_run}** | Trading Enabled: **{config.trading_enabled}**")
+    if config.bot_account_address:
+        st.write(f"Bot Account: **{config.bot_account_address[:8]}...{config.bot_account_address[-4:]}**")
+    else:
+        st.warning("Bot account address is not set — engine cannot run cycles.")
 
     if runtime:
         st.subheader("Engine Runtime Snapshot")

@@ -47,21 +47,12 @@ def log_startup_banner(config: BotConfig) -> None:
         logger.warning("Running on MAINNET. Real funds at risk on Bot Account.")
 
 
-async def main() -> None:
-    args = parse_args()
-    config = BotConfig.load()
-    log_startup_banner(config)
-
-    if args.mode == "gui":
-        run_gui()
-        return
-
+async def run_engine_async(config: BotConfig, mode: str) -> None:
     engine = TradingEngine(config)
-    if args.mode == "once":
+    if mode == "once":
         await engine._run_cycle()
         logger.info("Single cycle complete.")
         return
-
     try:
         await engine.run()
     except KeyboardInterrupt:
@@ -71,7 +62,14 @@ async def main() -> None:
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        args = parse_args()
+        config = BotConfig.load()
+        log_startup_banner(config)
+
+        if args.mode == "gui":
+            run_gui()
+        else:
+            asyncio.run(run_engine_async(config, args.mode))
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as exc:
