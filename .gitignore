@@ -8,6 +8,7 @@ __pycache__/
 config/config.yaml
 .env
 logs/
+logs/engine.pid
 *.log
 
 # IDE / OS

@@ -17,8 +17,10 @@ class BotConfig:
     # === TRADING PAIR ===
     trading_pair: str = "XRP-RLUSD"
     active_profile: str = "safe"
-    rlusd_currency: str = "RLUSD"
-    rlusd_issuer: str = "rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De"
+    rlusd_currency: str = "RLUSD"  # display name; on-ledger code is hex-encoded
+    rlusd_issuer: str = ""  # optional override; empty = auto by network
+    rlusd_issuer_testnet: str = "rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV"
+    rlusd_issuer_mainnet: str = "rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De"
 
     # === ORDER BOOK STRATEGY (your 3-level layered brackets) ===
     order_levels: int = 3
@@ -63,6 +65,18 @@ class BotConfig:
         if self.private_node_url:
             return self.private_node_url
         return self.xrpl_testnet_rpc_url if self.testnet else self.xrpl_mainnet_rpc_url
+
+    def resolved_rlusd_issuer(self) -> str:
+        if self.rlusd_issuer:
+            return self.rlusd_issuer
+        return self.rlusd_issuer_testnet if self.testnet else self.rlusd_issuer_mainnet
+
+    def resolved_rlusd_currency_code(self) -> str:
+        from utils.xrpl_currency import RLUSD_CURRENCY_HEX, encode_currency_code
+
+        if self.rlusd_currency.upper() in {"RLUSD", RLUSD_CURRENCY_HEX}:
+            return RLUSD_CURRENCY_HEX
+        return encode_currency_code(self.rlusd_currency)
 
     def save(self, filepath: str = "config/config.yaml"):
         """Save current config to YAML"""

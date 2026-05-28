@@ -51,18 +51,26 @@ xledgermate/
      - `xrpl_mainnet_rpc_url`
      - optional `private_node_url` (overrides both)
 
-3. Run (two terminals recommended):
+3. Run everything (one step):
+
+   - Double-click `run.bat`, or in terminal: `.\run.ps1`
+   - In Cursor: **Terminal → Run Task → XLedgerMate: Run All**
+
+   This opens the engine and GUI in separate windows.
+
+4. Or run components separately:
 
    - Trading engine (continuous loop): `python main.py --mode engine`
    - Single test cycle: `python main.py --mode once`
    - GUI (control panel): `python main.py --mode gui`
 
    In Cursor, use **Terminal → Run Task**:
+   - **XLedgerMate: Run All**
    - **XLedgerMate: Run Engine**
    - **XLedgerMate: Run One Cycle**
    - **XLedgerMate: Run GUI**
 
-4. Safety defaults:
+5. Safety defaults:
 
    - `dry_run: true` logs quote intents without submitting orders
    - Set `dry_run: false` only when ready for live order placement on Bot Account

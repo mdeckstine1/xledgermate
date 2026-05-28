@@ -75,8 +75,8 @@ class TradingEngine:
         connector = XRPLConnector(
             account_address=config.bot_account_address.strip(),
             secret=config.bot_secret_key or None,
-            rlusd_issuer=config.rlusd_issuer,
-            rlusd_currency=config.rlusd_currency,
+            rlusd_issuer=config.resolved_rlusd_issuer(),
+            rlusd_currency=config.resolved_rlusd_currency_code(),
             network=XRPLNetworkConfig(json_rpc_url=config.resolved_rpc_url()),
         )
         self.connector = connector
@@ -147,7 +147,6 @@ class TradingEngine:
         except Exception as exc:
             logger.exception("Cycle failed: %s", exc)
             self._persist_error(str(exc))
-            raise
         finally:
             self.connector = None
 

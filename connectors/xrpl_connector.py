@@ -16,6 +16,7 @@ try:
     from xrpl.asyncio.clients import AsyncJsonRpcClient
     from xrpl.asyncio.transaction import autofill_and_sign, submit_and_wait
     from xrpl.models.amounts import IssuedCurrencyAmount
+    from xrpl.models.currencies import IssuedCurrency, XRP
     from xrpl.models.requests import AccountInfo, AccountLines, AccountOffers, BookOffers
     from xrpl.models.transactions import OfferCancel, OfferCreate
     from xrpl.utils import drops_to_xrp, xrp_to_drops
@@ -23,6 +24,8 @@ try:
 except ImportError:  # pragma: no cover - handled at runtime
     AsyncJsonRpcClient = None
     IssuedCurrencyAmount = None
+    IssuedCurrency = None
+    XRP = None
     AccountInfo = None
     AccountLines = None
     AccountOffers = None
@@ -58,7 +61,7 @@ class XRPLConnector:
         account_address: str,
         secret: Optional[str],
         rlusd_issuer: str,
-        rlusd_currency: str = "RLUSD",
+        rlusd_currency: str,
         network: XRPLNetworkConfig | None = None,
         volatility_window: int = 120,
     ) -> None:
@@ -103,18 +106,18 @@ class XRPLConnector:
         )
         lines = (await self.client.request(req)).result.get("lines", [])
         for line in lines:
-            if line.get("currency") == self.rlusd_currency:
+            currency = line.get("currency", "")
+            if currency == self.rlusd_currency or currency.startswith("524C555344"):
                 return float(line.get("balance", 0.0))
         return 0.0
 
     async def fetch_xrp_rlusd_order_book(
         self, limit: int = 40
     ) -> Dict[str, List[Dict[str, float]]]:
-        taker_gets_xrp = "1000000"
-        taker_pays_rlusd = IssuedCurrencyAmount(
+        taker_gets_xrp = XRP()
+        taker_pays_rlusd = IssuedCurrency(
             currency=self.rlusd_currency,
             issuer=self.rlusd_issuer,
-            value="1",
         )
 
         asks_req = BookOffers(

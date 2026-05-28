@@ -107,7 +107,12 @@ def run_gui() -> None:
     config.trading_enabled = st.sidebar.toggle(
         "Trading Enabled", value=config.trading_enabled
     )
-    config.rlusd_issuer = st.sidebar.text_input("RLUSD Issuer", value=config.rlusd_issuer)
+    config.rlusd_issuer = st.sidebar.text_input(
+        "RLUSD Issuer override (optional)",
+        value=config.rlusd_issuer,
+        help=f"Leave empty to use network default. Testnet: {config.rlusd_issuer_testnet}",
+    )
+    st.sidebar.caption(f"Active RLUSD issuer: **{config.resolved_rlusd_issuer()}**")
 
     st.sidebar.header("Risk Management")
     config.max_daily_drawdown_percent = st.sidebar.slider(

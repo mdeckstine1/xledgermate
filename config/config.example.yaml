@@ -8,7 +8,9 @@ bot_secret_key: ""
 trading_pair: XRP-RLUSD
 active_profile: safe
 rlusd_currency: RLUSD
-rlusd_issuer: rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De
+rlusd_issuer: ""
+rlusd_issuer_testnet: rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV
+rlusd_issuer_mainnet: rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De
 
 order_levels: 3
 order_sizes:
