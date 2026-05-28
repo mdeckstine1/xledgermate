@@ -27,7 +27,7 @@ try:
     from xrpl.models.amounts import IssuedCurrencyAmount
     from xrpl.models.currencies import IssuedCurrency, XRP
     from xrpl.models.requests import AccountInfo, AccountLines, AccountOffers, BookOffers
-    from xrpl.models.transactions import OfferCancel, OfferCreate, TrustSet
+    from xrpl.models.transactions import OfferCancel, OfferCreate, Payment, TrustSet
     from xrpl.utils import drops_to_xrp, xrp_to_drops
     from xrpl.wallet import Wallet
 except ImportError:  # pragma: no cover - handled at runtime
@@ -41,6 +41,8 @@ except ImportError:  # pragma: no cover - handled at runtime
     BookOffers = None
     OfferCancel = None
     OfferCreate = None
+    Payment = None
+    TrustSet = None
     autofill_and_sign = None
     submit_and_wait = None
     Wallet = None
@@ -161,6 +163,69 @@ class XRPLConnector:
         signed = await autofill_and_sign(tx, self.client, wallet)
         response = await submit_and_wait(signed, self.client)
         return self._validate_tx_response(response)
+
+    async def send_payment(
+        self,
+        *,
+        destination: str,
+        amount: float,
+        asset: str = "XRP",
+        xrp_reserve: float = 12.0,
+    ) -> str:
+        """Send XRP or RLUSD from the bot account to destination (classic address)."""
+        dest = (destination or "").strip()
+        if not dest.startswith("r"):
+            raise ValueError("Destination must be a classic XRPL address (starts with r).")
+        if dest == self.account_address:
+            raise ValueError("Destination cannot be the bot account itself.")
+        if amount <= 0:
+            raise ValueError("Amount must be greater than zero.")
+
+        wallet = self.load_wallet()
+
+        if asset.upper() == "XRP":
+            balance = await self.get_xrp_balance()
+            if amount + xrp_reserve > balance:
+                raise ValueError(
+                    f"Send would exceed spendable XRP. Balance={balance:.4f}, "
+                    f"amount={amount:.4f}, reserve={xrp_reserve:.4f}."
+                )
+            tx = Payment(
+                account=self.account_address,
+                destination=dest,
+                amount=str(xrp_to_drops(amount)),
+            )
+        elif asset.upper() == "RLUSD":
+            trust = await self.get_rlusd_trust_line()
+            if not trust.exists:
+                raise ValueError("No RLUSD trust line on bot account.")
+            if amount > trust.balance:
+                raise ValueError(
+                    f"Insufficient RLUSD balance ({trust.balance:.6f}) for send {amount:.6f}."
+                )
+            tx = Payment(
+                account=self.account_address,
+                destination=dest,
+                amount=IssuedCurrencyAmount(
+                    currency=self.rlusd_currency,
+                    issuer=self.rlusd_issuer,
+                    value=f"{amount:.6f}",
+                ),
+            )
+        else:
+            raise ValueError(f"Unsupported asset: {asset}. Use XRP or RLUSD.")
+
+        signed = await autofill_and_sign(tx, self.client, wallet)
+        response = await submit_and_wait(signed, self.client)
+        tx_hash = self._validate_tx_response(response)
+        logger.info(
+            "Sent %s %s to %s | hash=%s",
+            amount,
+            asset.upper(),
+            dest,
+            tx_hash,
+        )
+        return tx_hash
 
     async def fetch_xrp_rlusd_order_book(
         self, limit: int = 40

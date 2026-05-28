@@ -14,6 +14,7 @@ from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_manager import OrderManager
 from monitoring.balance_logger import BalanceLogger
 from monitoring.csv_logger import CSVLogger
+from monitoring.fill_detection import detect_fill_from_balance_delta
 from monitoring.telegram_alerts import TelegramAlerts
 from risk.drawdown import DrawdownMonitor, portfolio_value_xrp
 from risk.kill_switch import KillSwitch
@@ -47,6 +48,7 @@ class TradingEngine:
         self._price_history: List[dict] = []
         self._price_history_max = 180
         self._last_preflight: Optional[Any] = None
+        self._last_cycle_balances: Optional[tuple[float, float]] = None
     async def run(self) -> None:
         self._running = True
         logger.info(
@@ -55,6 +57,13 @@ class TradingEngine:
             self.config.dry_run,
             self.config.trading_enabled,
             self.kill_switch.is_active(),
+        )
+        self.csv_logger.log_major(
+            network=self.config.network_name(),
+            notes=(
+                f"Engine started | dry_run={self.config.dry_run} "
+                f"trading_enabled={self.config.trading_enabled}"
+            ),
         )
         while self._running:
             try:
@@ -81,6 +90,11 @@ class TradingEngine:
     async def _run_cycle(self) -> None:
         config = BotConfig.load()
         self.config = config
+        self.alerts = TelegramAlerts(
+            token=config.telegram_token,
+            chat_id=config.telegram_chat_id,
+            enabled=config.telegram_enabled,
+        )
         profile = get_profile(config.active_profile)
         perception = BotPerception(active_profile=profile)
         if not config.bot_account_address.strip():
@@ -130,6 +144,13 @@ class TradingEngine:
             portfolio_value = self.drawdown_monitor.update_portfolio(
                 balance_xrp, rlusd_balance, mid_price or 0.0
             )
+            if not config.dry_run:
+                self._detect_and_log_fills(
+                    config=config,
+                    balance_xrp=balance_xrp,
+                    rlusd_balance=rlusd_balance,
+                    mid_price=mid_price,
+                )
             drawdown_pct = self.drawdown_monitor.get_drawdown_percent()
             if self.drawdown_monitor.is_kill_switch_triggered():
                 await self._activate_kill_switch(
@@ -217,6 +238,7 @@ class TradingEngine:
                 mid=mid_price,
                 execution=execution_summary,
             )
+            self._last_cycle_balances = (balance_xrp, rlusd_balance)
             self._persist_state(
                 perception=perception,
                 config=config,
@@ -244,6 +266,15 @@ class TradingEngine:
                 placed_count,
                 "OK" if preflight and preflight.ready else "FAIL",
             )
+            if config.telegram_notify_each_cycle and self.alerts.is_configured():
+                self.alerts.send_cycle_summary(
+                    network=config.network_name(),
+                    mid=mid_price or 0.0,
+                    cycle=self._cycle_count,
+                    dry_run=config.dry_run,
+                    placed=placed_count,
+                    preflight_ok=bool(preflight and preflight.ready),
+                )
         except Exception as exc:
             logger.exception("Cycle failed: %s", exc)
             self._persist_error(str(exc))
@@ -258,6 +289,11 @@ class TradingEngine:
         if self.kill_switch.is_active():
             return
         self.kill_switch.activate(reason)
+        self.csv_logger.log_major(
+            network=config.network_name(),
+            cycle=self._cycle_count,
+            notes=f"Kill switch activated: {reason}",
+        )
         self.alerts.send_kill_switch_alert(
             self.drawdown_monitor.get_drawdown_percent(),
             reason,
@@ -327,6 +363,51 @@ class TradingEngine:
         }
         with self._decision_log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record) + "\n")
+    def _detect_and_log_fills(
+        self,
+        *,
+        config: BotConfig,
+        balance_xrp: float,
+        rlusd_balance: float,
+        mid_price: Optional[float],
+    ) -> None:
+        if self._last_cycle_balances is None:
+            return
+        prev_xrp, prev_rlusd = self._last_cycle_balances
+        fill = detect_fill_from_balance_delta(
+            prev_xrp=prev_xrp,
+            prev_rlusd=prev_rlusd,
+            curr_xrp=balance_xrp,
+            curr_rlusd=rlusd_balance,
+            mid_price=mid_price,
+        )
+        if not fill:
+            return
+        cycle = self._cycle_count + 1
+        notes = "Inferred from balance change between cycles (verify on ledger for taxes)."
+        common = dict(
+            network=config.network_name(),
+            xrp_amount=float(fill["xrp_amount"]),
+            rlusd_amount=float(fill["rlusd_amount"]),
+            price_rlusd_per_xrp=float(fill["price_rlusd_per_xrp"]),
+            cycle=cycle,
+            notes=notes,
+            balance_xrp_after=balance_xrp,
+            balance_rlusd_after=rlusd_balance,
+        )
+        if fill["side"] == "SELL":
+            self.csv_logger.log_sell(**common)
+            self.decision_log.add(
+                "fill",
+                f"SELL ~{common['xrp_amount']:.4f} XRP for {common['rlusd_amount']:.4f} RLUSD",
+            )
+        else:
+            self.csv_logger.log_buy(**common)
+            self.decision_log.add(
+                "fill",
+                f"BUY ~{common['xrp_amount']:.4f} XRP for {common['rlusd_amount']:.4f} RLUSD",
+            )
+
     async def _refresh_orders(self, intents: List[QuoteIntent]) -> int:
         if self.config.dry_run:
             self.decision_log.add(
@@ -347,6 +428,13 @@ class TradingEngine:
                     f"Failed {intent.side} L{intent.level}: {exc}",
                 )
         self.decision_log.add("execution", f"Placed {placed}/{len(intents)} offers.")
+        self.csv_logger.log_offer_refresh(
+            network=self.config.network_name(),
+            placed=placed,
+            cancelled=cancelled,
+            cycle=self._cycle_count + 1,
+            dry_run=False,
+        )
         return placed
     def _persist_state(
         self,

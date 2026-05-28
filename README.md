@@ -11,7 +11,9 @@ XRPL XRP/RLUSD market-making bot (v1) focused on:
 ```text
 xledgermate/
 ├── main.py                 # App entrypoint
-├── VERSION                 # Release version (v1.0.0)
+├── VERSION                 # Release version (1.1.0)
+├── CHANGELOG.md            # Version history
+├── docs/OPERATOR_MANUAL.md # Non-technical operator guide
 ├── requirements.txt
 ├── config/                 # Settings loader + example config
 ├── core/                   # Perception, profiles, decision log, version
@@ -91,6 +93,7 @@ Hardening for testnet dry-run and small live tests:
 4. **Balance caps** on quote sizes vs XRP reserve and RLUSD balance.
 5. **TX validation** (`tesSUCCESS` required on submit).
 6. **Portfolio log**: `logs/portfolio_snapshots.csv` each cycle.
+7. **Tax / trade log**: `logs/trades_YYYY-MM.csv` — BUY/SELL fills (live only), TRANSFER (sends), MAJOR (kill switch, engine start), OFFER_REFRESH (live quote cycles). Not written in dry-run except MAJOR on engine start.
 
 CLI helpers:
 
@@ -105,5 +108,7 @@ Before **live** testnet (`dry_run: false`): run `setup-trust`, fund RLUSD, set n
 
 ## Versioning
 
-- Current version: `1.0.0` (`VERSION` file)
+- Current version: **1.1.0** (`VERSION` file)
+- Release notes: [`CHANGELOG.md`](CHANGELOG.md)
+- Plain-English guide: [`docs/OPERATOR_MANUAL.md`](docs/OPERATOR_MANUAL.md)
 - Runtime: `core.version.VERSION`

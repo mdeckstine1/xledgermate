@@ -1,27 +1,45 @@
+"""XLedgerMate Streamlit control panel — tabbed layout with reduced refresh flicker."""
+
+from __future__ import annotations
+
 import importlib
 import json
 import logging
-import time
+from datetime import timedelta
 from pathlib import Path
+from typing import Any, Dict, List
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 import config.settings as settings_module
 from config.settings import BotConfig
 from core.perception import BUILT_IN_PROFILES
-from utils.xrpl_currency import RLUSD_ISSUER_TESTNET
 from gui.engine_control import (
     cancel_offers_on_ledger,
     clear_kill_switch,
     is_engine_running,
     run_single_cycle,
+    send_funds,
+    setup_trust_line as run_setup_trust,
     start_engine,
     stop_engine,
 )
+from utils.xrpl_currency import RLUSD_ISSUER_TESTNET
 
 logger = logging.getLogger(__name__)
 RUNTIME_STATE_PATH = Path("logs/runtime_state.json")
+LOGO_PATH = Path(__file__).resolve().parent.parent / "Xledermate.jpg"
+
+try:
+    _fragment = st.fragment
+except AttributeError:  # pragma: no cover - older Streamlit
+
+    def _fragment(*_args, **_kwargs):
+        def decorator(func):
+            return func
+
+        return decorator
 
 
 def _load_runtime_state() -> dict:
@@ -33,181 +51,357 @@ def _load_runtime_state() -> dict:
         return {}
 
 
-def run_gui() -> None:
-    st.set_page_config(page_title="XLedgerMate", page_icon="chart", layout="wide")
-    st.title("XLedgerMate - XRPL Market Maker")
-
+def _load_config() -> BotConfig:
     importlib.reload(settings_module)
-    try:
-        config = settings_module.BotConfig.load()
-    except TypeError as exc:
-        st.error(
-            "Config failed to load (stale code in memory). "
-            "Fully stop Streamlit and restart with `run.bat`.\n\n"
-            f"Details: {exc}"
-        )
-        st.stop()
+    return settings_module.BotConfig.load()
+
+
+def _render_brand_logo(*, sidebar: bool = False) -> None:
+    if not LOGO_PATH.is_file():
+        if sidebar:
+            st.markdown("### XLedgerMate")
+        else:
+            st.title("XLedgerMate")
+        return
+    if sidebar:
+        st.image(str(LOGO_PATH), use_container_width=True)
+    else:
+        st.image(str(LOGO_PATH), width=480)
+
+
+def _fmt_price(value: Any, digits: int = 4) -> str:
+    if value is None:
+        return "n/a"
+    return f"{float(value):.{digits}f}"
+
+
+def _fmt_xrp_balance(value: Any) -> str:
+    return f"{float(value or 0):,.2f}"
+
+
+def _fmt_rlusd_balance(value: Any) -> str:
+    return f"{float(value or 0):,.4f}"
+
+
+def _render_balance_card(column: Any, runtime: dict) -> None:
+    """XRP on the main line; RLUSD on a smaller line below (fits narrow columns)."""
+    with column:
+        st.metric("Balance", _fmt_xrp_balance(runtime.get("balance_xrp")), help="Bot account XRP")
+        st.caption(f"RLUSD {_fmt_rlusd_balance(runtime.get('balance_rlusd'))}")
+
+
+def _quote_table(intents: List[dict]) -> pd.DataFrame:
+    rows: Dict[int, dict] = {}
+    for q in intents:
+        level = int(q.get("level", 0))
+        row = rows.setdefault(level, {"Level": f"L{level}"})
+        side = str(q.get("side", "")).lower()
+        price = float(q.get("price", 0))
+        size = float(q.get("size", 0))
+        if side == "bid":
+            row["Bid price"] = f"{price:.6f}"
+            row["Bid size (XRP)"] = f"{size:.2f}"
+        elif side == "ask":
+            row["Ask price"] = f"{price:.6f}"
+            row["Ask size (XRP)"] = f"{size:.2f}"
+    if not rows:
+        return pd.DataFrame(columns=["Level", "Bid price", "Bid size (XRP)", "Ask price", "Ask size (XRP)"])
+    return pd.DataFrame([rows[k] for k in sorted(rows.keys())])
+
+
+def _render_header(config: BotConfig, runtime: dict, engine_running: bool) -> None:
+    mid = runtime.get("mid_price")
+    pnl = float(runtime.get("session_pnl_xrp_estimate", 0.0))
+    dry = runtime.get("dry_run", config.dry_run)
+
+    h1, h2, h3, h4, h5, h6 = st.columns([1.2, 1, 1, 1, 1, 1])
+    status = "RUNNING" if engine_running else "STOPPED"
+    h1.markdown(f"**Bot** :{'green' if engine_running else 'orange'}[{status}]")
+    h2.markdown(f"**Mode** {'DRY-RUN' if dry else 'LIVE'}")
+    h3.metric("Mid", _fmt_price(mid) if mid else "—", help="RLUSD per XRP")
+    h4.metric("XRP", _fmt_xrp_balance(runtime.get("balance_xrp")))
+    h5.metric("RLUSD", _fmt_rlusd_balance(runtime.get("balance_rlusd")))
+    delta_color = "normal" if pnl == 0 else ("normal" if pnl > 0 else "inverse")
+    h6.metric("Session P&L", f"{pnl:+.4f}", help="XRP equiv.", delta_color=delta_color)
+    st.caption(
+        f"{config.network_name().upper()} · {config.active_profile} · "
+        f"Updated {runtime.get('updated_utc', 'n/a')}"
+    )
+
+
+def _update_live_dashboard(config: BotConfig) -> None:
+    """Refresh live metrics inside the Dashboard tab panel only."""
     runtime = _load_runtime_state()
+    engine_running = is_engine_running()
 
-    if not config.bot_account_address:
-        st.error(
-            "Bot account not configured. Enter your **Bot Account** address and secret "
-            "in the sidebar under **Bot Account (required)**, then click **Save Config**."
+    if not runtime:
+        st.info("Start the bot or run one cycle to populate live data.")
+        return
+
+    pnl = float(runtime.get("session_pnl_xrp_estimate", 0.0))
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Bot status", "RUNNING" if engine_running else "STOPPED")
+    _render_balance_card(k2, runtime)
+    k3.metric("Drawdown", f"{float(runtime.get('drawdown_pct', 0)):.2f}%")
+    k4.metric("Session P&L", f"{pnl:+.4f} XRP")
+
+    mid_raw = runtime.get("mid_price")
+    mid_bad = mid_raw is not None and float(mid_raw) > 100.0
+    if mid_bad:
+        st.error("Invalid mid price — restart engine with `run.bat`.")
+
+    c1, c2, c3, c4 = st.columns(4)
+    dry = runtime.get("dry_run", config.dry_run)
+    c1.metric("Execution", "DRY-RUN" if dry else "LIVE")
+    c2.metric("Cycles", int(runtime.get("cycle_count", 0)))
+    c3.metric("Placed (last)", int(runtime.get("offers_placed_last_cycle", 0)))
+    c4.metric("Open offers", int(runtime.get("open_offers_count", 0)))
+    st.caption(runtime.get("last_execution_summary", ""))
+
+    st.markdown("### Live price (RLUSD / XRP)")
+    p1, p2, p3 = st.columns(3)
+    bid = runtime.get("best_bid_rlusd_per_xrp")
+    ask = runtime.get("best_ask_rlusd_per_xrp")
+    p1.metric("Best bid", _fmt_price(bid, 6))
+    p2.metric("Mid", _fmt_price(mid_raw, 6))
+    p3.metric("Best ask", _fmt_price(ask, 6))
+
+    st.markdown("### Quote ladder (current cycle)")
+    intents = runtime.get("quote_intents", [])
+    st.dataframe(_quote_table(intents), use_container_width=True, hide_index=True)
+
+    if runtime.get("preflight_ready"):
+        st.success(runtime.get("preflight_summary", "Preflight OK"))
+    elif "preflight_ready" in runtime:
+        st.error(runtime.get("preflight_summary", "Preflight failed"))
+    for w in runtime.get("preflight_warnings") or []:
+        st.warning(w)
+
+
+@_fragment(run_every=timedelta(seconds=5))
+def _live_dashboard_fragment() -> None:
+    panel = st.session_state.get("_dash_live_panel")
+    cfg = st.session_state.get("_dash_config")
+    if panel is None or cfg is None:
+        return
+    with panel.container():
+        _update_live_dashboard(cfg)
+
+
+def _render_bot_controls(config: BotConfig) -> None:
+    engine_running = is_engine_running()
+    c1, c2, c3 = st.columns(3)
+    if c1.button("Start Bot", type="primary", disabled=engine_running, use_container_width=True):
+        if config.bot_account_address.strip():
+            config.save()
+            ok, msg = start_engine(force_restart=True)
+            st.success(msg) if ok else st.warning(msg)
+            st.rerun()
+        else:
+            st.error("Configure Bot Account first.")
+    if c2.button("Stop Bot", disabled=not engine_running, use_container_width=True):
+        ok, msg = stop_engine()
+        st.success(msg) if ok else st.warning(msg)
+        st.rerun()
+    if c3.button("Run One Cycle", use_container_width=True):
+        config.save()
+        with st.spinner("Running cycle..."):
+            ok, msg = run_single_cycle()
+        st.success(msg) if ok else st.error(msg)
+
+
+def _render_controls_tab(config: BotConfig) -> None:
+    st.markdown("### Order bracket sizes (XRP)")
+    st.caption("Three layered quote sizes — adjust with sliders, then **Save Config** in the sidebar.")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        config.order_sizes[0] = st.slider(
+            "Level 1",
+            min_value=0.0,
+            max_value=float(max(config.risk_capital_xrp, 100.0)),
+            value=float(config.order_sizes[0]),
+            step=10.0,
+        )
+    with c2:
+        config.order_sizes[1] = st.slider(
+            "Level 2",
+            min_value=0.0,
+            max_value=float(max(config.risk_capital_xrp, 100.0)),
+            value=float(config.order_sizes[1]),
+            step=25.0,
+        )
+    with c3:
+        config.order_sizes[2] = st.slider(
+            "Level 3",
+            min_value=0.0,
+            max_value=float(max(config.risk_capital_xrp, 100.0)),
+            value=float(config.order_sizes[2]),
+            step=50.0,
         )
 
-    st.sidebar.header("Bot Account (required)")
-    config.bot_account_address = st.sidebar.text_input(
-        "Bot Account Address (r...)",
+    st.markdown("### Spreads & timing")
+    s1, s2, s3 = st.columns(3)
+    with s1:
+        config.base_spread = st.number_input(
+            "Base spread (%)",
+            value=config.base_spread * 100,
+            step=0.01,
+            format="%.2f",
+        ) / 100
+    with s2:
+        config.order_refresh_time_seconds = st.number_input(
+            "Refresh interval (sec)",
+            value=int(config.order_refresh_time_seconds),
+            step=10,
+            min_value=15,
+        )
+    with s3:
+        profile_names = list(BUILT_IN_PROFILES.keys())
+        idx = profile_names.index(config.active_profile) if config.active_profile in profile_names else 0
+        config.active_profile = st.selectbox("Active profile", profile_names, index=idx)
+
+    st.markdown("### Risk & execution flags")
+    r1, r2, r3 = st.columns(3)
+    with r1:
+        config.risk_capital_xrp = st.number_input(
+            "Risk capital (XRP)", value=config.risk_capital_xrp, step=100.0
+        )
+    with r2:
+        config.max_daily_drawdown_percent = st.slider(
+            "Max daily drawdown (%)",
+            min_value=config.min_drawdown_percent,
+            max_value=config.max_drawdown_percent,
+            value=config.max_daily_drawdown_percent,
+            step=0.1,
+        )
+    with r3:
+        config.fund_with_xrp_only = st.toggle(
+            "Fund with XRP only",
+            value=getattr(config, "fund_with_xrp_only", True),
+        )
+
+    e1, e2 = st.columns(2)
+    with e1:
+        config.dry_run = st.toggle("Dry run (no ledger orders)", value=config.dry_run)
+    with e2:
+        config.trading_enabled = st.toggle("Trading enabled", value=config.trading_enabled)
+
+
+def _render_account_tab(config: BotConfig, runtime: dict) -> None:
+    st.markdown("### Bot account credentials")
+    config.bot_account_address = st.text_input(
+        "Bot account address (r...)",
         value=config.bot_account_address,
         placeholder="rYourBotAccountAddress...",
     )
-    config.bot_secret_key = st.sidebar.text_input(
-        "Bot Secret Key (never commit to git)",
+    config.bot_secret_key = st.text_input(
+        "Bot secret (never commit)",
         value=config.bot_secret_key,
         type="password",
-        placeholder="s...",
     )
-    st.sidebar.caption("Use the dedicated Bot Account only — not your Mangie bag.")
+    st.caption("Dedicated Bot Account only — not your main wallet.")
 
-    st.sidebar.header("Risk Capital Settings")
-    config.risk_capital_xrp = st.sidebar.number_input(
-        "Risk Capital (XRP)", value=config.risk_capital_xrp, step=100.0
+    st.markdown("### Fund the bot")
+    st.info(
+        "Send **XRP** to the address below (testnet faucet or transfer). "
+        "Use [tryrlusd.com](https://tryrlusd.com) with the **same** address for test RLUSD."
     )
+    if config.bot_account_address:
+        st.code(config.bot_account_address)
+        f1, f2, f3 = st.columns(3)
+        if f2.button("Setup RLUSD trust line"):
+            if not config.bot_secret_key.strip():
+                st.error("Save bot secret first.")
+            else:
+                with st.spinner("Submitting TrustSet..."):
+                    ok, msg = run_setup_trust()
+                st.success(msg) if ok else st.error(msg)
+        f3.link_button("Get testnet RLUSD", "https://tryrlusd.com/")
 
-    st.sidebar.header("Order Brackets (3-level)")
-    config.order_sizes[0] = st.sidebar.number_input(
-        "Level 1 Size (XRP)", value=config.order_sizes[0], step=50.0
-    )
-    config.order_sizes[1] = st.sidebar.number_input(
-        "Level 2 Size (XRP)", value=config.order_sizes[1], step=50.0
-    )
-    config.order_sizes[2] = st.sidebar.number_input(
-        "Level 3 Size (XRP)", value=config.order_sizes[2], step=50.0
-    )
+    trust_ok = any(
+        "trust line exists" in str(c).lower()
+        for c in (runtime.get("preflight_summary", ""), *(runtime.get("preflight_warnings") or []))
+    ) or bool(runtime.get("preflight_ready"))
+    if runtime.get("balance_rlusd") is not None or runtime:
+        rlusd_bal = float(runtime.get("balance_rlusd", 0))
+        if rlusd_bal > 0 or trust_ok:
+            st.success(f"RLUSD on ledger: **{rlusd_bal:.4f}**")
+        else:
+            st.warning("RLUSD trust line may exist; balance still **0** until faucet pays you.")
 
-    st.sidebar.header("Spreads & Timing")
-    config.base_spread = (
-        st.sidebar.number_input(
-            "Base Spread (%)", value=config.base_spread * 100, step=0.01, format="%.2f"
-        )
-        / 100
+    st.markdown("### Send / withdraw")
+    send_dest = st.text_input(
+        "Send to address",
+        value=getattr(config, "send_destination_default", "") or "",
     )
-    config.order_refresh_time_seconds = st.sidebar.number_input(
-        "Refresh Time (seconds)", value=config.order_refresh_time_seconds, step=10
-    )
-    profile_names = list(BUILT_IN_PROFILES.keys())
-    active_idx = (
-        profile_names.index(config.active_profile)
-        if config.active_profile in profile_names
-        else 0
-    )
-    config.active_profile = st.sidebar.selectbox(
-        "Active Profile", options=profile_names, index=active_idx
-    )
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        send_amount = st.number_input("Amount", min_value=0.0, value=0.0, step=1.0)
+    with sc2:
+        send_asset = st.selectbox("Asset", ["XRP", "RLUSD"])
+    send_ok = st.checkbox("Bot stopped & offers cancelled")
+    if st.button("Send now", type="primary"):
+        if not config.bot_secret_key.strip():
+            st.error("Bot secret required.")
+        elif is_engine_running() and not send_ok:
+            st.error("Stop bot and confirm checkbox.")
+        elif send_amount <= 0:
+            st.error("Enter amount > 0.")
+        else:
+            config.send_destination_default = send_dest.strip()
+            config.save()
+            with st.spinner("Sending..."):
+                ok, msg = send_funds(send_dest.strip(), send_amount, send_asset)
+            st.success(msg) if ok else st.error(msg)
 
-    st.sidebar.header("XRPL Network")
-    config.testnet = st.sidebar.toggle("Use Testnet", value=config.testnet)
-    config.xrpl_testnet_rpc_url = st.sidebar.text_input(
-        "Testnet RPC URL", value=config.xrpl_testnet_rpc_url
-    )
-    config.xrpl_mainnet_rpc_url = st.sidebar.text_input(
-        "Mainnet RPC URL", value=config.xrpl_mainnet_rpc_url
-    )
-    private_node = st.sidebar.text_input(
-        "Private Node URL (optional)", value=config.private_node_url or ""
-    )
-    config.private_node_url = private_node or None
 
-    st.sidebar.header("Execution")
-    config.dry_run = st.sidebar.toggle("Dry Run (no live orders)", value=config.dry_run)
-    config.trading_enabled = st.sidebar.toggle(
-        "Trading Enabled", value=config.trading_enabled
-    )
-    config.rlusd_issuer = st.sidebar.text_input(
-        "RLUSD Issuer override (optional)",
+def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
+    st.markdown("### Network")
+    config.testnet = st.toggle("Use testnet", value=config.testnet)
+    config.xrpl_testnet_rpc_url = st.text_input("Testnet RPC", value=config.xrpl_testnet_rpc_url)
+    config.xrpl_mainnet_rpc_url = st.text_input("Mainnet RPC", value=config.xrpl_mainnet_rpc_url)
+    private = st.text_input("Private node (optional)", value=config.private_node_url or "")
+    config.private_node_url = private or None
+    config.rlusd_issuer = st.text_input(
+        "RLUSD issuer override",
         value=config.rlusd_issuer or "",
-        help=f"Leave empty to use network default. Testnet: {RLUSD_ISSUER_TESTNET}",
+        help=f"Default testnet: {RLUSD_ISSUER_TESTNET}",
     )
-    st.sidebar.caption(f"Active RLUSD issuer: **{config.resolved_rlusd_issuer()}**")
+    st.caption(f"Active issuer: `{config.resolved_rlusd_issuer()}`")
 
-    st.sidebar.header("Risk Management")
-    config.max_daily_drawdown_percent = st.sidebar.slider(
-        "Daily Max Drawdown (%)",
-        min_value=config.min_drawdown_percent,
-        max_value=config.max_drawdown_percent,
-        value=config.max_daily_drawdown_percent,
-        step=0.1,
+    st.markdown("### Telegram")
+    config.telegram_enabled = st.toggle("Enable Telegram", value=config.telegram_enabled)
+    config.telegram_token = st.text_input("Bot token", value=config.telegram_token, type="password")
+    config.telegram_chat_id = st.text_input("Chat ID", value=config.telegram_chat_id)
+    config.telegram_notify_each_cycle = st.toggle(
+        "Notify each cycle",
+        value=getattr(config, "telegram_notify_each_cycle", False),
     )
+    if st.button("Send Telegram test"):
+        from monitoring.telegram_alerts import TelegramAlerts
 
-    if st.sidebar.button("Save Config"):
-        config.save()
-        st.sidebar.success("Config saved")
-
-    st.header("Bot Control")
-    engine_running = is_engine_running()
-    if engine_running:
-        st.success("Engine status: **RUNNING**")
-    else:
-        st.warning("Engine status: **STOPPED**")
-
-    col_start, col_stop, col_once = st.columns(3)
-    with col_start:
-        start_clicked = st.button("Start Bot", type="primary", disabled=engine_running)
-    with col_stop:
-        stop_clicked = st.button("Stop Bot", disabled=not engine_running)
-    with col_once:
-        once_clicked = st.button("Run One Cycle")
-
-    col_cancel, col_clear_kill, col_emergency = st.columns(3)
-    with col_cancel:
-        cancel_offers_clicked = st.button("Cancel All Offers (ledger)")
-    with col_clear_kill:
-        clear_kill_clicked = st.button("Clear Kill Switch")
-    with col_emergency:
-        emergency_clicked = st.button("Emergency Stop", type="secondary")
-
-    if start_clicked:
-        if not config.bot_account_address.strip():
-            st.error("Save your Bot Account address and secret first, then click Start Bot.")
-        else:
-            config.save()
-            ok, msg = start_engine(force_restart=True)
-            if ok:
-                st.success(msg)
-            else:
-                st.warning(msg)
-            st.rerun()
-
-    if stop_clicked:
-        ok, msg = stop_engine()
-        if ok:
-            st.success(msg)
-        else:
-            st.warning(msg)
-        st.rerun()
-
-    if once_clicked:
-        if not config.bot_account_address.strip():
-            st.error("Configure Bot Account first, then click Save Config.")
-        else:
-            config.save()
-            with st.spinner("Running one market cycle..."):
-                ok, msg = run_single_cycle()
-            if ok:
-                st.success(msg)
-            else:
-                st.error(msg)
-
-    if cancel_offers_clicked:
-        with st.spinner("Cancelling offers on ledger..."):
-            ok, msg = cancel_offers_on_ledger()
+        ok, msg = TelegramAlerts(
+            token=config.telegram_token,
+            chat_id=config.telegram_chat_id,
+            enabled=True,
+        ).send_test()
         st.success(msg) if ok else st.error(msg)
 
-    if clear_kill_clicked:
+    st.markdown("### Safety & logs")
+    if runtime.get("kill_switch_active"):
+        st.error(f"Kill switch active: {runtime.get('kill_switch_reason', '')}")
+    else:
+        st.success("Kill switch inactive")
+
+    a1, a2, a3 = st.columns(3)
+    if a1.button("Clear kill switch"):
         ok, msg = clear_kill_switch()
         st.success(msg) if ok else st.error(msg)
-
-    if emergency_clicked:
+    if a2.button("Cancel all offers"):
+        with st.spinner("Cancelling..."):
+            ok, msg = cancel_offers_on_ledger()
+        st.success(msg) if ok else st.error(msg)
+    if a3.button("Emergency stop"):
         from risk.kill_switch import KillSwitch
 
         KillSwitch().activate("GUI emergency stop")
@@ -216,215 +410,141 @@ def run_gui() -> None:
         stop_engine()
         if not config.dry_run:
             cancel_offers_on_ledger()
-        st.error("Emergency stop: trading disabled, engine stopped, kill switch set.")
+        st.error("Emergency stop executed.")
 
-    refresh_col, auto_col = st.columns([1, 3])
-    if refresh_col.button("Refresh now"):
-        st.rerun()
-    auto_refresh = auto_col.checkbox(
-        "Auto-refresh every 5s while engine is running", value=True
+    st.markdown("### Log files")
+    st.code(
+        "logs/runtime_state.json\nlogs/portfolio_snapshots.csv\n"
+        "logs/trades_YYYY-MM.csv (fills, transfers, major events)\n"
+        "logs/decisions.jsonl\nlogs/transfers.csv",
+        language=None,
     )
 
-    st.header("Live Bot Status")
-    st.write(f"Risk Capital: **{config.risk_capital_xrp:,} XRP**")
-    st.write(f"Drawdown Kill-Switch: **{config.max_daily_drawdown_percent}%**")
-    st.write(f"Active Profile: **{config.active_profile}**")
-    st.write(f"Network: **{config.network_name()}**")
-    st.write(f"RPC: **{config.resolved_rpc_url()}**")
-    st.write(f"Dry Run: **{config.dry_run}** | Trading Enabled: **{config.trading_enabled}**")
-    if config.bot_account_address:
-        st.write(f"Bot Account: **{config.bot_account_address[:8]}...{config.bot_account_address[-4:]}**")
+
+def _render_history_tab(config: BotConfig, runtime: dict) -> None:
+    if not runtime:
+        st.warning("No runtime data yet.")
+        return
+
+    st.markdown("### Session statistics")
+    s1, s2, s3, s4 = st.columns(4)
+    s1.metric("Portfolio (XRP equiv.)", f"{float(runtime.get('portfolio_value_xrp', 0)):.4f}")
+    s2.metric("Drawdown %", f"{float(runtime.get('drawdown_pct', 0)):.2f}")
+    s3.metric("Volatility %", f"{float(runtime.get('volatility_pct', 0)):.2f}")
+    s4.metric("Liquidity score", f"{float(runtime.get('liquidity_score', 0)):.2f}")
+
+    st.markdown("### Price history")
+    history = runtime.get("price_history") or []
+    if len(history) >= 2:
+        hist_df = pd.DataFrame(history)
+        hist_df["time"] = pd.to_datetime(hist_df["ts_utc"], utc=True)
+        cols = [c for c in ("bid", "mid", "ask") if c in hist_df.columns]
+        chart_df = hist_df.set_index("time")[cols].apply(pd.to_numeric, errors="coerce")
+        chart_df = chart_df.dropna(how="all")
+        if len(chart_df) >= 2 and not chart_df.empty:
+            st.line_chart(chart_df, height=280)
+        else:
+            st.info("Collecting price samples — chart appears after a few cycles.")
+    elif len(history) == 1:
+        h0 = history[0]
+        st.metric("Latest mid", _fmt_price(h0.get("mid"), 6))
+        st.caption("Chart needs at least 2 engine cycles.")
     else:
-        st.warning("Bot account address is not set — engine cannot run cycles.")
+        st.info("No price samples yet. Start the engine and wait for cycles.")
 
-    if runtime:
-        st.subheader("Preflight (testnet readiness)")
-        if runtime.get("preflight_ready"):
-            st.success(runtime.get("preflight_summary", "Preflight OK"))
-        else:
-            st.error(runtime.get("preflight_summary", "Preflight failed"))
-        for err in runtime.get("preflight_errors", []):
-            st.error(err)
-        for warn in runtime.get("preflight_warnings", []):
-            st.warning(warn)
-        if runtime.get("kill_switch_active"):
-            st.error(f"Kill switch active: {runtime.get('kill_switch_reason', '')}")
-
-        st.subheader("Execution & session P&L")
-        mid_raw = runtime.get("mid_price")
-        mid_bad = mid_raw is not None and float(mid_raw) > 100.0
-        if mid_bad:
-            st.error(
-                f"Mid price **{float(mid_raw):,.0f}** looks like raw XRPL quality, not RLUSD/XRP. "
-                "Click **Stop Bot**, then **Start Bot** (or run `run.bat`) to kill stale engine processes."
+    st.markdown("### Effective spreads")
+    spreads = runtime.get("effective_spreads_pct") or {}
+    mid = runtime.get("mid_price")
+    if mid and spreads:
+        rows = []
+        for level in sorted(spreads.keys(), key=lambda x: int(x)):
+            pct = float(spreads[level]) / 100.0
+            m = float(mid)
+            rows.append(
+                {
+                    "Level": f"L{level}",
+                    "Spread %": f"{float(spreads[level]):.3f}",
+                    "Bid": f"{m * (1 - pct):.6f}",
+                    "Ask": f"{m * (1 + pct):.6f}",
+                }
             )
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-        exec_col1, exec_col2, exec_col3, exec_col4 = st.columns(4)
-        dry = runtime.get("dry_run", config.dry_run)
-        exec_col1.metric(
-            "Mode",
-            "DRY-RUN" if dry else "LIVE",
-            help="Dry-run never submits orders to the ledger.",
-        )
-        exec_col2.metric("Cycles this session", int(runtime.get("cycle_count", 0)))
-        exec_col3.metric(
-            "Offers placed (last cycle)",
-            int(runtime.get("offers_placed_last_cycle", 0)),
-        )
-        exec_col4.metric(
-            "Open offers on ledger",
-            int(runtime.get("open_offers_count", 0)),
-        )
-        st.caption(runtime.get("last_execution_summary", "No execution data yet."))
-        st.write(
-            f"Balances: **{runtime.get('balance_xrp', 0):.4f} XRP** | "
-            f"**{runtime.get('balance_rlusd', 0):.4f} RLUSD**"
-        )
-        pnl = float(runtime.get("session_pnl_xrp_estimate", 0.0))
-        st.metric(
-            "Session P&L estimate (XRP equiv.)",
-            f"{pnl:+.4f} XRP",
-            help="Balance change since this engine session started (not per-fill accounting).",
-        )
-        st.metric(
-            "Portfolio value",
-            f"{float(runtime.get('portfolio_value_xrp', 0)):.4f} XRP equiv.",
-        )
-        st.metric("Daily drawdown", f"{float(runtime.get('drawdown_pct', 0)):.2f}%")
-        st.caption("Portfolio snapshots: `logs/portfolio_snapshots.csv`")
-        if dry:
-            st.info("**Dry-run is ON** — the bot plans quotes but does **not** place trades or earn P&L on-ledger.")
+    st.markdown("### Recent decisions")
+    decisions = runtime.get("recent_decisions", [])
+    if decisions:
+        df = pd.DataFrame(decisions)
+        if "ts_utc" in df.columns:
+            df = df.sort_values("ts_utc", ascending=False)
+        st.dataframe(df, use_container_width=True, hide_index=True, height=320)
+    if runtime.get("last_error"):
+        st.error(runtime["last_error"])
 
-        st.subheader("Live price (from XRPL order book)")
-        bid_v = runtime.get("best_bid_rlusd_per_xrp")
-        ask_v = runtime.get("best_ask_rlusd_per_xrp")
-        mid_v = runtime.get("mid_price")
-        st.caption(
-            f"Source: **`{runtime.get('price_source', 'xrpl_book_offers')}`** — "
-            f"fetched live each cycle via BookOffers on `{runtime.get('rpc_url', '')}`. "
-            "Not hardcoded in the bot."
-        )
-        if mid_v is not None and not mid_bad:
-            t1, t2, t3 = st.columns(3)
-            t1.metric("Best bid", f"{float(bid_v):.6f}" if bid_v else "n/a", "RLUSD per XRP")
-            t2.metric("Mid", f"{float(mid_v):.6f}", "RLUSD per XRP")
-            t3.metric("Best ask", f"{float(ask_v):.6f}" if ask_v else "n/a", "RLUSD per XRP")
-            if bid_v and ask_v and float(ask_v) > 0:
-                inv_mid = (float(bid_v) + float(ask_v)) / 2.0
-                st.caption(
-                    f"Implied XRP price: **1 XRP ≈ {float(mid_v):.4f} RLUSD** "
-                    f"(book spread {(float(ask_v) - float(bid_v)) / float(ask_v) * 100:.2f}%)"
-                )
 
-        history = runtime.get("price_history") or []
-        st.subheader("Price history (bot polls)")
-        st.caption(
-            "XRPL has no built-in candle/ticker API. This chart plots **bid / mid / ask** "
-            "from each engine cycle (~refresh interval). On testnet the line often looks flat "
-            "because the book rarely changes. Mainnet or faster polling shows more movement."
+def run_gui() -> None:
+    st.set_page_config(
+        page_title="XLedgerMate",
+        page_icon=str(LOGO_PATH) if LOGO_PATH.is_file() else "chart",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+
+    try:
+        config = _load_config()
+    except TypeError as exc:
+        st.error(f"Config load failed: {exc}")
+        st.stop()
+
+    runtime = _load_runtime_state()
+    engine_running = is_engine_running()
+
+    with st.sidebar:
+        _render_brand_logo(sidebar=True)
+        if st.button("Save Config", type="primary", use_container_width=True):
+            config.save()
+            st.success("Saved")
+        st.divider()
+        auto_refresh = st.toggle(
+            "Live refresh (5s)",
+            value=st.session_state.get("auto_refresh", True),
+            help="Updates Dashboard header & metrics only — not the whole page.",
         )
-        if len(history) >= 2:
-            hist_df = pd.DataFrame(history)
-            hist_df["time"] = pd.to_datetime(hist_df["ts_utc"])
-            chart_cols = [c for c in ("bid", "mid", "ask") if c in hist_df.columns]
-            st.line_chart(hist_df.set_index("time")[chart_cols], height=220)
-        elif len(history) == 1:
-            st.line_chart(
-                pd.DataFrame([{"mid": history[0].get("mid", 0)}]),
-                height=120,
-            )
-            st.caption("Need at least 2 cycles for a trend line — leave the engine running.")
+        st.session_state.auto_refresh = auto_refresh
+        if st.button("Refresh now", use_container_width=True):
+            st.rerun()
+        st.caption(f"Network: **{config.network_name()}**")
+
+    _render_brand_logo()
+    if not config.bot_account_address:
+        st.warning("Set your Bot Account on the **Bot Account** tab, then **Save Config**.")
+
+    _render_header(config, runtime, engine_running)
+
+    tab_dash, tab_ctrl, tab_acct, tab_adv, tab_hist = st.tabs(
+        ["Dashboard", "Controls", "Bot Account", "Advanced", "History"]
+    )
+
+    with tab_dash:
+        _render_bot_controls(config)
+        st.session_state._dash_live_panel = st.empty()
+        st.session_state._dash_config = config
+        if st.session_state.get("auto_refresh", True):
+            _live_dashboard_fragment()
         else:
-            st.info("No price samples yet. Start the engine and wait for a few cycles.")
+            with st.session_state._dash_live_panel.container():
+                _update_live_dashboard(config)
 
-        st.subheader("Spreads & your quote prices")
-        spreads = runtime.get("effective_spreads_pct") or {}
-        if mid_v and spreads:
-            spread_rows = []
-            for level in sorted(spreads.keys(), key=lambda x: int(x)):
-                pct = float(spreads[level]) / 100.0
-                mid_f = float(mid_v)
-                spread_rows.append(
-                    {
-                        "Level": f"L{level}",
-                        "Bot spread %": f"{float(spreads[level]):.3f}",
-                        "Bid quote": f"{mid_f * (1 - pct):.6f}",
-                        "Ask quote": f"{mid_f * (1 + pct):.6f}",
-                    }
-                )
-            st.dataframe(pd.DataFrame(spread_rows), use_container_width=True, hide_index=True)
-        else:
-            st.write("Effective spreads:", spreads)
+    with tab_ctrl:
+        _render_controls_tab(config)
 
-        st.subheader("Market summary")
-        if config.testnet or runtime.get("price_is_testnet_book", config.testnet):
-            st.info(
-                "**Testnet prices** come only from testnet offers on the ledger. "
-                "They are **not** live mainnet XRP/RLUSD market prices — testnet liquidity "
-                "is thin and often unrealistic. Switch **Use Testnet** off and use a "
-                "mainnet Bot Account when you want real market pricing."
-            )
-        else:
-            st.caption(
-                "Prices are **RLUSD per 1 XRP**, computed from the live mainnet order book."
-            )
+    with tab_acct:
+        _render_account_tab(config, runtime)
 
-        def _fmt_price(value) -> str:
-            if value is None:
-                return "n/a"
-            return f"{float(value):.4f}"
+    with tab_adv:
+        _render_advanced_tab(config, runtime)
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Mid (RLUSD / XRP)", _fmt_price(runtime.get("mid_price")))
-        col2.metric("Best Bid (RLUSD / XRP)", _fmt_price(runtime.get("best_bid_rlusd_per_xrp")))
-        col3.metric("Best Ask (RLUSD / XRP)", _fmt_price(runtime.get("best_ask_rlusd_per_xrp")))
-        col4.metric("Volatility %", f"{runtime.get('volatility_pct', 0):.2f}")
-
-        spread_ba = None
-        bid = runtime.get("best_bid_rlusd_per_xrp")
-        ask = runtime.get("best_ask_rlusd_per_xrp")
-        if bid is not None and ask is not None and float(ask) > 0:
-            spread_ba = ((float(ask) - float(bid)) / float(ask)) * 100.0
-        col5, col6 = st.columns(2)
-        col5.metric("Book Spread (ask-bid)", f"{spread_ba:.2f}%" if spread_ba is not None else "n/a")
-        col6.metric("Liquidity Score", f"{runtime.get('liquidity_score', 0):.2f}")
-        st.write(f"Kill Switch: **{runtime.get('kill_switch_active', False)}**")
-        intents = runtime.get("quote_intents", [])
-        if intents:
-            st.write("Quote intents (price = RLUSD per XRP):")
-            for q in intents:
-                st.caption(
-                    f"{q.get('side', '?')} L{q.get('level', '?')}: "
-                    f"{float(q.get('price', 0)):.4f} RLUSD/XRP, size {q.get('size', 0)}"
-                )
-        else:
-            st.write("Quote intents: none")
-        decisions = runtime.get("recent_decisions", [])
-        st.subheader("Recent decisions (newest first)")
-        if decisions:
-            df = pd.DataFrame(decisions)
-            if "ts_utc" in df.columns:
-                df = df.sort_values("ts_utc", ascending=False)
-            st.dataframe(df, use_container_width=True, hide_index=True)
-        else:
-            st.write("No decisions logged yet.")
-
-        if runtime.get("last_error"):
-            st.error(runtime["last_error"])
-        st.caption(
-            f"Last updated: {runtime.get('updated_utc', 'n/a')} | "
-            f"Engine PID: {runtime.get('engine_pid', 'n/a')}"
-        )
-    else:
-        st.warning(
-            "No runtime snapshot yet. Start engine with "
-            "`python main.py --mode engine` or run one cycle with `--mode once`."
-        )
-
-    if auto_refresh and engine_running:
-        time.sleep(5)
-        st.rerun()
-
+    with tab_hist:
+        _render_history_tab(config, runtime)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ order_sizes:
   - 500.0
 xrp_reserve: 12.0
 min_order_size_xrp: 1.0
+fund_with_xrp_only: true
 base_spread: 0.0010
 level_spread_increment: 0.0005
 
@@ -35,10 +36,12 @@ inventory_target_xrp_ratio: 0.55
 auto_rollover_enabled: true
 
 telegram_enabled: false
-telegram_token: ""
-telegram_chat_id: ""
+telegram_token: ""          # Bot token from @BotFather
+telegram_chat_id: ""        # Your numeric chat ID (message @userinfobot or /getUpdates)
+telegram_notify_each_cycle: false
 
 testnet: true
+send_destination_default: ""
 private_node_url: null
 xrpl_testnet_rpc_url: https://s.altnet.rippletest.net:51234
 xrpl_mainnet_rpc_url: https://xrplcluster.com

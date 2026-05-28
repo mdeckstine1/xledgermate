@@ -19,6 +19,7 @@ from core import VERSION
 from engine import TradingEngine
 from gui.streamlit_gui import run_gui
 from utils.logging_setup import setup_logging
+from utils.send_funds import send_from_bot_account
 from utils.testnet import is_testnet_mode
 
 setup_logging()
@@ -45,9 +46,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="XLedgerMate XRPL market maker")
     parser.add_argument(
         "--mode",
-        choices=["engine", "gui", "once", "cancel-offers", "clear-kill", "setup-trust"],
+        choices=["engine", "gui", "once", "cancel-offers", "clear-kill", "setup-trust", "send"],
         default="engine",
-        help="engine, gui, once, cancel-offers, clear-kill, setup-trust (RLUSD trust line)",
+        help="engine, gui, once, cancel-offers, clear-kill, setup-trust, send",
+    )
+    parser.add_argument("--to", dest="send_to", default="", help="Send destination r-address")
+    parser.add_argument("--amount", type=float, default=0.0, help="Amount to send")
+    parser.add_argument(
+        "--asset",
+        default="XRP",
+        choices=["XRP", "RLUSD", "xrp", "rlusd"],
+        help="Asset to send",
     )
     return parser.parse_args()
 
@@ -67,8 +76,18 @@ def log_startup_banner(config: BotConfig) -> None:
         logger.warning("Running on MAINNET. Real funds at risk on Bot Account.")
 
 
-async def run_engine_async(config: BotConfig, mode: str) -> None:
+async def run_engine_async(config: BotConfig, mode: str, args: argparse.Namespace) -> None:
     engine = TradingEngine(config)
+    if mode == "send":
+        if not args.send_to or args.amount <= 0:
+            raise ValueError("Send requires --to r... and --amount > 0")
+        tx_hash = await send_from_bot_account(
+            destination=args.send_to,
+            amount=args.amount,
+            asset=args.asset,
+        )
+        logger.info("Sent %s %s to %s | tx=%s", args.amount, args.asset.upper(), args.send_to, tx_hash)
+        return
     if mode == "cancel-offers":
         count = await engine.cancel_all_offers()
         logger.info("Cancelled %s open offer(s).", count)
@@ -113,8 +132,15 @@ if __name__ == "__main__":
 
         if args.mode == "gui":
             run_gui()
-        elif args.mode in {"engine", "once", "cancel-offers", "clear-kill", "setup-trust"}:
-            asyncio.run(run_engine_async(config, args.mode))
+        elif args.mode in {
+            "engine",
+            "once",
+            "cancel-offers",
+            "clear-kill",
+            "setup-trust",
+            "send",
+        }:
+            asyncio.run(run_engine_async(config, args.mode, args))
         else:
             raise ValueError(f"Unknown mode: {args.mode}")
     except KeyboardInterrupt:

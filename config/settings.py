@@ -36,6 +36,8 @@ class BotConfig:
     trading_enabled: bool = True
     xrp_reserve: float = 12.0
     min_order_size_xrp: float = 1.0
+    # Fund the bot with XRP only at start; place sell-XRP (ask) quotes until you hold RLUSD.
+    fund_with_xrp_only: bool = True
 
     # === RISK MANAGEMENT (GUI-adjustable 2%–5% drawdown) ===
     max_daily_drawdown_percent: float = 3.5   # Default (you can slide 2.0–5.0 in GUI)
@@ -48,11 +50,13 @@ class BotConfig:
 
     # === MONITORING ===
     telegram_enabled: bool = False
-    telegram_token: str = ""
-    telegram_chat_id: str = ""
+    telegram_token: str = ""       # From @BotFather
+    telegram_chat_id: str = ""     # Your chat ID (numeric, or @channel username)
+    telegram_notify_each_cycle: bool = False
 
     # === OTHER ===
     testnet: bool = True                    # Start on testnet by default
+    send_destination_default: str = ""      # Optional default withdraw / Mangie address
     private_node_url: Optional[str] = None  # e.g. your own node for no rate limits
     xrpl_testnet_rpc_url: str = "https://s.altnet.rippletest.net:51234"
     xrpl_mainnet_rpc_url: str = "https://xrplcluster.com"

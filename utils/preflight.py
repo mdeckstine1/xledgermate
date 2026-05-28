@@ -58,7 +58,22 @@ def evaluate_preflight(
     else:
         checks.append(f"Mid price OK ({mid_price:.6f} RLUSD/XRP)")
 
-    if not has_trust_line:
+    if config.fund_with_xrp_only:
+        checks.append("Funding mode: XRP only (sell-XRP / ask quotes)")
+        if xrp_balance >= min_order_xrp:
+            checks.append("XRP balance OK for ask quotes")
+        if not has_trust_line:
+            warnings.append(
+                f"No RLUSD trust line yet — OK for dry-run and planning. "
+                f"Run setup-trust before live asks (you receive RLUSD when sells fill)."
+            )
+        elif rlusd_balance <= 0:
+            warnings.append(
+                "RLUSD balance is 0 — bid (buy XRP) quotes disabled until you hold RLUSD"
+            )
+        else:
+            checks.append(f"RLUSD available ({rlusd_balance:.4f}) — two-sided quoting enabled")
+    elif not has_trust_line:
         msg = (
             f"No RLUSD trust line to issuer {config.resolved_rlusd_issuer()}. "
             "Create a trust line before live trading."
@@ -70,7 +85,7 @@ def evaluate_preflight(
     else:
         checks.append(f"RLUSD trust line exists (limit {trust_line_limit or 0:.2f})")
         if rlusd_balance <= 0:
-            warnings.append("RLUSD balance is 0 — ask-side quotes may fail until you hold RLUSD")
+            warnings.append("RLUSD balance is 0 — bid quotes disabled until you hold RLUSD")
 
     spendable_xrp = max(0.0, xrp_balance - xrp_reserve)
     if spendable_xrp < min_order_xrp:

@@ -158,6 +158,60 @@ def clear_kill_switch() -> tuple[bool, str]:
     return True, "Kill switch cleared."
 
 
+def setup_trust_line() -> tuple[bool, str]:
+    result = subprocess.run(
+        [_python_exe(), "main.py", "--mode", "setup-trust"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "Unknown error").strip()
+        return False, err[-2000:]
+    for line in (result.stdout or "").splitlines():
+        if "trust line submitted" in line.lower():
+            return True, line.strip()
+    return True, "RLUSD trust line created on the ledger."
+
+
+def send_funds(destination: str, amount: float, asset: str = "XRP") -> tuple[bool, str]:
+    """Send XRP or RLUSD from bot account via subprocess."""
+    dest = (destination or "").strip()
+    if not dest.startswith("r"):
+        return False, "Destination must be a classic XRPL address (starts with r)."
+    if amount <= 0:
+        return False, "Amount must be greater than zero."
+
+    result = subprocess.run(
+        [
+            _python_exe(),
+            "main.py",
+            "--mode",
+            "send",
+            "--to",
+            dest,
+            "--amount",
+            str(amount),
+            "--asset",
+            asset.upper(),
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "Unknown error").strip()
+        return False, err[-2000:]
+    for line in (result.stdout or "").splitlines():
+        if "tx=" in line.lower() or "hash=" in line.lower():
+            return True, line.strip()
+    return True, f"Sent {amount} {asset.upper()} to {dest}."
+
+
 def run_single_cycle() -> tuple[bool, str]:
     """Run one market cycle in a subprocess (no asyncio inside Streamlit)."""
     result = subprocess.run(

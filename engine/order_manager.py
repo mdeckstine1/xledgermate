@@ -37,11 +37,13 @@ class OrderManager:
         risk_cap = max(min_size, self.config.risk_capital_xrp)
 
         total_value = xrp_balance + (rlusd_balance / mid_price if mid_price > 0 else 0.0)
-        xrp_ratio = xrp_balance / total_value if total_value > 0 else 0.5
+        xrp_ratio = xrp_balance / total_value if total_value > 0 else 1.0
         skew = self.inventory_skew.get_skew_factor(xrp_ratio)
 
-        bid_budget_xrp = min(spendable_xrp, risk_cap * 0.5)
-        ask_budget_rlusd = rlusd_balance
+        # Bids buy XRP (lock RLUSD). Asks sell XRP (lock XRP).
+        bid_budget_rlusd = rlusd_balance
+        ask_budget_xrp = min(spendable_xrp, risk_cap)
+        quote_bids = not self.config.fund_with_xrp_only or rlusd_balance > min_size
 
         intents: List[QuoteIntent] = []
         skipped = 0
@@ -63,32 +65,43 @@ class OrderManager:
             bid_price = mid_price * (1.0 - spread)
             ask_price = mid_price * (1.0 + spread)
 
-            if bid_size >= min_size:
-                remaining_bids = max(1, self.config.order_levels - bid_levels)
-                capped_bid = min(bid_size, bid_budget_xrp / remaining_bids)
-                if capped_bid >= min_size:
+            if quote_bids and bid_size >= min_size:
+                bid_rlusd_needed = bid_size * bid_price
+                if bid_rlusd_needed <= bid_budget_rlusd:
                     intents.append(
-                        QuoteIntent(level=level, side="bid", price=bid_price, size_xrp=capped_bid)
+                        QuoteIntent(level=level, side="bid", price=bid_price, size_xrp=bid_size)
                     )
-                    bid_budget_xrp -= capped_bid
+                    bid_budget_rlusd -= bid_rlusd_needed
                     bid_levels += 1
+                else:
+                    skipped += 1
+            elif quote_bids:
+                skipped += 1
+            else:
+                skipped += 1
+
+            if ask_size >= min_size:
+                remaining_asks = max(1, self.config.order_levels - ask_levels)
+                capped_ask = min(ask_size, ask_budget_xrp / remaining_asks)
+                if capped_ask >= min_size:
+                    intents.append(
+                        QuoteIntent(level=level, side="ask", price=ask_price, size_xrp=capped_ask)
+                    )
+                    ask_budget_xrp -= capped_ask
+                    ask_levels += 1
                 else:
                     skipped += 1
             else:
                 skipped += 1
 
-            ask_rlusd_needed = ask_size * ask_price
-            if ask_size >= min_size and ask_rlusd_needed <= ask_budget_rlusd:
-                intents.append(
-                    QuoteIntent(level=level, side="ask", price=ask_price, size_xrp=ask_size)
-                )
-                ask_budget_rlusd -= ask_rlusd_needed
-                ask_levels += 1
-            else:
-                skipped += 1
-
-        note = f"Generated {len(intents)} quotes from mid={mid_price:.6f} RLUSD/XRP skew={skew:.3f}"
+        mode = "XRP-funded (asks/sell XRP)" if self.config.fund_with_xrp_only else "two-sided"
+        note = (
+            f"Generated {len(intents)} quotes ({mode}) from mid={mid_price:.6f} "
+            f"RLUSD/XRP skew={skew:.3f}"
+        )
         if skipped:
             note += f" ({skipped} legs skipped: size/balance/reserve)"
+        if self.config.fund_with_xrp_only and bid_levels == 0 and ask_levels > 0:
+            note += " | bids off until you hold RLUSD"
 
         return QuotePlan(intents=intents, reason=note)
