@@ -5,6 +5,23 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.3.6] — 2026-05-29 (`mainnet-live`)
+
+**Theme:** RLUSD trust line No Ripple — disable rippling for bot wallets.
+
+### Added
+
+- **`trust-no-ripple` CLI** — Sets `tfSetNoRipple` on the existing RLUSD trust line.
+- **GUI** — Bot Account → **Disable RLUSD rippling**.
+- **Preflight** — Warns when rippling is still enabled; confirms when No Ripple is set.
+- **Tests** — `tests/test_preflight.py`.
+
+### Changed
+
+- **Setup RLUSD trust line** — New trust lines are created with No Ripple enabled.
+
+---
+
 ## [1.3.5] — 2026-05-29 (`mainnet-live`)
 
 **Theme:** `profit_mode` profile for calm, liquid markets.

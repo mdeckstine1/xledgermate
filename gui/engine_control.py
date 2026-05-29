@@ -254,6 +254,25 @@ def setup_trust_line() -> tuple[bool, str]:
     return True, "RLUSD trust line created on the ledger."
 
 
+def disable_rlusd_rippling() -> tuple[bool, str]:
+    result = subprocess.run(
+        [_python_exe(), "main.py", "--mode", "trust-no-ripple"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "Unknown error").strip()
+        return False, err[-2000:]
+    for line in (result.stdout or "").splitlines():
+        lower = line.lower()
+        if "rippling disabled" in lower or "already has rippling disabled" in lower:
+            return True, line.strip()
+    return True, "RLUSD rippling disabled (No Ripple) on the ledger."
+
+
 def send_funds(destination: str, amount: float, asset: str = "XRP") -> tuple[bool, str]:
     """Send XRP or RLUSD from bot account via subprocess."""
     dest = (destination or "").strip()

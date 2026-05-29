@@ -1,6 +1,6 @@
 # XLedgerMate — Plain-English Operator Manual
 
-*Version 1.3.5 · For humans who remember when “save” meant a floppy disk*
+*Version 1.3.6 · For humans who remember when “save” meant a floppy disk*
 
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
@@ -102,6 +102,7 @@ After changing anything important: click **Save Config** in the sidebar.
 - Paste your bot **address** and **secret** (the secret is like a password — never email it, never commit it to GitHub).
 - **Fund** — Send **test XRP** to the address shown.
 - **Trust line** — Lets the account hold RLUSD. Click the button once, or use tryrlusd.com with the **same** address.
+- **Disable RLUSD rippling** — Turns off rippling (sets **No Ripple**) on the RLUSD trust line. Recommended for the bot wallet so other payments cannot route through your RLUSD balance. Same as fixing the warning in Xaman.
 - **Send out** — Move coins to another address (e.g. back to Mangie). Stop the bot first.
 
 ### Advanced (for later)

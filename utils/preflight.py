@@ -28,6 +28,7 @@ def evaluate_preflight(
     rlusd_balance: float,
     trust_line_limit: Optional[float],
     has_trust_line: bool,
+    trust_line_no_ripple: Optional[bool] = None,
     mid_price: Optional[float],
     kill_switch_active: bool,
     xrp_reserve: float = 12.0,
@@ -84,6 +85,13 @@ def evaluate_preflight(
             errors.append(msg)
     else:
         checks.append(f"RLUSD trust line exists (limit {trust_line_limit or 0:.2f})")
+        if trust_line_no_ripple is False:
+            warnings.append(
+                "RLUSD trust line has rippling enabled — turn rippling off (No Ripple) "
+                "in Xaman or use Bot Account → Disable RLUSD rippling."
+            )
+        elif trust_line_no_ripple is True:
+            checks.append("RLUSD trust line: rippling disabled (No Ripple)")
         if rlusd_balance <= 0:
             warnings.append("RLUSD balance is 0 — bid quotes disabled until you hold RLUSD")
 

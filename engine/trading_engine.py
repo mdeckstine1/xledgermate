@@ -225,6 +225,7 @@ class TradingEngine:
                 rlusd_balance=rlusd_balance,
                 trust_line_limit=trust.limit if trust.exists else None,
                 has_trust_line=trust.exists,
+                trust_line_no_ripple=trust.no_ripple if trust.exists else None,
                 mid_price=mid_price,
                 kill_switch_active=self.kill_switch.is_active(),
                 xrp_reserve=config.xrp_reserve,

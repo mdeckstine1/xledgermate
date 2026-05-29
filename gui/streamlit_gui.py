@@ -26,6 +26,7 @@ from gui.engine_control import (
     is_engine_running,
     run_single_cycle,
     send_funds,
+    disable_rlusd_rippling as run_disable_rlusd_rippling,
     setup_trust_line as run_setup_trust,
     start_engine,
     stop_engine,
@@ -1054,7 +1055,7 @@ def _render_account_tab(config: BotConfig, runtime: dict) -> None:
     )
     if config.bot_account_address:
         st.code(config.bot_account_address)
-        f1, f2, f3 = st.columns(3)
+        f1, f2, f3, f4 = st.columns(4)
         if f2.button("Setup RLUSD trust line"):
             disk = _load_config()
             if not disk.bot_secret_key.strip():
@@ -1065,7 +1066,17 @@ def _render_account_tab(config: BotConfig, runtime: dict) -> None:
                 with st.spinner("Submitting TrustSet..."):
                     ok, msg = run_setup_trust()
                 _show_result(ok, msg)
-        f3.link_button("Get testnet RLUSD", "https://tryrlusd.com/")
+        if f3.button("Disable RLUSD rippling"):
+            disk = _load_config()
+            if not disk.bot_secret_key.strip():
+                st.error("Click **Save credentials** first.")
+            elif not _credentials_match(disk.bot_account_address, disk.bot_secret_key)[0]:
+                st.error("On-disk credentials do not match — use **Save credentials**.")
+            else:
+                with st.spinner("Setting No Ripple on trust line..."):
+                    ok, msg = run_disable_rlusd_rippling()
+                _show_result(ok, msg)
+        f4.link_button("Get testnet RLUSD", "https://tryrlusd.com/")
 
     trust_ok = any(
         "trust line exists" in str(c).lower()

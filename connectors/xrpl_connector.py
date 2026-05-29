@@ -29,7 +29,13 @@ try:
     from xrpl.models.amounts import IssuedCurrencyAmount
     from xrpl.models.currencies import IssuedCurrency, XRP
     from xrpl.models.requests import AccountInfo, AccountLines, AccountOffers, BookOffers
-    from xrpl.models.transactions import OfferCancel, OfferCreate, Payment, TrustSet
+    from xrpl.models.transactions import (
+        OfferCancel,
+        OfferCreate,
+        Payment,
+        TrustSet,
+        TrustSetFlag,
+    )
     from xrpl.utils import drops_to_xrp, xrp_to_drops
     from xrpl.wallet import Wallet
 except ImportError:  # pragma: no cover - handled at runtime
@@ -45,6 +51,7 @@ except ImportError:  # pragma: no cover - handled at runtime
     OfferCreate = None
     Payment = None
     TrustSet = None
+    TrustSetFlag = None
     autofill_and_sign = None
     submit_and_wait = None
     Wallet = None
@@ -70,6 +77,7 @@ class TrustLineInfo:
     exists: bool
     balance: float = 0.0
     limit: float = 0.0
+    no_ripple: bool = False
 
 
 class XRPLConnector:
@@ -161,6 +169,7 @@ class XRPLConnector:
                     exists=True,
                     balance=float(line.get("balance", 0.0)),
                     limit=float(line.get("limit", 0.0)),
+                    no_ripple=bool(line.get("no_ripple", False)),
                 )
         return TrustLineInfo(exists=False)
 
@@ -180,16 +189,39 @@ class XRPLConnector:
             raise RuntimeError("XRPL transaction returned no hash")
         return tx_hash
 
+    def _rlusd_limit_amount(self, value: str) -> IssuedCurrencyAmount:
+        return IssuedCurrencyAmount(
+            currency=self.rlusd_currency,
+            issuer=self.rlusd_issuer,
+            value=value,
+        )
+
     async def setup_rlusd_trust_line(self, limit: str = "1000000000") -> str:
-        """Create or increase RLUSD trust line (testnet/mainnet)."""
+        """Create or increase RLUSD trust line with No Ripple enabled."""
         wallet = self.load_wallet()
         tx = TrustSet(
             account=self.account_address,
-            limit_amount=IssuedCurrencyAmount(
-                currency=self.rlusd_currency,
-                issuer=self.rlusd_issuer,
-                value=limit,
-            ),
+            limit_amount=self._rlusd_limit_amount(limit),
+            flags=TrustSetFlag.TF_SET_NO_RIPPLE,
+        )
+        response = await self._sign_and_submit(tx, wallet)
+        return self._validate_tx_response(response)
+
+    async def disable_rlusd_rippling(self) -> str:
+        """Set tfSetNoRipple on the existing RLUSD trust line (rippling off)."""
+        trust = await self.get_rlusd_trust_line()
+        if not trust.exists:
+            raise ValueError("No RLUSD trust line on bot account.")
+        if trust.no_ripple:
+            return ""
+        wallet = self.load_wallet()
+        limit_value = f"{trust.limit:.6f}".rstrip("0").rstrip(".")
+        if not limit_value or limit_value == "0":
+            limit_value = "1000000000"
+        tx = TrustSet(
+            account=self.account_address,
+            limit_amount=self._rlusd_limit_amount(limit_value),
+            flags=TrustSetFlag.TF_SET_NO_RIPPLE,
         )
         response = await self._sign_and_submit(tx, wallet)
         return self._validate_tx_response(response)

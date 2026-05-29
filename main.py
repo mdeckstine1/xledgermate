@@ -47,9 +47,18 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="XLedgerMate XRPL market maker")
     parser.add_argument(
         "--mode",
-        choices=["engine", "gui", "once", "cancel-offers", "clear-kill", "setup-trust", "send"],
+        choices=[
+            "engine",
+            "gui",
+            "once",
+            "cancel-offers",
+            "clear-kill",
+            "setup-trust",
+            "trust-no-ripple",
+            "send",
+        ],
         default="engine",
-        help="engine, gui, once, cancel-offers, clear-kill, setup-trust, send",
+        help="engine, gui, once, cancel-offers, clear-kill, setup-trust, trust-no-ripple, send",
     )
     parser.add_argument("--to", dest="send_to", default="", help="Send destination r-address")
     parser.add_argument("--amount", type=float, default=0.0, help="Amount to send")
@@ -120,7 +129,27 @@ async def run_engine_async(config: BotConfig, mode: str, args: argparse.Namespac
             network=XRPLNetworkConfig(json_rpc_url=cfg.resolved_rpc_url()),
         )
         tx_hash = await connector.setup_rlusd_trust_line()
-        logger.info("RLUSD trust line submitted: %s", tx_hash)
+        logger.info("RLUSD trust line submitted (No Ripple): %s", tx_hash)
+        return
+    if mode == "trust-no-ripple":
+        cfg = BotConfig.load()
+        if not cfg.bot_account_address.strip() or not (cfg.bot_secret_key or "").strip():
+            raise ValueError("bot_account_address and bot_secret_key required for trust-no-ripple.")
+        connector = XRPLConnector(
+            account_address=cfg.bot_account_address.strip(),
+            secret=cfg.bot_secret_key,
+            rlusd_issuer=cfg.resolved_rlusd_issuer(),
+            rlusd_currency=cfg.resolved_rlusd_currency_code(),
+            network=XRPLNetworkConfig(json_rpc_url=cfg.resolved_rpc_url()),
+        )
+        trust = await connector.get_rlusd_trust_line()
+        if not trust.exists:
+            raise ValueError("No RLUSD trust line — run setup-trust first.")
+        if trust.no_ripple:
+            logger.info("RLUSD trust line already has rippling disabled (No Ripple).")
+            return
+        tx_hash = await connector.disable_rlusd_rippling()
+        logger.info("RLUSD rippling disabled (No Ripple set): %s", tx_hash)
         return
     if mode == "once":
         await engine._run_cycle()
@@ -150,6 +179,7 @@ if __name__ == "__main__":
             "cancel-offers",
             "clear-kill",
             "setup-trust",
+            "trust-no-ripple",
             "send",
         }:
             asyncio.run(run_engine_async(config, args.mode, args))
