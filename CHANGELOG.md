@@ -5,6 +5,25 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.3.7] — 2026-05-29 (`mainnet-live`)
+
+**Theme:** Live profile control — apply on the fly, full auto-switch with anti-flap guards.
+
+### Added
+
+- **Apply profile now** — Controls tab + suggested-profile Apply; no engine restart (`trust-no-ripple`-style queue via `logs/profile_request.json`).
+- **Full auto profile switching** — All built-in profiles (including `profit_mode` and `tight_spread`), not defensive-only.
+- **Auto-switch debounce** — `auto_profile_confirm_cycles` (default 3) and `auto_profile_switch_cooldown_minutes` (default 45).
+- **Market hysteresis** — Sticky favorable/neutral and high-liquidity tiers to reduce recommendation jitter.
+- **GUI** — Config vs engine profile banner; auto-switch idle/pending/cooldown status; cycle-aware stale-state threshold.
+- **Tests** — `test_profile_request.py`, `test_auto_profile_state.py`; extended market conditions tests.
+
+### Changed
+
+- **Auto profile switching** — Requires repeated same recommendation + cooldown before switching (stops rapid safe ↔ profit flapping).
+
+---
+
 ## [1.3.6] — 2026-05-29 (`mainnet-live`)
 
 **Theme:** RLUSD trust line No Ripple — disable rippling for bot wallets.

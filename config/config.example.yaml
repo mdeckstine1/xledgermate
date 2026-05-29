@@ -41,6 +41,8 @@ max_half_spread_from_mid_pct: 1.0
 require_spread_validation_for_live: true
 auto_profile_switching: false
 auto_profile_inactivity_minutes: 120
+auto_profile_confirm_cycles: 3
+auto_profile_switch_cooldown_minutes: 45
 
 auto_rollover_enabled: true
 

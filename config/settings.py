@@ -58,8 +58,10 @@ class BotConfig:
     max_quote_improve_touch_pct: float = 0.15      # Max % allowed to cross/improve touch
     max_half_spread_from_mid_pct: float = 1.0      # Max distance from mid per quote leg
     require_spread_validation_for_live: bool = True
-    auto_profile_switching: bool = False       # Auto-move to defensive profile when idle + stress
+    auto_profile_switching: bool = False       # Auto-apply recommended profile when operator idle
     auto_profile_inactivity_minutes: int = 120
+    auto_profile_confirm_cycles: int = 3       # Same recommendation N cycles before switching
+    auto_profile_switch_cooldown_minutes: int = 45  # Min gap between auto switches
 
     # === AUTO ROLLOVER (risk capital rule) ===
     auto_rollover_enabled: bool = True

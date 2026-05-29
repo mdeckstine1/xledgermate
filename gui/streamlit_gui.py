@@ -31,7 +31,10 @@ from gui.engine_control import (
     start_engine,
     stop_engine,
 )
-from utils.operator_activity import touch_operator_activity
+from utils.auto_profile_state import load_auto_profile_state, minutes_since_auto_switch
+from utils.operator_activity import minutes_since_last_operator_action, touch_operator_activity
+from utils.auto_profile_state import clear_auto_profile_pending
+from utils.profile_request import write_profile_request
 from utils.wallet_credentials import secret_matches_address
 from utils.xrpl_currency import RLUSD_ISSUER_TESTNET
 
@@ -134,6 +137,33 @@ def _persist_config(config: BotConfig) -> BotConfig:
     return _load_config()
 
 
+def _apply_active_profile(config: BotConfig, profile_name: str) -> BotConfig:
+    """Save profile to config.yaml and queue pickup on the engine's next cycle."""
+    name = (profile_name or "safe").strip().lower()
+    if name not in BUILT_IN_PROFILES:
+        name = "safe"
+    config.active_profile = name
+    write_profile_request(name)
+    clear_auto_profile_pending()
+    saved = _persist_config(config)
+    touch_operator_activity("apply_profile")
+    return saved
+
+
+def _profile_apply_hint(config: BotConfig, runtime: dict) -> None:
+    """Explain config vs last-cycle profile when they differ."""
+    disk = _load_config()
+    config_name = (disk.active_profile or "safe").strip().lower()
+    engine_name = str(runtime.get("active_profile") or config_name).strip().lower()
+    refresh = max(30, int(config.order_refresh_time_seconds))
+    if config_name != engine_name:
+        st.info(
+            f"**Config profile:** {PROFILE_LABELS.get(config_name, config_name)} · "
+            f"**Last engine cycle:** {PROFILE_LABELS.get(engine_name, engine_name)} · "
+            f"Switch applies on the **next cycle** (within ~{refresh}s). No restart needed."
+        )
+
+
 def _credentials_match(address: str, secret: str) -> tuple[bool, str]:
     return secret_matches_address(secret, address)
 
@@ -186,6 +216,16 @@ def _runtime_updated_age_seconds(runtime: dict) -> Optional[float]:
         return (pd.Timestamp.now(tz="UTC") - ts).total_seconds()
     except (TypeError, ValueError):
         return None
+
+
+def _runtime_stale_threshold_seconds(
+    config: BotConfig, *, engine_running: bool
+) -> float:
+    """How old runtime_state may be before we warn — must exceed cycle sleep + RPC work."""
+    if not engine_running:
+        return 90.0
+    refresh = max(30, int(config.order_refresh_time_seconds))
+    return float(refresh + 45)
 
 
 def _load_portfolio_snapshots(limit: int = 180) -> pd.DataFrame:
@@ -562,12 +602,46 @@ def _render_market_conditions_panel(config: BotConfig, runtime: dict) -> None:
         st.caption(reason)
         st.caption(f"Active profile: **{active_label}**.")
         if st.button(f"Apply {PROFILE_SHORT.get(str(rec), rec_label)}", key="apply_recommended_profile"):
-            config.active_profile = str(rec).strip().lower()
-            _persist_config(config)
-            touch_operator_activity("apply_profile")
+            _apply_active_profile(config, str(rec))
+            st.success(
+                f"Saved **{PROFILE_LABELS.get(str(rec), rec_label)}** — engine picks it up on the next cycle."
+            )
             st.rerun()
     else:
         st.caption("Profile recommendation appears after the engine reports market conditions.")
+
+    if getattr(config, "auto_profile_switching", False):
+        idle = minutes_since_last_operator_action()
+        need = int(getattr(config, "auto_profile_inactivity_minutes", 120))
+        confirm = int(getattr(config, "auto_profile_confirm_cycles", 3))
+        cooldown = int(getattr(config, "auto_profile_switch_cooldown_minutes", 45))
+        engine_rec = str(runtime.get("recommended_profile") or rec or "").strip().lower()
+        active_key = str(runtime.get("active_profile") or config.active_profile).strip().lower()
+        ap_state = load_auto_profile_state()
+        if idle < need:
+            st.caption(
+                f"**Auto profile switch:** waits until **{need} min** idle "
+                f"(no Save Config / Apply profile). Now **{idle:.0f} min**."
+            )
+        elif ap_state.pending_profile:
+            since = minutes_since_auto_switch(ap_state)
+            st.caption(
+                f"**Auto profile switch:** confirming **"
+                f"{PROFILE_LABELS.get(ap_state.pending_profile, ap_state.pending_profile)}** "
+                f"({ap_state.pending_cycles}/{confirm} cycles). "
+                f"Cooldown **{since:.0f}/{cooldown} min** since last auto-switch."
+            )
+        elif engine_rec and engine_rec != active_key:
+            st.caption(
+                f"**Auto profile switch:** eligible — engine recommends "
+                f"**{PROFILE_LABELS.get(engine_rec, engine_rec)}** "
+                f"(active **{PROFILE_LABELS.get(active_key, active_key)}**)."
+            )
+        elif engine_rec:
+            st.caption(
+                f"**Auto profile switch:** active profile matches recommendation "
+                f"**{PROFILE_LABELS.get(engine_rec, engine_rec)}**."
+            )
 
 
 def _render_header(config: BotConfig, runtime: dict, engine_running: bool) -> None:
@@ -602,7 +676,13 @@ def _render_header(config: BotConfig, runtime: dict, engine_running: bool) -> No
     )
 
 
-def _render_session_statistics(runtime: dict, *, show_portfolio_chart: bool = False) -> None:
+def _render_session_statistics(
+    runtime: dict,
+    config: BotConfig,
+    *,
+    engine_running: bool,
+    show_portfolio_chart: bool = False,
+) -> None:
     """Live session metrics — same numbers as cycle log portfolio / engine state."""
     pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime)
     port = float(runtime.get("portfolio_value_xrp", 0))
@@ -633,7 +713,8 @@ def _render_session_statistics(runtime: dict, *, show_portfolio_chart: bool = Fa
         )
     age = _runtime_updated_age_seconds(runtime)
     updated = runtime.get("updated_utc", "n/a")
-    if age is not None and age > 90:
+    stale_after = _runtime_stale_threshold_seconds(config, engine_running=engine_running)
+    if age is not None and age > stale_after:
         st.warning(f"Runtime state is **{int(age)}s** old ({updated}). Is the engine running?")
     else:
         st.caption(f"Engine state updated: **{updated}**")
@@ -666,6 +747,8 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
         st.info("Start the bot or run one cycle to populate live data.")
         return
 
+    _profile_apply_hint(config, runtime)
+
     pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime)
     port = float(runtime.get("portfolio_value_xrp", 0))
     dd = float(runtime.get("drawdown_pct", 0))
@@ -690,7 +773,8 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
         help=_SESSION_BALANCE_PNL_HELP,
     )
     age = _runtime_updated_age_seconds(runtime)
-    if age is not None and age > 90:
+    stale_after = _runtime_stale_threshold_seconds(config, engine_running=engine_running)
+    if age is not None and age > stale_after:
         st.warning(f"Runtime state is **{int(age)}s** old — click Refresh now or check the engine.")
     else:
         st.caption(f"Live data · updated {runtime.get('updated_utc', 'n/a')}")
@@ -852,15 +936,22 @@ def _render_controls_tab(config: BotConfig) -> None:
         )
     with s3:
         profile_names = list(BUILT_IN_PROFILES.keys())
-        current = (config.active_profile or "safe").strip().lower()
-        idx = profile_names.index(current) if current in profile_names else 0
-        config.active_profile = st.selectbox(
+        disk_profile = (_load_config().active_profile or "safe").strip().lower()
+        idx = profile_names.index(disk_profile) if disk_profile in profile_names else 0
+        picked = st.selectbox(
             "Active profile",
             profile_names,
             index=idx,
             format_func=lambda key: PROFILE_LABELS.get(key, key),
-            help="Saved to config when you click Save Config (after all tabs load).",
+            key="controls_active_profile",
+            help="Use Apply profile now — takes effect on the next engine cycle (~refresh interval).",
         )
+        config.active_profile = picked
+        if st.button("Apply profile now", key="apply_controls_profile", use_container_width=True):
+            saved = _apply_active_profile(config, picked)
+            label = PROFILE_LABELS.get(saved.active_profile, saved.active_profile)
+            st.success(f"**{label}** saved — next engine cycle will quote with this profile.")
+            st.rerun()
 
     st.markdown("### Risk & execution flags")
     r1, r2, r3 = st.columns(3)
@@ -968,7 +1059,10 @@ def _render_controls_tab(config: BotConfig) -> None:
         config.auto_profile_switching = st.toggle(
             "Auto profile switching",
             value=getattr(config, "auto_profile_switching", False),
-            help="When idle, move to a more defensive profile if market stress rises.",
+            help=(
+                "When idle, switch to the Suggested profile after it holds for several cycles "
+                "and the cooldown since the last auto-switch has passed."
+            ),
         )
     with d3:
         config.auto_profile_inactivity_minutes = st.number_input(
@@ -976,6 +1070,25 @@ def _render_controls_tab(config: BotConfig) -> None:
             value=int(getattr(config, "auto_profile_inactivity_minutes", 120)),
             step=15,
             min_value=30,
+        )
+
+    a1, a2 = st.columns(2)
+    with a1:
+        config.auto_profile_confirm_cycles = st.number_input(
+            "Confirm cycles before auto-switch",
+            value=int(getattr(config, "auto_profile_confirm_cycles", 3)),
+            step=1,
+            min_value=1,
+            max_value=10,
+            help="Same suggested profile must repeat this many cycles before switching.",
+        )
+    with a2:
+        config.auto_profile_switch_cooldown_minutes = st.number_input(
+            "Cooldown between auto-switches (min)",
+            value=int(getattr(config, "auto_profile_switch_cooldown_minutes", 45)),
+            step=5,
+            min_value=0,
+            help="Minimum time between automatic profile changes.",
         )
 
     config.dynamic_min_edge_enabled = st.toggle(
@@ -1196,7 +1309,12 @@ def _paint_history_content(runtime: dict, config: BotConfig) -> None:
         st.warning("No runtime data yet. Start the bot or run one cycle.")
         return
 
-    _render_session_statistics(runtime, show_portfolio_chart=True)
+    _render_session_statistics(
+        runtime,
+        config,
+        engine_running=is_engine_running(),
+        show_portfolio_chart=True,
+    )
 
     st.markdown("### Price history")
     history = runtime.get("price_history") or []

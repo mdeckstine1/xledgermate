@@ -1,6 +1,6 @@
 # XLedgerMate — Plain-English Operator Manual
 
-*Version 1.3.6 · For humans who remember when “save” meant a floppy disk*
+*Version 1.3.7 · For humans who remember when “save” meant a floppy disk*
 
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
@@ -92,7 +92,7 @@ Turn **Live refresh (5s)** on in the left sidebar if you want numbers to update 
 - **Edge strictness** — Scales your profile’s built-in minimum edge (Low / Normal / Strict). Each profile owns its own target (e.g. `tight_spread` ≈ 0.08%).
 - **Dynamic min edge** — Optional: adapts required edge to live book spread (never above profile cap).
 - **Max daily drawdown %** — Kill switch if portfolio drops this much in a day (default **10%**; range 2–25% in GUI).
-- **Auto profile switching** — Off by default. When on, moves to a *more defensive* profile only after you have been idle (no Save Config / Apply) and conditions worsen. Never auto-switches to aggressive `Tight spread`.
+- **Auto profile switching** — Off by default. When on, after you have been idle for the configured minutes, the engine switches only when the **Suggested profile** stays the same for **several cycles** and the **cooldown** since the last auto-switch has passed. Stops rapid flipping when the book jitters at tier boundaries.
 - **Auto-switch after idle (min)** — How long you must leave it alone before auto-switch can fire (default 120 min).
 
 After changing anything important: click **Save Config** in the sidebar.

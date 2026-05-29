@@ -129,9 +129,12 @@ def assess_market_conditions(
     liquidity_score: float,
     book_spread_pct: float,
     active_profile: str,
+    previous_condition: Optional[str] = None,
+    previous_liquidity_level: Optional[str] = None,
 ) -> MarketAssessment:
     vol_level = _level(volatility_pct, low=0.08, high=0.35)
-    liq_level = _level(liquidity_score, low=0.25, high=0.55)
+    liq_high = 0.50 if previous_liquidity_level == "high" else 0.55
+    liq_level = _level(liquidity_score, low=0.25, high=liq_high)
     spread_status = _book_spread_status(book_spread_pct)
 
     # Health score 0–100 (higher = better for competitive quoting).
@@ -140,9 +143,12 @@ def assess_market_conditions(
     spread_penalty = min(25.0, max(0.0, book_spread_pct - 0.2) * 15.0)
     health = max(0.0, min(100.0, 55.0 + liq_bonus - vol_penalty - spread_penalty))
 
-    if health >= 72 and vol_level != "high" and liq_level != "low":
+    favorable_at = 66 if previous_condition == CONDITION_FAVORABLE else 72
+    neutral_at = 44 if previous_condition == CONDITION_NEUTRAL else 48
+
+    if health >= favorable_at and vol_level != "high" and liq_level != "low":
         condition = CONDITION_FAVORABLE
-    elif health >= 48 and vol_level != "high":
+    elif health >= neutral_at and vol_level != "high":
         condition = CONDITION_NEUTRAL
     elif health >= 28 or vol_level == "high" or liq_level == "low":
         condition = CONDITION_DEFENSIVE
@@ -181,15 +187,21 @@ def assess_market_conditions(
     )
 
 
-def defensive_profile_for_auto_switch(assessment: MarketAssessment) -> Optional[str]:
+def profile_for_auto_switch(
+    assessment: MarketAssessment,
+    *,
+    active_profile: str,
+) -> Optional[str]:
     """
-    Auto-switch only moves toward more defensive profiles — never to aggressive profiles.
-    Returns None if no switch needed.
+    Profile to apply when auto-switching is on and operator is idle.
+    Uses the same recommendation as the GUI (all built-in profiles).
+    Returns None if already on the recommended profile.
     """
-    current = assessment.recommended_profile
-    if current in ("tight_spread", "profit_mode"):
+    proposed = (assessment.recommended_profile or "").strip().lower()
+    current = (active_profile or "safe").strip().lower()
+    if proposed not in BUILT_IN_PROFILES or proposed == current:
         return None
-    return current
+    return proposed
 
 
 def is_more_defensive_than(current: str, proposed: str) -> bool:

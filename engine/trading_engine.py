@@ -12,8 +12,7 @@ from connectors.xrpl_connector import is_plausible_rlusd_per_xrp
 from core.market_conditions import (
     assess_market_conditions,
     compute_book_spread_pct,
-    defensive_profile_for_auto_switch,
-    is_more_defensive_than,
+    profile_for_auto_switch,
 )
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_manager import OrderManager
@@ -29,6 +28,14 @@ from risk.drawdown import (
 )
 from risk.kill_switch import KillSwitch
 from core import BotPerception, DecisionLog, VERSION, get_profile
+from core.perception import BUILT_IN_PROFILES
+from utils.auto_profile_state import (
+    clear_auto_profile_pending,
+    load_auto_profile_state,
+    minutes_since_auto_switch,
+    save_auto_profile_state,
+)
+from utils.profile_request import consume_profile_request
 from strategy.avellaneda_strategy import AvellanedaStrategy
 from strategy.quote_decision import (
     apply_spread_adjustments,
@@ -78,6 +85,9 @@ class TradingEngine:
         self._last_cycle_balances: Optional[tuple[float, float]] = None
         self._prev_kill_active = False
         self._fill_quality = FillQualityTracker()
+        self._active_profile_last_cycle: Optional[str] = None
+        self._last_market_condition: Optional[str] = None
+        self._last_liquidity_level: Optional[str] = None
 
     def _restore_price_history(self) -> List[dict]:
         """Continue chart history across engine restarts (from runtime_state.json)."""
@@ -144,6 +154,23 @@ class TradingEngine:
             chat_id=config.telegram_chat_id,
             enabled=config.telegram_enabled,
         )
+        requested = consume_profile_request(known_profiles=set(BUILT_IN_PROFILES.keys()))
+        if requested and requested != config.active_profile:
+            old = config.active_profile
+            config.active_profile = requested
+            config.save()
+            self.config = config
+            self.order_manager.config = config
+            msg = f"Operator profile {old} → {requested} (no engine restart)"
+            logger.info(msg)
+            self.decision_log.add("profile", msg)
+        prev = self._active_profile_last_cycle
+        if prev is not None and prev != config.active_profile:
+            msg = f"Active profile {prev} → {config.active_profile} (from config)"
+            logger.info(msg)
+            self.decision_log.add("profile", msg)
+        self._active_profile_last_cycle = config.active_profile
+
         profile = get_profile(config.active_profile)
         perception = BotPerception(active_profile=profile)
         if not config.bot_account_address.strip():
@@ -246,7 +273,11 @@ class TradingEngine:
                 liquidity_score=liquidity.liquidity_score,
                 book_spread_pct=book_spread_pct,
                 active_profile=config.active_profile,
+                previous_condition=self._last_market_condition,
+                previous_liquidity_level=self._last_liquidity_level,
             )
+            self._last_market_condition = market_assessment.condition
+            self._last_liquidity_level = market_assessment.liquidity_level
             self.decision_log.add("market", market_assessment.summary)
 
             if mid_price is not None:
@@ -260,17 +291,46 @@ class TradingEngine:
                     minutes_since_last_operator_action()
                     >= config.auto_profile_inactivity_minutes
                 )
-                if inactive and market_assessment.condition in ("defensive", "hostile"):
-                    proposed = defensive_profile_for_auto_switch(market_assessment)
-                    if proposed and is_more_defensive_than(config.active_profile, proposed):
+                proposed = profile_for_auto_switch(
+                    market_assessment,
+                    active_profile=config.active_profile,
+                )
+                if not inactive or not proposed:
+                    if not proposed:
+                        clear_auto_profile_pending()
+                else:
+                    confirm_cycles = max(
+                        1, int(getattr(config, "auto_profile_confirm_cycles", 3))
+                    )
+                    cooldown_min = max(
+                        0, int(getattr(config, "auto_profile_switch_cooldown_minutes", 45))
+                    )
+                    ap_state = load_auto_profile_state()
+                    if proposed == ap_state.pending_profile:
+                        ap_state.pending_cycles += 1
+                    else:
+                        ap_state.pending_profile = proposed
+                        ap_state.pending_cycles = 1
+                    since_switch = minutes_since_auto_switch(ap_state)
+                    if (
+                        ap_state.pending_cycles >= confirm_cycles
+                        and since_switch >= cooldown_min
+                    ):
                         old = config.active_profile
                         config.active_profile = proposed
                         config.save()
                         profile = get_profile(proposed)
                         perception.active_profile = profile
+                        ap_state.last_auto_switch_utc = datetime.now(
+                            tz=timezone.utc
+                        ).isoformat()
+                        ap_state.pending_profile = None
+                        ap_state.pending_cycles = 0
+                        save_auto_profile_state(ap_state)
                         msg = (
                             f"Auto-switched profile {old} → {proposed} "
-                            f"(operator idle, {market_assessment.condition_label} market)"
+                            f"(operator idle, {market_assessment.condition_label} market, "
+                            f"confirmed {confirm_cycles} cycles)"
                         )
                         self.decision_log.add("profile", msg)
                         self.csv_logger.log_major(
@@ -278,6 +338,17 @@ class TradingEngine:
                             notes=msg,
                             cycle=self._cycle_count + 1,
                         )
+                    else:
+                        save_auto_profile_state(ap_state)
+                        if ap_state.pending_cycles == 1:
+                            self.decision_log.add(
+                                "profile",
+                                (
+                                    f"Auto-switch pending {proposed} "
+                                    f"({ap_state.pending_cycles}/{confirm_cycles} cycles, "
+                                    f"cooldown {since_switch:.0f}/{cooldown_min} min)"
+                                ),
+                            )
 
             spread_result = self.strategy.compute_spreads(
                 volatility_pct=volatility_pct,

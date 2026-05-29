@@ -2,6 +2,7 @@ from core.market_conditions import (
     CONDITION_DEFENSIVE,
     assess_market_conditions,
     ideal_for_profit_mode,
+    profile_for_auto_switch,
     recommend_profile,
 )
 
@@ -62,6 +63,29 @@ def test_favorable_moderate_vol_recommends_tight_spread_not_profit() -> None:
         book_spread_status="tight",
     )
     assert profile == "tight_spread"
+
+
+def test_auto_switch_can_move_to_profit_mode() -> None:
+    a = assess_market_conditions(
+        volatility_pct=0.05,
+        liquidity_score=0.7,
+        book_spread_pct=0.1,
+        active_profile="safe",
+    )
+    assert a.recommended_profile == "profit_mode"
+    assert profile_for_auto_switch(a, active_profile="safe") == "profit_mode"
+    assert profile_for_auto_switch(a, active_profile="profit_mode") is None
+
+
+def test_auto_switch_can_move_to_tight_spread() -> None:
+    a = assess_market_conditions(
+        volatility_pct=0.09,
+        liquidity_score=0.7,
+        book_spread_pct=0.12,
+        active_profile="safe",
+    )
+    assert a.recommended_profile == "tight_spread"
+    assert profile_for_auto_switch(a, active_profile="safe") == "tight_spread"
 
 
 def test_profit_mode_profile_exists_and_is_aggressive() -> None:
