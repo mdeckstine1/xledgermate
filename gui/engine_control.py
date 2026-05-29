@@ -5,10 +5,13 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PID_FILE = ROOT / "logs" / "engine.pid"
+PARENT_PID_FILE = ROOT / "logs" / "engine.parent.pid"
+STOP_FILE = ROOT / "logs" / "engine.stop"
 
 
 def _python_exe() -> str:
@@ -18,13 +21,42 @@ def _python_exe() -> str:
     return sys.executable
 
 
+def _command_line_is_engine_mode(command_line: str | None) -> bool:
+    """True when this process is our long-running trading engine."""
+    if not command_line:
+        return False
+    lowered = command_line.lower()
+    return "main.py" in lowered and "--mode" in lowered and "engine" in lowered
+
+
+def _is_process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return str(pid) in (result.stdout or "")
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 def _find_engine_pids() -> list[int]:
     """Find all python processes running main.py --mode engine."""
     pids: list[int] = []
     if sys.platform == "win32":
         script = (
-            "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-            "Where-Object { $_.CommandLine -like '*main.py*--mode*engine*' } | "
+            "Get-CimInstance Win32_Process | "
+            "Where-Object { $_.Name -match '^(?i)python(3(\\.\\d+)?)?\\.exe$' "
+            "-and $_.CommandLine -match 'main\\.py' "
+            "-and $_.CommandLine -match '--mode' "
+            "-and $_.CommandLine -match 'engine' } | "
             "Select-Object -ExpandProperty ProcessId"
         )
         result = subprocess.run(
@@ -53,6 +85,8 @@ def _find_engine_pids() -> list[int]:
 
 
 def _kill_pid(pid: int) -> None:
+    if pid <= 0:
+        return
     if sys.platform == "win32":
         subprocess.run(
             ["taskkill", "/PID", str(pid), "/T", "/F"],
@@ -62,29 +96,60 @@ def _kill_pid(pid: int) -> None:
     else:
         import signal
 
-        os.kill(pid, signal.SIGTERM)
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            os.kill(pid, signal.SIGTERM)
+
+
+def _request_engine_stop() -> None:
+    STOP_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STOP_FILE.write_text("stop", encoding="utf-8")
+
+
+def _clear_stop_files() -> None:
+    STOP_FILE.unlink(missing_ok=True)
+    PID_FILE.unlink(missing_ok=True)
+    PARENT_PID_FILE.unlink(missing_ok=True)
 
 
 def stop_all_engines() -> tuple[int, str]:
-    """Stop every running engine process (PID file + orphan scan)."""
-    stopped: list[int] = []
+    """Stop every running engine process (stop flag + PID files + process scan)."""
+    _request_engine_stop()
 
-    if PID_FILE.exists():
-        try:
-            pid = int(PID_FILE.read_text(encoding="utf-8").strip())
-            _kill_pid(pid)
-            stopped.append(pid)
-        except ValueError:
-            pass
-        PID_FILE.unlink(missing_ok=True)
+    targets: set[int] = set(_find_engine_pids())
+    for path in (PID_FILE, PARENT_PID_FILE):
+        if path.exists():
+            try:
+                targets.add(int(path.read_text(encoding="utf-8").strip()))
+            except ValueError:
+                pass
+
+    stopped: list[int] = []
+    for pid in sorted(targets, reverse=True):
+        if pid in stopped:
+            continue
+        _kill_pid(pid)
+        stopped.append(pid)
+
+    time.sleep(0.75)
 
     for pid in _find_engine_pids():
         if pid not in stopped:
             _kill_pid(pid)
             stopped.append(pid)
 
+    _clear_stop_files()
+
     if not stopped:
         return 0, "No engine processes were running."
+    remaining = _find_engine_pids()
+    if remaining:
+        return len(stopped), (
+            f"Stopped {len(stopped)} process(es) {stopped}, "
+            f"but engine may still be running (pids {remaining}). "
+            "Close any XLedgerMate Engine terminal windows and try again."
+        )
     return len(stopped), f"Stopped {len(stopped)} engine process(es): {stopped}"
 
 
@@ -93,7 +158,18 @@ def is_engine_running() -> bool:
     if pids:
         PID_FILE.write_text(str(pids[-1]), encoding="utf-8")
         return True
-    PID_FILE.unlink(missing_ok=True)
+
+    for path in (PID_FILE, PARENT_PID_FILE):
+        if not path.exists():
+            continue
+        try:
+            pid = int(path.read_text(encoding="utf-8").strip())
+        except ValueError:
+            continue
+        if _is_process_alive(pid):
+            return True
+
+    _clear_stop_files()
     return False
 
 
@@ -102,11 +178,12 @@ def start_engine(*, force_restart: bool = True) -> tuple[bool, str]:
         stop_all_engines()
 
     if is_engine_running():
-        pid = PID_FILE.read_text(encoding="utf-8").strip()
+        pid = PID_FILE.read_text(encoding="utf-8").strip() if PID_FILE.exists() else "?"
         return False, f"Engine already running (pid {pid})."
 
     logs_dir = ROOT / "logs"
     logs_dir.mkdir(exist_ok=True)
+    STOP_FILE.unlink(missing_ok=True)
 
     creationflags = 0
     if sys.platform == "win32":
@@ -117,6 +194,7 @@ def start_engine(*, force_restart: bool = True) -> tuple[bool, str]:
         cwd=str(ROOT),
         creationflags=creationflags,
     )
+    PARENT_PID_FILE.write_text(str(proc.pid), encoding="utf-8")
     PID_FILE.write_text(str(proc.pid), encoding="utf-8")
     return True, f"Engine started in a new window (pid {proc.pid})."
 

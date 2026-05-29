@@ -15,9 +15,11 @@ import streamlit as st
 import config.settings as settings_module
 from config.settings import CONFIG_FILE, BotConfig
 from core.market_conditions import assess_market_conditions, compute_book_spread_pct
-from core.perception import BUILT_IN_PROFILES
+from core.perception import BUILT_IN_PROFILES, get_profile
+from core.profile_edge import profile_min_edge_pct
 from core.runtime_state import QuoteIntent
 from utils.quote_validation import QuoteValidationResult, validate_quotes_against_book
+from strategy.market_microstructure import resolve_effective_min_edge_pct
 from gui.engine_control import (
     cancel_offers_on_ledger,
     clear_kill_switch,
@@ -81,6 +83,9 @@ def _load_runtime_state() -> dict:
 
 
 def _load_config() -> BotConfig:
+    import core.perception as perception_module
+
+    importlib.reload(perception_module)
     importlib.reload(settings_module)
     return settings_module.BotConfig.load()
 
@@ -220,6 +225,23 @@ def _inject_ui_alignment_styles() -> None:
         div[data-testid="stMetric"] [data-testid="stMetricValue"] > div {
             justify-content: flex-start;
         }
+        .xlm-mode-banner {
+            padding: 0.65rem 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+            border: 2px solid;
+        }
+        .xlm-dry-run {
+            background: #e8f4fd;
+            border-color: #1f77b4;
+            color: #0d3d56;
+        }
+        .xlm-mainnet-live {
+            background: #fde8e8;
+            border-color: #c0392b;
+            color: #5c0f0f;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -334,22 +356,36 @@ def _render_spread_check_panel(runtime: dict, config: BotConfig) -> None:
 def _render_operating_banners(config: BotConfig, runtime: dict) -> None:
     runtime = _load_runtime_state() or runtime
     dry = bool(runtime.get("dry_run", config.dry_run))
+    mainnet = not config.testnet
+
     if dry:
-        st.info(
-            "**DRY-RUN MODE** — Quotes are planned only; nothing is submitted to the ledger. "
-            "This is the recommended default."
+        st.markdown(
+            '<div class="xlm-mode-banner xlm-dry-run">'
+            "🛡️ <strong>DRY-RUN MODE</strong> — Quotes are planned only. "
+            "Nothing is submitted to the XRPL ledger. Safe for mainnet rehearsal."
+            "</div>",
+            unsafe_allow_html=True,
         )
     elif config.testnet:
         st.warning(
             "**LIVE on TESTNET** — Real testnet orders on the ledger (play money, not mainnet)."
         )
     else:
-        st.error(
-            "**MAINNET LIVE TRADING** — Real funds at risk. Use dry-run unless you intentionally "
-            "accept mainnet execution."
+        st.markdown(
+            '<div class="xlm-mode-banner xlm-mainnet-live">'
+            "⚠️ <strong>MAINNET LIVE TRADING</strong> — Real funds at risk on the Bot Account. "
+            "Only disable dry-run when you intentionally accept ledger execution."
+            "</div>",
+            unsafe_allow_html=True,
         )
 
-    if config.testnet is False and runtime.get("cycle_count", 0) > 0:
+    if mainnet:
+        st.caption(
+            f"Network: **MAINNET** · RPC `{config.resolved_rpc_url()}` · "
+            f"Spread guard: **{'ON' if config.require_spread_validation_for_live else 'OFF'}**"
+        )
+
+    if mainnet and runtime.get("cycle_count", 0) > 0:
         spread = _compute_spread_validation(runtime, config)
         if spread and spread.ok:
             st.success(
@@ -360,7 +396,7 @@ def _render_operating_banners(config: BotConfig, runtime: dict) -> None:
             st.error(
                 "**Spread check FAILED** — "
                 + (spread.errors[0] if spread.errors else spread.summary)
-                + " Restart the bot after fixing spreads. Live orders stay blocked until this passes."
+                + " Live orders stay blocked until this passes."
             )
 
 
@@ -426,10 +462,14 @@ def _render_market_conditions_panel(config: BotConfig, runtime: dict) -> None:
         f"Health {float(runtime.get('market_health_score', 0)):.0f}/100 · "
         f"Spread {float(runtime.get('book_spread_pct', 0)):.3f}% · "
         f"Inventory {runtime.get('inventory_label', 'balanced')} · "
-        f"Momentum {float(runtime.get('mid_momentum_pct', 0)):+.3f}%"
+        f"Momentum {float(runtime.get('mid_momentum_pct', 0)):+.3f}% · "
+        f"Book {runtime.get('book_pressure_label', 'balanced')} · "
+        f"Adverse sel. {runtime.get('adverse_selection_tier', 'none')}"
     )
     if runtime.get("quote_decision_summary"):
         st.caption(f"Quoting logic: {runtime.get('quote_decision_summary')}")
+    if runtime.get("rebalance_summary"):
+        st.info(f"**Inventory steering:** {runtime.get('rebalance_summary')}")
 
     assessment = _resolve_market_assessment(config, runtime)
     rec = assessment.get("recommended_profile", "")
@@ -509,6 +549,15 @@ def _update_live_dashboard(config: BotConfig) -> None:
     if runtime.get("quote_decision_summary"):
         st.markdown("### Why these quotes?")
         st.caption(runtime.get("quote_decision_summary"))
+        d1, d2, d3, d4 = st.columns(4)
+        d1.metric("Market edge", "OK" if runtime.get("market_edge_met", True) else "THIN")
+        d2.metric("Fill quality", f"{float(runtime.get('fill_quality_score', 100)):.0f}")
+        d3.metric("Pause bids", "YES" if runtime.get("pause_bids") else "no")
+        d4.metric("Pause asks", "YES" if runtime.get("pause_asks") else "no")
+        if runtime.get("fill_quality_summary"):
+            st.caption(runtime.get("fill_quality_summary"))
+        if runtime.get("rebalance_summary"):
+            st.caption(f"Rebalance: {runtime.get('rebalance_summary')}")
 
     st.markdown("### Live price (RLUSD / XRP)")
     p1, p2, p3 = st.columns(3)
@@ -649,13 +698,28 @@ def _render_controls_tab(config: BotConfig) -> None:
             "Risk capital (XRP)", value=config.risk_capital_xrp, step=100.0
         )
     with r2:
+        # MM portfolios swing on inventory mark-to-market and fill timing; a 5% cap
+        # trips the kill switch too often during pilot testing. 10% is a practical
+        # default — tighten once live P&L and inventory behavior are well understood.
+        _drawdown_slider_min = 2.0
+        _drawdown_slider_max = 25.0
+        _drawdown_value = min(
+            max(float(config.max_daily_drawdown_percent), _drawdown_slider_min),
+            _drawdown_slider_max,
+        )
         config.max_daily_drawdown_percent = st.slider(
             "Max daily drawdown (%)",
-            min_value=config.min_drawdown_percent,
-            max_value=config.max_drawdown_percent,
-            value=config.max_daily_drawdown_percent,
-            step=0.1,
+            min_value=_drawdown_slider_min,
+            max_value=_drawdown_slider_max,
+            value=_drawdown_value,
+            step=0.5,
+            help=(
+                "Daily portfolio drawdown from baseline before kill switch. "
+                "5% is too tight for market-making tests; 10% is a realistic starting point."
+            ),
         )
+        config.min_drawdown_percent = _drawdown_slider_min
+        config.max_drawdown_percent = _drawdown_slider_max
     with r3:
         config.fund_with_xrp_only = st.toggle(
             "Fund with XRP only",
@@ -708,16 +772,27 @@ def _render_controls_tab(config: BotConfig) -> None:
         )
 
     st.markdown("### Defensive quoting")
+    _edge_strictness_labels = {
+        0.85: "Low (0.85×)",
+        1.0: "Normal (1.0×)",
+        1.15: "Strict (1.15×)",
+    }
+    _current_strictness = float(getattr(config, "edge_strictness", 1.0))
+    _strictness_key = min(_edge_strictness_labels.keys(), key=lambda k: abs(k - _current_strictness))
+
     d1, d2, d3 = st.columns(3)
     with d1:
-        config.min_edge_pct = st.number_input(
-            "Minimum edge L1 (%)",
-            value=float(config.min_edge_pct),
-            step=0.01,
-            min_value=0.05,
-            format="%.2f",
-            help="Bot reduces size / widens if L1 spread is below this plus fees.",
+        _picked = st.selectbox(
+            "Edge strictness",
+            options=list(_edge_strictness_labels.keys()),
+            format_func=lambda k: _edge_strictness_labels[k],
+            index=list(_edge_strictness_labels.keys()).index(_strictness_key),
+            help=(
+                "Scales each profile's built-in min edge. Change profile for a different "
+                "baseline — no separate edge slider needed."
+            ),
         )
+        config.edge_strictness = float(_picked)
     with d2:
         config.auto_profile_switching = st.toggle(
             "Auto profile switching",
@@ -730,6 +805,33 @@ def _render_controls_tab(config: BotConfig) -> None:
             value=int(getattr(config, "auto_profile_inactivity_minutes", 120)),
             step=15,
             min_value=30,
+        )
+
+    config.dynamic_min_edge_enabled = st.toggle(
+        "Dynamic min edge from live book",
+        value=bool(getattr(config, "dynamic_min_edge_enabled", False)),
+        help=(
+            "Each cycle, adapt required edge to the live book spread (capped by profile target). "
+            "Off = profile edge only (Option A)."
+        ),
+    )
+
+    _profile = get_profile(config.active_profile)
+    _rt = _load_runtime_state() or {}
+    _book_spread = float(_rt.get("book_spread_pct", 0))
+    _eff_edge, _edge_note = resolve_effective_min_edge_pct(
+        profile=_profile,
+        edge_strictness=config.edge_strictness,
+        book_spread_pct=_book_spread,
+        dynamic_enabled=config.dynamic_min_edge_enabled,
+    )
+    st.caption(
+        f"**{_profile.name}** profile edge baseline **{profile_min_edge_pct(_profile):.2f}%** → "
+        f"effective **{_eff_edge:.3f}%** (+ 0.02% fee) · {_edge_note}"
+    )
+    if _rt.get("effective_min_edge_pct"):
+        st.caption(
+            f"Last engine cycle used **{float(_rt['effective_min_edge_pct']):.3f}%** min edge."
         )
 
 

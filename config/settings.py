@@ -42,12 +42,17 @@ class BotConfig:
     # Fund the bot with XRP only at start; place sell-XRP (ask) quotes until you hold RLUSD.
     fund_with_xrp_only: bool = True
 
-    # === RISK MANAGEMENT (GUI-adjustable 2%–5% drawdown) ===
-    max_daily_drawdown_percent: float = 3.5   # Default (you can slide 2.0–5.0 in GUI)
+    # === RISK MANAGEMENT (GUI-adjustable daily drawdown kill switch) ===
+    # 5% is too tight for a market maker — normal inventory MTM and spread timing
+    # cause false trips during testing; 10% is a realistic starting default.
+    max_daily_drawdown_percent: float = 10.0
     min_drawdown_percent: float = 2.0
-    max_drawdown_percent: float = 5.0
+    max_drawdown_percent: float = 25.0
     inventory_target_xrp_ratio: float = 0.55   # Slightly XRP-heavy (supports your $27 thesis)
-    min_edge_pct: float = 0.10                 # Minimum L1 spread % before reducing size
+    min_edge_pct: float = 0.10                 # Legacy; migrated to edge_strictness on load
+    edge_strictness: float = 1.0                 # Scales profile min edge: 0.85 low, 1.0 normal, 1.15 strict
+    dynamic_min_edge_enabled: bool = False       # Adapt min edge to live book spread each cycle
+    book_pressure_sensitivity: float = 1.0   # How strongly book depth imbalance steers quotes
     # Live spread guard: planned quotes must sit near book bid/ask (validated each cycle).
     max_quote_worse_than_touch_pct: float = 0.50   # Max % ask above best ask / bid below best bid
     max_quote_improve_touch_pct: float = 0.15      # Max % allowed to cross/improve touch
@@ -135,6 +140,15 @@ class BotConfig:
         # Legacy configs used mainnet issuer while on testnet — prefer auto-select.
         if config.testnet and config.rlusd_issuer == config.rlusd_issuer_mainnet:
             config.rlusd_issuer = ""
+            updated = True
+
+        # Legacy min_edge_pct slider → edge_strictness (1.0 = old default 0.10%).
+        if "edge_strictness" not in data and "min_edge_pct" in data:
+            try:
+                legacy = float(data["min_edge_pct"])
+                config.edge_strictness = max(0.85, min(1.15, legacy / 0.10))
+            except (TypeError, ValueError):
+                config.edge_strictness = 1.0
             updated = True
 
         if allowed - set(data.keys()):

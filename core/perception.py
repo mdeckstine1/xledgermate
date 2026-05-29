@@ -18,6 +18,10 @@ class Profile:
     aggression: float = 1.0
     inventory_skew_strength: float = 1.0
     min_spread_floor_pct: float = 0.08
+    defensive_widen_mult: float = 1.0
+    book_pressure_sensitivity: float = 1.0
+    min_edge_mult: float = 1.0  # legacy; edge target is min_edge_pct
+    min_edge_pct: float = 0.10  # profile-owned minimum L1 edge target (%)
 
 
 @dataclass
@@ -90,51 +94,79 @@ class BotPerception:
 BUILT_IN_PROFILES: Dict[str, Profile] = {
     "safe": Profile(
         name="safe",
-        description="Conservative default — wider spreads, smaller size, strong inventory protection.",
-        spread_multiplier=1.25,
-        volatility_sensitivity=1.20,
-        liquidity_sensitivity=1.20,
-        risk_multiplier=0.85,
-        size_multiplier=0.85,
-        aggression=0.65,
-        inventory_skew_strength=1.25,
-        min_spread_floor_pct=0.12,
+        description=(
+            "Capital-first default — wide floors, half size in stress, strong inventory skew, "
+            "pauses vulnerable side when hostile."
+        ),
+        spread_multiplier=1.45,
+        volatility_sensitivity=1.35,
+        liquidity_sensitivity=1.30,
+        risk_multiplier=0.70,
+        size_multiplier=0.65,
+        aggression=0.50,
+        inventory_skew_strength=1.45,
+        min_spread_floor_pct=0.16,
+        defensive_widen_mult=1.15,
+        book_pressure_sensitivity=1.25,
+        min_edge_mult=1.15,
+        min_edge_pct=0.12,
     ),
     "high_volatility": Profile(
         name="high_volatility",
-        description="Defensive in unstable markets — widens quickly as volatility rises.",
-        spread_multiplier=1.40,
-        volatility_sensitivity=1.50,
-        liquidity_sensitivity=1.05,
-        risk_multiplier=0.75,
-        size_multiplier=0.70,
-        aggression=0.55,
-        inventory_skew_strength=1.15,
-        min_spread_floor_pct=0.15,
+        description=(
+            "Volatility shock mode — spreads widen fast, size cut sharply, momentum protection "
+            "ramps early."
+        ),
+        spread_multiplier=1.65,
+        volatility_sensitivity=1.75,
+        liquidity_sensitivity=1.10,
+        risk_multiplier=0.60,
+        size_multiplier=0.50,
+        aggression=0.40,
+        inventory_skew_strength=1.30,
+        min_spread_floor_pct=0.20,
+        defensive_widen_mult=1.25,
+        book_pressure_sensitivity=1.35,
+        min_edge_mult=1.25,
+        min_edge_pct=0.13,
     ),
     "thin_liquidity": Profile(
         name="thin_liquidity",
-        description="Protective when book depth is weak — reduces size and adverse selection.",
-        spread_multiplier=1.30,
-        volatility_sensitivity=1.05,
-        liquidity_sensitivity=1.55,
-        risk_multiplier=0.80,
-        size_multiplier=0.75,
-        aggression=0.60,
-        inventory_skew_strength=1.20,
-        min_spread_floor_pct=0.14,
+        description=(
+            "Thin-book defense — extra liquidity penalty, book-pressure sensitive, smaller clips "
+            "to limit adverse selection."
+        ),
+        spread_multiplier=1.55,
+        volatility_sensitivity=1.15,
+        liquidity_sensitivity=1.85,
+        risk_multiplier=0.65,
+        size_multiplier=0.55,
+        aggression=0.45,
+        inventory_skew_strength=1.35,
+        min_spread_floor_pct=0.18,
+        defensive_widen_mult=1.20,
+        book_pressure_sensitivity=1.50,
+        min_edge_mult=1.20,
+        min_edge_pct=0.11,
     ),
     "tight_spread": Profile(
         name="tight_spread",
-        description="Competitive when conditions are clearly favorable — not for stress regimes.",
-        spread_multiplier=0.82,
-        volatility_sensitivity=0.85,
-        liquidity_sensitivity=0.80,
-        risk_multiplier=1.10,
-        size_multiplier=1.05,
-        aggression=1.20,
-        inventory_skew_strength=0.90,
-        min_spread_floor_pct=0.06,
+        description=(
+            "Competitive only in favorable regimes — tight floors, larger size, lighter skew; "
+            "still blocked by spread validation and edge guards on mainnet."
+        ),
+        spread_multiplier=0.72,
+        volatility_sensitivity=0.75,
+        liquidity_sensitivity=0.70,
+        risk_multiplier=1.15,
+        size_multiplier=1.15,
+        aggression=1.35,
+        inventory_skew_strength=0.75,
+        min_spread_floor_pct=0.05,
+        defensive_widen_mult=0.95,
+        book_pressure_sensitivity=0.85,
+        min_edge_mult=0.85,
+        min_edge_pct=0.08,
     ),
 }
 
@@ -168,3 +200,6 @@ def compute_effective_spreads_pct(
         adjusted += volatility_component + liquidity_component
         level_spreads[level] = max(profile.min_spread_floor_pct, adjusted)
     return level_spreads
+
+
+from core.profile_edge import profile_min_edge_pct  # noqa: F401 — re-export for callers

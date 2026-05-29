@@ -8,6 +8,7 @@ from .perception import (
     compute_effective_spreads_pct,
     get_profile,
 )
+from .profile_edge import profile_min_edge_pct
 from .version import VERSION
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "Profile",
     "compute_effective_spreads_pct",
     "get_profile",
+    "profile_min_edge_pct",
     "VERSION",
 ]

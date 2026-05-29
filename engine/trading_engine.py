@@ -31,9 +31,15 @@ from strategy.quote_decision import (
     build_quote_adjustments,
     compute_mid_momentum_pct,
 )
+from strategy.fill_quality import FillQualityTracker
+from strategy.inventory_balance import assess_rebalance_need
+from strategy.market_microstructure import resolve_effective_min_edge_pct
 from utils.preflight import evaluate_preflight
 from utils.quote_validation import validate_quotes_against_book
 logger = logging.getLogger(__name__)
+ENGINE_STOP_FILE = Path("logs/engine.stop")
+
+
 class TradingEngine:
     """Continuous market loop: perception updates, quote planning, optional order refresh."""
     def __init__(self, config: BotConfig) -> None:
@@ -64,6 +70,7 @@ class TradingEngine:
         self._last_spread_validation: Optional[Any] = None
         self._last_cycle_balances: Optional[tuple[float, float]] = None
         self._prev_kill_active = False
+        self._fill_quality = FillQualityTracker()
 
     def _restore_price_history(self) -> List[dict]:
         """Continue chart history across engine restarts (from runtime_state.json)."""
@@ -92,11 +99,19 @@ class TradingEngine:
             ),
         )
         while self._running:
+            if ENGINE_STOP_FILE.exists():
+                ENGINE_STOP_FILE.unlink(missing_ok=True)
+                logger.info("Stop requested via GUI — shutting down engine loop.")
+                break
             try:
                 await self._run_cycle()
             except Exception as exc:
                 logger.exception("Engine cycle failed: %s", exc)
                 self._persist_error(str(exc))
+            if ENGINE_STOP_FILE.exists():
+                ENGINE_STOP_FILE.unlink(missing_ok=True)
+                logger.info("Stop requested via GUI — shutting down engine loop.")
+                break
             await asyncio.sleep(self.config.order_refresh_time_seconds)
     def stop(self) -> None:
         self._running = False
@@ -155,6 +170,8 @@ class TradingEngine:
         quote_adjustments = None
         mid_momentum = 0.0
         book_spread_pct = 0.0
+        rebalance = None
+        fill_quality = None
         try:
             balance_xrp = await connector.get_xrp_balance()
             trust = await connector.get_rlusd_trust_line()
@@ -225,6 +242,7 @@ class TradingEngine:
 
             if mid_price is not None:
                 self._record_price_tick(mid=mid_price, bid=best_bid, ask=best_ask)
+                self._fill_quality.note_mid(mid_price)
 
             if config.auto_profile_switching:
                 from utils.operator_activity import minutes_since_last_operator_action
@@ -266,14 +284,43 @@ class TradingEngine:
                 skew_strength=profile.inventory_skew_strength,
             )
             l1_spread = spread_result.effective_spreads_pct.get(1, config.base_spread * 100.0)
+            fill_quality = self._fill_quality.assess()
+            effective_min_edge, edge_resolution = resolve_effective_min_edge_pct(
+                profile=profile,
+                edge_strictness=float(getattr(config, "edge_strictness", 1.0)),
+                book_spread_pct=book_spread_pct,
+                dynamic_enabled=bool(getattr(config, "dynamic_min_edge_enabled", False)),
+            )
             quote_adjustments = build_quote_adjustments(
                 profile=profile,
                 assessment=market_assessment,
                 inventory=inventory_state,
                 mid_momentum_pct=mid_momentum,
                 effective_spread_l1_pct=l1_spread,
-                min_edge_pct=config.min_edge_pct,
+                book_spread_pct=book_spread_pct,
+                depth_imbalance=liquidity.depth_imbalance,
+                min_edge_pct=effective_min_edge,
+                book_pressure_sensitivity=float(
+                    getattr(config, "book_pressure_sensitivity", 1.0)
+                ),
+                fill_quality=fill_quality,
+                fund_with_xrp_only=config.fund_with_xrp_only,
+                rlusd_balance=rlusd_balance,
+                min_order_xrp=config.min_order_size_xrp,
             )
+            spendable_xrp = max(0.0, balance_xrp - config.xrp_reserve)
+            rebalance = assess_rebalance_need(
+                xrp_balance=balance_xrp,
+                rlusd_balance=rlusd_balance,
+                mid_price=mid_price or 0.0,
+                target_xrp_ratio=config.inventory_target_xrp_ratio,
+                spendable_xrp=spendable_xrp,
+                xrp_reserve=config.xrp_reserve,
+                min_order_xrp=config.min_order_size_xrp,
+                fund_with_xrp_only=config.fund_with_xrp_only,
+            )
+            self.decision_log.add("inventory", rebalance.summary)
+            self.decision_log.add("edge", edge_resolution)
             adjusted_spreads = apply_spread_adjustments(
                 spread_result.effective_spreads_pct,
                 quote_adjustments,
@@ -294,6 +341,8 @@ class TradingEngine:
                     xrp_balance=balance_xrp,
                     rlusd_balance=rlusd_balance,
                     adjustments=quote_adjustments,
+                    best_bid=best_bid,
+                    best_ask=best_ask,
                 )
                 book_note = ""
                 if best_bid is not None and best_ask is not None:
@@ -394,6 +443,13 @@ class TradingEngine:
                 book_spread_pct=book_spread_pct,
                 mid_momentum=mid_momentum,
                 spread_validation=spread_validation,
+                rebalance=rebalance,
+                fill_quality=fill_quality,
+                effective_min_edge_pct=effective_min_edge,
+                edge_resolution_summary=edge_resolution,
+                dynamic_min_edge_enabled=bool(
+                    getattr(config, "dynamic_min_edge_enabled", False)
+                ),
             )
             spread_ok = spread_validation.ok if spread_validation else False
             logger.info(
@@ -526,6 +582,12 @@ class TradingEngine:
         )
         if not fill:
             return
+        self._fill_quality.note_fill(
+            side=str(fill["side"]),
+            xrp_amount=float(fill["xrp_amount"]),
+            price=float(fill["price_rlusd_per_xrp"]),
+            mid_at_fill=mid_price or float(fill["price_rlusd_per_xrp"]),
+        )
         cycle = self._cycle_count + 1
         notes = "Inferred from balance change between cycles (verify on ledger for taxes)."
         common = dict(
@@ -600,6 +662,11 @@ class TradingEngine:
         book_spread_pct: float = 0.0,
         mid_momentum: float = 0.0,
         spread_validation: Optional[Any] = None,
+        rebalance: Optional[Any] = None,
+        fill_quality: Optional[Any] = None,
+        effective_min_edge_pct: float = 0.0,
+        edge_resolution_summary: str = "",
+        dynamic_min_edge_enabled: bool = False,
     ) -> None:
         decisions = [
             {"ts_utc": e.ts_utc, "category": e.category, "message": e.message}
@@ -688,6 +755,28 @@ class TradingEngine:
             spread_validation_lines=(
                 list(spread_validation.lines) if spread_validation else []
             ),
+            adverse_selection_tier=(
+                quote_adjustments.adverse_selection_tier if quote_adjustments else "none"
+            ),
+            book_pressure_label=(
+                quote_adjustments.book_pressure_label if quote_adjustments else "balanced"
+            ),
+            market_edge_met=(
+                bool(quote_adjustments.market_edge_met) if quote_adjustments else True
+            ),
+            market_edge_pct=(
+                float(quote_adjustments.market_edge_pct) if quote_adjustments else 0.0
+            ),
+            fill_quality_score=float(fill_quality.score) if fill_quality else 100.0,
+            fill_quality_summary=str(fill_quality.summary) if fill_quality else "",
+            rebalance_action=str(rebalance.action) if rebalance else "",
+            rebalance_summary=str(rebalance.summary) if rebalance else "",
+            pause_bids=bool(quote_adjustments.pause_bids) if quote_adjustments else False,
+            pause_asks=bool(quote_adjustments.pause_asks) if quote_adjustments else False,
+            effective_min_edge_pct=effective_min_edge_pct,
+            edge_resolution_summary=edge_resolution_summary,
+            dynamic_min_edge_enabled=dynamic_min_edge_enabled,
+            edge_strictness=float(getattr(config, "edge_strictness", 1.0)),
         )
         self.state_store.save(state)
     def _persist_error(self, message: str) -> None:

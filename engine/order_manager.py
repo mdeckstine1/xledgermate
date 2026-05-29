@@ -11,6 +11,46 @@ from strategy.quote_decision import QuoteAdjustments
 _MAX_SIDE_SPREAD_PCT = 2.5
 
 
+def _clamp_quote_price(
+    *,
+    side: str,
+    price: float,
+    mid_price: float,
+    best_bid: float | None,
+    best_ask: float | None,
+    max_worse_than_touch_pct: float,
+    max_improve_touch_pct: float,
+    max_half_spread_from_mid_pct: float,
+) -> float:
+    """Keep planned quotes inside spread-validation limits vs live book touch."""
+    if price <= 0 or mid_price <= 0:
+        return price
+
+    half_cap = max_half_spread_from_mid_pct / 100.0
+    if side == "ask":
+        floor_mid = mid_price * (1.0 + 1e-9)
+        ceiling_mid = mid_price * (1.0 + half_cap)
+        price = min(max(price, floor_mid), ceiling_mid)
+        if best_ask is not None and best_ask > 0:
+            improve = max_improve_touch_pct / 100.0
+            worse = max_worse_than_touch_pct / 100.0
+            lo = best_ask * (1.0 - improve)
+            hi = best_ask * (1.0 + worse)
+            price = min(max(price, lo), hi)
+        return price
+
+    ceiling_mid = mid_price * (1.0 - 1e-9)
+    floor_mid = mid_price * (1.0 - half_cap)
+    price = max(min(price, ceiling_mid), floor_mid)
+    if best_bid is not None and best_bid > 0:
+        improve = max_improve_touch_pct / 100.0
+        worse = max_worse_than_touch_pct / 100.0
+        hi = best_bid * (1.0 + improve)
+        lo = best_bid * (1.0 - worse)
+        price = max(min(price, hi), lo)
+    return price
+
+
 @dataclass
 class QuotePlan:
     intents: List[QuoteIntent]
@@ -31,6 +71,8 @@ class OrderManager:
         xrp_balance: float,
         rlusd_balance: float,
         adjustments: Optional[QuoteAdjustments] = None,
+        best_bid: float | None = None,
+        best_ask: float | None = None,
     ) -> QuotePlan:
         if mid_price <= 0:
             return QuotePlan(intents=[], reason="No valid mid price; skipping quote generation.")
@@ -70,8 +112,27 @@ class OrderManager:
             bid_size = size * adj.bid_size_multiplier
             ask_size = size * adj.ask_size_multiplier
 
-            bid_price = mid_price * (1.0 - bid_spread)
-            ask_price = mid_price * (1.0 + ask_spread)
+            bid_anchor = mid_price * (1.0 + adj.bid_anchor_shift_pct / 100.0)
+            ask_anchor = mid_price * (1.0 + adj.ask_anchor_shift_pct / 100.0)
+            bid_price = bid_anchor * (1.0 - bid_spread)
+            ask_price = ask_anchor * (1.0 + ask_spread)
+
+            clamp_kwargs = dict(
+                mid_price=mid_price,
+                best_bid=best_bid,
+                best_ask=best_ask,
+                max_worse_than_touch_pct=float(
+                    getattr(self.config, "max_quote_worse_than_touch_pct", 0.50)
+                ),
+                max_improve_touch_pct=float(
+                    getattr(self.config, "max_quote_improve_touch_pct", 0.15)
+                ),
+                max_half_spread_from_mid_pct=float(
+                    getattr(self.config, "max_half_spread_from_mid_pct", 1.0)
+                ),
+            )
+            bid_price = _clamp_quote_price(side="bid", price=bid_price, **clamp_kwargs)
+            ask_price = _clamp_quote_price(side="ask", price=ask_price, **clamp_kwargs)
 
             if quote_bids and not adj.pause_bids and bid_size >= min_size:
                 bid_rlusd_needed = bid_size * bid_price

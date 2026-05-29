@@ -1,6 +1,6 @@
 # XLedgerMate — Plain-English Operator Manual
 
-*Version 1.2.1 · For humans who remember when “save” meant a floppy disk*
+*Version 1.3.2 · For humans who remember when “save” meant a floppy disk*
 
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
@@ -63,7 +63,7 @@ Think of it like five drawers in a desk.
 ### Dashboard (where you live)
 
 - **Start Bot** — Turns the worker on (if it was off).
-- **Stop Bot** — Tells the worker to quit politely.
+- **Stop Bot** — Stops the engine (on Windows, kills both the launcher and worker process). If cycles keep logging, click Stop again or close the **XLedgerMate Engine** PowerShell window.
 - **Run One Cycle** — One heartbeat: check balances, prices, maybe refresh quotes. Good for testing.
 
 You will see:
@@ -84,7 +84,9 @@ Turn **Live refresh (5s)** on in the left sidebar if you want numbers to update 
 
 **Defensive quoting** (same tab):
 
-- **Minimum edge L1 (%)** — Bot widens and shrinks if the spread is too thin to cover fees comfortably.
+- **Edge strictness** — Scales your profile’s built-in minimum edge (Low / Normal / Strict). Each profile owns its own target (e.g. `tight_spread` ≈ 0.08%).
+- **Dynamic min edge** — Optional: adapts required edge to live book spread (never above profile cap).
+- **Max daily drawdown %** — Kill switch if portfolio drops this much in a day (default **10%**; range 2–25% in GUI).
 - **Auto profile switching** — Off by default. When on, moves to a *more defensive* profile only after you have been idle (no Save Config / Apply) and conditions worsen. Never auto-switches to aggressive `Tight spread`.
 - **Auto-switch after idle (min)** — How long you must leave it alone before auto-switch can fire (default 120 min).
 
@@ -163,6 +165,7 @@ Stay on **dry-run** until step 5 passes consistently. The engine **blocks live o
 |---------|-------------|
 | White or empty screen | Restart `run.bat`; hard-refresh browser (Ctrl+Shift+R). Turn off Live refresh temporarily. |
 | Bot says STOPPED | Click **Start Bot**. Check address/secret saved. |
+| Stop Bot but log still updates | Restart Streamlit after an update; use **Stop Bot** again or close the Engine window. |
 | RLUSD is 0 | Normal until faucet pays you after trust line exists. |
 | Price looks insane (millions) | Stop Bot → Start Bot again (kills stale engines). |
 | Kill switch active | Advanced tab → **Clear kill switch** after you understand why it fired. Page refreshes; drawdown baseline resets on next cycle. |
@@ -205,7 +208,7 @@ Leave “notify each cycle” off unless you enjoy constant buzzing.
 
 ## Version & history
 
-- Current version: **1.2.1** (see `VERSION` file).
+- Current version: **1.3.2** (see `VERSION` file).
 - What changed release-by-release: **`CHANGELOG.md`** in the project folder.
 
 ---

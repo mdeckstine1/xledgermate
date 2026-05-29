@@ -72,6 +72,21 @@ class RuntimeState:
     spread_validation_summary: str = ""
     spread_validation_errors: List[str] = field(default_factory=list)
     spread_validation_lines: List[Dict[str, Any]] = field(default_factory=list)
+    # Defensive MM transparency
+    adverse_selection_tier: str = "none"
+    book_pressure_label: str = "balanced"
+    market_edge_met: bool = True
+    market_edge_pct: float = 0.0
+    fill_quality_score: float = 100.0
+    fill_quality_summary: str = ""
+    rebalance_action: str = ""
+    rebalance_summary: str = ""
+    pause_bids: bool = False
+    pause_asks: bool = False
+    effective_min_edge_pct: float = 0.0
+    edge_resolution_summary: str = ""
+    dynamic_min_edge_enabled: bool = False
+    edge_strictness: float = 1.0
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -149,6 +164,20 @@ class RuntimeStateStore:
             spread_validation_summary=str(data.get("spread_validation_summary", "")),
             spread_validation_errors=list(data.get("spread_validation_errors", [])),
             spread_validation_lines=list(data.get("spread_validation_lines", [])),
+            adverse_selection_tier=str(data.get("adverse_selection_tier", "none")),
+            book_pressure_label=str(data.get("book_pressure_label", "balanced")),
+            market_edge_met=bool(data.get("market_edge_met", True)),
+            market_edge_pct=float(data.get("market_edge_pct", 0.0)),
+            fill_quality_score=float(data.get("fill_quality_score", 100.0)),
+            fill_quality_summary=str(data.get("fill_quality_summary", "")),
+            rebalance_action=str(data.get("rebalance_action", "")),
+            rebalance_summary=str(data.get("rebalance_summary", "")),
+            pause_bids=bool(data.get("pause_bids", False)),
+            pause_asks=bool(data.get("pause_asks", False)),
+            effective_min_edge_pct=float(data.get("effective_min_edge_pct", 0.0)),
+            edge_resolution_summary=str(data.get("edge_resolution_summary", "")),
+            dynamic_min_edge_enabled=bool(data.get("dynamic_min_edge_enabled", False)),
+            edge_strictness=float(data.get("edge_strictness", 1.0)),
             recent_decisions=list(data.get("recent_decisions", [])),
             last_error=data.get("last_error"),
             updated_utc=data.get("updated_utc"),

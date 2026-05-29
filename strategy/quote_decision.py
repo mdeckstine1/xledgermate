@@ -13,9 +13,20 @@ from core.market_conditions import (
     MarketAssessment,
 )
 from core.perception import Profile
+from strategy.fill_quality import FillQualityState
+from strategy.market_microstructure import (
+    BookPressure,
+    MarketEdgeAssessment,
+    MomentumTier,
+    assess_book_pressure,
+    assess_market_edge,
+    classify_momentum,
+)
 
 # Extra half-spread per side from inventory skew (percentage points, not fraction).
 _MAX_INVENTORY_SPREAD_ADD_PCT = 1.5
+_MAX_ANCHOR_SHIFT_PCT = 0.35
+_MAX_DEFENSIVE_SIDE_SPREAD_ADD_PCT = 0.45
 
 
 def _inventory_spread_add_pct(deviation: float, strength: float) -> float:
@@ -31,10 +42,17 @@ class QuoteAdjustments:
     ask_spread_add_pct: float = 0.0
     bid_size_multiplier: float = 1.0
     ask_size_multiplier: float = 1.0
+    bid_anchor_shift_pct: float = 0.0
+    ask_anchor_shift_pct: float = 0.0
     pause_bids: bool = False
     pause_asks: bool = False
     min_edge_met: bool = True
+    market_edge_met: bool = True
+    market_edge_pct: float = 0.0
     inventory_label: str = "balanced"
+    adverse_selection_tier: str = "none"
+    book_pressure_label: str = "balanced"
+    fill_quality_score: float = 100.0
     decision_summary: str = ""
 
 
@@ -46,6 +64,8 @@ class InventoryState:
     ask_size_mult: float
     bid_spread_add_pct: float
     ask_spread_add_pct: float
+    bid_anchor_shift_pct: float
+    ask_anchor_shift_pct: float
 
 
 def compute_mid_momentum_pct(price_history: list, lookback: int = 5) -> float:
@@ -71,25 +91,39 @@ def assess_inventory(
     ratio = xrp_balance / total if total > 0 else 1.0
     deviation = ratio - target_xrp_ratio
     strength = max(0.5, min(2.0, skew_strength))
+    abs_dev = abs(deviation)
 
-    if deviation > 0.12:
-        label = "xrp_heavy"
-        bid_mult = max(0.35, 1.0 - deviation * 2.5 * strength)
-        ask_mult = min(1.35, 1.0 + deviation * 1.5 * strength)
-        bid_spread = _inventory_spread_add_pct(deviation, strength)
-        ask_spread = 0.0
-    elif deviation < -0.12:
-        label = "rlusd_heavy"
-        bid_mult = min(1.35, 1.0 + abs(deviation) * 1.5 * strength)
-        ask_mult = max(0.35, 1.0 - abs(deviation) * 2.5 * strength)
-        bid_spread = 0.0
-        ask_spread = _inventory_spread_add_pct(deviation, strength)
-    else:
+    if abs_dev <= 0.03:
         label = "balanced"
+    elif deviation > 0:
+        label = "xrp_heavy" if abs_dev >= 0.08 else "slight_xrp_heavy"
+    else:
+        label = "rlusd_heavy" if abs_dev >= 0.08 else "slight_rlusd_heavy"
+
+    spread_add = _inventory_spread_add_pct(deviation, strength)
+    anchor = min(_MAX_ANCHOR_SHIFT_PCT, abs_dev * 0.45 * strength)
+
+    if deviation > 0:
+        bid_mult = max(0.25, 1.0 - abs_dev * 3.2 * strength)
+        ask_mult = min(1.45, 1.0 + abs_dev * 2.0 * strength)
+        bid_spread = spread_add
+        ask_spread = max(0.0, spread_add * 0.15 - abs_dev * 0.8 * strength)
+        bid_anchor = -anchor
+        ask_anchor = -anchor * 0.55
+    elif deviation < 0:
+        bid_mult = min(1.45, 1.0 + abs_dev * 2.0 * strength)
+        ask_mult = max(0.25, 1.0 - abs_dev * 3.2 * strength)
+        bid_spread = max(0.0, spread_add * 0.15 - abs_dev * 0.8 * strength)
+        ask_spread = spread_add
+        bid_anchor = anchor * 0.55
+        ask_anchor = anchor
+    else:
         bid_mult = 1.0
         ask_mult = 1.0
         bid_spread = 0.0
         ask_spread = 0.0
+        bid_anchor = 0.0
+        ask_anchor = 0.0
 
     return InventoryState(
         xrp_ratio=ratio,
@@ -98,7 +132,36 @@ def assess_inventory(
         ask_size_mult=ask_mult,
         bid_spread_add_pct=bid_spread,
         ask_spread_add_pct=ask_spread,
+        bid_anchor_shift_pct=bid_anchor,
+        ask_anchor_shift_pct=ask_anchor,
     )
+
+
+def _profile_market_overlay(
+    profile: Profile,
+    assessment: MarketAssessment,
+) -> tuple[float, float, list[str]]:
+    """Profile market overlay only — base profile spread lives in compute_effective_spreads_pct."""
+    parts: list[str] = []
+    spread_mult = 1.0
+    size_mult = profile.size_multiplier * profile.risk_multiplier
+
+    if assessment.condition == CONDITION_FAVORABLE:
+        spread_mult *= max(0.78, 1.0 - profile.aggression * 0.14)
+        size_mult *= min(1.25, 1.0 + profile.aggression * 0.10)
+        parts.append(f"{profile.name}: favorable → tighter competitive posture")
+    elif assessment.condition == CONDITION_NEUTRAL:
+        parts.append(f"{profile.name}: neutral → profile baseline")
+    elif assessment.condition == CONDITION_DEFENSIVE:
+        spread_mult *= 1.18 * profile.defensive_widen_mult
+        size_mult *= 0.72
+        parts.append(f"{profile.name}: defensive → wider + smaller")
+    else:
+        spread_mult *= 1.42 * profile.defensive_widen_mult
+        size_mult *= 0.42
+        parts.append(f"{profile.name}: hostile → capital preservation mode")
+
+    return spread_mult, size_mult, parts
 
 
 def build_quote_adjustments(
@@ -108,65 +171,121 @@ def build_quote_adjustments(
     inventory: InventoryState,
     mid_momentum_pct: float,
     effective_spread_l1_pct: float,
+    book_spread_pct: float,
+    depth_imbalance: float,
     min_edge_pct: float,
+    book_pressure_sensitivity: float = 1.0,
+    fill_quality: Optional[FillQualityState] = None,
     xrpl_fee_bps: float = 2.0,
+    fund_with_xrp_only: bool = False,
+    rlusd_balance: float = 0.0,
+    min_order_xrp: float = 1.0,
 ) -> QuoteAdjustments:
-    """Combine profile, market, inventory, and momentum into quoting posture."""
+    """Combine profile, market, inventory, momentum, book pressure, and fill quality."""
     adj = QuoteAdjustments(inventory_label=inventory.label)
     parts: list[str] = []
+    acquiring_rlusd = fund_with_xrp_only and rlusd_balance <= min_order_xrp * 0.5
 
-    # Market condition sizing / spread posture.
-    if assessment.condition == CONDITION_FAVORABLE:
-        adj.spread_multiplier = max(0.85, 1.0 - (profile.aggression * 0.12))
-        adj.size_multiplier = min(1.15, profile.size_multiplier * (1.0 + profile.aggression * 0.08))
-        parts.append("favorable market → slightly tighter/wider size")
-    elif assessment.condition == CONDITION_NEUTRAL:
-        adj.spread_multiplier = 1.0
-        adj.size_multiplier = profile.size_multiplier
-        parts.append("neutral market → profile baseline")
-    elif assessment.condition == CONDITION_DEFENSIVE:
-        adj.spread_multiplier = 1.15
-        adj.size_multiplier = profile.size_multiplier * 0.75
-        parts.append("defensive market → wider + smaller")
-    else:  # hostile
-        adj.spread_multiplier = 1.35
-        adj.size_multiplier = profile.size_multiplier * 0.5
-        parts.append("hostile market → much wider + half size")
+    spread_mult, size_mult, profile_parts = _profile_market_overlay(profile, assessment)
+    parts.extend(profile_parts)
+    adj.spread_multiplier = spread_mult
+    adj.size_multiplier = size_mult
 
-    # Inventory skew.
     adj.bid_size_multiplier = inventory.bid_size_mult
     adj.ask_size_multiplier = inventory.ask_size_mult
     adj.bid_spread_add_pct = inventory.bid_spread_add_pct
     adj.ask_spread_add_pct = inventory.ask_spread_add_pct
+    adj.bid_anchor_shift_pct = inventory.bid_anchor_shift_pct
+    adj.ask_anchor_shift_pct = inventory.ask_anchor_shift_pct
     if inventory.label != "balanced":
-        parts.append(f"inventory {inventory.label} → skew bids/asks")
+        parts.append(f"inventory {inventory.label} (XRP {inventory.xrp_ratio:.0%}) → steer quotes")
 
-    # Adverse selection: strong mid move → protect vulnerable side.
-    momentum_threshold = 0.06
-    if mid_momentum_pct > momentum_threshold:
-        adj.bid_spread_add_pct += abs(mid_momentum_pct) * 0.35
-        adj.bid_size_multiplier *= 0.7
-        parts.append(f"mid rising +{mid_momentum_pct:.2f}% → protect bids")
-    elif mid_momentum_pct < -momentum_threshold:
-        adj.ask_spread_add_pct += abs(mid_momentum_pct) * 0.35
-        adj.ask_size_multiplier *= 0.7
-        parts.append(f"mid falling {mid_momentum_pct:.2f}% → protect asks")
+    momentum_tier, momentum_note = classify_momentum(mid_momentum_pct)
+    adj.adverse_selection_tier = momentum_tier.name
+    if momentum_tier.name != "none":
+        if mid_momentum_pct > 0:
+            adj.bid_spread_add_pct += abs(mid_momentum_pct) * momentum_tier.spread_mult
+            adj.bid_size_multiplier *= momentum_tier.size_mult
+            if momentum_tier.pause_vulnerable:
+                adj.pause_bids = True
+        elif mid_momentum_pct < 0 and not acquiring_rlusd:
+            # XRP-only acquisition: keep asks competitive even if mid is falling.
+            adj.ask_spread_add_pct += abs(mid_momentum_pct) * momentum_tier.spread_mult
+            adj.ask_size_multiplier *= momentum_tier.size_mult
+            if momentum_tier.pause_vulnerable:
+                adj.pause_asks = True
+        elif mid_momentum_pct < 0 and acquiring_rlusd:
+            adj.ask_size_multiplier *= max(0.75, momentum_tier.size_mult)
+        parts.append(momentum_note if not acquiring_rlusd or mid_momentum_pct >= 0 else "momentum falling → smaller asks (still quoting to acquire RLUSD)")
 
-    # Minimum edge after estimated ledger fee (bps on notional).
+    pressure = assess_book_pressure(
+        depth_imbalance=depth_imbalance,
+        sensitivity=book_pressure_sensitivity * profile.book_pressure_sensitivity,
+    )
+    adj.book_pressure_label = pressure.label
+    if acquiring_rlusd:
+        # Selling XRP for RLUSD — do not widen asks because the book is ask-heavy.
+        adj.bid_spread_add_pct += pressure.bid_spread_add_pct
+        adj.bid_size_multiplier *= pressure.bid_size_mult
+        adj.ask_size_multiplier *= min(1.15, pressure.ask_size_mult)
+        if pressure.label != "balanced":
+            parts.append(f"{pressure.summary} (ask spread held — acquiring RLUSD)")
+    else:
+        adj.bid_spread_add_pct += pressure.bid_spread_add_pct
+        adj.ask_spread_add_pct += pressure.ask_spread_add_pct
+        adj.bid_size_multiplier *= pressure.bid_size_mult
+        adj.ask_size_multiplier *= pressure.ask_size_mult
+        if pressure.label != "balanced":
+            parts.append(pressure.summary)
+
+    fq = fill_quality or FillQualityState()
+    adj.fill_quality_score = fq.score
+    adj.size_multiplier *= fq.size_multiplier
+    adj.spread_multiplier *= fq.spread_multiplier
+    if fq.recent_fills:
+        parts.append(fq.summary)
+
+    market_edge = assess_market_edge(
+        book_spread_pct=book_spread_pct,
+        our_l1_spread_pct=effective_spread_l1_pct * adj.spread_multiplier,
+        min_edge_pct=min_edge_pct,
+        xrpl_fee_bps=xrpl_fee_bps,
+    )
+    adj.market_edge_met = market_edge.met
+    adj.market_edge_pct = market_edge.capture_edge_pct
+    parts.append(market_edge.summary)
+
     required_edge = min_edge_pct + xrpl_fee_bps / 100.0
-    adj.min_edge_met = effective_spread_l1_pct >= required_edge
-    if not adj.min_edge_met:
-        adj.size_multiplier *= 0.5
-        adj.spread_multiplier *= 1.2
-        parts.append(
-            f"edge thin (L1 {effective_spread_l1_pct:.3f}% < need {required_edge:.3f}%) → conservative"
-        )
+    adj.min_edge_met = effective_spread_l1_pct * adj.spread_multiplier >= required_edge
+    if not adj.min_edge_met or not adj.market_edge_met:
+        adj.size_multiplier *= 0.55 if acquiring_rlusd else 0.45
+        if not adj.min_edge_met:
+            parts.append(
+                f"edge guard: L1 {effective_spread_l1_pct * adj.spread_multiplier:.3f}% "
+                f"< need {required_edge:.3f}% → smaller size (spread unchanged)"
+            )
 
-    if assessment.condition == CONDITION_HOSTILE and not adj.min_edge_met:
-        adj.pause_bids = inventory.label == "xrp_heavy"
-        adj.pause_asks = inventory.label == "rlusd_heavy"
+    adj.bid_spread_add_pct = min(_MAX_DEFENSIVE_SIDE_SPREAD_ADD_PCT, adj.bid_spread_add_pct)
+    adj.ask_spread_add_pct = min(_MAX_DEFENSIVE_SIDE_SPREAD_ADD_PCT, adj.ask_spread_add_pct)
+
+    if acquiring_rlusd:
+        adj.ask_spread_add_pct = 0.0
+        adj.ask_anchor_shift_pct = min(0.0, adj.ask_anchor_shift_pct)
+        adj.pause_asks = False
+        adj.spread_multiplier = min(adj.spread_multiplier, 1.05)
+        parts.append("XRP-only mode → competitive asks until RLUSD balance builds")
+
+    if assessment.condition == CONDITION_HOSTILE and (not adj.min_edge_met or not adj.market_edge_met):
+        adj.pause_bids = adj.pause_bids or inventory.label in ("xrp_heavy", "slight_xrp_heavy")
+        adj.pause_asks = adj.pause_asks or inventory.label in ("rlusd_heavy", "slight_rlusd_heavy")
         if adj.pause_bids or adj.pause_asks:
             parts.append("hostile + weak edge → pause vulnerable side")
+
+    if assessment.condition == CONDITION_HOSTILE and momentum_tier.pause_vulnerable:
+        if mid_momentum_pct > 0:
+            adj.pause_bids = True
+        elif mid_momentum_pct < 0:
+            adj.pause_asks = True
 
     adj.decision_summary = "; ".join(parts)
     return adj
