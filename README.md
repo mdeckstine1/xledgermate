@@ -11,14 +11,14 @@ XRPL XRP/RLUSD market-making bot (v1) focused on:
 ```text
 xledgermate/
 ├── main.py                 # App entrypoint
-├── VERSION                 # Release version (1.1.0)
+├── VERSION                 # Release version (1.2.0)
 ├── CHANGELOG.md            # Version history
 ├── docs/OPERATOR_MANUAL.md # Non-technical operator guide
 ├── requirements.txt
 ├── config/                 # Settings loader + example config
-├── core/                   # Perception, profiles, decision log, version
-├── connectors/             # XRPL connectivity (testnet)
-├── strategy/               # Spread engine
+├── core/                   # Perception, market conditions, runtime state, version
+├── connectors/             # XRPL connectivity (testnet/mainnet)
+├── strategy/               # Spread engine + quote decision logic
 ├── engine/                 # Trading loop + quote planning
 ├── risk/                   # Drawdown + inventory controls
 ├── monitoring/             # Alerts + CSV logging

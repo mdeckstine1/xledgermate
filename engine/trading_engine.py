@@ -9,7 +9,12 @@ from typing import Any, Dict, List, Optional
 from config.settings import BotConfig
 from connectors import XRPLConnector, XRPLNetworkConfig
 from connectors.xrpl_connector import is_plausible_rlusd_per_xrp
-from core import BotPerception, DecisionLog, VERSION, get_profile
+from core.market_conditions import (
+    assess_market_conditions,
+    compute_book_spread_pct,
+    defensive_profile_for_auto_switch,
+    is_more_defensive_than,
+)
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_manager import OrderManager
 from monitoring.balance_logger import BalanceLogger
@@ -18,7 +23,14 @@ from monitoring.fill_detection import detect_fill_from_balance_delta
 from monitoring.telegram_alerts import TelegramAlerts
 from risk.drawdown import DrawdownMonitor, portfolio_value_xrp
 from risk.kill_switch import KillSwitch
+from core import BotPerception, DecisionLog, VERSION, get_profile
 from strategy.avellaneda_strategy import AvellanedaStrategy
+from strategy.quote_decision import (
+    apply_spread_adjustments,
+    assess_inventory,
+    build_quote_adjustments,
+    compute_mid_momentum_pct,
+)
 from utils.preflight import evaluate_preflight
 logger = logging.getLogger(__name__)
 class TradingEngine:
@@ -49,6 +61,7 @@ class TradingEngine:
         self._price_history_max = 180
         self._last_preflight: Optional[Any] = None
         self._last_cycle_balances: Optional[tuple[float, float]] = None
+        self._prev_kill_active = False
     async def run(self) -> None:
         self._running = True
         logger.info(
@@ -124,6 +137,10 @@ class TradingEngine:
         open_offers: List[Any] = []
         placed_count = 0
         portfolio_value = 0.0
+        market_assessment = None
+        quote_adjustments = None
+        mid_momentum = 0.0
+        book_spread_pct = 0.0
         try:
             balance_xrp = await connector.get_xrp_balance()
             trust = await connector.get_rlusd_trust_line()
@@ -144,6 +161,11 @@ class TradingEngine:
             portfolio_value = self.drawdown_monitor.update_portfolio(
                 balance_xrp, rlusd_balance, mid_price or 0.0
             )
+            self.kill_switch.reload()
+            if getattr(self, "_prev_kill_active", False) and not self.kill_switch.is_active():
+                self.drawdown_monitor.reset_baseline(portfolio_value)
+                self.decision_log.add("profile", "Kill switch cleared — drawdown baseline reset.")
+            self._prev_kill_active = self.kill_switch.is_active()
             if not config.dry_run:
                 self._detect_and_log_fills(
                     config=config,
@@ -152,7 +174,7 @@ class TradingEngine:
                     mid_price=mid_price,
                 )
             drawdown_pct = self.drawdown_monitor.get_drawdown_percent()
-            if self.drawdown_monitor.is_kill_switch_triggered():
+            if self.drawdown_monitor.is_kill_switch_triggered() and not self.kill_switch.is_active():
                 await self._activate_kill_switch(
                     connector,
                     config,
@@ -178,24 +200,83 @@ class TradingEngine:
             if self.kill_switch.is_active():
                 await self._cancel_offers_if_live(connector, config, "Kill switch active")
             volatility_pct = connector.update_and_estimate_volatility_pct(mid_price)
+            book_spread_pct = compute_book_spread_pct(best_bid, best_ask)
+            market_assessment = assess_market_conditions(
+                volatility_pct=volatility_pct,
+                liquidity_score=liquidity.liquidity_score,
+                book_spread_pct=book_spread_pct,
+                active_profile=config.active_profile,
+            )
+            self.decision_log.add("market", market_assessment.summary)
+
+            if config.auto_profile_switching:
+                from utils.operator_activity import minutes_since_last_operator_action
+
+                inactive = (
+                    minutes_since_last_operator_action()
+                    >= config.auto_profile_inactivity_minutes
+                )
+                if inactive and market_assessment.condition in ("defensive", "hostile"):
+                    proposed = defensive_profile_for_auto_switch(market_assessment)
+                    if proposed and is_more_defensive_than(config.active_profile, proposed):
+                        old = config.active_profile
+                        config.active_profile = proposed
+                        config.save()
+                        profile = get_profile(proposed)
+                        perception.active_profile = profile
+                        msg = (
+                            f"Auto-switched profile {old} → {proposed} "
+                            f"(operator idle, {market_assessment.condition_label} market)"
+                        )
+                        self.decision_log.add("profile", msg)
+                        self.csv_logger.log_major(
+                            network=config.network_name(),
+                            notes=msg,
+                            cycle=self._cycle_count + 1,
+                        )
+
             spread_result = self.strategy.compute_spreads(
                 volatility_pct=volatility_pct,
                 liquidity_score=liquidity.liquidity_score,
                 profile=profile,
             )
+            mid_momentum = compute_mid_momentum_pct(self._price_history)
+            inventory_state = assess_inventory(
+                xrp_balance=balance_xrp,
+                rlusd_balance=rlusd_balance,
+                mid_price=mid_price or 0.0,
+                target_xrp_ratio=config.inventory_target_xrp_ratio,
+                skew_strength=profile.inventory_skew_strength,
+            )
+            l1_spread = spread_result.effective_spreads_pct.get(1, config.base_spread * 100.0)
+            quote_adjustments = build_quote_adjustments(
+                profile=profile,
+                assessment=market_assessment,
+                inventory=inventory_state,
+                mid_momentum_pct=mid_momentum,
+                effective_spread_l1_pct=l1_spread,
+                min_edge_pct=config.min_edge_pct,
+            )
+            adjusted_spreads = apply_spread_adjustments(
+                spread_result.effective_spreads_pct,
+                quote_adjustments,
+            )
+            self.decision_log.add("inventory", f"Inventory {inventory_state.label} (XRP ratio {inventory_state.xrp_ratio:.2f})")
+            self.decision_log.add("decision", quote_adjustments.decision_summary or "baseline quoting")
             perception.update_market_state(
                 mid_price=mid_price or 0.0,
                 volatility_pct=volatility_pct,
                 liquidity=liquidity,
-                effective_spreads_pct=spread_result.effective_spreads_pct,
+                effective_spreads_pct=adjusted_spreads,
             )
             if preflight.ready and mid_price and not self.kill_switch.is_active():
                 self.decision_log.add("spread", spread_result.reason)
                 quote_plan = self.order_manager.build_quotes(
                     mid_price=mid_price,
-                    spreads_pct=spread_result.effective_spreads_pct,
+                    spreads_pct=adjusted_spreads,
                     xrp_balance=balance_xrp,
                     rlusd_balance=rlusd_balance,
+                    adjustments=quote_adjustments,
                 )
                 book_note = ""
                 if best_bid is not None and best_ask is not None:
@@ -253,6 +334,10 @@ class TradingEngine:
                 preflight=preflight,
                 portfolio_value=portfolio_value,
                 drawdown_pct=drawdown_pct,
+                market_assessment=market_assessment,
+                quote_adjustments=quote_adjustments,
+                book_spread_pct=book_spread_pct,
+                mid_momentum=mid_momentum,
             )
             logger.info(
                 "Cycle complete | #%s profile=%s mid=%.4f RLUSD/XRP portfolio=%.4f XRP "
@@ -452,6 +537,10 @@ class TradingEngine:
         preflight: Optional[Any] = None,
         portfolio_value: float = 0.0,
         drawdown_pct: float = 0.0,
+        market_assessment: Optional[Any] = None,
+        quote_adjustments: Optional[Any] = None,
+        book_spread_pct: float = 0.0,
+        mid_momentum: float = 0.0,
     ) -> None:
         decisions = [
             {"ts_utc": e.ts_utc, "category": e.category, "message": e.message}
@@ -518,6 +607,18 @@ class TradingEngine:
             engine_pid=os.getpid(),
             price_source="xrpl_book_offers",
             price_history=list(self._price_history),
+            market_condition=market_assessment.condition if market_assessment else "neutral",
+            market_condition_label=market_assessment.condition_label if market_assessment else "Neutral",
+            volatility_level=market_assessment.volatility_level if market_assessment else "moderate",
+            liquidity_level=market_assessment.liquidity_level if market_assessment else "moderate",
+            book_spread_pct=book_spread_pct,
+            book_spread_status=market_assessment.book_spread_status if market_assessment else "unknown",
+            market_health_score=market_assessment.health_score if market_assessment else 0.0,
+            recommended_profile=market_assessment.recommended_profile if market_assessment else config.active_profile,
+            recommendation_reason=market_assessment.recommendation_reason if market_assessment else "",
+            quote_decision_summary=quote_adjustments.decision_summary if quote_adjustments else "",
+            inventory_label=quote_adjustments.inventory_label if quote_adjustments else "balanced",
+            mid_momentum_pct=mid_momentum,
         )
         self.state_store.save(state)
     def _persist_error(self, message: str) -> None:

@@ -32,6 +32,9 @@ max_daily_drawdown_percent: 3.5
 min_drawdown_percent: 2.0
 max_drawdown_percent: 5.0
 inventory_target_xrp_ratio: 0.55
+min_edge_pct: 0.10
+auto_profile_switching: false
+auto_profile_inactivity_minutes: 120
 
 auto_rollover_enabled: true
 

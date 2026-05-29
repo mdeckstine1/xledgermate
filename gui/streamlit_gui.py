@@ -14,6 +14,7 @@ import streamlit as st
 
 import config.settings as settings_module
 from config.settings import BotConfig
+from core.market_conditions import assess_market_conditions, compute_book_spread_pct
 from core.perception import BUILT_IN_PROFILES
 from gui.engine_control import (
     cancel_offers_on_ledger,
@@ -25,6 +26,7 @@ from gui.engine_control import (
     start_engine,
     stop_engine,
 )
+from utils.operator_activity import touch_operator_activity
 from utils.xrpl_currency import RLUSD_ISSUER_TESTNET
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,21 @@ PROFILE_LABELS = {
     "high_volatility": "High volatility",
     "thin_liquidity": "Thin liquidity",
     "tight_spread": "Tight spread",
+}
+
+PROFILE_SHORT = {
+    "safe": "Safe",
+    "high_volatility": "High vol",
+    "thin_liquidity": "Thin liq",
+    "tight_spread": "Tight",
+}
+
+SPREAD_SHORT = {
+    "unknown": "—",
+    "tight": "Tight",
+    "normal": "Normal",
+    "wide": "Wide",
+    "very wide": "V. wide",
 }
 
 try:
@@ -133,6 +150,122 @@ def _open_offers_table(offers: List[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _compact_stat(column: Any, label: str, value: str) -> None:
+    """Small label + value (fits narrow columns better than st.metric)."""
+    with column:
+        st.caption(label)
+        st.markdown(f"**{value}**")
+
+
+def _render_operating_banners(config: BotConfig, runtime: dict) -> None:
+    dry = bool(runtime.get("dry_run", config.dry_run))
+    if dry:
+        st.info(
+            "**DRY-RUN MODE** — Quotes are planned only; nothing is submitted to the ledger. "
+            "This is the recommended default."
+        )
+    elif config.testnet:
+        st.warning(
+            "**LIVE on TESTNET** — Real testnet orders on the ledger (play money, not mainnet)."
+        )
+    else:
+        st.error(
+            "**MAINNET LIVE TRADING** — Real funds at risk. Use dry-run unless you intentionally "
+            "accept mainnet execution."
+        )
+
+
+def _resolve_market_assessment(config: BotConfig, runtime: dict) -> dict:
+    """Use engine snapshot fields, or compute recommendation live from book metrics."""
+    rec = runtime.get("recommended_profile", "")
+    reason = runtime.get("recommendation_reason", "")
+    if rec:
+        return {
+            "recommended_profile": str(rec),
+            "recommendation_reason": str(reason),
+            "market_condition_label": runtime.get("market_condition_label", "Neutral"),
+        }
+    bid = runtime.get("best_bid_rlusd_per_xrp")
+    ask = runtime.get("best_ask_rlusd_per_xrp")
+    spread = float(runtime.get("book_spread_pct", 0)) or compute_book_spread_pct(bid, ask)
+    assessment = assess_market_conditions(
+        volatility_pct=float(runtime.get("volatility_pct", 0)),
+        liquidity_score=float(runtime.get("liquidity_score", 0)),
+        book_spread_pct=spread,
+        active_profile=config.active_profile,
+    )
+    return {
+        "recommended_profile": assessment.recommended_profile,
+        "recommendation_reason": assessment.recommendation_reason,
+        "market_condition_label": assessment.condition_label,
+    }
+
+
+def _render_market_conditions_panel(config: BotConfig, runtime: dict) -> None:
+    """Market conditions + profile recommendation (top of page, right of logo)."""
+    if not runtime:
+        st.caption("Market conditions appear after the engine runs a cycle.")
+        return
+
+    condition = runtime.get("market_condition", "neutral")
+    cond_colors = {
+        "favorable": "green",
+        "neutral": "blue",
+        "defensive": "orange",
+        "hostile": "red",
+    }
+    cond_color = cond_colors.get(str(condition), "gray")
+    cond_label = runtime.get("market_condition_label", "Neutral")
+
+    st.markdown("#### Market conditions")
+    m1, m2, m3, m4, m5 = st.columns(5)
+    active = runtime.get("active_profile") or config.active_profile
+    profile_short = PROFILE_SHORT.get(str(active), str(active)[:8])
+    spread_key = str(runtime.get("book_spread_status", "unknown")).lower()
+    spread_short = SPREAD_SHORT.get(spread_key, spread_key.title()[:7])
+    _compact_stat(m1, "Profile", profile_short)
+    with m2:
+        st.caption("Market")
+        st.markdown(f":{cond_color}[**{cond_label}**]")
+    vol_key = str(runtime.get("volatility_level", "—")).lower()
+    vol_short = {"low": "Low", "moderate": "Mod", "high": "High"}.get(vol_key, vol_key[:4].title())
+    _compact_stat(m3, "Vol", vol_short)
+    _compact_stat(m4, "Liq", f"{float(runtime.get('liquidity_score', 0)):.2f}")
+    _compact_stat(m5, "Spread", spread_short)
+
+    st.caption(
+        f"Health {float(runtime.get('market_health_score', 0)):.0f}/100 · "
+        f"Spread {float(runtime.get('book_spread_pct', 0)):.3f}% · "
+        f"Inventory {runtime.get('inventory_label', 'balanced')} · "
+        f"Momentum {float(runtime.get('mid_momentum_pct', 0)):+.3f}%"
+    )
+    if runtime.get("quote_decision_summary"):
+        st.caption(f"Quoting logic: {runtime.get('quote_decision_summary')}")
+
+    assessment = _resolve_market_assessment(config, runtime)
+    rec = assessment.get("recommended_profile", "")
+    rec_label = PROFILE_LABELS.get(str(rec), str(rec)) if rec else "—"
+    active = runtime.get("active_profile") or config.active_profile
+    active_label = PROFILE_LABELS.get(str(active), str(active))
+
+    st.markdown("#### Profile recommendation")
+    if rec and str(rec) == str(active):
+        st.success(f"**{rec_label}** — matches current conditions.")
+        st.caption(assessment.get("recommendation_reason", ""))
+    elif rec:
+        st.markdown(f"**Suggested:** {rec_label}")
+        st.caption(
+            f"Active: {active_label}. {assessment.get('recommendation_reason', '')}"
+        )
+        if st.button(f"Apply {PROFILE_SHORT.get(str(rec), rec_label)}", key="apply_recommended_profile"):
+            config.active_profile = str(rec).strip().lower()
+            config.save()
+            touch_operator_activity("apply_profile")
+            st.rerun()
+    else:
+        st.caption("Profile recommendation appears after the engine reports market conditions.")
+
+
 def _render_header(config: BotConfig, runtime: dict, engine_running: bool) -> None:
     mid = runtime.get("mid_price")
     pnl = float(runtime.get("session_pnl_xrp_estimate", 0.0))
@@ -183,6 +316,10 @@ def _update_live_dashboard(config: BotConfig) -> None:
     c3.metric("Placed (last)", int(runtime.get("offers_placed_last_cycle", 0)))
     c4.metric("Open offers", int(runtime.get("open_offers_count", 0)))
     st.caption(runtime.get("last_execution_summary", ""))
+
+    if runtime.get("quote_decision_summary"):
+        st.markdown("### Why these quotes?")
+        st.caption(runtime.get("quote_decision_summary"))
 
     st.markdown("### Live price (RLUSD / XRP)")
     p1, p2, p3 = st.columns(3)
@@ -333,9 +470,38 @@ def _render_controls_tab(config: BotConfig) -> None:
 
     e1, e2 = st.columns(2)
     with e1:
-        config.dry_run = st.toggle("Dry run (no ledger orders)", value=config.dry_run)
+        config.dry_run = st.toggle(
+            "Dry run (no ledger orders)",
+            value=config.dry_run,
+            help="Recommended default — rehearses quoting without submitting orders.",
+        )
     with e2:
         config.trading_enabled = st.toggle("Trading enabled", value=config.trading_enabled)
+
+    st.markdown("### Defensive quoting")
+    d1, d2, d3 = st.columns(3)
+    with d1:
+        config.min_edge_pct = st.number_input(
+            "Minimum edge L1 (%)",
+            value=float(config.min_edge_pct),
+            step=0.01,
+            min_value=0.05,
+            format="%.2f",
+            help="Bot reduces size / widens if L1 spread is below this plus fees.",
+        )
+    with d2:
+        config.auto_profile_switching = st.toggle(
+            "Auto profile switching",
+            value=getattr(config, "auto_profile_switching", False),
+            help="When idle, move to a more defensive profile if market stress rises.",
+        )
+    with d3:
+        config.auto_profile_inactivity_minutes = st.number_input(
+            "Auto-switch after idle (min)",
+            value=int(getattr(config, "auto_profile_inactivity_minutes", 120)),
+            step=15,
+            min_value=30,
+        )
 
 
 def _render_account_tab(config: BotConfig, runtime: dict) -> None:
@@ -409,6 +575,11 @@ def _render_account_tab(config: BotConfig, runtime: dict) -> None:
 def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
     st.markdown("### Network")
     config.testnet = st.toggle("Use testnet", value=config.testnet)
+    if not config.testnet:
+        st.error(
+            "**Mainnet selected** — Use a dedicated Bot Account, start with dry-run, and verify "
+            "preflight before live trading."
+        )
     config.xrpl_testnet_rpc_url = st.text_input("Testnet RPC", value=config.xrpl_testnet_rpc_url)
     config.xrpl_mainnet_rpc_url = st.text_input("Mainnet RPC", value=config.xrpl_mainnet_rpc_url)
     private = st.text_input("Private node (optional)", value=config.private_node_url or "")
@@ -447,7 +618,11 @@ def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
     a1, a2, a3 = st.columns(3)
     if a1.button("Clear kill switch"):
         ok, msg = clear_kill_switch()
-        st.success(msg) if ok else st.error(msg)
+        if ok:
+            st.success(msg)
+            st.rerun()
+        else:
+            st.error(msg)
     if a2.button("Cancel all offers"):
         with st.spinner("Cancelling..."):
             ok, msg = cancel_offers_on_ledger()
@@ -563,7 +738,14 @@ def run_gui() -> None:
             st.rerun()
         st.caption(f"Network: **{config.network_name()}**")
 
-    _render_brand_logo()
+    _render_operating_banners(config, runtime)
+
+    logo_col, market_col = st.columns([1.1, 1.9])
+    with logo_col:
+        _render_brand_logo()
+    with market_col:
+        _render_market_conditions_panel(config, runtime)
+
     if not config.bot_account_address:
         st.warning("Set your Bot Account on the **Bot Account** tab, then **Save Config**.")
 
@@ -598,6 +780,7 @@ def run_gui() -> None:
     if save_config_clicked:
         config.active_profile = (config.active_profile or "safe").strip().lower()
         config.save()
+        touch_operator_activity("save_config")
         with st.sidebar:
             st.success("Saved")
         st.rerun()

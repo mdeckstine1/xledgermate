@@ -48,6 +48,11 @@ class KillSwitch:
         }
         self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
+    def reload(self) -> KillSwitchState:
+        """Reload from disk so GUI/CLI clears apply to a running engine."""
+        self._state = self._load()
+        return self._state
+
     def activate(self, reason: str = "Drawdown limit exceeded") -> None:
         self._state = KillSwitchState(
             active=True,
@@ -60,11 +65,34 @@ class KillSwitch:
     def clear(self, reason: str = "Operator reset") -> None:
         self._state = KillSwitchState(active=False, reason=reason, activated_utc=None)
         self._save()
+        self._sync_runtime_state_cleared()
         logger.info("Kill switch cleared: %s", reason)
 
+    def _sync_runtime_state_cleared(self) -> None:
+        """Update GUI snapshot immediately after operator clear."""
+        try:
+            from core.runtime_state import RuntimeStateStore
+
+            store = RuntimeStateStore()
+            state = store.load()
+            if state is None:
+                return
+            state.kill_switch_active = False
+            state.kill_switch_reason = self._state.reason
+            if state.preflight_errors == ["Kill switch is active"]:
+                state.preflight_errors = []
+            if "Kill switch" in (state.preflight_summary or ""):
+                state.preflight_summary = "Preflight pending — next engine cycle."
+            state.last_execution_summary = "Kill switch cleared by operator."
+            store.save(state)
+        except Exception as exc:
+            logger.warning("Could not sync runtime_state after kill clear: %s", exc)
+
     def is_active(self) -> bool:
+        self.reload()
         return self._state.active
 
     @property
     def reason(self) -> str:
+        self.reload()
         return self._state.reason

@@ -31,6 +31,15 @@ class DrawdownMonitor:
         self.current_value = value
         return value
 
+    def reset_baseline(self, value: Optional[float] = None) -> None:
+        """Operator cleared kill switch — restart drawdown from current portfolio."""
+        baseline = value if value is not None else self.current_value
+        if baseline is None:
+            return
+        self.daily_start_value = baseline
+        self.daily_start_time = datetime.utcnow()
+        logger.info("Drawdown baseline reset: %.4f XRP equiv.", baseline)
+
     def get_drawdown_percent(self) -> float:
         if self.daily_start_value is None or self.current_value is None:
             return 0.0

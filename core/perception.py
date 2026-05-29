@@ -14,6 +14,10 @@ class Profile:
     volatility_sensitivity: float = 1.0
     liquidity_sensitivity: float = 1.0
     risk_multiplier: float = 1.0
+    size_multiplier: float = 1.0
+    aggression: float = 1.0
+    inventory_skew_strength: float = 1.0
+    min_spread_floor_pct: float = 0.08
 
 
 @dataclass
@@ -86,35 +90,51 @@ class BotPerception:
 BUILT_IN_PROFILES: Dict[str, Profile] = {
     "safe": Profile(
         name="safe",
-        description="Conservative spreads with lower risk posture.",
-        spread_multiplier=1.2,
-        volatility_sensitivity=1.15,
-        liquidity_sensitivity=1.15,
-        risk_multiplier=0.9,
+        description="Conservative default — wider spreads, smaller size, strong inventory protection.",
+        spread_multiplier=1.25,
+        volatility_sensitivity=1.20,
+        liquidity_sensitivity=1.20,
+        risk_multiplier=0.85,
+        size_multiplier=0.85,
+        aggression=0.65,
+        inventory_skew_strength=1.25,
+        min_spread_floor_pct=0.12,
     ),
     "high_volatility": Profile(
         name="high_volatility",
-        description="Aggressively widen spreads in unstable markets.",
-        spread_multiplier=1.25,
-        volatility_sensitivity=1.35,
-        liquidity_sensitivity=1.0,
-        risk_multiplier=0.8,
+        description="Defensive in unstable markets — widens quickly as volatility rises.",
+        spread_multiplier=1.40,
+        volatility_sensitivity=1.50,
+        liquidity_sensitivity=1.05,
+        risk_multiplier=0.75,
+        size_multiplier=0.70,
+        aggression=0.55,
+        inventory_skew_strength=1.15,
+        min_spread_floor_pct=0.15,
     ),
     "thin_liquidity": Profile(
         name="thin_liquidity",
-        description="Protective widening when top-of-book depth is weak.",
-        spread_multiplier=1.2,
-        volatility_sensitivity=1.0,
-        liquidity_sensitivity=1.4,
-        risk_multiplier=0.85,
+        description="Protective when book depth is weak — reduces size and adverse selection.",
+        spread_multiplier=1.30,
+        volatility_sensitivity=1.05,
+        liquidity_sensitivity=1.55,
+        risk_multiplier=0.80,
+        size_multiplier=0.75,
+        aggression=0.60,
+        inventory_skew_strength=1.20,
+        min_spread_floor_pct=0.14,
     ),
     "tight_spread": Profile(
         name="tight_spread",
-        description="Tighter quoting for strong and stable conditions.",
-        spread_multiplier=0.85,
-        volatility_sensitivity=0.9,
-        liquidity_sensitivity=0.85,
-        risk_multiplier=1.15,
+        description="Competitive when conditions are clearly favorable — not for stress regimes.",
+        spread_multiplier=0.82,
+        volatility_sensitivity=0.85,
+        liquidity_sensitivity=0.80,
+        risk_multiplier=1.10,
+        size_multiplier=1.05,
+        aggression=1.20,
+        inventory_skew_strength=0.90,
+        min_spread_floor_pct=0.06,
     ),
 }
 
@@ -146,5 +166,5 @@ def compute_effective_spreads_pct(
         baseline = base_spread_pct + (level - 1) * level_spread_increment_pct
         adjusted = baseline * profile.spread_multiplier
         adjusted += volatility_component + liquidity_component
-        level_spreads[level] = max(0.01, adjusted)
+        level_spreads[level] = max(profile.min_spread_floor_pct, adjusted)
     return level_spreads

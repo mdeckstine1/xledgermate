@@ -5,6 +5,34 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.2.0] — 2026-05-29 (`mainnet-prep` branch)
+
+**Theme:** Defensive market-making — condition-aware quoting, profile recommendations, and kill-switch reliability.
+
+### Added
+
+- **Market condition assessment** (`core/market_conditions.py`) — Favorable / Neutral / Defensive / Hostile tiers from volatility, liquidity, and book spread; health score and profile recommendation.
+- **Dynamic quote decisions** (`strategy/quote_decision.py`) — Inventory skew, minimum edge guard, adverse-selection (mid momentum), spread/size multipliers per condition.
+- **Enhanced profiles** — Each profile now sets size, aggression, inventory skew strength, and spread floor (not just spread multipliers).
+- **GUI market panel** — Top-of-page indicator: profile, market condition, vol, liquidity, spread; profile recommendation with Apply button.
+- **Operating mode banners** — Clear DRY-RUN / LIVE testnet / MAINNET LIVE labels.
+- **Defensive quoting controls** — Minimum edge %, optional auto profile switching after operator idle time.
+- **“Why these quotes?”** — Dashboard caption from engine decision summary.
+- **Operator activity tracking** — For conservative auto profile switching (`logs/operator_activity.json`).
+
+### Fixed
+
+- **Kill switch clear** — Running engine reloads kill state from disk each cycle; clear syncs `runtime_state.json` and resets drawdown baseline.
+- **GUI Clear kill switch** — Reruns page after successful clear so status updates immediately.
+
+### Changed
+
+- **Order manager** — Uses `QuoteAdjustments` instead of legacy inventory skew helper; per-side spread and size from decision logic.
+- **Runtime state** — Persists market condition fields, recommendation, inventory label, momentum, and quote decision summary for GUI.
+- **Operator manual** — Documents market conditions, defensive controls, and profile recommendation.
+
+---
+
 ## [1.1.0] — 2026-05-28 (`testnet` branch)
 
 **Theme:** Operator-ready testnet — new GUI, funding tools, tax CSV, and ledger fixes.
@@ -54,6 +82,7 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 1. **v1.0.0** — Core bot: engine, quotes, first GUI, testnet connector.  
 2. **Pricing fire drill** — Testnet mid looked like `249000000`; fixed book parsing and killed duplicate engines.  
 3. **Testnet hardening (ffb6054)** — Preflight, kill switch, drawdown, portfolio CSV.  
-4. **v1.1.0 (this release)** — Real operator UX: tabs, logo, fund/send, Telegram, tax CSV, trust line, and everything above.
+4. **v1.1.0** — Real operator UX: tabs, logo, fund/send, Telegram, tax CSV, trust line, and everything above.  
+5. **v1.2.0 (mainnet-prep)** — Defensive MM decision logic, market conditions GUI, auto profile switching, kill-switch fix.
 
-**Next likely step:** Soak test on testnet (small live size), then a `mainnet-prep` branch.
+**Next likely step:** Ledger-accurate fill tracking, mainnet enablement gate, then mainnet dry-run soak.

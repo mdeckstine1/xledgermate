@@ -1,6 +1,6 @@
 # XLedgerMate — Plain-English Operator Manual
 
-*Version 1.1.0 · For humans who remember when “save” meant a floppy disk*
+*Version 1.2.0 · For humans who remember when “save” meant a floppy disk*
 
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
@@ -30,6 +30,32 @@ If the browser does not open, type that address in Chrome or Edge yourself.
 
 ---
 
+## Banner at the top (read this first)
+
+When the engine is running, a colored banner tells you the mode:
+
+| Banner | Meaning |
+|--------|---------|
+| **Blue — DRY-RUN** | Rehearsal only. No orders hit the ledger. **Recommended default.** |
+| **Yellow — LIVE on TESTNET** | Real testnet orders (play money). |
+| **Red — MAINNET LIVE TRADING** | Real funds. Only use when you mean it. |
+
+---
+
+## Market conditions (top of the page)
+
+To the right of the logo you will see **Market conditions** — how the bot reads the book *right now*:
+
+- **Profile** — Which risk posture is active (`Safe`, `Thin liq`, etc.).
+- **Market** — Favorable, Neutral, Defensive, or Hostile (color-coded).
+- **Vol / Liq / Spread** — Volatility level, liquidity score, and how wide the book is.
+- **Health score** — 0–100 summary in the caption below (higher = nicer for quoting).
+- **Profile recommendation** — Suggested profile for current conditions. Green check if it matches yours; otherwise use **Apply** to switch (then **Save Config** is not required — Apply saves for you).
+
+The Dashboard also shows **Why these quotes?** when the engine explains its spread/size choices (e.g. “defensive market → wider + smaller”).
+
+---
+
 ## The control panel — five tabs
 
 Think of it like five drawers in a desk.
@@ -55,6 +81,12 @@ Turn **Live refresh (5s)** on in the left sidebar if you want numbers to update 
 - **Base spread & refresh time** — How wide the prices are and how often the bot rearranges offers.
 - **Dry run** — Leave **ON** until you deliberately want real testnet orders.
 - **Trading enabled** — Master switch; off means the bot thinks but does not trade.
+
+**Defensive quoting** (same tab):
+
+- **Minimum edge L1 (%)** — Bot widens and shrinks if the spread is too thin to cover fees comfortably.
+- **Auto profile switching** — Off by default. When on, moves to a *more defensive* profile only after you have been idle (no Save Config / Apply) and conditions worsen. Never auto-switches to aggressive `Tight spread`.
+- **Auto-switch after idle (min)** — How long you must leave it alone before auto-switch can fire (default 120 min).
 
 After changing anything important: click **Save Config** in the sidebar.
 
@@ -89,6 +121,8 @@ After changing anything important: click **Save Config** in the sidebar.
 | **Preflight** | Bot’s checklist before it quotes: enough money? trust line? sane price? |
 | **Kill switch** | Bot hit the panic wire (often drawdown). Stops trading until you clear it. |
 | **Trust line** | Permission slip to hold RLUSD in that wallet. |
+| **Market condition** | Bot’s read of the book: Favorable → Hostile. Defensive = widen and shrink. |
+| **Profile** | Named risk posture (`safe`, `thin_liquidity`, etc.). Drives spreads and size. |
 
 ---
 
@@ -112,7 +146,7 @@ After changing anything important: click **Save Config** in the sidebar.
 | Bot says STOPPED | Click **Start Bot**. Check address/secret saved. |
 | RLUSD is 0 | Normal until faucet pays you after trust line exists. |
 | Price looks insane (millions) | Stop Bot → Start Bot again (kills stale engines). |
-| Kill switch active | Advanced tab → **Clear kill switch** after you understand why it fired. |
+| Kill switch active | Advanced tab → **Clear kill switch** after you understand why it fired. Page refreshes; drawdown baseline resets on next cycle. |
 | “Preflight failed” | Read the red/yellow messages; usually trust line, zero sizes, or no mid price. |
 
 **Emergency stop** (Advanced) — Disables trading, stops engine, sets kill switch, cancels offers (if not dry-run). Use when you want everything off *now*.
@@ -130,6 +164,7 @@ All in the `logs` folder (created automatically):
 | `transfers.csv` | When you used **Send out**. |
 | `decisions.jsonl` | Bot diary (technical). |
 | `runtime_state.json` | Current snapshot for the GUI. |
+| `operator_activity.json` | Last time you saved config or applied a profile (for auto-switch idle timer). |
 
 Dry-run does **not** log fake buys/sells to the tax CSV. Live testnet does.
 
@@ -149,7 +184,7 @@ Leave “notify each cycle” off unless you enjoy constant buzzing.
 
 ## Version & history
 
-- Current version: **1.1.0** (see `VERSION` file).
+- Current version: **1.2.0** (see `VERSION` file).
 - What changed release-by-release: **`CHANGELOG.md`** in the project folder.
 
 ---

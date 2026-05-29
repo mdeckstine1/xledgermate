@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import List, Optional
 
 from config.settings import BotConfig
 from core.runtime_state import QuoteIntent
-from risk.inventory import InventorySkew
+from strategy.quote_decision import QuoteAdjustments
 
 
 @dataclass
@@ -19,28 +19,24 @@ class OrderManager:
 
     def __init__(self, config: BotConfig) -> None:
         self.config = config
-        self.inventory_skew = InventorySkew(target_xrp_ratio=config.inventory_target_xrp_ratio)
 
     def build_quotes(
         self,
         *,
         mid_price: float,
-        spreads_pct: Dict[int, float],
+        spreads_pct: dict[int, float],
         xrp_balance: float,
         rlusd_balance: float,
+        adjustments: Optional[QuoteAdjustments] = None,
     ) -> QuotePlan:
         if mid_price <= 0:
             return QuotePlan(intents=[], reason="No valid mid price; skipping quote generation.")
 
+        adj = adjustments or QuoteAdjustments()
         spendable_xrp = max(0.0, xrp_balance - self.config.xrp_reserve)
         min_size = max(0.0, self.config.min_order_size_xrp)
         risk_cap = max(min_size, self.config.risk_capital_xrp)
 
-        total_value = xrp_balance + (rlusd_balance / mid_price if mid_price > 0 else 0.0)
-        xrp_ratio = xrp_balance / total_value if total_value > 0 else 1.0
-        skew = self.inventory_skew.get_skew_factor(xrp_ratio)
-
-        # Bids buy XRP (lock RLUSD). Asks sell XRP (lock XRP).
         bid_budget_rlusd = rlusd_balance
         ask_budget_xrp = min(spendable_xrp, risk_cap)
         quote_bids = not self.config.fund_with_xrp_only or rlusd_balance > min_size
@@ -56,16 +52,19 @@ class OrderManager:
                 skipped += 1
                 continue
 
-            spread = spreads_pct.get(level, self.config.base_spread * 100.0) / 100.0
-            size = min(configured_size, risk_cap)
+            spread_base = spreads_pct.get(level, self.config.base_spread * 100.0) / 100.0
+            side_scale = 1.0 / max(1, level)
+            bid_spread = spread_base + (adj.bid_spread_add_pct * side_scale) / 100.0
+            ask_spread = spread_base + (adj.ask_spread_add_pct * side_scale) / 100.0
 
-            bid_size = size * skew if self.inventory_skew.should_increase_ask_size(xrp_ratio) else size
-            ask_size = size / skew if not self.inventory_skew.should_increase_ask_size(xrp_ratio) else size
+            size = min(configured_size, risk_cap) * adj.size_multiplier
+            bid_size = size * adj.bid_size_multiplier
+            ask_size = size * adj.ask_size_multiplier
 
-            bid_price = mid_price * (1.0 - spread)
-            ask_price = mid_price * (1.0 + spread)
+            bid_price = mid_price * (1.0 - bid_spread)
+            ask_price = mid_price * (1.0 + ask_spread)
 
-            if quote_bids and bid_size >= min_size:
+            if quote_bids and not adj.pause_bids and bid_size >= min_size:
                 bid_rlusd_needed = bid_size * bid_price
                 if bid_rlusd_needed <= bid_budget_rlusd:
                     intents.append(
@@ -75,12 +74,14 @@ class OrderManager:
                     bid_levels += 1
                 else:
                     skipped += 1
-            elif quote_bids:
+            elif quote_bids and not adj.pause_bids:
+                skipped += 1
+            elif quote_bids and adj.pause_bids:
                 skipped += 1
             else:
                 skipped += 1
 
-            if ask_size >= min_size:
+            if not adj.pause_asks and ask_size >= min_size:
                 remaining_asks = max(1, self.config.order_levels - ask_levels)
                 capped_ask = min(ask_size, ask_budget_xrp / remaining_asks)
                 if capped_ask >= min_size:
@@ -91,17 +92,23 @@ class OrderManager:
                     ask_levels += 1
                 else:
                     skipped += 1
+            elif adj.pause_asks:
+                skipped += 1
             else:
                 skipped += 1
 
         mode = "XRP-funded (asks/sell XRP)" if self.config.fund_with_xrp_only else "two-sided"
         note = (
             f"Generated {len(intents)} quotes ({mode}) from mid={mid_price:.6f} "
-            f"RLUSD/XRP skew={skew:.3f}"
+            f"RLUSD/XRP | inventory={adj.inventory_label}"
         )
+        if adj.decision_summary:
+            note += f" | {adj.decision_summary}"
         if skipped:
-            note += f" ({skipped} legs skipped: size/balance/reserve)"
+            note += f" ({skipped} legs skipped: size/balance/reserve/pause)"
         if self.config.fund_with_xrp_only and bid_levels == 0 and ask_levels > 0:
             note += " | bids off until you hold RLUSD"
+        if not adj.min_edge_met:
+            note += " | min-edge guard active"
 
         return QuotePlan(intents=intents, reason=note)

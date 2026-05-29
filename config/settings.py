@@ -44,6 +44,9 @@ class BotConfig:
     min_drawdown_percent: float = 2.0
     max_drawdown_percent: float = 5.0
     inventory_target_xrp_ratio: float = 0.55   # Slightly XRP-heavy (supports your $27 thesis)
+    min_edge_pct: float = 0.10                 # Minimum L1 spread % before reducing size
+    auto_profile_switching: bool = False       # Auto-move to defensive profile when idle + stress
+    auto_profile_inactivity_minutes: int = 120
 
     # === AUTO ROLLOVER (risk capital rule) ===
     auto_rollover_enabled: bool = True

@@ -55,6 +55,19 @@ class RuntimeState:
     engine_pid: Optional[int] = None
     price_source: str = "xrpl_book_offers"
     price_history: List[Dict[str, Any]] = field(default_factory=list)
+    # Market conditions + decision transparency
+    market_condition: str = "neutral"
+    market_condition_label: str = "Neutral"
+    volatility_level: str = "moderate"
+    liquidity_level: str = "moderate"
+    book_spread_pct: float = 0.0
+    book_spread_status: str = "unknown"
+    market_health_score: float = 0.0
+    recommended_profile: str = "safe"
+    recommendation_reason: str = ""
+    quote_decision_summary: str = ""
+    inventory_label: str = "balanced"
+    mid_momentum_pct: float = 0.0
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -116,6 +129,18 @@ class RuntimeStateStore:
             engine_pid=data.get("engine_pid"),
             price_source=str(data.get("price_source", "xrpl_book_offers")),
             price_history=list(data.get("price_history", [])),
+            market_condition=str(data.get("market_condition", "neutral")),
+            market_condition_label=str(data.get("market_condition_label", "Neutral")),
+            volatility_level=str(data.get("volatility_level", "moderate")),
+            liquidity_level=str(data.get("liquidity_level", "moderate")),
+            book_spread_pct=float(data.get("book_spread_pct", 0.0)),
+            book_spread_status=str(data.get("book_spread_status", "unknown")),
+            market_health_score=float(data.get("market_health_score", 0.0)),
+            recommended_profile=str(data.get("recommended_profile", "safe")),
+            recommendation_reason=str(data.get("recommendation_reason", "")),
+            quote_decision_summary=str(data.get("quote_decision_summary", "")),
+            inventory_label=str(data.get("inventory_label", "balanced")),
+            mid_momentum_pct=float(data.get("mid_momentum_pct", 0.0)),
             recent_decisions=list(data.get("recent_decisions", [])),
             last_error=data.get("last_error"),
             updated_utc=data.get("updated_utc"),
