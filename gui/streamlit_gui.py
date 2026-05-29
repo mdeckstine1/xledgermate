@@ -31,6 +31,13 @@ logger = logging.getLogger(__name__)
 RUNTIME_STATE_PATH = Path("logs/runtime_state.json")
 LOGO_PATH = Path(__file__).resolve().parent.parent / "Xledermate.jpg"
 
+PROFILE_LABELS = {
+    "safe": "Safe",
+    "high_volatility": "High volatility",
+    "thin_liquidity": "Thin liquidity",
+    "tight_spread": "Tight spread",
+}
+
 try:
     _fragment = st.fragment
 except AttributeError:  # pragma: no cover - older Streamlit
@@ -97,7 +104,7 @@ def _quote_table(intents: List[dict]) -> pd.DataFrame:
         row = rows.setdefault(level, {"Level": f"L{level}"})
         side = str(q.get("side", "")).lower()
         price = float(q.get("price", 0))
-        size = float(q.get("size", 0))
+        size = float(q.get("size_xrp", q.get("size", 0)))
         if side == "bid":
             row["Bid price"] = f"{price:.6f}"
             row["Bid size (XRP)"] = f"{size:.2f}"
@@ -107,6 +114,23 @@ def _quote_table(intents: List[dict]) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=["Level", "Bid price", "Bid size (XRP)", "Ask price", "Ask size (XRP)"])
     return pd.DataFrame([rows[k] for k in sorted(rows.keys())])
+
+
+def _open_offers_table(offers: List[dict]) -> pd.DataFrame:
+    columns = ["Side", "Price (RLUSD/XRP)", "Size (XRP)", "Offer seq"]
+    if not offers:
+        return pd.DataFrame(columns=columns)
+    rows = []
+    for offer in offers:
+        rows.append(
+            {
+                "Side": str(offer.get("side", "")).upper(),
+                "Price (RLUSD/XRP)": f"{float(offer.get('price', 0)):.6f}",
+                "Size (XRP)": f"{float(offer.get('size_xrp', 0)):.2f}",
+                "Offer seq": int(offer.get("sequence", 0)),
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def _render_header(config: BotConfig, runtime: dict, engine_running: bool) -> None:
@@ -123,8 +147,10 @@ def _render_header(config: BotConfig, runtime: dict, engine_running: bool) -> No
     h5.metric("RLUSD", _fmt_rlusd_balance(runtime.get("balance_rlusd")))
     delta_color = "normal" if pnl == 0 else ("normal" if pnl > 0 else "inverse")
     h6.metric("Session P&L", f"{pnl:+.4f}", help="XRP equiv.", delta_color=delta_color)
+    profile = runtime.get("active_profile") or config.active_profile
+    profile_label = PROFILE_LABELS.get(str(profile), str(profile))
     st.caption(
-        f"{config.network_name().upper()} · {config.active_profile} · "
+        f"{config.network_name().upper()} · {profile_label} · "
         f"Updated {runtime.get('updated_utc', 'n/a')}"
     )
 
@@ -166,7 +192,20 @@ def _update_live_dashboard(config: BotConfig) -> None:
     p2.metric("Mid", _fmt_price(mid_raw, 6))
     p3.metric("Best ask", _fmt_price(ask, 6))
 
-    st.markdown("### Quote ladder (current cycle)")
+    st.markdown("### Open offers on ledger")
+    ledger_offers = runtime.get("open_offers") or []
+    count = int(runtime.get("open_offers_count", len(ledger_offers)))
+    if ledger_offers:
+        st.dataframe(_open_offers_table(ledger_offers), use_container_width=True, hide_index=True)
+    elif count > 0:
+        st.info(f"{count} open offer(s) on ledger — detail appears on the next engine cycle.")
+    elif dry:
+        st.caption("Dry-run: no offers on the ledger.")
+    else:
+        st.caption("No open offers right now.")
+
+    st.markdown("### Quote ladder (planned this cycle)")
+    st.caption("What the bot intended to post; may differ briefly right after a refresh.")
     intents = runtime.get("quote_intents", [])
     st.dataframe(_quote_table(intents), use_container_width=True, hide_index=True)
 
@@ -181,8 +220,13 @@ def _update_live_dashboard(config: BotConfig) -> None:
 @_fragment(run_every=timedelta(seconds=5))
 def _live_dashboard_fragment() -> None:
     panel = st.session_state.get("_dash_live_panel")
-    cfg = st.session_state.get("_dash_config")
-    if panel is None or cfg is None:
+    if panel is None:
+        return
+    try:
+        cfg = _load_config()
+    except TypeError:
+        cfg = st.session_state.get("_dash_config")
+    if cfg is None:
         return
     with panel.container():
         _update_live_dashboard(cfg)
@@ -257,8 +301,15 @@ def _render_controls_tab(config: BotConfig) -> None:
         )
     with s3:
         profile_names = list(BUILT_IN_PROFILES.keys())
-        idx = profile_names.index(config.active_profile) if config.active_profile in profile_names else 0
-        config.active_profile = st.selectbox("Active profile", profile_names, index=idx)
+        current = (config.active_profile or "safe").strip().lower()
+        idx = profile_names.index(current) if current in profile_names else 0
+        config.active_profile = st.selectbox(
+            "Active profile",
+            profile_names,
+            index=idx,
+            format_func=lambda key: PROFILE_LABELS.get(key, key),
+            help="Saved to config when you click Save Config (after all tabs load).",
+        )
 
     st.markdown("### Risk & execution flags")
     r1, r2, r3 = st.columns(3)
@@ -500,9 +551,7 @@ def run_gui() -> None:
 
     with st.sidebar:
         _render_brand_logo(sidebar=True)
-        if st.button("Save Config", type="primary", use_container_width=True):
-            config.save()
-            st.success("Saved")
+        save_config_clicked = st.button("Save Config", type="primary", use_container_width=True)
         st.divider()
         auto_refresh = st.toggle(
             "Live refresh (5s)",
@@ -545,6 +594,13 @@ def run_gui() -> None:
 
     with tab_hist:
         _render_history_tab(config, runtime)
+
+    if save_config_clicked:
+        config.active_profile = (config.active_profile or "safe").strip().lower()
+        config.save()
+        with st.sidebar:
+            st.success("Saved")
+        st.rerun()
 
 
 if __name__ == "__main__":

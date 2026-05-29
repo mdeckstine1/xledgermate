@@ -209,7 +209,6 @@ class TradingEngine:
                 quote_plan = None
                 if not preflight.ready:
                     self.decision_log.add("quotes", "Skipped — preflight not ready.")
-            open_offers = await connector.get_open_offers()
             if (
                 quote_plan
                 and quote_plan.intents
@@ -218,6 +217,7 @@ class TradingEngine:
                 and preflight.ready
             ):
                 placed_count = await self._refresh_orders(quote_plan.intents)
+            open_offers = await connector.get_open_offers()
             if self._session_baseline_xrp is None:
                 self._session_baseline_xrp = balance_xrp
                 self._session_baseline_rlusd = rlusd_balance
@@ -244,7 +244,7 @@ class TradingEngine:
                 config=config,
                 balance_xrp=balance_xrp,
                 balance_rlusd=rlusd_balance,
-                open_offers_count=len(open_offers),
+                open_offers=open_offers,
                 quote_intents=quote_plan.intents if quote_plan else [],
                 placed_count=placed_count,
                 execution_summary=execution_summary,
@@ -443,7 +443,7 @@ class TradingEngine:
         config: BotConfig,
         balance_xrp: float,
         balance_rlusd: float,
-        open_offers_count: int,
+        open_offers: List[Any],
         quote_intents: List[QuoteIntent],
         placed_count: int,
         execution_summary: str,
@@ -496,7 +496,16 @@ class TradingEngine:
             effective_spreads_pct=perception.effective_spreads_pct,
             balance_xrp=balance_xrp,
             balance_rlusd=balance_rlusd,
-            open_offers_count=open_offers_count,
+            open_offers_count=len(open_offers),
+            open_offers=[
+                {
+                    "sequence": int(o.sequence),
+                    "side": str(o.side),
+                    "price": float(o.price),
+                    "size_xrp": float(o.size_xrp),
+                }
+                for o in open_offers
+            ],
             cycle_count=self._cycle_count,
             offers_placed_last_cycle=placed_count,
             last_execution_summary=execution_summary,

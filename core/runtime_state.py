@@ -41,6 +41,7 @@ class RuntimeState:
     balance_xrp: float = 0.0
     balance_rlusd: float = 0.0
     open_offers_count: int = 0
+    open_offers: List[Dict[str, Any]] = field(default_factory=list)
     cycle_count: int = 0
     offers_placed_last_cycle: int = 0
     last_execution_summary: str = ""
@@ -104,6 +105,7 @@ class RuntimeStateStore:
             balance_xrp=float(data.get("balance_xrp", 0.0)),
             balance_rlusd=float(data.get("balance_rlusd", 0.0)),
             open_offers_count=int(data.get("open_offers_count", 0)),
+            open_offers=list(data.get("open_offers", [])),
             cycle_count=int(data.get("cycle_count", 0)),
             offers_placed_last_cycle=int(data.get("offers_placed_last_cycle", 0)),
             last_execution_summary=str(data.get("last_execution_summary", "")),
