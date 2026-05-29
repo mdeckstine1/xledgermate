@@ -1,6 +1,6 @@
 # XLedgerMate — Plain-English Operator Manual
 
-*Version 1.3.3 · For humans who remember when “save” meant a floppy disk*
+*Version 1.3.5 · For humans who remember when “save” meant a floppy disk*
 
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
@@ -50,7 +50,7 @@ To the right of the logo you will see **Market conditions** — how the bot read
 - **Market** — Favorable, Neutral, Defensive, or Hostile (color-coded).
 - **Vol / Liq / Spread** — Volatility level, liquidity score, and how wide the book is.
 - **Health score** — 0–100 summary in the caption below (higher = nicer for quoting).
-- **Profile recommendation** — Suggested profile for current conditions. Green check if it matches yours; otherwise use **Apply** to switch (then **Save Config** is not required — Apply saves for you).
+- **Suggested profile** — e.g. **Profit mode** when volatility is low, liquidity is high, and the book is tight; **Tight spread** for favorable but not ideal books. Green check if it matches your active profile; otherwise use **Apply** (no separate Save Config needed).
 
 The Dashboard also shows **Why these quotes?** when the engine explains its spread/size choices (e.g. “defensive market → wider + smaller”).
 
@@ -71,7 +71,12 @@ You will see:
 - **Green “RUNNING”** or stopped status.
 - **Balances** — XRP on top, RLUSD underneath in smaller text.
 - **Prices** — Bid / mid / ask (how much RLUSD per 1 XRP).
+- **Session MTM P&L** — Change in total portfolio value (XRP + RLUSD at mid) since this engine run. **Matches the portfolio number in the cycle log.**
+- **Balance Δ P&L** — Change from wallet balances only (fills, fees), ignoring mid price moves on RLUSD you already hold.
 - **Quote ladder** — The three levels the bot *wants* to post.
+
+**Session P&L — why two numbers?**  
+Portfolio can rise when **mid moves** even if you did not trade (common when you are XRP-heavy and RLUSD/XRP mid dips). **Session MTM P&L** includes that. **Balance Δ P&L** stays near zero until a fill or fee changes XRP/RLUSD balances. Both reset when you restart the engine.
 
 Turn **Live refresh (5s)** on in the left sidebar if you want numbers to update automatically.
 
@@ -106,8 +111,11 @@ After changing anything important: click **Save Config** in the sidebar.
 
 ### History (charts and diary)
 
-- Price chart over time (one point per engine cycle, ~60s apart). Turn on **Live refresh (5s)** in the sidebar so this tab updates while the bot runs.
+- **Session statistics (live)** — Same portfolio, P&L, drawdown, vol, and liquidity as the engine; refreshes every **5s** with **Live refresh** on (same as Dashboard). Includes a **portfolio value** chart from `logs/portfolio_snapshots.csv`.
+- Price chart over time (one point per engine cycle, ~60s apart).
 - Recent **decisions** — what the bot was thinking.
+
+If numbers look frozen, confirm **Live refresh (5s)** is on and check **Engine state updated** under the metrics. After an engine restart, **Session MTM P&L** starts at **0** until mid or balances move.
 
 ---
 

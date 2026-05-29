@@ -47,6 +47,10 @@ class RuntimeState:
     last_execution_summary: str = ""
     session_baseline_xrp: Optional[float] = None
     session_baseline_rlusd: Optional[float] = None
+    session_baseline_mid: Optional[float] = None
+    session_baseline_portfolio_xrp: Optional[float] = None
+    session_pnl_mtm_xrp: float = 0.0
+    session_pnl_balance_xrp: float = 0.0
     session_pnl_xrp_estimate: float = 0.0
     quote_intents: List[QuoteIntent] = field(default_factory=list)
     recent_decisions: List[Dict[str, str]] = field(default_factory=list)
@@ -93,6 +97,16 @@ class RuntimeState:
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+def _load_session_pnl_mtm(data: Dict[str, Any]) -> float:
+    if "session_pnl_mtm_xrp" in data:
+        return float(data["session_pnl_mtm_xrp"])
+    baseline_port = data.get("session_baseline_portfolio_xrp")
+    port = data.get("portfolio_value_xrp")
+    if baseline_port is not None and port is not None:
+        return float(port) - float(baseline_port)
+    return float(data.get("session_pnl_xrp_estimate", 0.0))
 
 
 class RuntimeStateStore:
@@ -143,7 +157,18 @@ class RuntimeStateStore:
             last_execution_summary=str(data.get("last_execution_summary", "")),
             session_baseline_xrp=data.get("session_baseline_xrp"),
             session_baseline_rlusd=data.get("session_baseline_rlusd"),
-            session_pnl_xrp_estimate=float(data.get("session_pnl_xrp_estimate", 0.0)),
+            session_baseline_mid=data.get("session_baseline_mid"),
+            session_baseline_portfolio_xrp=data.get("session_baseline_portfolio_xrp"),
+            session_pnl_mtm_xrp=_load_session_pnl_mtm(data),
+            session_pnl_balance_xrp=float(
+                data.get(
+                    "session_pnl_balance_xrp",
+                    data.get("session_pnl_xrp_estimate", 0.0),
+                )
+            ),
+            session_pnl_xrp_estimate=float(
+                data.get("session_pnl_xrp_estimate", _load_session_pnl_mtm(data))
+            ),
             quote_intents=intents,
             engine_pid=data.get("engine_pid"),
             price_source=str(data.get("price_source", "xrpl_book_offers")),

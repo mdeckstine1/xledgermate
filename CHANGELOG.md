@@ -5,6 +5,36 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.3.5] — 2026-05-29 (`mainnet-live`)
+
+**Theme:** `profit_mode` profile for calm, liquid markets.
+
+### Added
+
+- **`profit_mode` profile** — Tighter spreads, larger size, lower min edge than `tight_spread`; growth-oriented when conditions are ideal.
+- **Profile recommendation** — Suggests `profit_mode` when market is favorable with low vol, high liquidity, and a tight book.
+- **GUI** — “Suggested profile” panel wording; `profit_mode` in profile selector.
+
+---
+
+## [1.3.4] — 2026-05-29 (`mainnet-live`)
+
+**Theme:** Session P&L clarity — MTM aligned with cycle log portfolio.
+
+### Added
+
+- **Session MTM P&L** — Mark-to-market since engine start (`session_baseline_portfolio_xrp` + `session_pnl_mtm_xrp`).
+- **Balance Δ P&L** — Wallet balance change only (`session_pnl_balance_xrp`); labeled separately in GUI.
+- **`docs/STRATEGY_MANUAL.md`** — Decision stack, inventory vs defensive logic, session accounting.
+- **Tests** — `tests/test_session_pnl.py`.
+
+### Changed
+
+- **GUI** — Header and Dashboard show both P&L metrics with tooltips; History tab shows session start portfolio.
+- **`session_pnl_xrp_estimate`** — Now mirrors MTM P&L for backward compatibility.
+
+---
+
 ## [1.3.3] — 2026-05-29 (`mainnet-live`)
 
 **Theme:** Live spread-check stability — bid touch boundary and GUI false failures.

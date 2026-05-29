@@ -1,4 +1,9 @@
-from core.market_conditions import assess_market_conditions, recommend_profile, CONDITION_DEFENSIVE
+from core.market_conditions import (
+    CONDITION_DEFENSIVE,
+    assess_market_conditions,
+    ideal_for_profit_mode,
+    recommend_profile,
+)
 
 
 def test_recommend_safe_on_hostile() -> None:
@@ -30,3 +35,42 @@ def test_defensive_on_high_vol() -> None:
         active_profile="tight_spread",
     )
     assert a.condition in (CONDITION_DEFENSIVE, "hostile")
+
+
+def test_recommend_profit_mode_on_ideal_book() -> None:
+    assert ideal_for_profit_mode(
+        condition="favorable",
+        volatility_level="low",
+        liquidity_level="high",
+        book_spread_status="tight",
+    )
+    profile, reason = recommend_profile(
+        condition="favorable",
+        volatility_level="low",
+        liquidity_level="high",
+        book_spread_status="tight",
+    )
+    assert profile == "profit_mode"
+    assert "tight spread" in reason.lower()
+
+
+def test_favorable_moderate_vol_recommends_tight_spread_not_profit() -> None:
+    profile, _ = recommend_profile(
+        condition="favorable",
+        volatility_level="moderate",
+        liquidity_level="high",
+        book_spread_status="tight",
+    )
+    assert profile == "tight_spread"
+
+
+def test_profit_mode_profile_exists_and_is_aggressive() -> None:
+    from core.perception import BUILT_IN_PROFILES, get_profile
+
+    assert "profit_mode" in BUILT_IN_PROFILES
+    profit = get_profile("profit_mode")
+    tight = get_profile("tight_spread")
+    assert profit.spread_multiplier < tight.spread_multiplier
+    assert profit.size_multiplier > tight.size_multiplier
+    assert profit.min_edge_pct < tight.min_edge_pct
+    assert profit.aggression > tight.aggression

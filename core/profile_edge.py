@@ -9,6 +9,7 @@ _PROFILE_MIN_EDGE_BY_NAME: dict[str, float] = {
     "high_volatility": 0.13,
     "thin_liquidity": 0.11,
     "tight_spread": 0.08,
+    "profit_mode": 0.05,
 }
 
 

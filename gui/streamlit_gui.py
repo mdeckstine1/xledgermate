@@ -45,6 +45,7 @@ PROFILE_LABELS = {
     "high_volatility": "High volatility",
     "thin_liquidity": "Thin liquidity",
     "tight_spread": "Tight spread",
+    "profit_mode": "Profit mode",
 }
 
 PROFILE_SHORT = {
@@ -52,6 +53,7 @@ PROFILE_SHORT = {
     "high_volatility": "High vol",
     "thin_liquidity": "Thin liq",
     "tight_spread": "Tight",
+    "profit_mode": "Profit",
 }
 
 SPREAD_SHORT = {
@@ -160,6 +162,60 @@ def _fmt_xrp_balance(value: Any) -> str:
 
 def _fmt_rlusd_balance(value: Any) -> str:
     return f"{float(value or 0):,.4f}"
+
+
+_SESSION_MTM_HELP = (
+    "Mark-to-market since this engine run — matches cycle log portfolio "
+    "(includes mid price moves on RLUSD)."
+)
+_SESSION_BALANCE_PNL_HELP = (
+    "Wallet balance change only, both legs at current mid — fees and fills, "
+    "not mid revaluation."
+)
+
+
+def _runtime_updated_age_seconds(runtime: dict) -> Optional[float]:
+    raw = runtime.get("updated_utc")
+    if not raw:
+        return None
+    try:
+        ts = pd.Timestamp(raw)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        return (pd.Timestamp.now(tz="UTC") - ts).total_seconds()
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_portfolio_snapshots(limit: int = 180) -> pd.DataFrame:
+    path = Path("logs/portfolio_snapshots.csv")
+    if not path.is_file():
+        return pd.DataFrame()
+    try:
+        df = pd.read_csv(path)
+    except (OSError, pd.errors.EmptyDataError, ValueError):
+        return pd.DataFrame()
+    if df.empty or "portfolio_xrp_equiv" not in df.columns:
+        return df
+    return df.tail(limit)
+
+
+def _session_pnl_from_runtime(runtime: dict) -> tuple[float, float]:
+    """Return (session_mtm_pnl, session_balance_pnl) in XRP equivalent."""
+    port = runtime.get("portfolio_value_xrp")
+    baseline_port = runtime.get("session_baseline_portfolio_xrp")
+    if runtime.get("session_pnl_mtm_xrp") is not None:
+        mtm = float(runtime["session_pnl_mtm_xrp"])
+    elif port is not None and baseline_port is not None:
+        mtm = float(port) - float(baseline_port)
+    else:
+        mtm = float(runtime.get("session_pnl_xrp_estimate", 0.0))
+
+    if runtime.get("session_pnl_balance_xrp") is not None:
+        balance = float(runtime["session_pnl_balance_xrp"])
+    else:
+        balance = float(runtime.get("session_pnl_xrp_estimate", 0.0))
+    return mtm, balance
 
 
 def _render_balance_card(column: Any, runtime: dict) -> None:
@@ -495,15 +551,15 @@ def _render_market_conditions_panel(config: BotConfig, runtime: dict) -> None:
     active = runtime.get("active_profile") or config.active_profile
     active_label = PROFILE_LABELS.get(str(active), str(active))
 
-    st.markdown("#### Profile recommendation")
+    st.markdown("#### Suggested profile")
+    reason = assessment.get("recommendation_reason", "")
     if rec and str(rec) == str(active):
-        st.success(f"**{rec_label}** — matches current conditions.")
-        st.caption(assessment.get("recommendation_reason", ""))
+        st.success(f"**Recommended: {rec_label}** — matches your active profile.")
+        st.caption(reason)
     elif rec:
-        st.markdown(f"**Suggested:** {rec_label}")
-        st.caption(
-            f"Active: {active_label}. {assessment.get('recommendation_reason', '')}"
-        )
+        st.markdown(f"**Recommended: {rec_label}**")
+        st.caption(reason)
+        st.caption(f"Active profile: **{active_label}**.")
         if st.button(f"Apply {PROFILE_SHORT.get(str(rec), rec_label)}", key="apply_recommended_profile"):
             config.active_profile = str(rec).strip().lower()
             _persist_config(config)
@@ -515,18 +571,28 @@ def _render_market_conditions_panel(config: BotConfig, runtime: dict) -> None:
 
 def _render_header(config: BotConfig, runtime: dict, engine_running: bool) -> None:
     mid = runtime.get("mid_price")
-    pnl = float(runtime.get("session_pnl_xrp_estimate", 0.0))
+    pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime)
     dry = runtime.get("dry_run", config.dry_run)
 
-    h1, h2, h3, h4, h5, h6 = st.columns([1.2, 1, 1, 1, 1, 1])
+    h1, h2, h3, h4, h5, h6, h7 = st.columns([1.2, 0.9, 0.9, 0.9, 0.9, 1, 1])
     status = "RUNNING" if engine_running else "STOPPED"
     h1.markdown(f"**Bot** :{'green' if engine_running else 'orange'}[{status}]")
     h2.markdown(f"**Mode** {'DRY-RUN' if dry else 'LIVE'}")
     h3.metric("Mid", _fmt_price(mid) if mid else "—", help="RLUSD per XRP")
     h4.metric("XRP", _fmt_xrp_balance(runtime.get("balance_xrp")))
     h5.metric("RLUSD", _fmt_rlusd_balance(runtime.get("balance_rlusd")))
-    delta_color = "normal" if pnl == 0 else ("normal" if pnl > 0 else "inverse")
-    h6.metric("Session P&L", f"{pnl:+.4f}", help="XRP equiv.", delta_color=delta_color)
+    delta_color = "normal" if pnl_mtm == 0 else ("normal" if pnl_mtm > 0 else "inverse")
+    h6.metric(
+        "Session MTM P&L",
+        f"{pnl_mtm:+.4f}",
+        help=_SESSION_MTM_HELP,
+        delta_color=delta_color,
+    )
+    h7.metric(
+        "Balance Δ P&L",
+        f"{pnl_balance:+.4f}",
+        help=_SESSION_BALANCE_PNL_HELP,
+    )
     profile = runtime.get("active_profile") or config.active_profile
     profile_label = PROFILE_LABELS.get(str(profile), str(profile))
     st.caption(
@@ -535,21 +601,98 @@ def _render_header(config: BotConfig, runtime: dict, engine_running: bool) -> No
     )
 
 
-def _update_live_dashboard(config: BotConfig) -> None:
+def _render_session_statistics(runtime: dict, *, show_portfolio_chart: bool = False) -> None:
+    """Live session metrics — same numbers as cycle log portfolio / engine state."""
+    pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime)
+    port = float(runtime.get("portfolio_value_xrp", 0))
+    vol = float(runtime.get("volatility_pct", 0))
+    liq = float(runtime.get("liquidity_score", 0))
+    dd = float(runtime.get("drawdown_pct", 0))
+
+    st.markdown("### Session statistics (live)")
+    s1, s2, s3, s4, s5, s6 = st.columns(6)
+    s1.metric(
+        "Portfolio (XRP equiv.)",
+        f"{port:.4f}",
+        delta=f"{pnl_mtm:+.4f} MTM",
+        help="Total book at mid — matches engine cycle log.",
+    )
+    s2.metric("Session MTM P&L", f"{pnl_mtm:+.4f}", help=_SESSION_MTM_HELP)
+    s3.metric("Balance Δ P&L", f"{pnl_balance:+.4f}", help=_SESSION_BALANCE_PNL_HELP)
+    s4.metric("Drawdown %", f"{dd:.3f}")
+    s5.metric("Volatility %", f"{vol:.4f}")
+    s6.metric("Liquidity score", f"{liq:.4f}")
+
+    baseline_port = runtime.get("session_baseline_portfolio_xrp")
+    if baseline_port is not None:
+        st.caption(
+            f"Session start portfolio: **{float(baseline_port):.4f}** XRP equiv. · "
+            f"start mid **{runtime.get('session_baseline_mid', 'n/a')}** · "
+            f"cycle **{int(runtime.get('cycle_count', 0))}**"
+        )
+    age = _runtime_updated_age_seconds(runtime)
+    updated = runtime.get("updated_utc", "n/a")
+    if age is not None and age > 90:
+        st.warning(f"Runtime state is **{int(age)}s** old ({updated}). Is the engine running?")
+    else:
+        st.caption(f"Engine state updated: **{updated}**")
+
+    if vol == 0.0 and int(runtime.get("cycle_count", 0)) < 5:
+        st.caption("Volatility stays 0% until the engine has enough mid samples in a cycle window.")
+
+    if show_portfolio_chart:
+        snaps = _load_portfolio_snapshots()
+        if len(snaps) >= 2 and "timestamp_utc" in snaps.columns:
+            chart_df = snaps.copy()
+            chart_df["time"] = pd.to_datetime(chart_df["timestamp_utc"], utc=True)
+            chart_df = chart_df.set_index("time")[["portfolio_xrp_equiv"]].apply(
+                pd.to_numeric, errors="coerce"
+            )
+            chart_df = chart_df.dropna()
+            if len(chart_df) >= 2:
+                st.markdown("#### Portfolio value (running)")
+                st.line_chart(chart_df, height=200)
+                st.caption("From `logs/portfolio_snapshots.csv` — one point per engine cycle.")
+
+
+def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) -> None:
     """Refresh live metrics inside the Dashboard tab panel only."""
-    runtime = _load_runtime_state()
+    if runtime is None:
+        runtime = _load_runtime_state()
     engine_running = is_engine_running()
 
     if not runtime:
         st.info("Start the bot or run one cycle to populate live data.")
         return
 
-    pnl = float(runtime.get("session_pnl_xrp_estimate", 0.0))
-    k1, k2, k3, k4 = st.columns(4)
+    pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime)
+    port = float(runtime.get("portfolio_value_xrp", 0))
+    dd = float(runtime.get("drawdown_pct", 0))
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
     k1.metric("Bot status", "RUNNING" if engine_running else "STOPPED")
     _render_balance_card(k2, runtime)
-    k3.metric("Drawdown", f"{float(runtime.get('drawdown_pct', 0)):.2f}%")
-    k4.metric("Session P&L", f"{pnl:+.4f} XRP")
+    k3.metric(
+        "Portfolio",
+        f"{port:.4f}",
+        delta=f"{pnl_mtm:+.4f} MTM",
+        help="XRP equivalent at mid — same as cycle log.",
+    )
+    k4.metric("Drawdown", f"{dd:.3f}%")
+    k5.metric(
+        "Session MTM P&L",
+        f"{pnl_mtm:+.4f} XRP",
+        help=_SESSION_MTM_HELP,
+    )
+    k6.metric(
+        "Balance Δ P&L",
+        f"{pnl_balance:+.4f} XRP",
+        help=_SESSION_BALANCE_PNL_HELP,
+    )
+    age = _runtime_updated_age_seconds(runtime)
+    if age is not None and age > 90:
+        st.warning(f"Runtime state is **{int(age)}s** old — click Refresh now or check the engine.")
+    else:
+        st.caption(f"Live data · updated {runtime.get('updated_utc', 'n/a')}")
 
     mid_raw = runtime.get("mid_price")
     mid_bad = mid_raw is not None and float(mid_raw) > 100.0
@@ -613,18 +756,27 @@ def _update_live_dashboard(config: BotConfig) -> None:
 
 
 @_fragment(run_every=timedelta(seconds=5))
-def _live_dashboard_fragment() -> None:
-    panel = st.session_state.get("_dash_live_panel")
-    if panel is None:
+def _live_engine_panels_fragment() -> None:
+    """Refresh Dashboard and History live panels from logs/runtime_state.json."""
+    runtime = _load_runtime_state()
+    if not runtime:
         return
     try:
         cfg = _load_config()
     except TypeError:
-        cfg = st.session_state.get("_dash_config")
+        cfg = st.session_state.get("_dash_config") or st.session_state.get("_hist_config")
     if cfg is None:
         return
-    with panel.container():
-        _update_live_dashboard(cfg)
+
+    dash = st.session_state.get("_dash_live_panel")
+    if dash is not None:
+        with dash.container():
+            _update_live_dashboard(cfg, runtime)
+
+    hist = st.session_state.get("_hist_live_panel")
+    if hist is not None:
+        with hist.container():
+            _paint_history_content(runtime, cfg)
 
 
 def _render_bot_controls(config: BotConfig) -> None:
@@ -1033,16 +1185,7 @@ def _paint_history_content(runtime: dict, config: BotConfig) -> None:
         st.warning("No runtime data yet. Start the bot or run one cycle.")
         return
 
-    st.markdown("### Session statistics")
-    s1, s2, s3, s4 = st.columns(4)
-    s1.metric("Portfolio (XRP equiv.)", f"{float(runtime.get('portfolio_value_xrp', 0)):.4f}")
-    s2.metric("Drawdown %", f"{float(runtime.get('drawdown_pct', 0)):.2f}")
-    s3.metric("Volatility %", f"{float(runtime.get('volatility_pct', 0)):.2f}")
-    s4.metric("Liquidity score", f"{float(runtime.get('liquidity_score', 0)):.2f}")
-    st.caption(
-        f"Engine cycles: **{int(runtime.get('cycle_count', 0))}** · "
-        f"Updated {runtime.get('updated_utc', 'n/a')}"
-    )
+    _render_session_statistics(runtime, show_portfolio_chart=True)
 
     st.markdown("### Price history")
     history = runtime.get("price_history") or []
@@ -1129,23 +1272,12 @@ def _paint_history_content(runtime: dict, config: BotConfig) -> None:
 
 
 def _render_history_tab(config: BotConfig, runtime: dict) -> None:
-    st.session_state._hist_live_panel = st.empty()
     st.session_state._hist_config = config
-    if st.session_state.get("auto_refresh", True):
-        _live_history_fragment()
-    else:
+    if "_hist_live_panel" not in st.session_state:
+        st.session_state._hist_live_panel = st.empty()
+    if not st.session_state.get("auto_refresh", True):
         with st.session_state._hist_live_panel.container():
             _paint_history_content(_load_runtime_state() or runtime, config)
-
-
-@_fragment(run_every=timedelta(seconds=5))
-def _live_history_fragment() -> None:
-    panel = st.session_state.get("_hist_live_panel")
-    if panel is None:
-        return
-    cfg = st.session_state.get("_hist_config") or _load_config()
-    with panel.container():
-        _paint_history_content(_load_runtime_state(), cfg)
 
 
 def run_gui() -> None:
@@ -1199,11 +1331,10 @@ def run_gui() -> None:
 
     with tab_dash:
         _render_bot_controls(config)
-        st.session_state._dash_live_panel = st.empty()
         st.session_state._dash_config = config
-        if st.session_state.get("auto_refresh", True):
-            _live_dashboard_fragment()
-        else:
+        if "_dash_live_panel" not in st.session_state:
+            st.session_state._dash_live_panel = st.empty()
+        if not st.session_state.get("auto_refresh", True):
             with st.session_state._dash_live_panel.container():
                 _update_live_dashboard(config)
 
@@ -1218,6 +1349,9 @@ def run_gui() -> None:
 
     with tab_hist:
         _render_history_tab(config, runtime)
+
+    if st.session_state.get("auto_refresh", True):
+        _live_engine_panels_fragment()
 
     if save_config_clicked:
         _persist_config(config)

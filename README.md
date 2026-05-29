@@ -4,7 +4,7 @@ XRPL XRP/RLUSD market-making bot (v1) focused on:
 
 - strict risk-capital isolation (Bot Account only)
 - transparent perception (volatility, liquidity, effective spreads)
-- profile-based control (`safe`, `high_volatility`, `thin_liquidity`, `tight_spread`)
+- profile-based control (`safe`, `high_volatility`, `thin_liquidity`, `tight_spread`, `profit_mode`)
 
 ## Project layout
 

@@ -75,13 +75,22 @@ def assess_rebalance_need(
     if deviation > 0.06:
         excess_xrp = max(0.0, xrp_balance - target_xrp - xrp_reserve)
         convert = min(excess_xrp, spendable_xrp * 0.25)
+        if rlusd_balance > min_order_xrp * mid_price * 0.5:
+            swap_hint = (
+                f"Optional: swap ~{convert:.1f} XRP → RLUSD on a DEX (e.g. Xaman) "
+                "to rebalance faster — bot is already two-sided."
+            )
+        else:
+            swap_hint = (
+                f"Quote competitive asks to build RLUSD; or swap "
+                f"~{convert:.1f} XRP → RLUSD when ready for two-sided quoting."
+            )
         return RebalanceAdvice(
             action="reduce_xrp",
             label="xrp_heavy",
             summary=(
                 f"XRP-heavy ({ratio:.0%} vs target {target_xrp_ratio:.0%}): "
-                "quote asks more aggressively; consider swapping "
-                f"~{convert:.1f} XRP → RLUSD on-ledger when ready for two-sided quoting."
+                f"quote asks more aggressively; {swap_hint}"
             ),
             suggested_xrp_to_convert=max(0.0, convert),
             target_rlusd_after=target_rlusd,

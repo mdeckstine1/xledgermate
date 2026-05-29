@@ -68,6 +68,22 @@ def _book_spread_status(spread_pct: float) -> str:
     return "very wide"
 
 
+def ideal_for_profit_mode(
+    *,
+    condition: str,
+    volatility_level: str,
+    liquidity_level: str,
+    book_spread_status: str,
+) -> bool:
+    """True when calm, liquid, tight book — best regime for profit_mode."""
+    return (
+        condition == CONDITION_FAVORABLE
+        and volatility_level == "low"
+        and liquidity_level == "high"
+        and book_spread_status == "tight"
+    )
+
+
 def recommend_profile(
     *,
     condition: str,
@@ -87,6 +103,17 @@ def recommend_profile(
     if condition == CONDITION_FAVORABLE:
         if liquidity_level == "low":
             return "thin_liquidity", "Liquidity still thin despite stable vol — stay protective."
+        if ideal_for_profit_mode(
+            condition=condition,
+            volatility_level=volatility_level,
+            liquidity_level=liquidity_level,
+            book_spread_status=book_spread_status,
+        ):
+            return (
+                "profit_mode",
+                "Good conditions for tight spreads — low volatility, deep liquidity, tight book; "
+                "Profit mode maximizes size and edge capture.",
+            )
         return "tight_spread", "Stable vol and decent liquidity — Tight spread can compete for edge."
     # neutral
     if volatility_level == "high":
@@ -156,18 +183,24 @@ def assess_market_conditions(
 
 def defensive_profile_for_auto_switch(assessment: MarketAssessment) -> Optional[str]:
     """
-    Auto-switch only moves toward more defensive profiles — never to tight_spread.
+    Auto-switch only moves toward more defensive profiles — never to aggressive profiles.
     Returns None if no switch needed.
     """
     current = assessment.recommended_profile
-    if current == "tight_spread":
+    if current in ("tight_spread", "profit_mode"):
         return None
     return current
 
 
 def is_more_defensive_than(current: str, proposed: str) -> bool:
     """True if proposed is more defensive than current (for auto-switch guard)."""
-    order = {"tight_spread": 0, "safe": 1, "thin_liquidity": 2, "high_volatility": 3}
+    order = {
+        "profit_mode": -1,
+        "tight_spread": 0,
+        "safe": 1,
+        "thin_liquidity": 2,
+        "high_volatility": 3,
+    }
     return order.get(proposed, 1) > order.get(current, 1)
 
 
@@ -177,5 +210,6 @@ def profile_display_name(name: str) -> str:
         "high_volatility": "High volatility",
         "thin_liquidity": "Thin liquidity",
         "tight_spread": "Tight spread",
+        "profit_mode": "Profit mode",
     }
     return labels.get(name, name)

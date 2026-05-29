@@ -49,6 +49,21 @@ def test_market_edge_rejects_tight_book() -> None:
     assert edge.met is False
 
 
+def test_xrp_heavy_two_sided_rebalance_copy() -> None:
+    advice = assess_rebalance_need(
+        xrp_balance=200.0,
+        rlusd_balance=60.0,
+        mid_price=1.32,
+        target_xrp_ratio=0.55,
+        spendable_xrp=180.0,
+        xrp_reserve=12.0,
+        min_order_xrp=1.0,
+        fund_with_xrp_only=False,
+    )
+    assert advice.label == "xrp_heavy"
+    assert "already two-sided" in advice.summary
+
+
 def test_xrp_only_rebalance_advises_ask_side() -> None:
     advice = assess_rebalance_need(
         xrp_balance=200.0,

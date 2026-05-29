@@ -21,7 +21,12 @@ from monitoring.balance_logger import BalanceLogger
 from monitoring.csv_logger import CSVLogger
 from monitoring.fill_detection import detect_fill_from_balance_delta
 from monitoring.telegram_alerts import TelegramAlerts
-from risk.drawdown import DrawdownMonitor, portfolio_value_xrp
+from risk.drawdown import (
+    DrawdownMonitor,
+    portfolio_value_xrp,
+    session_pnl_balance_delta_xrp,
+    session_pnl_mtm_xrp,
+)
 from risk.kill_switch import KillSwitch
 from core import BotPerception, DecisionLog, VERSION, get_profile
 from strategy.avellaneda_strategy import AvellanedaStrategy
@@ -62,6 +67,8 @@ class TradingEngine:
         self._cycle_count = 0
         self._session_baseline_xrp: Optional[float] = None
         self._session_baseline_rlusd: Optional[float] = None
+        self._session_baseline_mid: Optional[float] = None
+        self._session_baseline_portfolio_xrp: Optional[float] = None
         self._decision_log_path = Path("logs/decisions.jsonl")
         self._decision_log_path.parent.mkdir(parents=True, exist_ok=True)
         self._price_history_max = 180
@@ -131,6 +138,7 @@ class TradingEngine:
     async def _run_cycle(self) -> None:
         config = BotConfig.load()
         self.config = config
+        self.order_manager.config = config
         self.alerts = TelegramAlerts(
             token=config.telegram_token,
             chat_id=config.telegram_chat_id,
@@ -406,6 +414,8 @@ class TradingEngine:
             if self._session_baseline_xrp is None:
                 self._session_baseline_xrp = balance_xrp
                 self._session_baseline_rlusd = rlusd_balance
+                self._session_baseline_mid = mid_price
+                self._session_baseline_portfolio_xrp = portfolio_value
             execution_summary = self._execution_summary(config, placed_count)
             self._cycle_count += 1
             self.balance_logger.log_snapshot(
@@ -673,19 +683,25 @@ class TradingEngine:
             for e in self.decision_log.recent_newest_first(limit=60)
         ]
         mid = perception.mid_price or 0.0
-        pnl_estimate = 0.0
+        pnl_balance = 0.0
+        pnl_mtm = 0.0
         if (
             self._session_baseline_xrp is not None
             and self._session_baseline_rlusd is not None
             and mid > 0
         ):
-            current_val = portfolio_value_xrp(balance_xrp, balance_rlusd, mid)
-            baseline_val = portfolio_value_xrp(
-                self._session_baseline_xrp,
-                self._session_baseline_rlusd,
-                mid,
+            pnl_balance = session_pnl_balance_delta_xrp(
+                balance_xrp=balance_xrp,
+                balance_rlusd=balance_rlusd,
+                baseline_xrp=self._session_baseline_xrp,
+                baseline_rlusd=self._session_baseline_rlusd,
+                mid_rlusd_per_xrp=mid,
             )
-            pnl_estimate = current_val - baseline_val
+        if self._session_baseline_portfolio_xrp is not None:
+            pnl_mtm = session_pnl_mtm_xrp(
+                portfolio_value_xrp=portfolio_value,
+                baseline_portfolio_xrp=self._session_baseline_portfolio_xrp,
+            )
         pf = preflight or self._last_preflight
         state = RuntimeState(
             version=VERSION,
@@ -726,7 +742,11 @@ class TradingEngine:
             last_execution_summary=execution_summary,
             session_baseline_xrp=self._session_baseline_xrp,
             session_baseline_rlusd=self._session_baseline_rlusd,
-            session_pnl_xrp_estimate=pnl_estimate,
+            session_baseline_mid=self._session_baseline_mid,
+            session_baseline_portfolio_xrp=self._session_baseline_portfolio_xrp,
+            session_pnl_mtm_xrp=pnl_mtm,
+            session_pnl_balance_xrp=pnl_balance,
+            session_pnl_xrp_estimate=pnl_mtm,
             quote_intents=quote_intents,
             recent_decisions=decisions,
             last_error=None,

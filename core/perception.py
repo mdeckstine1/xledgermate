@@ -168,6 +168,25 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         min_edge_mult=0.85,
         min_edge_pct=0.08,
     ),
+    "profit_mode": Profile(
+        name="profit_mode",
+        description=(
+            "Growth-first in calm, liquid books — tightest spreads, largest clips, lowest edge "
+            "floor; use only when volatility is low and the book is tight."
+        ),
+        spread_multiplier=0.58,
+        volatility_sensitivity=0.65,
+        liquidity_sensitivity=0.60,
+        risk_multiplier=1.28,
+        size_multiplier=1.35,
+        aggression=1.55,
+        inventory_skew_strength=0.90,
+        min_spread_floor_pct=0.04,
+        defensive_widen_mult=0.88,
+        book_pressure_sensitivity=0.72,
+        min_edge_mult=0.72,
+        min_edge_pct=0.05,
+    ),
 }
 
 

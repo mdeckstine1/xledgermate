@@ -12,6 +12,27 @@ def portfolio_value_xrp(xrp_balance: float, rlusd_balance: float, mid_rlusd_per_
     return xrp_balance + (rlusd_balance / mid_rlusd_per_xrp)
 
 
+def session_pnl_balance_delta_xrp(
+    *,
+    balance_xrp: float,
+    balance_rlusd: float,
+    baseline_xrp: float,
+    baseline_rlusd: float,
+    mid_rlusd_per_xrp: float,
+) -> float:
+    """P&L from wallet balance changes only, both legs marked at the current mid."""
+    if mid_rlusd_per_xrp <= 0:
+        return balance_xrp - baseline_xrp
+    current = portfolio_value_xrp(balance_xrp, balance_rlusd, mid_rlusd_per_xrp)
+    baseline = portfolio_value_xrp(baseline_xrp, baseline_rlusd, mid_rlusd_per_xrp)
+    return current - baseline
+
+
+def session_pnl_mtm_xrp(*, portfolio_value_xrp: float, baseline_portfolio_xrp: float) -> float:
+    """Mark-to-market P&L since session start (aligned with cycle log portfolio)."""
+    return portfolio_value_xrp - baseline_portfolio_xrp
+
+
 class DrawdownMonitor:
     """Daily drawdown on portfolio value (XRP + RLUSD at mid)."""
 
