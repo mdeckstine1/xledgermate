@@ -7,15 +7,17 @@ import json
 import logging
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import streamlit as st
 
 import config.settings as settings_module
-from config.settings import BotConfig
+from config.settings import CONFIG_FILE, BotConfig
 from core.market_conditions import assess_market_conditions, compute_book_spread_pct
 from core.perception import BUILT_IN_PROFILES
+from core.runtime_state import QuoteIntent
+from utils.quote_validation import QuoteValidationResult, validate_quotes_against_book
 from gui.engine_control import (
     cancel_offers_on_ledger,
     clear_kill_switch,
@@ -27,11 +29,14 @@ from gui.engine_control import (
     stop_engine,
 )
 from utils.operator_activity import touch_operator_activity
+from utils.wallet_credentials import secret_matches_address
 from utils.xrpl_currency import RLUSD_ISSUER_TESTNET
 
 logger = logging.getLogger(__name__)
 RUNTIME_STATE_PATH = Path("logs/runtime_state.json")
 LOGO_PATH = Path(__file__).resolve().parent.parent / "Xledermate.jpg"
+
+_CREDENTIALS_FORM = "bot_account_credentials"
 
 PROFILE_LABELS = {
     "safe": "Safe",
@@ -78,6 +83,51 @@ def _load_runtime_state() -> dict:
 def _load_config() -> BotConfig:
     importlib.reload(settings_module)
     return settings_module.BotConfig.load()
+
+
+def _show_result(ok: bool, msg: str, *, fail: str = "error") -> None:
+    """Show success/error without leaking Streamlit's DeltaGenerator return value."""
+    if ok:
+        st.success(msg)
+    elif fail == "warning":
+        st.warning(msg)
+    else:
+        st.error(msg)
+
+
+def _merge_disk_credentials(config: BotConfig) -> None:
+    """Never overwrite saved credentials with stale in-memory values from other tabs."""
+    disk = _load_config()
+    config.bot_account_address = disk.bot_account_address
+    config.bot_secret_key = disk.bot_secret_key
+
+
+def _save_credentials_to_disk(address: str, secret: str) -> tuple[bool, str]:
+    address = (address or "").strip()
+    secret = (secret or "").strip()
+    match, detail = _credentials_match(address, secret)
+    if not match:
+        return False, detail
+    cfg = _load_config()
+    cfg.bot_account_address = address
+    cfg.bot_secret_key = secret
+    cfg.save()
+    verify = _load_config()
+    if verify.bot_account_address.strip() != address or verify.bot_secret_key != secret:
+        return False, f"Write failed — check permissions on `{CONFIG_FILE}`."
+    return True, f"Credentials saved to `{CONFIG_FILE.name}`."
+
+
+def _persist_config(config: BotConfig) -> BotConfig:
+    """Save non-credential settings without clobbering credentials on disk."""
+    _merge_disk_credentials(config)
+    config.active_profile = (config.active_profile or "safe").strip().lower()
+    config.save()
+    return _load_config()
+
+
+def _credentials_match(address: str, secret: str) -> tuple[bool, str]:
+    return secret_matches_address(secret, address)
 
 
 def _render_brand_logo(*, sidebar: bool = False) -> None:
@@ -157,7 +207,132 @@ def _compact_stat(column: Any, label: str, value: str) -> None:
         st.markdown(f"**{value}**")
 
 
+def _inject_ui_alignment_styles() -> None:
+    """Metric values default to right-aligned; tables right-align numbers."""
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stMetric"] [data-testid="stMetricLabel"],
+        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+            text-align: left;
+            justify-content: flex-start;
+        }
+        div[data-testid="stMetric"] [data-testid="stMetricValue"] > div {
+            justify-content: flex-start;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _show_dataframe(
+    df: pd.DataFrame,
+    *,
+    height: int | None = None,
+    alignment: str = "left",
+) -> None:
+    """Display a dataframe with consistent cell alignment (not right-justified numbers)."""
+    kwargs: dict[str, Any] = {"use_container_width": True, "hide_index": True}
+    if height is not None:
+        kwargs["height"] = height
+    if not df.empty and hasattr(st, "column_config"):
+        kwargs["column_config"] = {
+            str(col): st.column_config.Column(str(col), alignment=alignment)
+            for col in df.columns
+        }
+    st.dataframe(df, **kwargs)
+
+
+def _quote_intents_from_runtime(runtime: dict) -> List[QuoteIntent]:
+    intents: List[QuoteIntent] = []
+    for item in runtime.get("quote_intents") or []:
+        if not isinstance(item, dict):
+            continue
+        intents.append(
+            QuoteIntent(
+                level=int(item.get("level", 0)),
+                side=str(item.get("side", "")),
+                price=float(item.get("price", 0)),
+                size_xrp=float(item.get("size_xrp", 0)),
+            )
+        )
+    return intents
+
+
+def _engine_persisted_spread_check(runtime: dict) -> bool:
+    return bool(runtime.get("spread_validation_summary")) or bool(
+        runtime.get("spread_validation_lines")
+    )
+
+
+def _compute_spread_validation(
+    runtime: dict, config: BotConfig
+) -> Optional[QuoteValidationResult]:
+    """Validate planned quotes vs book from runtime snapshot (works even if engine is stale)."""
+    mid = runtime.get("mid_price")
+    if mid is None:
+        return None
+    return validate_quotes_against_book(
+        _quote_intents_from_runtime(runtime),
+        mid_price=float(mid),
+        best_bid=runtime.get("best_bid_rlusd_per_xrp"),
+        best_ask=runtime.get("best_ask_rlusd_per_xrp"),
+        max_half_spread_from_mid_pct=float(
+            getattr(config, "max_half_spread_from_mid_pct", 1.0)
+        ),
+        max_worse_than_touch_pct=float(
+            getattr(config, "max_quote_worse_than_touch_pct", 0.50)
+        ),
+        max_improve_touch_pct=float(getattr(config, "max_quote_improve_touch_pct", 0.15)),
+        require_intents_when_trading=bool(runtime.get("trading_enabled", True)),
+    )
+
+
+def _render_spread_check_panel(runtime: dict, config: BotConfig) -> None:
+    st.markdown("### Live spread check (vs order book)")
+    cycles = int(runtime.get("cycle_count", 0))
+    if cycles == 0 and not runtime.get("quote_intents"):
+        st.caption("Run the engine or **Run One Cycle** to compare planned quotes to the live book.")
+        return
+
+    if cycles > 0 and not _engine_persisted_spread_check(runtime):
+        st.warning(
+            "The running engine has not written spread-check results (likely started before the "
+            "last update). **Stop Bot** → **Start Bot** so cycles log `spread_check` in decisions. "
+            "The check below is computed in the dashboard from your saved quotes + book prices."
+        )
+
+    result = _compute_spread_validation(runtime, config)
+    if result is None:
+        st.caption("Waiting for mid price and book from the next cycle…")
+        return
+
+    if result.ok:
+        st.success(result.summary)
+    else:
+        st.error(result.summary)
+    for err in result.errors:
+        st.error(err)
+    for warn in result.warnings:
+        st.warning(warn)
+    if result.lines:
+        _show_dataframe(pd.DataFrame(result.lines))
+    elif not result.errors:
+        st.caption("No quote intents this cycle — nothing to compare to the book.")
+
+    book_bid = runtime.get("best_bid_rlusd_per_xrp")
+    book_ask = runtime.get("best_ask_rlusd_per_xrp")
+    mid = runtime.get("mid_price")
+    if mid is not None:
+        st.caption(
+            f"Book touch: bid **{_fmt_price(book_bid, 6)}** · mid **{_fmt_price(mid, 6)}** · "
+            f"ask **{_fmt_price(book_ask, 6)}** · cycle **{cycles}**"
+        )
+
+
 def _render_operating_banners(config: BotConfig, runtime: dict) -> None:
+    runtime = _load_runtime_state() or runtime
     dry = bool(runtime.get("dry_run", config.dry_run))
     if dry:
         st.info(
@@ -173,6 +348,20 @@ def _render_operating_banners(config: BotConfig, runtime: dict) -> None:
             "**MAINNET LIVE TRADING** — Real funds at risk. Use dry-run unless you intentionally "
             "accept mainnet execution."
         )
+
+    if config.testnet is False and runtime.get("cycle_count", 0) > 0:
+        spread = _compute_spread_validation(runtime, config)
+        if spread and spread.ok:
+            st.success(
+                "**Spread check OK** — Planned quotes are near the live book. "
+                "Keep dry-run on until you are ready to post real offers."
+            )
+        elif spread and not spread.ok:
+            st.error(
+                "**Spread check FAILED** — "
+                + (spread.errors[0] if spread.errors else spread.summary)
+                + " Restart the bot after fixing spreads. Live orders stay blocked until this passes."
+            )
 
 
 def _resolve_market_assessment(config: BotConfig, runtime: dict) -> dict:
@@ -259,7 +448,7 @@ def _render_market_conditions_panel(config: BotConfig, runtime: dict) -> None:
         )
         if st.button(f"Apply {PROFILE_SHORT.get(str(rec), rec_label)}", key="apply_recommended_profile"):
             config.active_profile = str(rec).strip().lower()
-            config.save()
+            _persist_config(config)
             touch_operator_activity("apply_profile")
             st.rerun()
     else:
@@ -333,7 +522,7 @@ def _update_live_dashboard(config: BotConfig) -> None:
     ledger_offers = runtime.get("open_offers") or []
     count = int(runtime.get("open_offers_count", len(ledger_offers)))
     if ledger_offers:
-        st.dataframe(_open_offers_table(ledger_offers), use_container_width=True, hide_index=True)
+        _show_dataframe(_open_offers_table(ledger_offers))
     elif count > 0:
         st.info(f"{count} open offer(s) on ledger — detail appears on the next engine cycle.")
     elif dry:
@@ -344,7 +533,7 @@ def _update_live_dashboard(config: BotConfig) -> None:
     st.markdown("### Quote ladder (planned this cycle)")
     st.caption("What the bot intended to post; may differ briefly right after a refresh.")
     intents = runtime.get("quote_intents", [])
-    st.dataframe(_quote_table(intents), use_container_width=True, hide_index=True)
+    _show_dataframe(_quote_table(intents))
 
     if runtime.get("preflight_ready"):
         st.success(runtime.get("preflight_summary", "Preflight OK"))
@@ -352,6 +541,8 @@ def _update_live_dashboard(config: BotConfig) -> None:
         st.error(runtime.get("preflight_summary", "Preflight failed"))
     for w in runtime.get("preflight_warnings") or []:
         st.warning(w)
+
+    _render_spread_check_panel(runtime, config)
 
 
 @_fragment(run_every=timedelta(seconds=5))
@@ -373,22 +564,25 @@ def _render_bot_controls(config: BotConfig) -> None:
     engine_running = is_engine_running()
     c1, c2, c3 = st.columns(3)
     if c1.button("Start Bot", type="primary", disabled=engine_running, use_container_width=True):
-        if config.bot_account_address.strip():
-            config.save()
+        disk = _load_config()
+        if disk.bot_account_address.strip() and _credentials_match(
+            disk.bot_account_address, disk.bot_secret_key
+        )[0]:
+            _persist_config(config)
             ok, msg = start_engine(force_restart=True)
-            st.success(msg) if ok else st.warning(msg)
+            _show_result(ok, msg, fail="warning")
             st.rerun()
         else:
-            st.error("Configure Bot Account first.")
+            st.error("Save matching credentials on the Bot Account tab first.")
     if c2.button("Stop Bot", disabled=not engine_running, use_container_width=True):
         ok, msg = stop_engine()
-        st.success(msg) if ok else st.warning(msg)
+        _show_result(ok, msg, fail="warning")
         st.rerun()
     if c3.button("Run One Cycle", use_container_width=True):
-        config.save()
+        _persist_config(config)
         with st.spinner("Running cycle..."):
             ok, msg = run_single_cycle()
-        st.success(msg) if ok else st.error(msg)
+        _show_result(ok, msg)
 
 
 def _render_controls_tab(config: BotConfig) -> None:
@@ -478,6 +672,41 @@ def _render_controls_tab(config: BotConfig) -> None:
     with e2:
         config.trading_enabled = st.toggle("Trading enabled", value=config.trading_enabled)
 
+    if not config.dry_run and not config.testnet:
+        st.error(
+            "Mainnet live mode — orders submit to the ledger. Spread check must pass each cycle "
+            "or placement is blocked."
+        )
+
+    st.markdown("### Live spread guard (mainnet safety)")
+    st.caption(
+        "Each cycle compares **planned** quote prices to the **live** best bid/ask from XRPL. "
+        "Failed checks block live order placement."
+    )
+    g1, g2, g3 = st.columns(3)
+    with g1:
+        config.max_quote_worse_than_touch_pct = st.number_input(
+            "Max worse than touch (%)",
+            value=float(getattr(config, "max_quote_worse_than_touch_pct", 0.50)),
+            min_value=0.05,
+            max_value=5.0,
+            step=0.05,
+            help="Ask may not be more than this % above best ask (same for bids below touch).",
+        )
+    with g2:
+        config.max_half_spread_from_mid_pct = st.number_input(
+            "Max distance from mid (%)",
+            value=float(getattr(config, "max_half_spread_from_mid_pct", 1.0)),
+            min_value=0.05,
+            max_value=5.0,
+            step=0.05,
+        )
+    with g3:
+        config.require_spread_validation_for_live = st.toggle(
+            "Block live if check fails",
+            value=getattr(config, "require_spread_validation_for_live", True),
+        )
+
     st.markdown("### Defensive quoting")
     d1, d2, d3 = st.columns(3)
     with d1:
@@ -505,18 +734,46 @@ def _render_controls_tab(config: BotConfig) -> None:
 
 
 def _render_account_tab(config: BotConfig, runtime: dict) -> None:
+    disk = _load_config()
+    config.bot_account_address = disk.bot_account_address
+    config.bot_secret_key = disk.bot_secret_key
+
     st.markdown("### Bot account credentials")
-    config.bot_account_address = st.text_input(
-        "Bot account address (r...)",
-        value=config.bot_account_address,
-        placeholder="rYourBotAccountAddress...",
+    st.caption(
+        "Family seed (`s...`, 29 chars) or Xaman encoded secret (`sn...`). "
+        "Dedicated Bot Account only — never your main wallet."
     )
-    config.bot_secret_key = st.text_input(
-        "Bot secret (never commit)",
-        value=config.bot_secret_key,
-        type="password",
-    )
-    st.caption("Dedicated Bot Account only — not your main wallet.")
+
+    disk_match, disk_detail = _credentials_match(disk.bot_account_address, disk.bot_secret_key)
+    if disk.bot_account_address.strip():
+        if disk_match:
+            st.success(f"**On disk:** `{disk.bot_account_address}` — address and secret match.")
+        else:
+            st.error(f"**On disk:** `{disk.bot_account_address}` — {disk_detail}")
+    else:
+        st.warning("No bot address saved yet.")
+
+    with st.form(_CREDENTIALS_FORM, clear_on_submit=False):
+        address = st.text_input(
+            "Bot account address (r...)",
+            value=disk.bot_account_address,
+            placeholder="rYourBotAccountAddress...",
+        )
+        secret = st.text_input(
+            "Bot secret (never commit)",
+            value=disk.bot_secret_key,
+            type="password",
+        )
+        save_creds = st.form_submit_button("Save credentials", type="primary")
+
+    if save_creds:
+        ok, msg = _save_credentials_to_disk(address, secret)
+        if ok:
+            touch_operator_activity("save_credentials")
+            st.success(msg)
+            st.rerun()
+        else:
+            st.error(msg)
 
     st.markdown("### Fund the bot")
     st.info(
@@ -527,12 +784,15 @@ def _render_account_tab(config: BotConfig, runtime: dict) -> None:
         st.code(config.bot_account_address)
         f1, f2, f3 = st.columns(3)
         if f2.button("Setup RLUSD trust line"):
-            if not config.bot_secret_key.strip():
-                st.error("Save bot secret first.")
+            disk = _load_config()
+            if not disk.bot_secret_key.strip():
+                st.error("Click **Save credentials** first.")
+            elif not _credentials_match(disk.bot_account_address, disk.bot_secret_key)[0]:
+                st.error("On-disk credentials do not match — use **Save credentials**.")
             else:
                 with st.spinner("Submitting TrustSet..."):
                     ok, msg = run_setup_trust()
-                st.success(msg) if ok else st.error(msg)
+                _show_result(ok, msg)
         f3.link_button("Get testnet RLUSD", "https://tryrlusd.com/")
 
     trust_ok = any(
@@ -566,10 +826,10 @@ def _render_account_tab(config: BotConfig, runtime: dict) -> None:
             st.error("Enter amount > 0.")
         else:
             config.send_destination_default = send_dest.strip()
-            config.save()
+            _persist_config(config)
             with st.spinner("Sending..."):
                 ok, msg = send_funds(send_dest.strip(), send_amount, send_asset)
-            st.success(msg) if ok else st.error(msg)
+            _show_result(ok, msg)
 
 
 def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
@@ -607,7 +867,7 @@ def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
             chat_id=config.telegram_chat_id,
             enabled=True,
         ).send_test()
-        st.success(msg) if ok else st.error(msg)
+        _show_result(ok, msg)
 
     st.markdown("### Safety & logs")
     if runtime.get("kill_switch_active"):
@@ -626,13 +886,13 @@ def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
     if a2.button("Cancel all offers"):
         with st.spinner("Cancelling..."):
             ok, msg = cancel_offers_on_ledger()
-        st.success(msg) if ok else st.error(msg)
+        _show_result(ok, msg)
     if a3.button("Emergency stop"):
         from risk.kill_switch import KillSwitch
 
         KillSwitch().activate("GUI emergency stop")
         config.trading_enabled = False
-        config.save()
+        _persist_config(config)
         stop_engine()
         if not config.dry_run:
             cancel_offers_on_ledger()
@@ -647,9 +907,10 @@ def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
     )
 
 
-def _render_history_tab(config: BotConfig, runtime: dict) -> None:
+def _paint_history_content(runtime: dict, config: BotConfig) -> None:
+    """History tab body — always load fresh runtime when called from the live fragment."""
     if not runtime:
-        st.warning("No runtime data yet.")
+        st.warning("No runtime data yet. Start the bot or run one cycle.")
         return
 
     st.markdown("### Session statistics")
@@ -658,17 +919,42 @@ def _render_history_tab(config: BotConfig, runtime: dict) -> None:
     s2.metric("Drawdown %", f"{float(runtime.get('drawdown_pct', 0)):.2f}")
     s3.metric("Volatility %", f"{float(runtime.get('volatility_pct', 0)):.2f}")
     s4.metric("Liquidity score", f"{float(runtime.get('liquidity_score', 0)):.2f}")
+    st.caption(
+        f"Engine cycles: **{int(runtime.get('cycle_count', 0))}** · "
+        f"Updated {runtime.get('updated_utc', 'n/a')}"
+    )
 
     st.markdown("### Price history")
     history = runtime.get("price_history") or []
     if len(history) >= 2:
         hist_df = pd.DataFrame(history)
         hist_df["time"] = pd.to_datetime(hist_df["ts_utc"], utc=True)
-        cols = [c for c in ("bid", "mid", "ask") if c in hist_df.columns]
-        chart_df = hist_df.set_index("time")[cols].apply(pd.to_numeric, errors="coerce")
-        chart_df = chart_df.dropna(how="all")
-        if len(chart_df) >= 2 and not chart_df.empty:
-            st.line_chart(chart_df, height=280)
+        mid_series = pd.to_numeric(hist_df["mid"], errors="coerce").dropna()
+        if len(mid_series) >= 2:
+            first_mid = float(mid_series.iloc[0])
+            last_mid = float(mid_series.iloc[-1])
+            delta_pct = ((last_mid - first_mid) / first_mid * 100.0) if first_mid else 0.0
+            h1, h2, h3 = st.columns(3)
+            h1.metric("Samples", len(mid_series))
+            h2.metric("Latest mid", f"{last_mid:.6f}")
+            h3.metric("Session move", f"{delta_pct:+.3f}%")
+            chart_df = hist_df.set_index("time")[["mid"]].apply(pd.to_numeric, errors="coerce")
+            chart_df = chart_df.dropna()
+            if len(chart_df) >= 2:
+                st.line_chart(chart_df, height=280)
+                st.caption(
+                    "Mid price (RLUSD per XRP) each engine cycle (~60s). "
+                    "Moves look small because the axis auto-zooms to the session range."
+                )
+                with st.expander("Bid / ask (can look noisy)"):
+                    ba_cols = [c for c in ("bid", "ask") if c in hist_df.columns]
+                    if ba_cols:
+                        ba_df = hist_df.set_index("time")[ba_cols].apply(
+                            pd.to_numeric, errors="coerce"
+                        )
+                        st.line_chart(ba_df.dropna(how="all"), height=220)
+            else:
+                st.info("Collecting price samples — chart appears after a few cycles.")
         else:
             st.info("Collecting price samples — chart appears after a few cycles.")
     elif len(history) == 1:
@@ -678,23 +964,38 @@ def _render_history_tab(config: BotConfig, runtime: dict) -> None:
     else:
         st.info("No price samples yet. Start the engine and wait for cycles.")
 
-    st.markdown("### Effective spreads")
-    spreads = runtime.get("effective_spreads_pct") or {}
+    st.markdown("### Quote ladder vs market")
     mid = runtime.get("mid_price")
+    book_bid = runtime.get("best_bid_rlusd_per_xrp")
+    book_ask = runtime.get("best_ask_rlusd_per_xrp")
+    if mid:
+        m = float(mid)
+        st.caption(
+            f"Book best bid **{_fmt_price(book_bid, 6)}** · mid **{_fmt_price(mid, 6)}** · "
+            f"best ask **{_fmt_price(book_ask, 6)}** RLUSD/XRP"
+        )
+    _render_spread_check_panel(runtime, config)
+
+    st.markdown("### Profile spread targets (per side, before inventory skew)")
+    spreads = runtime.get("effective_spreads_pct") or {}
     if mid and spreads:
         rows = []
         for level in sorted(spreads.keys(), key=lambda x: int(x)):
-            pct = float(spreads[level]) / 100.0
+            half = float(spreads[level]) / 100.0
             m = float(mid)
             rows.append(
                 {
                     "Level": f"L{level}",
-                    "Spread %": f"{float(spreads[level]):.3f}",
-                    "Bid": f"{m * (1 - pct):.6f}",
-                    "Ask": f"{m * (1 + pct):.6f}",
+                    "Half-spread %": f"{float(spreads[level]):.3f}",
+                    "Bid if symmetric": f"{m * (1 - half):.6f}",
+                    "Ask if symmetric": f"{m * (1 + half):.6f}",
                 }
             )
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        _show_dataframe(pd.DataFrame(rows))
+        st.caption(
+            "Inventory skew widens only the vulnerable side (e.g. bids when XRP-heavy). "
+            "Actual quotes are in the table above."
+        )
 
     st.markdown("### Recent decisions")
     decisions = runtime.get("recent_decisions", [])
@@ -702,9 +1003,29 @@ def _render_history_tab(config: BotConfig, runtime: dict) -> None:
         df = pd.DataFrame(decisions)
         if "ts_utc" in df.columns:
             df = df.sort_values("ts_utc", ascending=False)
-        st.dataframe(df, use_container_width=True, hide_index=True, height=320)
+        _show_dataframe(df, height=320)
     if runtime.get("last_error"):
         st.error(runtime["last_error"])
+
+
+def _render_history_tab(config: BotConfig, runtime: dict) -> None:
+    st.session_state._hist_live_panel = st.empty()
+    st.session_state._hist_config = config
+    if st.session_state.get("auto_refresh", True):
+        _live_history_fragment()
+    else:
+        with st.session_state._hist_live_panel.container():
+            _paint_history_content(_load_runtime_state() or runtime, config)
+
+
+@_fragment(run_every=timedelta(seconds=5))
+def _live_history_fragment() -> None:
+    panel = st.session_state.get("_hist_live_panel")
+    if panel is None:
+        return
+    cfg = st.session_state.get("_hist_config") or _load_config()
+    with panel.container():
+        _paint_history_content(_load_runtime_state(), cfg)
 
 
 def run_gui() -> None:
@@ -714,6 +1035,7 @@ def run_gui() -> None:
         layout="wide",
         initial_sidebar_state="expanded",
     )
+    _inject_ui_alignment_styles()
 
     try:
         config = _load_config()
@@ -731,7 +1053,7 @@ def run_gui() -> None:
         auto_refresh = st.toggle(
             "Live refresh (5s)",
             value=st.session_state.get("auto_refresh", True),
-            help="Updates Dashboard header & metrics only — not the whole page.",
+            help="Refreshes Dashboard and History charts every 5s without reloading the whole page.",
         )
         st.session_state.auto_refresh = auto_refresh
         if st.button("Refresh now", use_container_width=True):
@@ -778,8 +1100,7 @@ def run_gui() -> None:
         _render_history_tab(config, runtime)
 
     if save_config_clicked:
-        config.active_profile = (config.active_profile or "safe").strip().lower()
-        config.save()
+        _persist_config(config)
         touch_operator_activity("save_config")
         with st.sidebar:
             st.success("Saved")

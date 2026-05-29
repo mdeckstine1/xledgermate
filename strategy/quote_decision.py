@@ -14,6 +14,14 @@ from core.market_conditions import (
 )
 from core.perception import Profile
 
+# Extra half-spread per side from inventory skew (percentage points, not fraction).
+_MAX_INVENTORY_SPREAD_ADD_PCT = 1.5
+
+
+def _inventory_spread_add_pct(deviation: float, strength: float) -> float:
+    """Cap skew so quotes stay near the book (deviation is ratio delta vs target)."""
+    return min(_MAX_INVENTORY_SPREAD_ADD_PCT, abs(deviation) * 8.0 * max(0.5, min(2.0, strength)))
+
 
 @dataclass
 class QuoteAdjustments:
@@ -68,14 +76,14 @@ def assess_inventory(
         label = "xrp_heavy"
         bid_mult = max(0.35, 1.0 - deviation * 2.5 * strength)
         ask_mult = min(1.35, 1.0 + deviation * 1.5 * strength)
-        bid_spread = deviation * 40.0 * strength
+        bid_spread = _inventory_spread_add_pct(deviation, strength)
         ask_spread = 0.0
     elif deviation < -0.12:
         label = "rlusd_heavy"
         bid_mult = min(1.35, 1.0 + abs(deviation) * 1.5 * strength)
         ask_mult = max(0.35, 1.0 - abs(deviation) * 2.5 * strength)
         bid_spread = 0.0
-        ask_spread = abs(deviation) * 40.0 * strength
+        ask_spread = _inventory_spread_add_pct(deviation, strength)
     else:
         label = "balanced"
         bid_mult = 1.0
@@ -168,14 +176,8 @@ def apply_spread_adjustments(
     spreads_pct: Dict[int, float],
     adjustments: QuoteAdjustments,
 ) -> Dict[int, float]:
-    """Apply global and side-specific spread adjustments."""
-    out: Dict[int, float] = {}
-    for level, spread in spreads_pct.items():
-        base = spread * adjustments.spread_multiplier
-        # Level 1 uses side adds; deeper levels inherit fraction.
-        side_scale = 1.0 / max(1, level)
-        bid_add = adjustments.bid_spread_add_pct * side_scale
-        ask_add = adjustments.ask_spread_add_pct * side_scale
-        # Store symmetric widen as average for level (order manager splits bid/ask).
-        out[level] = max(0.05, base + (bid_add + ask_add) / 2.0)
-    return out
+    """Apply market/profile spread multiplier only — inventory skew is per-side in OrderManager."""
+    return {
+        level: max(0.02, spread * adjustments.spread_multiplier)
+        for level, spread in spreads_pct.items()
+    }

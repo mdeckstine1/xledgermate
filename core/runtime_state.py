@@ -68,6 +68,10 @@ class RuntimeState:
     quote_decision_summary: str = ""
     inventory_label: str = "balanced"
     mid_momentum_pct: float = 0.0
+    spread_validation_ok: bool = False
+    spread_validation_summary: str = ""
+    spread_validation_errors: List[str] = field(default_factory=list)
+    spread_validation_lines: List[Dict[str, Any]] = field(default_factory=list)
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -141,6 +145,10 @@ class RuntimeStateStore:
             quote_decision_summary=str(data.get("quote_decision_summary", "")),
             inventory_label=str(data.get("inventory_label", "balanced")),
             mid_momentum_pct=float(data.get("mid_momentum_pct", 0.0)),
+            spread_validation_ok=bool(data.get("spread_validation_ok", False)),
+            spread_validation_summary=str(data.get("spread_validation_summary", "")),
+            spread_validation_errors=list(data.get("spread_validation_errors", [])),
+            spread_validation_lines=list(data.get("spread_validation_lines", [])),
             recent_decisions=list(data.get("recent_decisions", [])),
             last_error=data.get("last_error"),
             updated_utc=data.get("updated_utc"),

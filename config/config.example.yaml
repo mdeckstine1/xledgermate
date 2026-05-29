@@ -33,6 +33,10 @@ min_drawdown_percent: 2.0
 max_drawdown_percent: 5.0
 inventory_target_xrp_ratio: 0.55
 min_edge_pct: 0.10
+max_quote_worse_than_touch_pct: 0.50
+max_quote_improve_touch_pct: 0.15
+max_half_spread_from_mid_pct: 1.0
+require_spread_validation_for_live: true
 auto_profile_switching: false
 auto_profile_inactivity_minutes: 120
 
@@ -47,4 +51,4 @@ testnet: true
 send_destination_default: ""
 private_node_url: null
 xrpl_testnet_rpc_url: https://s.altnet.rippletest.net:51234
-xrpl_mainnet_rpc_url: https://xrplcluster.com
+xrpl_mainnet_rpc_url: https://s1.ripple.com:51234

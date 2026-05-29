@@ -1,7 +1,10 @@
 from dataclasses import asdict, dataclass, field, fields
-from typing import List, Optional
-import yaml
 from pathlib import Path
+from typing import List, Optional, Union
+
+import yaml
+
+CONFIG_FILE = Path(__file__).resolve().parent / "config.yaml"
 
 
 @dataclass
@@ -45,6 +48,11 @@ class BotConfig:
     max_drawdown_percent: float = 5.0
     inventory_target_xrp_ratio: float = 0.55   # Slightly XRP-heavy (supports your $27 thesis)
     min_edge_pct: float = 0.10                 # Minimum L1 spread % before reducing size
+    # Live spread guard: planned quotes must sit near book bid/ask (validated each cycle).
+    max_quote_worse_than_touch_pct: float = 0.50   # Max % ask above best ask / bid below best bid
+    max_quote_improve_touch_pct: float = 0.15      # Max % allowed to cross/improve touch
+    max_half_spread_from_mid_pct: float = 1.0      # Max distance from mid per quote leg
+    require_spread_validation_for_live: bool = True
     auto_profile_switching: bool = False       # Auto-move to defensive profile when idle + stress
     auto_profile_inactivity_minutes: int = 120
 
@@ -62,7 +70,7 @@ class BotConfig:
     send_destination_default: str = ""      # Optional default withdraw / Mangie address
     private_node_url: Optional[str] = None  # e.g. your own node for no rate limits
     xrpl_testnet_rpc_url: str = "https://s.altnet.rippletest.net:51234"
-    xrpl_mainnet_rpc_url: str = "https://xrplcluster.com"
+    xrpl_mainnet_rpc_url: str = "https://s1.ripple.com:51234"
 
     def to_dict(self):
         return asdict(self)
@@ -92,17 +100,18 @@ class BotConfig:
             return RLUSD_CURRENCY_HEX
         return encode_currency_code(self.rlusd_currency)
 
-    def save(self, filepath: str = "config/config.yaml"):
-        """Save current config to YAML"""
-        Path("config").mkdir(exist_ok=True)
-        with open(filepath, "w") as f:
-            yaml.dump(self.to_dict(), f, default_flow_style=False, sort_keys=False)
+    def save(self, filepath: Optional[Union[str, Path]] = None) -> None:
+        """Save current config to YAML."""
+        path = Path(filepath) if filepath else CONFIG_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            yaml.dump(self.to_dict(), handle, default_flow_style=False, sort_keys=False)
 
     @classmethod
-    def load(cls, filepath: str = "config/config.yaml") -> "BotConfig":
+    def load(cls, filepath: Optional[Union[str, Path]] = None) -> "BotConfig":
         """Load from YAML, merging with defaults (never cls(**yaml) — avoids legacy key crashes)."""
         config = cls()
-        path = Path(filepath)
+        path = Path(filepath) if filepath else CONFIG_FILE
 
         if not path.exists():
             config.save(filepath)

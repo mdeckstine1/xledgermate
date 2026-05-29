@@ -9,6 +9,8 @@ from typing import Deque, Dict, List, Optional
 
 from core.perception import LiquidityMetrics
 from core.runtime_state import QuoteIntent
+from utils.rpc_health import amendment_blocked_message, is_retryable_rpc_error, request_with_retry
+from utils.wallet_credentials import wallet_from_bot_secret
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +104,7 @@ class XRPLConnector:
     def load_wallet(self) -> Wallet:
         if not self.secret:
             raise ValueError("Bot secret key is required to load wallet.")
-        wallet = Wallet.from_seed(seed=self.secret)
+        wallet = wallet_from_bot_secret(self.secret)
         if wallet.classic_address != self.account_address:
             raise ValueError(
                 "bot_secret_key does not match bot_account_address. "
@@ -110,9 +112,38 @@ class XRPLConnector:
             )
         return wallet
 
+    async def _request(self, req: Any) -> Any:
+        try:
+            return await request_with_retry(self.client, req)
+        except Exception as exc:
+            if is_retryable_rpc_error(exc):
+                raise RuntimeError(amendment_blocked_message(exc)) from exc
+            raise
+
+    async def _sign_and_submit(self, tx: Any, wallet: Wallet) -> Any:
+        last_exc: Optional[BaseException] = None
+        for attempt in range(4):
+            try:
+                signed = await autofill_and_sign(tx, self.client, wallet)
+                return await submit_and_wait(signed, self.client)
+            except Exception as exc:
+                last_exc = exc
+                if not is_retryable_rpc_error(exc) or attempt >= 3:
+                    if is_retryable_rpc_error(exc):
+                        raise RuntimeError(amendment_blocked_message(exc)) from exc
+                    raise
+                logger.warning(
+                    "Ledger submit attempt %s/4 failed (%s); retrying…",
+                    attempt + 1,
+                    exc,
+                )
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Ledger submit failed with no response")
+
     async def get_xrp_balance(self) -> float:
         req = AccountInfo(account=self.account_address, ledger_index="validated")
-        result = (await self.client.request(req)).result
+        result = (await self._request(req)).result
         drops_balance = result["account_data"]["Balance"]
         return float(drops_to_xrp(drops_balance))
 
@@ -122,7 +153,7 @@ class XRPLConnector:
             peer=self.rlusd_issuer,
             ledger_index="validated",
         )
-        lines = (await self.client.request(req)).result.get("lines", [])
+        lines = (await self._request(req)).result.get("lines", [])
         for line in lines:
             currency = line.get("currency", "")
             if currency == self.rlusd_currency or currency.startswith("524C555344"):
@@ -160,8 +191,7 @@ class XRPLConnector:
                 value=limit,
             ),
         )
-        signed = await autofill_and_sign(tx, self.client, wallet)
-        response = await submit_and_wait(signed, self.client)
+        response = await self._sign_and_submit(tx, wallet)
         return self._validate_tx_response(response)
 
     async def send_payment(
@@ -215,8 +245,7 @@ class XRPLConnector:
         else:
             raise ValueError(f"Unsupported asset: {asset}. Use XRP or RLUSD.")
 
-        signed = await autofill_and_sign(tx, self.client, wallet)
-        response = await submit_and_wait(signed, self.client)
+        response = await self._sign_and_submit(tx, wallet)
         tx_hash = self._validate_tx_response(response)
         logger.info(
             "Sent %s %s to %s | hash=%s",
@@ -247,8 +276,8 @@ class XRPLConnector:
             limit=limit,
         )
 
-        asks_raw = (await self.client.request(asks_req)).result.get("offers", [])
-        bids_raw = (await self.client.request(bids_req)).result.get("offers", [])
+        asks_raw = (await self._request(asks_req)).result.get("offers", [])
+        bids_raw = (await self._request(bids_req)).result.get("offers", [])
         return {
             "asks": self._normalize_offers(asks_raw, side="ask"),
             "bids": self._normalize_offers(bids_raw, side="bid"),
@@ -256,7 +285,7 @@ class XRPLConnector:
 
     async def get_open_offers(self) -> List[OpenOffer]:
         req = AccountOffers(account=self.account_address, ledger_index="validated")
-        offers = (await self.client.request(req)).result.get("offers", [])
+        offers = (await self._request(req)).result.get("offers", [])
         parsed: List[OpenOffer] = []
         for offer in offers:
             seq = int(offer.get("seq", 0))
@@ -276,8 +305,7 @@ class XRPLConnector:
         cancelled = 0
         for offer in await self.get_open_offers():
             tx = OfferCancel(account=self.account_address, offer_sequence=offer.sequence)
-            signed = await autofill_and_sign(tx, self.client, wallet)
-            response = await submit_and_wait(signed, self.client)
+            response = await self._sign_and_submit(tx, wallet)
             self._validate_tx_response(response)
             cancelled += 1
         return cancelled
@@ -307,8 +335,7 @@ class XRPLConnector:
             taker_gets=taker_gets,
             taker_pays=taker_pays,
         )
-        signed = await autofill_and_sign(tx, self.client, wallet)
-        response = await submit_and_wait(signed, self.client)
+        response = await self._sign_and_submit(tx, wallet)
         tx_hash = self._validate_tx_response(response)
         logger.info(
             "Placed %s L%s offer | size=%.4f XRP price=%.6f hash=%s",

@@ -5,6 +5,33 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.2.1] — 2026-05-29 (`mainnet-prep` → `mainnet-pilot`)
+
+**Theme:** Mainnet readiness — live book validation, safe spreads, and operator gates before real orders.
+
+### Added
+
+- **Live spread check** (`utils/quote_validation.py`) — Each cycle compares planned quotes to live best bid/ask; blocks live placement when checks fail.
+- **RPC health** (`utils/rpc_health.py`) — Retries on `amendmentBlocked`; default mainnet RPC `https://s1.ripple.com:51234`.
+- **Xaman / `sn...` wallet support** (`utils/wallet_credentials.py`) — Correct secp256k1 derivation for Secret Numbers encoding.
+- **GUI spread panel** — Dashboard and History show validation table; computes from runtime when engine is stale.
+- **Live spread guard** controls — `max_quote_worse_than_touch_pct`, `max_half_spread_from_mid_pct`, block live on fail.
+- **Tests** — `test_quote_spreads.py`, `test_quote_validation.py`.
+
+### Fixed
+
+- **Inventory skew** — Capped per-side spread adds (was `deviation × 40`, producing ~8% off-market quotes).
+- **Spread display** — Profile spreads no longer blend inventory skew into symmetric “effective spread” table.
+- **Streamlit** — Spread check visible after cycles; table/metric left alignment; no `DeltaGenerator` leak on trust-line button.
+- **History tab** — Live refresh for price chart and spread data.
+
+### Changed
+
+- **Engine** — Restores price history across restarts; records price tick every cycle with valid mid.
+- **Operator manual** — Mainnet go-live gate, spread check troubleshooting, RPC notes.
+
+---
+
 ## [1.2.0] — 2026-05-29 (`mainnet-prep` branch)
 
 **Theme:** Defensive market-making — condition-aware quoting, profile recommendations, and kill-switch reliability.

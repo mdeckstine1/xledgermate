@@ -32,6 +32,7 @@ from strategy.quote_decision import (
     compute_mid_momentum_pct,
 )
 from utils.preflight import evaluate_preflight
+from utils.quote_validation import validate_quotes_against_book
 logger = logging.getLogger(__name__)
 class TradingEngine:
     """Continuous market loop: perception updates, quote planning, optional order refresh."""
@@ -57,11 +58,23 @@ class TradingEngine:
         self._session_baseline_rlusd: Optional[float] = None
         self._decision_log_path = Path("logs/decisions.jsonl")
         self._decision_log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._price_history: List[dict] = []
         self._price_history_max = 180
+        self._price_history = self._restore_price_history()
         self._last_preflight: Optional[Any] = None
+        self._last_spread_validation: Optional[Any] = None
         self._last_cycle_balances: Optional[tuple[float, float]] = None
         self._prev_kill_active = False
+
+    def _restore_price_history(self) -> List[dict]:
+        """Continue chart history across engine restarts (from runtime_state.json)."""
+        try:
+            prior = self.state_store.load()
+            if prior and prior.price_history:
+                return list(prior.price_history)[-self._price_history_max :]
+        except (json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
+            logger.debug("Could not restore price history: %s", exc)
+        return []
+
     async def run(self) -> None:
         self._running = True
         logger.info(
@@ -129,6 +142,7 @@ class TradingEngine:
         self.connector = connector
         preflight = None
         quote_plan = None
+        spread_validation = None
         balance_xrp = 0.0
         rlusd_balance = 0.0
         mid_price: Optional[float] = None
@@ -209,6 +223,9 @@ class TradingEngine:
             )
             self.decision_log.add("market", market_assessment.summary)
 
+            if mid_price is not None:
+                self._record_price_tick(mid=mid_price, bid=best_bid, ask=best_ask)
+
             if config.auto_profile_switching:
                 from utils.operator_activity import minutes_since_last_operator_action
 
@@ -285,17 +302,55 @@ class TradingEngine:
                         f"mid={mid_price:.6f} RLUSD/XRP"
                     )
                 self.decision_log.add("quotes", quote_plan.reason + book_note)
-                self._record_price_tick(mid=mid_price, bid=best_bid, ask=best_ask)
             else:
                 quote_plan = None
                 if not preflight.ready:
                     self.decision_log.add("quotes", "Skipped — preflight not ready.")
+
+            intents_for_check = quote_plan.intents if quote_plan else []
+            spread_validation = validate_quotes_against_book(
+                intents_for_check,
+                mid_price=mid_price,
+                best_bid=best_bid,
+                best_ask=best_ask,
+                max_half_spread_from_mid_pct=float(
+                    getattr(config, "max_half_spread_from_mid_pct", 1.0)
+                ),
+                max_worse_than_touch_pct=float(
+                    getattr(config, "max_quote_worse_than_touch_pct", 0.50)
+                ),
+                max_improve_touch_pct=float(
+                    getattr(config, "max_quote_improve_touch_pct", 0.15)
+                ),
+                require_intents_when_trading=config.trading_enabled,
+            )
+            self._last_spread_validation = spread_validation
+            self.decision_log.add("spread_check", spread_validation.summary)
+            for check in spread_validation.checks[:4]:
+                self.decision_log.add("spread_check", check)
+            for err in spread_validation.errors:
+                self.decision_log.add("spread_check", f"Error: {err}")
+            for warn in spread_validation.warnings:
+                self.decision_log.add("spread_check", f"Warning: {warn}")
+
+            live_blocked_by_spread = (
+                not config.dry_run
+                and bool(getattr(config, "require_spread_validation_for_live", True))
+                and not spread_validation.ok
+            )
+            if live_blocked_by_spread:
+                self.decision_log.add(
+                    "execution",
+                    "Live orders blocked — spread check failed (fix spreads or stay in dry-run).",
+                )
+
             if (
                 quote_plan
                 and quote_plan.intents
                 and config.trading_enabled
                 and not self.kill_switch.is_active()
                 and preflight.ready
+                and not live_blocked_by_spread
             ):
                 placed_count = await self._refresh_orders(quote_plan.intents)
             open_offers = await connector.get_open_offers()
@@ -338,10 +393,12 @@ class TradingEngine:
                 quote_adjustments=quote_adjustments,
                 book_spread_pct=book_spread_pct,
                 mid_momentum=mid_momentum,
+                spread_validation=spread_validation,
             )
+            spread_ok = spread_validation.ok if spread_validation else False
             logger.info(
                 "Cycle complete | #%s profile=%s mid=%.4f RLUSD/XRP portfolio=%.4f XRP "
-                "drawdown=%.2f%% intents=%s placed=%s preflight=%s",
+                "drawdown=%.2f%% intents=%s placed=%s preflight=%s spread_check=%s",
                 self._cycle_count,
                 profile.name,
                 mid_price or 0.0,
@@ -350,6 +407,7 @@ class TradingEngine:
                 len(quote_plan.intents) if quote_plan else 0,
                 placed_count,
                 "OK" if preflight and preflight.ready else "FAIL",
+                "OK" if spread_ok else "FAIL",
             )
             if config.telegram_notify_each_cycle and self.alerts.is_configured():
                 self.alerts.send_cycle_summary(
@@ -541,6 +599,7 @@ class TradingEngine:
         quote_adjustments: Optional[Any] = None,
         book_spread_pct: float = 0.0,
         mid_momentum: float = 0.0,
+        spread_validation: Optional[Any] = None,
     ) -> None:
         decisions = [
             {"ts_utc": e.ts_utc, "category": e.category, "message": e.message}
@@ -619,6 +678,16 @@ class TradingEngine:
             quote_decision_summary=quote_adjustments.decision_summary if quote_adjustments else "",
             inventory_label=quote_adjustments.inventory_label if quote_adjustments else "balanced",
             mid_momentum_pct=mid_momentum,
+            spread_validation_ok=bool(spread_validation.ok) if spread_validation else False,
+            spread_validation_summary=(
+                spread_validation.summary if spread_validation else ""
+            ),
+            spread_validation_errors=(
+                list(spread_validation.errors) if spread_validation else []
+            ),
+            spread_validation_lines=(
+                list(spread_validation.lines) if spread_validation else []
+            ),
         )
         self.state_store.save(state)
     def _persist_error(self, message: str) -> None:

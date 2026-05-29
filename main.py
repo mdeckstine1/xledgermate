@@ -19,6 +19,7 @@ from core import VERSION
 from engine import TradingEngine
 from gui.streamlit_gui import run_gui
 from utils.logging_setup import setup_logging
+from utils.rpc_health import AMENDMENT_BLOCKED_HINT, rpc_reports_amendment_blocked
 from utils.send_funds import send_from_bot_account
 from utils.testnet import is_testnet_mode
 
@@ -74,6 +75,17 @@ def log_startup_banner(config: BotConfig) -> None:
         logger.warning("Running on TESTNET. Set testnet: false in config for mainnet.")
     else:
         logger.warning("Running on MAINNET. Real funds at risk on Bot Account.")
+
+    rpc_url = config.resolved_rpc_url()
+    blocked = rpc_reports_amendment_blocked(rpc_url)
+    if blocked is True:
+        logger.error("RPC reports amendment_blocked=true at %s", rpc_url)
+        logger.error(AMENDMENT_BLOCKED_HINT)
+    elif blocked is False and "xrplcluster.com" in rpc_url:
+        logger.warning(
+            "xrplcluster.com load-balances nodes; some are outdated and return "
+            "amendmentBlocked. Prefer https://s1.ripple.com:51234 in config."
+        )
 
 
 async def run_engine_async(config: BotConfig, mode: str, args: argparse.Namespace) -> None:

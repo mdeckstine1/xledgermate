@@ -1,6 +1,6 @@
 # XLedgerMate — Plain-English Operator Manual
 
-*Version 1.2.0 · For humans who remember when “save” meant a floppy disk*
+*Version 1.2.1 · For humans who remember when “save” meant a floppy disk*
 
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
@@ -104,7 +104,7 @@ After changing anything important: click **Save Config** in the sidebar.
 
 ### History (charts and diary)
 
-- Price chart over time (needs a few cycles running).
+- Price chart over time (one point per engine cycle, ~60s apart). Turn on **Live refresh (5s)** in the sidebar so this tab updates while the bot runs.
 - Recent **decisions** — what the bot was thinking.
 
 ---
@@ -128,13 +128,32 @@ After changing anything important: click **Save Config** in the sidebar.
 
 ## Safe order of operations (testnet)
 
-1. Set bot address + secret → **Save Config**.
+1. Set bot address + secret → **Save credentials** on Bot Account tab.
 2. Fund with **test XRP** (faucet or transfer).
 3. Leave **Dry run ON** → **Start Bot** → watch Dashboard for a while.
 4. **Setup RLUSD trust line** when ready.
 5. Get test RLUSD from [tryrlusd.com](https://tryrlusd.com) (same bot address).
 6. Turn off **Fund with XRP only** in Controls if you want buys and sells.
 7. Only then consider **Dry run OFF** and **tiny** order sizes for a live testnet trial.
+
+---
+
+## Mainnet go-live gate (`mainnet-prep` complete → `mainnet-pilot`)
+
+Use this checklist **before** you turn off dry-run on mainnet. Every item should be green.
+
+| Step | What to verify |
+|------|----------------|
+| 1 | **Advanced** → testnet **OFF**, Mainnet RPC = `https://s1.ripple.com:51234` → **Save Config** |
+| 2 | Bot credentials saved (`sn...` or family seed); **Spread check** does not say “credentials mismatch” |
+| 3 | **RLUSD trust line** on ledger (Bot Account tab) |
+| 4 | **Stop Bot** → **Start Bot** after any code update (loads latest spread logic) |
+| 5 | **10+ dry-run cycles** with Dashboard **Spread check OK** (table shows asks near best ask) |
+| 6 | **Controls** → tiny **order_sizes** (e.g. one level at 5–10 XRP); **Live spread guard** left on |
+| 7 | **Emergency stop** tested once in dry-run (you know where it is) |
+| 8 | Only then: **Dry run OFF** for a **small live pilot** — watch `logs/trades_*.csv` and open offers |
+
+Stay on **dry-run** until step 5 passes consistently. The engine **blocks live orders** if spread check fails.
 
 ---
 
@@ -148,6 +167,8 @@ After changing anything important: click **Save Config** in the sidebar.
 | Price looks insane (millions) | Stop Bot → Start Bot again (kills stale engines). |
 | Kill switch active | Advanced tab → **Clear kill switch** after you understand why it fired. Page refreshes; drawdown baseline resets on next cycle. |
 | “Preflight failed” | Read the red/yellow messages; usually trust line, zero sizes, or no mid price. |
+| `amendmentBlocked` / “need upgrade” | Your **mainnet RPC** hit an outdated node (common on `xrplcluster.com`). In **Advanced**, set Mainnet RPC to `https://s1.ripple.com:51234`, **Save Config**, retry. |
+| Spread check red on mainnet | Planned quotes are too far from **live** best bid/ask. Stay in **dry-run**; adjust **Live spread guard** on Controls or profile until Dashboard shows **Spread check OK**. Live orders are blocked until it passes. |
 
 **Emergency stop** (Advanced) — Disables trading, stops engine, sets kill switch, cancels offers (if not dry-run). Use when you want everything off *now*.
 
@@ -184,7 +205,7 @@ Leave “notify each cycle” off unless you enjoy constant buzzing.
 
 ## Version & history
 
-- Current version: **1.2.0** (see `VERSION` file).
+- Current version: **1.2.1** (see `VERSION` file).
 - What changed release-by-release: **`CHANGELOG.md`** in the project folder.
 
 ---

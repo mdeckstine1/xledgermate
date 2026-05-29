@@ -7,6 +7,9 @@ from config.settings import BotConfig
 from core.runtime_state import QuoteIntent
 from strategy.quote_decision import QuoteAdjustments
 
+# Hard cap per side (percent of mid) so inventory skew cannot post absurd quotes.
+_MAX_SIDE_SPREAD_PCT = 2.5
+
 
 @dataclass
 class QuotePlan:
@@ -54,8 +57,14 @@ class OrderManager:
 
             spread_base = spreads_pct.get(level, self.config.base_spread * 100.0) / 100.0
             side_scale = 1.0 / max(1, level)
-            bid_spread = spread_base + (adj.bid_spread_add_pct * side_scale) / 100.0
-            ask_spread = spread_base + (adj.ask_spread_add_pct * side_scale) / 100.0
+            bid_spread = min(
+                _MAX_SIDE_SPREAD_PCT / 100.0,
+                spread_base + (adj.bid_spread_add_pct * side_scale) / 100.0,
+            )
+            ask_spread = min(
+                _MAX_SIDE_SPREAD_PCT / 100.0,
+                spread_base + (adj.ask_spread_add_pct * side_scale) / 100.0,
+            )
 
             size = min(configured_size, risk_cap) * adj.size_multiplier
             bid_size = size * adj.bid_size_multiplier

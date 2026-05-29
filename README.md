@@ -11,7 +11,7 @@ XRPL XRP/RLUSD market-making bot (v1) focused on:
 ```text
 xledgermate/
 ├── main.py                 # App entrypoint
-├── VERSION                 # Release version (1.2.0)
+├── VERSION                 # Release version (1.2.1)
 ├── CHANGELOG.md            # Version history
 ├── docs/OPERATOR_MANUAL.md # Non-technical operator guide
 ├── requirements.txt
@@ -80,8 +80,22 @@ xledgermate/
 ## Branches
 
 - `main` — stable baseline on GitHub
-- `development` — active build branch for phased work
+- `development` — integration branch for phased work
 - `testnet` — testnet hardening (preflight, kill switch, portfolio drawdown, trust line tools)
+- `mainnet-prep` — mainnet dry-run, live book, spread validation (merged target: v1.2.1)
+- `mainnet-pilot` — small live mainnet pilot (`dry_run: false`, tiny sizes)
+
+## Mainnet prep (v1.2.1)
+
+Before **live** mainnet (`dry_run: false`):
+
+1. `testnet: false`, RPC `https://s1.ripple.com:51234` (avoid stale `xrplcluster.com` nodes).
+2. Credentials: Xaman `sn...` or family seed `s...` (see Bot Account tab).
+3. Run **dry-run** until Dashboard **Spread check OK** for many cycles in a row.
+4. **Stop Bot** → **Start Bot** after pulling new code.
+5. Follow the **Mainnet go-live gate** in [`docs/OPERATOR_MANUAL.md`](docs/OPERATOR_MANUAL.md).
+
+Spread guard settings in **Controls** (`max_quote_worse_than_touch_pct`, etc.) block live placement when quotes are off the book.
 
 ## Testnet branch (`testnet`)
 
@@ -108,7 +122,7 @@ Before **live** testnet (`dry_run: false`): run `setup-trust`, fund RLUSD, set n
 
 ## Versioning
 
-- Current version: **1.1.0** (`VERSION` file)
+- Current version: **1.2.1** (`VERSION` file)
 - Release notes: [`CHANGELOG.md`](CHANGELOG.md)
 - Plain-English guide: [`docs/OPERATOR_MANUAL.md`](docs/OPERATOR_MANUAL.md)
 - Runtime: `core.version.VERSION`
