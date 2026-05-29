@@ -5,6 +5,22 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.3.3] — 2026-05-29 (`mainnet-live`)
+
+**Theme:** Live spread-check stability — bid touch boundary and GUI false failures.
+
+### Fixed
+
+- **Bid touch clamp** — Quotes stay 0.03% inside the max-worse-than-touch limit (avoids float rounding at exactly -0.50%).
+- **Spread validation tolerance** — Small boundary slack so clamped quotes do not flicker fail.
+- **GUI spread panel** — Shows engine-persisted spread check from last cycle instead of recomputing stale quotes vs a moved book.
+
+### Added
+
+- **Tests** — Bid-at-limit and bid-clamp validation cases in `test_quote_validation.py` / `test_order_clamp.py`.
+
+---
+
 ## [1.3.2] — 2026-05-29 (`mainnet-pilot`)
 
 **Theme:** Profile-owned edge, reliable engine stop on Windows, mainnet dry-run validated.
@@ -172,6 +188,7 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 3. **Testnet hardening (ffb6054)** — Preflight, kill switch, drawdown, portfolio CSV.  
 4. **v1.1.0** — Real operator UX: tabs, logo, fund/send, Telegram, tax CSV, trust line, and everything above.  
 5. **v1.2.0 (mainnet-prep)** — Defensive MM decision logic, market conditions GUI, auto profile switching, kill-switch fix.  
-6. **v1.3.0–1.3.2 (mainnet-pilot)** — Full defensive MM stack, spread-check fix, profile edge + Windows stop fix; 10-cycle mainnet dry-run gate passed.
+6. **v1.3.0–1.3.2 (mainnet-pilot)** — Full defensive MM stack, spread-check fix, profile edge + Windows stop fix; 10-cycle mainnet dry-run gate passed.  
+7. **v1.3.3 (mainnet-live)** — First live orders; spread-check boundary fix for two-sided bids + GUI display fix.
 
-**Next likely step:** Small live mainnet pilot (`dry_run: false`), then two-sided quoting once RLUSD builds from fills.
+**Next likely step:** Continue small live pilot; rebalance toward RLUSD for tighter two-sided quoting.

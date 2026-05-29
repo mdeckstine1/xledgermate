@@ -23,6 +23,22 @@ def test_clamp_ask_to_book_touch() -> None:
     assert clamped >= best_ask * 0.998
 
 
+def test_clamp_bid_stays_inside_validation_limit() -> None:
+    best_bid = 1.326370
+    clamped = _clamp_quote_price(
+        side="bid",
+        price=1.31,
+        mid_price=1.327,
+        best_bid=best_bid,
+        best_ask=1.328,
+        max_worse_than_touch_pct=0.50,
+        max_improve_touch_pct=0.15,
+        max_half_spread_from_mid_pct=1.0,
+    )
+    vs_touch_pct = ((clamped - best_bid) / best_bid) * 100.0
+    assert vs_touch_pct >= -0.50 + 0.02
+
+
 def test_xrp_only_build_quotes_near_book() -> None:
     config = BotConfig()
     config.fund_with_xrp_only = True

@@ -1,6 +1,6 @@
 # XLedgerMate — Plain-English Operator Manual
 
-*Version 1.3.2 · For humans who remember when “save” meant a floppy disk*
+*Version 1.3.3 · For humans who remember when “save” meant a floppy disk*
 
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
@@ -171,7 +171,7 @@ Stay on **dry-run** until step 5 passes consistently. The engine **blocks live o
 | Kill switch active | Advanced tab → **Clear kill switch** after you understand why it fired. Page refreshes; drawdown baseline resets on next cycle. |
 | “Preflight failed” | Read the red/yellow messages; usually trust line, zero sizes, or no mid price. |
 | `amendmentBlocked` / “need upgrade” | Your **mainnet RPC** hit an outdated node (common on `xrplcluster.com`). In **Advanced**, set Mainnet RPC to `https://s1.ripple.com:51234`, **Save Config**, retry. |
-| Spread check red on mainnet | Planned quotes are too far from **live** best bid/ask. Stay in **dry-run**; adjust **Live spread guard** on Controls or profile until Dashboard shows **Spread check OK**. Live orders are blocked until it passes. |
+| Spread check red on mainnet | Planned quotes are too far from **live** best bid/ask. Stay in **dry-run**; adjust **Live spread guard** on Controls or profile until Dashboard shows **Spread check OK**. Live orders are blocked until it passes. If the engine log says `spread_check=OK` but the panel shows FAIL, **Stop Bot → Start Bot** after an update (v1.3.3+ shows the engine’s last-cycle result). |
 
 **Emergency stop** (Advanced) — Disables trading, stops engine, sets kill switch, cancels offers (if not dry-run). Use when you want everything off *now*.
 
@@ -208,7 +208,7 @@ Leave “notify each cycle” off unless you enjoy constant buzzing.
 
 ## Version & history
 
-- Current version: **1.3.2** (see `VERSION` file).
+- Current version: **1.3.3** (see `VERSION` file).
 - What changed release-by-release: **`CHANGELOG.md`** in the project folder.
 
 ---

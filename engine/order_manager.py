@@ -11,6 +11,10 @@ from strategy.quote_decision import QuoteAdjustments
 _MAX_SIDE_SPREAD_PCT = 2.5
 
 
+# Stay slightly inside spread-validation touch limits (fp + book drift between cycles).
+_TOUCH_CLAMP_BUFFER_PCT = 0.03
+
+
 def _clamp_quote_price(
     *,
     side: str,
@@ -33,7 +37,7 @@ def _clamp_quote_price(
         price = min(max(price, floor_mid), ceiling_mid)
         if best_ask is not None and best_ask > 0:
             improve = max_improve_touch_pct / 100.0
-            worse = max_worse_than_touch_pct / 100.0
+            worse = max(0.0, max_worse_than_touch_pct - _TOUCH_CLAMP_BUFFER_PCT) / 100.0
             lo = best_ask * (1.0 - improve)
             hi = best_ask * (1.0 + worse)
             price = min(max(price, lo), hi)
@@ -44,7 +48,7 @@ def _clamp_quote_price(
     price = max(min(price, ceiling_mid), floor_mid)
     if best_bid is not None and best_bid > 0:
         improve = max_improve_touch_pct / 100.0
-        worse = max_worse_than_touch_pct / 100.0
+        worse = max(0.0, max_worse_than_touch_pct - _TOUCH_CLAMP_BUFFER_PCT) / 100.0
         hi = best_bid * (1.0 + improve)
         lo = best_bid * (1.0 - worse)
         price = max(min(price, hi), lo)

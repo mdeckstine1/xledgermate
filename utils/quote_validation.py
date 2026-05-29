@@ -7,6 +7,9 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from core.runtime_state import QuoteIntent
 
+# Small slack so clamped quotes stay inside validation after float rounding.
+_TOUCH_TOLERANCE_PCT = 0.01
+
 
 @dataclass
 class QuoteValidationResult:
@@ -120,14 +123,14 @@ def validate_quotes_against_book(
             vs_touch_pct = _pct_diff(touch, price)
             line["book_touch"] = touch
             line["vs_touch_pct"] = round(vs_touch_pct, 4)
-            if vs_touch_pct > max_worse_than_touch_pct:
+            if vs_touch_pct > max_worse_than_touch_pct + _TOUCH_TOLERANCE_PCT:
                 line["ok"] = False
                 line["note"] = f"{vs_touch_pct:.2f}% above best ask (too high to fill)"
                 errors.append(
                     f"L{level} ask {price:.6f} is {vs_touch_pct:.2f}% above best ask "
                     f"{touch:.6f} (max +{max_worse_than_touch_pct:.2f}%)"
                 )
-            elif vs_touch_pct < -max_improve_touch_pct:
+            elif vs_touch_pct < -max_improve_touch_pct - _TOUCH_TOLERANCE_PCT:
                 line["ok"] = False
                 line["note"] = f"{-vs_touch_pct:.2f}% below best ask (crossing book)"
                 errors.append(
@@ -151,14 +154,14 @@ def validate_quotes_against_book(
             vs_touch_pct = _pct_diff(touch, price)
             line["book_touch"] = touch
             line["vs_touch_pct"] = round(vs_touch_pct, 4)
-            if vs_touch_pct < -max_worse_than_touch_pct:
+            if vs_touch_pct < -max_worse_than_touch_pct - _TOUCH_TOLERANCE_PCT:
                 line["ok"] = False
                 line["note"] = f"{-vs_touch_pct:.2f}% below best bid (too low to fill)"
                 errors.append(
                     f"L{level} bid {price:.6f} is {-vs_touch_pct:.2f}% below best bid "
                     f"{touch:.6f} (max -{max_worse_than_touch_pct:.2f}%)"
                 )
-            elif vs_touch_pct > max_improve_touch_pct:
+            elif vs_touch_pct > max_improve_touch_pct + _TOUCH_TOLERANCE_PCT:
                 line["ok"] = False
                 line["note"] = f"{vs_touch_pct:.2f}% above best bid (crossing book)"
                 errors.append(

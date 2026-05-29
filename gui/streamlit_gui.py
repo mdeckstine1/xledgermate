@@ -288,6 +288,21 @@ def _engine_persisted_spread_check(runtime: dict) -> bool:
     )
 
 
+def _spread_validation_from_runtime(
+    runtime: dict, config: BotConfig
+) -> Optional[QuoteValidationResult]:
+    """Prefer engine-persisted spread check; recompute only when missing."""
+    summary = str(runtime.get("spread_validation_summary") or "").strip()
+    if summary and int(runtime.get("cycle_count", 0)) > 0:
+        return QuoteValidationResult(
+            ok=bool(runtime.get("spread_validation_ok")),
+            summary=summary,
+            errors=list(runtime.get("spread_validation_errors") or []),
+            lines=list(runtime.get("spread_validation_lines") or []),
+        )
+    return _compute_spread_validation(runtime, config)
+
+
 def _compute_spread_validation(
     runtime: dict, config: BotConfig
 ) -> Optional[QuoteValidationResult]:
@@ -325,10 +340,13 @@ def _render_spread_check_panel(runtime: dict, config: BotConfig) -> None:
             "The check below is computed in the dashboard from your saved quotes + book prices."
         )
 
-    result = _compute_spread_validation(runtime, config)
+    result = _spread_validation_from_runtime(runtime, config)
     if result is None:
         st.caption("Waiting for mid price and book from the next cycle…")
         return
+
+    if runtime.get("spread_validation_summary") and runtime.get("quote_intents"):
+        st.caption("Showing spread check from the **last engine cycle** (at quote time).")
 
     if result.ok:
         st.success(result.summary)
@@ -386,7 +404,7 @@ def _render_operating_banners(config: BotConfig, runtime: dict) -> None:
         )
 
     if mainnet and runtime.get("cycle_count", 0) > 0:
-        spread = _compute_spread_validation(runtime, config)
+        spread = _spread_validation_from_runtime(runtime, config)
         if spread and spread.ok:
             st.success(
                 "**Spread check OK** — Planned quotes are near the live book. "
