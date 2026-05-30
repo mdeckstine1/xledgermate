@@ -17,8 +17,8 @@ rlusd_issuer_mainnet: rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De
 order_levels: 3
 order_sizes:
   - 50.0
-  - 150.0
-  - 500.0
+  - 15.0
+  - 0.0
 xrp_reserve: 12.0
 min_order_size_xrp: 1.0
 fund_with_xrp_only: true
@@ -34,9 +34,16 @@ max_daily_drawdown_percent: 10.0
 min_drawdown_percent: 2.0
 max_drawdown_percent: 25.0
 inventory_target_xrp_ratio: 0.55
+inventory_max_deviation: 0.12
 edge_strictness: 1.0
-dynamic_min_edge_enabled: false
+dynamic_min_edge_enabled: true
 book_pressure_sensitivity: 1.0
+selective_order_refresh: true
+order_price_tolerance_pct: 0.08
+order_size_tolerance_xrp: 0.75
+spread_failure_kill_cycles: 8
+toxic_fill_ratio_kill_threshold: 0.55
+toxic_fill_min_count: 5
 max_quote_worse_than_touch_pct: 0.50
 max_quote_improve_touch_pct: 0.15
 max_half_spread_from_mid_pct: 1.0
@@ -45,8 +52,6 @@ auto_profile_switching: false
 auto_profile_inactivity_minutes: 30
 auto_profile_confirm_cycles: 3
 auto_profile_switch_cooldown_minutes: 45
-
-auto_rollover_enabled: true
 
 telegram_enabled: false
 telegram_token: ""          # Bot token from @BotFather

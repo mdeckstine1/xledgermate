@@ -100,6 +100,7 @@ class CSVLogger:
         cycle: int = 0,
         notes: str = "",
         tx_hash: str = "",
+        profit_xrp_equiv: float = 0.0,
         balance_xrp_after: float = 0.0,
         balance_rlusd_after: float = 0.0,
     ) -> None:
@@ -111,6 +112,7 @@ class CSVLogger:
             xrp_amount=xrp_amount,
             rlusd_amount=rlusd_amount,
             price_rlusd_per_xrp=price_rlusd_per_xrp,
+            profit_xrp_equiv=profit_xrp_equiv,
             cycle=cycle,
             notes=notes,
             tx_hash=tx_hash,
@@ -128,6 +130,7 @@ class CSVLogger:
         cycle: int = 0,
         notes: str = "",
         tx_hash: str = "",
+        profit_xrp_equiv: float = 0.0,
         balance_xrp_after: float = 0.0,
         balance_rlusd_after: float = 0.0,
     ) -> None:
@@ -139,6 +142,7 @@ class CSVLogger:
             xrp_amount=xrp_amount,
             rlusd_amount=rlusd_amount,
             price_rlusd_per_xrp=price_rlusd_per_xrp,
+            profit_xrp_equiv=profit_xrp_equiv,
             cycle=cycle,
             notes=notes,
             tx_hash=tx_hash,

@@ -51,10 +51,17 @@ class BotConfig:
     min_drawdown_percent: float = 2.0
     max_drawdown_percent: float = 25.0
     inventory_target_xrp_ratio: float = 0.55   # Slightly XRP-heavy (supports your $27 thesis)
+    inventory_max_deviation: float = 0.12      # Pause bids/asks when XRP share exceeds target ± this
     min_edge_pct: float = 0.10                 # Legacy; migrated to edge_strictness on load
     edge_strictness: float = 1.0                 # Scales profile min edge: 0.85 low, 1.0 normal, 1.15 strict
-    dynamic_min_edge_enabled: bool = False       # Adapt min edge to live book spread each cycle
+    dynamic_min_edge_enabled: bool = True        # Adapt min edge to live book spread each cycle
     book_pressure_sensitivity: float = 1.0   # How strongly book depth imbalance steers quotes
+    selective_order_refresh: bool = True     # Keep matching offers; cancel/replace only when quotes move
+    order_price_tolerance_pct: float = 0.08    # Match open offer if within this % of planned price
+    order_size_tolerance_xrp: float = 0.75     # Match open offer if size within this XRP
+    spread_failure_kill_cycles: int = 8        # Consecutive live spread-check failures → kill switch
+    toxic_fill_ratio_kill_threshold: float = 0.55  # Kill if toxic/recent fills exceeds this
+    toxic_fill_min_count: int = 5              # Minimum fills before toxic-ratio kill applies
     # Live spread guard: planned quotes must sit near book bid/ask (validated each cycle).
     max_quote_worse_than_touch_pct: float = 0.50   # Max % ask above best ask / bid below best bid
     max_quote_improve_touch_pct: float = 0.15      # Max % allowed to cross/improve touch
@@ -64,9 +71,6 @@ class BotConfig:
     auto_profile_inactivity_minutes: int = 30
     auto_profile_confirm_cycles: int = 3       # Same recommendation N cycles before switching
     auto_profile_switch_cooldown_minutes: int = 45  # Min gap between auto switches
-
-    # === AUTO ROLLOVER (risk capital rule) ===
-    auto_rollover_enabled: bool = True
 
     # === MONITORING ===
     telegram_enabled: bool = False

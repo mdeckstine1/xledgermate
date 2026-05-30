@@ -12,14 +12,17 @@ from connectors.xrpl_connector import is_plausible_rlusd_per_xrp
 from core.market_conditions import (
     assess_market_conditions,
     compute_book_spread_pct,
+    is_more_defensive_than,
     profile_for_auto_switch,
 )
 from utils.profile_recommendation import normalize_profile_recommendation
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_manager import OrderManager
+from engine.order_sync import plan_order_sync
 from monitoring.balance_logger import BalanceLogger
 from monitoring.csv_logger import CSVLogger
 from monitoring.fill_detection import detect_fill_from_balance_delta
+from monitoring.fill_economics import estimate_spread_capture_xrp
 from monitoring.telegram_alerts import TelegramAlerts
 from risk.drawdown import (
     DrawdownMonitor,
@@ -89,6 +92,8 @@ class TradingEngine:
         self._active_profile_last_cycle: Optional[str] = None
         self._last_market_condition: Optional[str] = None
         self._last_liquidity_level: Optional[str] = None
+        self._last_quote_mid: Optional[float] = None
+        self._consecutive_spread_failures: int = 0
 
     def _restore_price_history(self) -> List[dict]:
         """Continue chart history across engine restarts (from runtime_state.json)."""
@@ -310,6 +315,15 @@ class TradingEngine:
                     confirm_cycles = max(
                         1, int(getattr(config, "auto_profile_confirm_cycles", 3))
                     )
+                    if proposed and not is_more_defensive_than(
+                        config.active_profile, proposed
+                    ):
+                        confirm_cycles += 2
+                        self.decision_log.add(
+                            "profile",
+                            f"Aggressive auto-switch to {proposed} needs "
+                            f"{confirm_cycles} confirm cycles",
+                        )
                     cooldown_min = max(
                         0, int(getattr(config, "auto_profile_switch_cooldown_minutes", 45))
                     )
@@ -395,7 +409,15 @@ class TradingEngine:
                 fund_with_xrp_only=config.fund_with_xrp_only,
                 rlusd_balance=rlusd_balance,
                 min_order_xrp=config.min_order_size_xrp,
+                target_xrp_ratio=float(config.inventory_target_xrp_ratio),
+                inventory_max_deviation=float(
+                    getattr(config, "inventory_max_deviation", 0.12)
+                ),
             )
+            if fill_quality and not self.kill_switch.is_active():
+                await self._maybe_kill_on_toxic_fills(
+                    config, fill_quality, connector
+                )
             spendable_xrp = max(0.0, balance_xrp - config.xrp_reserve)
             rebalance = assess_rebalance_need(
                 xrp_balance=balance_xrp,
@@ -476,10 +498,14 @@ class TradingEngine:
                 and not spread_validation.ok
             )
             if live_blocked_by_spread:
+                self._consecutive_spread_failures += 1
                 self.decision_log.add(
                     "execution",
                     "Live orders blocked — spread check failed (fix spreads or stay in dry-run).",
                 )
+                await self._maybe_kill_on_spread_failures(config, connector)
+            else:
+                self._consecutive_spread_failures = 0
 
             if (
                 quote_plan
@@ -489,6 +515,7 @@ class TradingEngine:
                 and preflight.ready
                 and not live_blocked_by_spread
             ):
+                self._last_quote_mid = mid_price
                 placed_count = await self._refresh_orders(quote_plan.intents)
             open_offers = await connector.get_open_offers()
             if self._session_baseline_xrp is None:
@@ -672,6 +699,13 @@ class TradingEngine:
         )
         if not fill:
             return
+        mid_at_quote = self._last_quote_mid or mid_price
+        profit_xrp = estimate_spread_capture_xrp(
+            side=str(fill["side"]),
+            xrp_amount=float(fill["xrp_amount"]),
+            fill_price_rlusd_per_xrp=float(fill["price_rlusd_per_xrp"]),
+            mid_at_quote_rlusd_per_xrp=mid_at_quote,
+        )
         self._fill_quality.note_fill(
             side=str(fill["side"]),
             xrp_amount=float(fill["xrp_amount"]),
@@ -679,12 +713,16 @@ class TradingEngine:
             mid_at_fill=mid_price or float(fill["price_rlusd_per_xrp"]),
         )
         cycle = self._cycle_count + 1
-        notes = "Inferred from balance change between cycles (verify on ledger for taxes)."
+        notes = (
+            f"Inferred from balance delta; spread capture ~{profit_xrp:+.4f} XRP "
+            f"@ mid {mid_at_quote or 'n/a'} (verify on ledger for taxes)."
+        )
         common = dict(
             network=config.network_name(),
             xrp_amount=float(fill["xrp_amount"]),
             rlusd_amount=float(fill["rlusd_amount"]),
             price_rlusd_per_xrp=float(fill["price_rlusd_per_xrp"]),
+            profit_xrp_equiv=profit_xrp,
             cycle=cycle,
             notes=notes,
             balance_xrp_after=balance_xrp,
@@ -703,6 +741,36 @@ class TradingEngine:
                 f"BUY ~{common['xrp_amount']:.4f} XRP for {common['rlusd_amount']:.4f} RLUSD",
             )
 
+    async def _maybe_kill_on_spread_failures(
+        self, config: BotConfig, connector: XRPLConnector
+    ) -> None:
+        limit = int(getattr(config, "spread_failure_kill_cycles", 8))
+        if limit <= 0 or self._consecutive_spread_failures < limit:
+            return
+        if self.kill_switch.is_active():
+            return
+        reason = (
+            f"Spread check failed {self._consecutive_spread_failures} consecutive cycles "
+            f"(limit {limit})"
+        )
+        await self._activate_kill_switch(connector, config, reason)
+
+    async def _maybe_kill_on_toxic_fills(
+        self, config: BotConfig, fill_quality: Any, connector: XRPLConnector
+    ) -> None:
+        min_fills = int(getattr(config, "toxic_fill_min_count", 5))
+        threshold = float(getattr(config, "toxic_fill_ratio_kill_threshold", 0.55))
+        if fill_quality.recent_fills < min_fills:
+            return
+        ratio = fill_quality.toxic_fills / max(1, fill_quality.recent_fills)
+        if ratio < threshold or self.kill_switch.is_active():
+            return
+        reason = (
+            f"Toxic fill ratio {ratio:.0%} over last {fill_quality.recent_fills} fills "
+            f"(threshold {threshold:.0%})"
+        )
+        await self._activate_kill_switch(connector, config, reason)
+
     async def _refresh_orders(self, intents: List[QuoteIntent]) -> int:
         if self.config.dry_run:
             self.decision_log.add(
@@ -710,10 +778,44 @@ class TradingEngine:
                 f"Dry-run: would refresh {len(intents)} quotes (no ledger submit).",
             )
             return 0
-        cancelled = await self.connector.cancel_all_offers()
-        self.decision_log.add("execution", f"Cancelled {cancelled} open offers before refresh.")
+
+        selective = bool(getattr(self.config, "selective_order_refresh", True))
+        open_offers = await self.connector.get_open_offers()
+        cancelled = 0
         placed = 0
-        for intent in intents:
+
+        if selective and intents:
+            plan = plan_order_sync(
+                intents,
+                open_offers,
+                price_tolerance_pct=float(
+                    getattr(self.config, "order_price_tolerance_pct", 0.08)
+                ),
+                size_tolerance_xrp=float(
+                    getattr(self.config, "order_size_tolerance_xrp", 0.75)
+                ),
+            )
+            for seq in plan.cancel_sequences:
+                try:
+                    await self.connector.cancel_offer(seq)
+                    cancelled += 1
+                except Exception as exc:
+                    self.decision_log.add("execution", f"Cancel seq {seq} failed: {exc}")
+            to_place = plan.place_intents
+            if plan.kept_count:
+                self.decision_log.add(
+                    "execution",
+                    f"Kept {plan.kept_count} matching offer(s); "
+                    f"cancel {len(plan.cancel_sequences)}, place {len(to_place)}.",
+                )
+        else:
+            cancelled = await self.connector.cancel_all_offers()
+            to_place = list(intents)
+            self.decision_log.add(
+                "execution", f"Cancelled {cancelled} open offers before refresh."
+            )
+
+        for intent in to_place:
             try:
                 await self.connector.place_quote(intent)
                 placed += 1
@@ -722,7 +824,7 @@ class TradingEngine:
                     "execution",
                     f"Failed {intent.side} L{intent.level}: {exc}",
                 )
-        self.decision_log.add("execution", f"Placed {placed}/{len(intents)} offers.")
+        self.decision_log.add("execution", f"Placed {placed}/{len(to_place)} offers.")
         self.csv_logger.log_offer_refresh(
             network=self.config.network_name(),
             placed=placed,

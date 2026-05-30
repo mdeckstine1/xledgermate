@@ -22,6 +22,7 @@ from strategy.market_microstructure import (
     assess_market_edge,
     classify_momentum,
 )
+from risk.inventory_limits import assess_inventory_limits
 
 # Extra half-spread per side from inventory skew (percentage points, not fraction).
 _MAX_INVENTORY_SPREAD_ADD_PCT = 1.5
@@ -180,6 +181,8 @@ def build_quote_adjustments(
     fund_with_xrp_only: bool = False,
     rlusd_balance: float = 0.0,
     min_order_xrp: float = 1.0,
+    target_xrp_ratio: float = 0.55,
+    inventory_max_deviation: float = 0.12,
 ) -> QuoteAdjustments:
     """Combine profile, market, inventory, momentum, book pressure, and fill quality."""
     adj = QuoteAdjustments(inventory_label=inventory.label)
@@ -199,6 +202,18 @@ def build_quote_adjustments(
     adj.ask_anchor_shift_pct = inventory.ask_anchor_shift_pct
     if inventory.label != "balanced":
         parts.append(f"inventory {inventory.label} (XRP {inventory.xrp_ratio:.0%}) → steer quotes")
+
+    inv_limits = assess_inventory_limits(
+        xrp_ratio=inventory.xrp_ratio,
+        target_xrp_ratio=target_xrp_ratio,
+        max_deviation=inventory_max_deviation,
+    )
+    if inv_limits.pause_bids:
+        adj.pause_bids = True
+    if inv_limits.pause_asks:
+        adj.pause_asks = True
+    if inv_limits.summary:
+        parts.append(inv_limits.summary)
 
     momentum_tier, momentum_note = classify_momentum(mid_momentum_pct)
     adj.adverse_selection_tier = momentum_tier.name
@@ -255,15 +270,40 @@ def build_quote_adjustments(
     adj.market_edge_pct = market_edge.capture_edge_pct
     parts.append(market_edge.summary)
 
+    # Lean in when book offers fat capture; widen slightly when capture is negative.
+    if assessment.condition == CONDITION_FAVORABLE and market_edge.met:
+        cap = market_edge.capture_edge_pct
+        if cap > 0.12:
+            tighten = min(0.12, cap * 0.12)
+            adj.spread_multiplier *= max(0.85, 1.0 - tighten)
+            parts.append(f"favorable + fat capture {cap:.2f}% → tighter spread ({tighten:.2f})")
+        elif cap < -0.02:
+            adj.spread_multiplier *= 1.06
+            parts.append(f"favorable but thin capture {cap:.2f}% → slightly wider")
+
     required_edge = min_edge_pct + xrpl_fee_bps / 100.0
-    adj.min_edge_met = effective_spread_l1_pct * adj.spread_multiplier >= required_edge
+    base_l1 = max(0.01, effective_spread_l1_pct)
+    current_l1 = base_l1 * adj.spread_multiplier
+    adj.min_edge_met = current_l1 >= required_edge
+
+    if not adj.min_edge_met:
+        needed_mult = (required_edge * 1.02) / base_l1
+        adj.spread_multiplier = max(adj.spread_multiplier, needed_mult)
+        adj.min_edge_met = True
+        parts.append(
+            f"edge guard: widened spread to {base_l1 * adj.spread_multiplier:.3f}% "
+            f"(need {required_edge:.3f}%)"
+        )
+
+    if not adj.market_edge_met:
+        adj.spread_multiplier *= 1.08
+        adj.bid_spread_add_pct += 0.04
+        adj.ask_spread_add_pct += 0.04
+        parts.append("market edge thin → widen both sides (+8% spread, +0.04% side add)")
+
     if not adj.min_edge_met or not adj.market_edge_met:
         adj.size_multiplier *= 0.55 if acquiring_rlusd else 0.45
-        if not adj.min_edge_met:
-            parts.append(
-                f"edge guard: L1 {effective_spread_l1_pct * adj.spread_multiplier:.3f}% "
-                f"< need {required_edge:.3f}% → smaller size (spread unchanged)"
-            )
+        parts.append("edge guard → smaller size until spread adequate")
 
     adj.bid_spread_add_pct = min(_MAX_DEFENSIVE_SIDE_SPREAD_ADD_PCT, adj.bid_spread_add_pct)
     adj.ask_spread_add_pct = min(_MAX_DEFENSIVE_SIDE_SPREAD_ADD_PCT, adj.ask_spread_add_pct)

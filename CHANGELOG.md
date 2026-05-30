@@ -5,6 +5,32 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.3.9] — 2026-05-30 (`debug`)
+
+**Theme:** Good → great MM — edge capture, queue preservation, harder protection.
+
+### Added
+
+- **Edge guard widens spread** (not size-only) when min/market edge thin; favorable `capture_edge_pct` tightens/widens aggression.
+- **Selective order refresh** — keep matching open offers; cancel/replace only when price/size drift (`engine/order_sync.py`).
+- **Inventory circuit breakers** — pause bids/asks when XRP share exceeds target ± `inventory_max_deviation`.
+- **Multi-trigger kill switch** — consecutive spread-check failures; toxic fill ratio threshold.
+- **Per-fill spread capture** — `profit_xrp_equiv` in trade CSV via `monitoring/fill_economics.py`.
+- **Auto-switch guard** — aggressive profile switches need +2 confirm cycles.
+- **Tests** — `test_great_mm`, `test_kill_switch`, `test_drawdown`, `test_order_sync`.
+
+### Changed
+
+- **`dynamic_min_edge_enabled`** default **true** in `BotConfig` and example config.
+- **Example L2 size** — `[50, 15, 0]` for depth skim.
+- **`requirements.txt`** — added `pandas`, `pytest`.
+
+### Removed
+
+- **`auto_rollover_enabled`** — unimplemented config stub.
+
+---
+
 ## [1.3.8] — 2026-05-30 (`debug/repair-set`)
 
 **Theme:** Debug repair set — GUI save/apply reliability, profile presets, profit_mode guardrails.

@@ -1,6 +1,6 @@
 # XLedgerMate — Plain-English Operator Manual
 
-*Version 1.3.8 · For humans who remember when “save” meant a floppy disk*
+*Version 1.3.9 · For humans who remember when “save” meant a floppy disk*
 
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
@@ -217,8 +217,9 @@ Leave “notify each cycle” off unless you enjoy constant buzzing.
 
 ## Version & history
 
-- Current version: **1.3.8** (see `VERSION` file).
+- Current version: **1.3.9** (see `VERSION` file).
 - What changed release-by-release: **`CHANGELOG.md`** in the project folder.
+- Roadmap to “great” MM (checklist): **[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)**.
 
 ---
 

@@ -1,8 +1,9 @@
 # XLedgerMate — Strategy Manual
 
-*Version 1.3.8 · What the bot is trying to do with your money, in plain language*
+*Version 1.3.9 · What the bot is trying to do with your money, in plain language*
 
-This document is about **strategy and risk**, not which buttons to press. For setup, tabs, and wallet steps, see [`OPERATOR_MANUAL.md`](OPERATOR_MANUAL.md).
+This document is about **strategy and risk**, not which buttons to press. For setup, tabs, and wallet steps, see [`OPERATOR_MANUAL.md`](OPERATOR_MANUAL.md).  
+For the engineering roadmap (good → great MM), see [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
 
 ---
 

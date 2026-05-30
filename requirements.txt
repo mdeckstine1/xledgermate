@@ -1,3 +1,5 @@
 streamlit
 PyYAML
 xrpl-py
+pandas
+pytest

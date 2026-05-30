@@ -332,6 +332,12 @@ class XRPLConnector:
                 )
         return parsed
 
+    async def cancel_offer(self, sequence: int) -> str:
+        wallet = self.load_wallet()
+        tx = OfferCancel(account=self.account_address, offer_sequence=sequence)
+        response = await self._sign_and_submit(tx, wallet)
+        return self._validate_tx_response(response)
+
     async def cancel_all_offers(self) -> int:
         wallet = self.load_wallet()
         cancelled = 0
