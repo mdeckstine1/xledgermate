@@ -114,6 +114,7 @@ _WALLET_SNAPSHOT_KEYS = (
     "balance_xrp",
     "balance_rlusd",
     "updated_utc",
+    "fills_session",
 )
 
 
@@ -174,6 +175,10 @@ def _sidebar_wallet_display_runtime(fresh: Optional[dict] = None) -> tuple[dict,
     for key, val in fresh.items():
         if val is not None and val != "":
             display[key] = val
+
+    fresh_fills = int(fresh.get("fills_session") or 0) if fresh else 0
+    cached_fills = int(cached.get("fills_session") or 0)
+    display["fills_session"] = max(fresh_fills, cached_fills)
 
     fresh_has_portfolio = fresh.get("portfolio_value_xrp") is not None
     fresh_has_balances = fresh.get("balance_xrp") is not None or fresh.get("balance_rlusd") is not None
@@ -1069,26 +1074,29 @@ def _render_command_bar(
 ) -> None:
     """Alerts + top status bar (HTML — requires inject_theme CSS)."""
     _render_alert_strip(config, runtime)
-    pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime) if runtime else (0.0, 0.0)
-    profile = _gui_display_profile(config, runtime, engine_running=engine_running)
+    display, _ = _sidebar_wallet_display_runtime(runtime)
+    pnl_mtm, pnl_balance = _session_pnl_from_runtime(display if display else runtime) if (display or runtime) else (0.0, 0.0)
+    profile = _gui_display_profile(config, display or runtime, engine_running=engine_running)
     profile_label = PROFILE_LABELS.get(str(profile), str(profile))
-    dry = bool(runtime.get("dry_run", config.dry_run)) if runtime else config.dry_run
+    dry = bool((display or runtime).get("dry_run", config.dry_run)) if (display or runtime) else config.dry_run
+    bar_runtime = display or runtime
     render_header_bar(
         engine_running=engine_running,
         dry_run=dry,
         testnet=config.testnet,
         profile_label=profile_label,
-        market_label=str(runtime.get("market_condition_label", "—")),
-        market_condition=str(runtime.get("market_condition", "neutral")),
+        market_label=str(bar_runtime.get("market_condition_label", "—")),
+        market_condition=str(bar_runtime.get("market_condition", "neutral")),
         pnl_mtm=pnl_mtm,
         pnl_balance=pnl_balance,
         portfolio_xrp=(
-            float(runtime["portfolio_value_xrp"])
-            if runtime.get("portfolio_value_xrp") is not None
+            float(bar_runtime["portfolio_value_xrp"])
+            if bar_runtime.get("portfolio_value_xrp") is not None
             else None
         ),
-        mid=runtime.get("mid_price"),
+        mid=bar_runtime.get("mid_price"),
         network=config.network_name(),
+        fills_session=int(bar_runtime.get("fills_session", 0) or 0),
     )
 
 

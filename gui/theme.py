@@ -294,6 +294,7 @@ def render_header_bar(
     portfolio_xrp: Optional[float],
     mid: Optional[float],
     network: str,
+    fills_session: int = 0,
 ) -> None:
     """Single top command bar — status, mode, P&L, profile, market."""
     import streamlit as st
@@ -319,6 +320,7 @@ def render_header_bar(
             header_stat("Balance Δ", format_pnl(pnl_balance), value_class=pnl_class(pnl_balance)),
             header_stat("Profile", profile_label),
             header_stat("Mid", mid_str),
+            header_stat("Fills", str(int(fills_session))),
         ]
     )
 
