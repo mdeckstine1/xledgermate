@@ -130,16 +130,20 @@ def _clamp_order_sizes(config: BotConfig, size_cap: float) -> None:
 
 
 def _ensure_page_config() -> None:
-    if st.session_state.get("_xledgermate_page_config"):
-        return
-    st.set_page_config(
-        page_title="XLedgerMate",
-        page_icon=str(LOGO_PATH) if LOGO_PATH.is_file() else "chart",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
+    if not st.session_state.get("_xledgermate_page_config"):
+        st.set_page_config(
+            page_title="XLedgerMate",
+            page_icon=str(LOGO_PATH) if LOGO_PATH.is_file() else "chart",
+            layout="wide",
+            initial_sidebar_state="expanded",
+        )
+        st.session_state._xledgermate_page_config = True
     inject_theme()
-    st.session_state._xledgermate_page_config = True
+
+
+def _ensure_theme() -> None:
+    """Re-apply CSS every run — Streamlit fragment reruns drop injected styles."""
+    inject_theme()
 
 
 def _gui_clear_stale_panel_state() -> None:
@@ -832,6 +836,17 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
     m3.metric("Balance Δ P&L", f"{pnl_balance:+.4f}", help=_SESSION_BALANCE_PNL_HELP)
     m4.metric("Drawdown", f"{dd:.3f}%")
 
+    e1, e2, e3, e4 = st.columns(4)
+    toxic_pct = float(runtime.get("toxic_fill_ratio", 0.0)) * 100.0
+    toxic_30 = float(runtime.get("toxic_fill_ratio_30s", 0.0)) * 100.0
+    e1.metric("Toxic ratio", f"{toxic_pct:.0f}%", help="Adverse fills / recent (profile dampens quotes)")
+    e2.metric("Toxic @30s", f"{toxic_30:.0f}%", help="30s markout horizon")
+    e3.metric("Cancel / fill", f"{float(runtime.get('cancel_per_fill', 0.0)):.1f}", help="Lower is better — queue preservation")
+    poll = int(runtime.get("book_poll_interval_seconds", 15))
+    full = int(runtime.get("full_quote_refresh_seconds", 60))
+    refresh_label = "full" if runtime.get("last_cycle_full_refresh", True) else "poll"
+    e4.metric("Refresh cadence", f"{poll}s / {full}s", help=f"Last cycle: {refresh_label} (profile-owned)")
+
     # ── Balances & activity ──
     b1, b2, b3 = st.columns(3)
     xrp = runtime.get("balance_xrp")
@@ -887,11 +902,19 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
     if runtime.get("quote_decision_summary"):
         with st.expander("Why these quotes?", expanded=False):
             st.caption(runtime.get("quote_decision_summary"))
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("Market edge", "OK" if runtime.get("market_edge_met", True) else "THIN")
             c2.metric("Fill quality", f"{float(runtime.get('fill_quality_score', 100)):.0f}")
-            c3.metric("Pause bids", "YES" if runtime.get("pause_bids") else "no")
-            c4.metric("Pause asks", "YES" if runtime.get("pause_asks") else "no")
+            toxic_pct = float(runtime.get("toxic_fill_ratio", 0.0)) * 100.0
+            toxic_30 = float(runtime.get("toxic_fill_ratio_30s", 0.0)) * 100.0
+            c3.metric("Toxic ratio", f"{toxic_pct:.0f}%", help="Adverse fills / recent (cycle markout)")
+            c4.metric("Toxic @30s", f"{toxic_30:.0f}%", help="30-second markout horizon")
+            c5.metric("Cancel/fill", f"{float(runtime.get('cancel_per_fill', 0.0)):.1f}")
+            c6.metric("Pause bids", "YES" if runtime.get("pause_bids") else "no")
+            st.caption(
+                f"Pause asks: {'YES' if runtime.get('pause_asks') else 'no'} · "
+                f"Mean 30s markout: {float(runtime.get('mean_markout_30s_pct', 0.0)):+.3f}%"
+            )
 
     with st.expander("Quote ladder (this cycle)", expanded=False):
         intents = runtime.get("quote_intents", [])
@@ -901,10 +924,53 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
             st.caption("No quote intents yet.")
 
 
+def _render_command_bar(
+    config: BotConfig,
+    runtime: dict,
+    *,
+    engine_running: bool,
+) -> None:
+    """Alerts + top status bar (HTML — requires inject_theme CSS)."""
+    _render_alert_strip(config, runtime)
+    pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime) if runtime else (0.0, 0.0)
+    profile = _gui_display_profile(config, runtime, engine_running=engine_running)
+    profile_label = PROFILE_LABELS.get(str(profile), str(profile))
+    dry = bool(runtime.get("dry_run", config.dry_run)) if runtime else config.dry_run
+    render_header_bar(
+        engine_running=engine_running,
+        dry_run=dry,
+        testnet=config.testnet,
+        profile_label=profile_label,
+        market_label=str(runtime.get("market_condition_label", "—")),
+        market_condition=str(runtime.get("market_condition", "neutral")),
+        pnl_mtm=pnl_mtm,
+        pnl_balance=pnl_balance,
+        portfolio_xrp=(
+            float(runtime["portfolio_value_xrp"])
+            if runtime.get("portfolio_value_xrp") is not None
+            else None
+        ),
+        mid=runtime.get("mid_price"),
+        network=config.network_name(),
+    )
+
+
+@_fragment(run_every=timedelta(seconds=5))
+def _command_bar_live_fragment(config: BotConfig) -> None:
+    """Keep header bar + theme CSS alive across fragment-only reruns."""
+    if not st.session_state.get("auto_refresh", True):
+        return
+    _ensure_theme()
+    runtime = _load_runtime_state() or {}
+    engine_running = is_engine_running()
+    _render_command_bar(config, runtime, engine_running=engine_running)
+
+
 @_fragment(run_every=timedelta(seconds=5))
 def _sidebar_wallet_live_fragment() -> None:
     if not st.session_state.get("auto_refresh", True):
         return
+    _ensure_theme()
     runtime = _load_runtime_state()
     if runtime:
         _render_sidebar_wallet(runtime)
@@ -914,6 +980,7 @@ def _sidebar_wallet_live_fragment() -> None:
 def _dashboard_live_fragment() -> None:
     if not st.session_state.get("auto_refresh", True):
         return
+    _ensure_theme()
     runtime = _load_runtime_state()
     if not runtime:
         return
@@ -928,6 +995,7 @@ def _dashboard_live_fragment() -> None:
 def _logs_live_fragment() -> None:
     if not st.session_state.get("auto_refresh", True):
         return
+    _ensure_theme()
     runtime = _load_runtime_state()
     if not runtime:
         return
@@ -942,6 +1010,7 @@ def _logs_live_fragment() -> None:
 def _inventory_live_fragment() -> None:
     if not st.session_state.get("auto_refresh", True):
         return
+    _ensure_theme()
     runtime = _load_runtime_state()
     if not runtime:
         return
@@ -1627,26 +1696,10 @@ def run_gui() -> None:
                 _gui_clear_stale_panel_state()
                 st.rerun()
 
-    _render_alert_strip(config, runtime)
-
-    pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime) if runtime else (0.0, 0.0)
-    profile = _gui_display_profile(config, runtime, engine_running=engine_running)
-    profile_label = PROFILE_LABELS.get(str(profile), str(profile))
-    dry = bool(runtime.get("dry_run", config.dry_run)) if runtime else config.dry_run
-
-    render_header_bar(
-        engine_running=engine_running,
-        dry_run=dry,
-        testnet=config.testnet,
-        profile_label=profile_label,
-        market_label=str(runtime.get("market_condition_label", "—")),
-        market_condition=str(runtime.get("market_condition", "neutral")),
-        pnl_mtm=pnl_mtm,
-        pnl_balance=pnl_balance,
-        portfolio_xrp=float(runtime["portfolio_value_xrp"]) if runtime.get("portfolio_value_xrp") is not None else None,
-        mid=runtime.get("mid_price"),
-        network=config.network_name(),
-    )
+    if st.session_state.get("auto_refresh", True):
+        _command_bar_live_fragment(config)
+    else:
+        _render_command_bar(config, runtime, engine_running=engine_running)
 
     tab_dash, tab_ctrl, tab_inv, tab_logs, tab_adv = st.tabs(
         ["Dashboard", "Controls", "Inventory", "Logs", "Advanced"]

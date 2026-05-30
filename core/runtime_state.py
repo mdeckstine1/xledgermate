@@ -91,6 +91,17 @@ class RuntimeState:
     edge_resolution_summary: str = ""
     dynamic_min_edge_enabled: bool = False
     edge_strictness: float = 1.0
+    # Tier 2 execution metrics
+    toxic_fill_ratio: float = 0.0
+    toxic_fill_ratio_30s: float = 0.0
+    mean_markout_30s_pct: float = 0.0
+    offers_cancelled_session: int = 0
+    offers_kept_session: int = 0
+    fills_session: int = 0
+    cancel_per_fill: float = 0.0
+    book_poll_interval_seconds: int = 15
+    full_quote_refresh_seconds: int = 60
+    last_cycle_full_refresh: bool = True
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()

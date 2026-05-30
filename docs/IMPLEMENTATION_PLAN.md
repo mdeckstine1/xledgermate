@@ -1,6 +1,6 @@
 # XLedgerMate — Implementation Plan: Good → Great MM
 
-*Updated: 2026-05-30 · v1.3.9 great-MM gap fixes shipped on `debug`*
+*Updated: 2026-05-30 · v1.4.0 Tier 2 on `tier-2-fix`*
 
 ## North star
 
@@ -74,24 +74,24 @@
 - [x] Map open offers by side/sequence from connector
 - [x] Cancel/replace only when price or size change exceeds epsilon — `engine/order_sync.py`
 - [x] Log: offers cancelled vs kept per cycle
-- [ ] Metric target: **cancelled offers per fill** trending down (measure in production)
+- [ ] Metric target: **cancelled offers per fill** trending down (measure in production) — **tracked in runtime_state `cancel_per_fill`**
 
-**Files:** `engine/trading_engine.py`, `connectors/xrpl_connector.py`, `engine/order_sync.py`
+**Files:** `engine/trading_engine.py`, `connectors/xrpl_connector.py`, `engine/order_sync.py`, `core/profile_execution.py`
 
 ### 2. Ledger-accurate fills
 
-- [ ] Poll or parse `account_tx` / OfferFilled for bot account
-- [ ] Match fills to quote intents; store tx hash + real fill price
-- [ ] Stop relying on balance-delta alone for P&L and markout
-- [ ] Tests with mocked XRPL JSON-RPC responses
+- [x] Poll or parse `account_tx` / OfferFilled for bot account
+- [x] Match fills to quote intents; store tx hash + real fill price
+- [x] Balance-delta fallback when ledger scan misses (deduped)
+- [x] Tests with mocked XRPL JSON-RPC responses
 
-**Files:** `monitoring/fill_detection.py` (extend or new `monitoring/ledger_fills.py`)
+**Files:** `monitoring/fill_detection.py`, `monitoring/ledger_fills.py`
 
 ### 3. Multi-horizon markout
 
-- [ ] Record markout at +30s and +5m after fill (not only next cycle mid)
-- [ ] Feed improved markout into `FillQualityTracker`
-- [ ] Surface toxic ratio in GUI Dashboard or Logs tab
+- [x] Record markout at +30s and +5m after fill (not only next cycle mid)
+- [x] Feed improved markout into `FillQualityTracker`
+- [x] Surface toxic ratio in GUI Dashboard or Logs tab
 
 **Files:** `strategy/fill_quality.py`, `engine/trading_engine.py`, `gui/streamlit_gui.py`
 
@@ -106,17 +106,17 @@
 
 ### 5. Smarter refresh cadence
 
-- [ ] Tiered loop: fast book/momentum check (e.g. 15s) vs full refresh (60s)
+- [x] Tiered loop: fast book/momentum check (profile-owned poll) vs full refresh (profile-owned)
 - [x] Skip full cancel/replace when quotes unchanged (`selective_order_refresh`)
-- [ ] Pause refresh after toxic-fill cluster (configurable threshold)
+- [x] Pause refresh after toxic-fill cluster (profile threshold)
 
-**Files:** `engine/trading_engine.py`, `config/settings.py`
+**Files:** `engine/trading_engine.py`, `config/settings.py`, `core/profile_execution.py`, `core/perception.py` (profile fields)
 
 ### 6. Multi-trigger kill switch
 
 - [x] Trigger on N consecutive spread-check failures (live mode)
 - [x] Trigger on toxic-fill ratio > threshold over last M fills
-- [ ] Trigger on RPC failure streak (optional circuit breaker)
+- [x] Trigger on RPC failure streak (optional circuit breaker)
 - [x] Tests — `tests/test_kill_switch.py`, `tests/test_drawdown.py`
 
 **Files:** `risk/kill_switch.py`, `engine/trading_engine.py`
@@ -124,7 +124,7 @@
 ### 7. Auto-switch guard
 
 - [x] Aggressive auto-switch requires +2 extra confirm cycles (`is_more_defensive_than`)
-- [ ] Log every auto profile switch with before/after + market snapshot (partial — decision log only)
+- [x] Log every auto profile switch with before/after + market snapshot
 
 **Files:** `core/market_conditions.py`, `engine/trading_engine.py`
 
@@ -195,8 +195,9 @@ Copy to a spreadsheet or append to `logs/` review notes.
 | 2026-05-30 | v1.3.9 on `good-to-great` | Tier 1 MM gaps: edge widen, selective refresh, inventory limits, fill P&L, kill triggers |
 | 2026-05-30 | **v1.3.9 great-MM** | Edge widen, selective refresh, inventory limits, fill P&L, multi-trigger kill |
 | | Tier 1 live verify | Spread check + profit_xrp_equiv on mainnet fills |
-| | Tier 2 started | |
-| | Tier 2 complete | |
+| 2026-05-30 | **v1.4.0 tier-2-fix** | Profile-owned execution, ledger fills, markout 30s/5m, tiered refresh, RPC kill |
+| 2026-05-30 | Tier 2 started | Branch `tier-2-fix` from `good-to-great` |
+| | Tier 2 live verify | Cancel/fill ratio + toxic @30s on mainnet pilot |
 | | Tier 3 item started | |
 
 ---
@@ -215,8 +216,9 @@ Copy to a spreadsheet or append to `logs/` review notes.
 Cycle:  engine/trading_engine.py::_run_cycle
 Quotes: strategy/quote_decision.py::build_quote_adjustments
 Edge:   strategy/market_microstructure.py::resolve_effective_min_edge_pct
-Fills:  monitoring/fill_detection.py + engine::_detect_and_log_fills
-Orders: engine/trading_engine.py::_refresh_orders  ← cancel-all today
+Fills:  monitoring/ledger_fills.py + monitoring/fill_detection.py (fallback)
+Orders: engine/trading_engine.py::_refresh_orders  ← profile-aware selective sync
+Profile execution: core/profile_execution.py + core/perception.py Profile fields
 Risk:   risk/drawdown.py, risk/kill_switch.py
 Config: config/settings.py, config/config.yaml (local, gitignored)
 ```

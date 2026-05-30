@@ -22,6 +22,13 @@ class Profile:
     book_pressure_sensitivity: float = 1.0
     min_edge_mult: float = 1.0  # legacy; edge target is min_edge_pct
     min_edge_pct: float = 0.10  # profile-owned minimum L1 edge target (%)
+    # Tier 2 execution — queue preservation and refresh cadence (profile-owned)
+    order_keep_price_tolerance_pct: float = 0.10
+    order_keep_size_tolerance_xrp: float = 0.75
+    book_poll_interval_seconds: int = 15
+    full_quote_refresh_seconds: int = 60
+    toxic_refresh_pause_ratio: float = 0.40
+    markout_toxic_threshold_pct: float = 0.04
 
 
 @dataclass
@@ -110,6 +117,12 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         book_pressure_sensitivity=1.25,
         min_edge_mult=1.15,
         min_edge_pct=0.12,
+        order_keep_price_tolerance_pct=0.12,
+        order_keep_size_tolerance_xrp=1.0,
+        book_poll_interval_seconds=20,
+        full_quote_refresh_seconds=60,
+        toxic_refresh_pause_ratio=0.35,
+        markout_toxic_threshold_pct=0.04,
     ),
     "high_volatility": Profile(
         name="high_volatility",
@@ -129,6 +142,12 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         book_pressure_sensitivity=1.35,
         min_edge_mult=1.25,
         min_edge_pct=0.13,
+        order_keep_price_tolerance_pct=0.14,
+        order_keep_size_tolerance_xrp=1.25,
+        book_poll_interval_seconds=20,
+        full_quote_refresh_seconds=90,
+        toxic_refresh_pause_ratio=0.28,
+        markout_toxic_threshold_pct=0.035,
     ),
     "thin_liquidity": Profile(
         name="thin_liquidity",
@@ -148,6 +167,12 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         book_pressure_sensitivity=1.50,
         min_edge_mult=1.20,
         min_edge_pct=0.11,
+        order_keep_price_tolerance_pct=0.13,
+        order_keep_size_tolerance_xrp=1.0,
+        book_poll_interval_seconds=20,
+        full_quote_refresh_seconds=75,
+        toxic_refresh_pause_ratio=0.30,
+        markout_toxic_threshold_pct=0.04,
     ),
     "tight_spread": Profile(
         name="tight_spread",
@@ -167,6 +192,12 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         book_pressure_sensitivity=0.85,
         min_edge_mult=0.85,
         min_edge_pct=0.08,
+        order_keep_price_tolerance_pct=0.07,
+        order_keep_size_tolerance_xrp=0.50,
+        book_poll_interval_seconds=15,
+        full_quote_refresh_seconds=45,
+        toxic_refresh_pause_ratio=0.45,
+        markout_toxic_threshold_pct=0.05,
     ),
     "profit_mode": Profile(
         name="profit_mode",
@@ -186,6 +217,12 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         book_pressure_sensitivity=0.72,
         min_edge_mult=0.72,
         min_edge_pct=0.05,
+        order_keep_price_tolerance_pct=0.06,
+        order_keep_size_tolerance_xrp=0.40,
+        book_poll_interval_seconds=15,
+        full_quote_refresh_seconds=30,
+        toxic_refresh_pause_ratio=0.50,
+        markout_toxic_threshold_pct=0.06,
     ),
 }
 

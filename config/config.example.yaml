@@ -26,6 +26,8 @@ base_spread: 0.0010
 level_spread_increment: 0.0005
 
 order_refresh_time_seconds: 60
+tiered_refresh_enabled: true
+rpc_failure_kill_streak: 6
 
 dry_run: true
 trading_enabled: true

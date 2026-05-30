@@ -5,7 +5,32 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
-## [1.3.9] — 2026-05-30 (`debug`)
+---
+
+## [1.4.0] — 2026-05-30 (`tier-2-fix`)
+
+**Theme:** Tier 2 execution + truth — profile-owned queue cadence, ledger fills, multi-horizon markout.
+
+### Added
+
+- **Profile execution layer** (`core/profile_execution.py`) — each profile owns order-keep tolerances, poll interval, full refresh cadence, toxic pause threshold, and markout sensitivity.
+- **Tiered refresh loop** — fast book poll (profile-owned, e.g. 15–20s) vs full quote refresh (30–90s); mid-move promotes to full refresh.
+- **Ledger-accurate fills** — `account_tx` scan via `monitoring/ledger_fills.py`; tx hash on CSV rows when available.
+- **Multi-horizon markout** — +30s and +5m toxic classification feeding `FillQualityTracker` and GUI.
+- **RPC failure kill switch** — consecutive cycle failures trip kill (`rpc_failure_kill_streak`).
+- **Execution metrics** — cancel/fill ratio, session cancels/keeps, toxic ratio on Dashboard.
+- **Tests** — `test_profile_execution`, `test_ledger_fills`, `test_fill_quality_markout`.
+
+### Changed
+
+- **Order sync tolerances** now resolve from **active profile** (config can only tighten, not loosen).
+- **Toxic refresh pause** — skips order refresh when toxic ratio exceeds profile threshold.
+- **Auto profile switch log** includes vol/liquidity/book spread snapshot.
+- **Command bar persistence** — live fragment re-injects theme CSS so header pills/layout survive 5s refresh.
+
+---
+
+## [1.3.9] — 2026-05-30 (`good-to-great`)
 
 **Theme:** Good → great MM — edge capture, queue preservation, harder protection.
 

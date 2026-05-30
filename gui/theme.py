@@ -43,15 +43,23 @@ def inject_theme() -> None:
 
         /* ── Header bar ── */
         .xlm-header {
-            display: flex;
+            display: flex !important;
+            flex-direction: row !important;
             flex-wrap: wrap;
             align-items: center;
+            align-content: center;
             gap: 0.75rem 1.25rem;
             padding: 0.85rem 1.1rem;
             margin-bottom: 1rem;
             background: linear-gradient(135deg, var(--xlm-surface) 0%, var(--xlm-surface-2) 100%);
             border: 1px solid var(--xlm-border);
             border-radius: 10px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .xlm-header > * {
+            flex-shrink: 0;
         }
 
         .xlm-header-brand {
@@ -67,8 +75,10 @@ def inject_theme() -> None:
         }
 
         .xlm-pill {
-            display: inline-flex;
+            display: inline-flex !important;
+            flex-direction: row !important;
             align-items: center;
+            white-space: nowrap;
             padding: 0.28rem 0.65rem;
             border-radius: 999px;
             font-size: 0.78rem;
@@ -89,9 +99,10 @@ def inject_theme() -> None:
         .xlm-pill-hostile { border-color: #6b2a2a; color: var(--xlm-red); }
 
         .xlm-stat {
-            display: flex;
-            flex-direction: column;
+            display: inline-flex !important;
+            flex-direction: column !important;
             min-width: 5.5rem;
+            white-space: nowrap;
         }
 
         .xlm-stat-label {

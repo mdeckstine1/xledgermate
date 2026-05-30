@@ -35,6 +35,8 @@ class BotConfig:
 
     # === TIMING ===
     order_refresh_time_seconds: int = 60
+    tiered_refresh_enabled: bool = True       # Profile-owned fast poll + full quote refresh
+    rpc_failure_kill_streak: int = 6            # Consecutive cycle RPC failures → kill switch
 
     # === EXECUTION ===
     dry_run: bool = True

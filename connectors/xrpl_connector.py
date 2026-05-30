@@ -5,7 +5,7 @@ import math
 from collections import deque
 from dataclasses import dataclass
 from statistics import pstdev
-from typing import Deque, Dict, List, Optional
+from typing import Deque, Dict, List, Optional, Any
 
 from core.perception import LiquidityMetrics
 from core.runtime_state import QuoteIntent
@@ -28,7 +28,7 @@ try:
     from xrpl.asyncio.transaction import autofill_and_sign, submit_and_wait
     from xrpl.models.amounts import IssuedCurrencyAmount
     from xrpl.models.currencies import IssuedCurrency, XRP
-    from xrpl.models.requests import AccountInfo, AccountLines, AccountOffers, BookOffers
+    from xrpl.models.requests import AccountInfo, AccountLines, AccountOffers, AccountTx, BookOffers
     from xrpl.models.transactions import (
         OfferCancel,
         OfferCreate,
@@ -46,6 +46,7 @@ except ImportError:  # pragma: no cover - handled at runtime
     AccountInfo = None
     AccountLines = None
     AccountOffers = None
+    AccountTx = None
     BookOffers = None
     OfferCancel = None
     OfferCreate = None
@@ -331,6 +332,17 @@ class XRPLConnector:
                     OpenOffer(sequence=seq, side=side, price=price, size_xrp=size_xrp)
                 )
         return parsed
+
+    async def fetch_account_transactions(self, limit: int = 40) -> List[Dict[str, Any]]:
+        """Recent validated ledger transactions for fill scanning."""
+        req = AccountTx(
+            account=self.account_address,
+            ledger_index_min=-1,
+            limit=max(1, min(limit, 100)),
+        )
+        result = (await self._request(req)).result
+        txs = result.get("transactions", [])
+        return list(txs) if isinstance(txs, list) else []
 
     async def cancel_offer(self, sequence: int) -> str:
         wallet = self.load_wallet()

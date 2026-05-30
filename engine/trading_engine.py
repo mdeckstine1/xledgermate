@@ -23,6 +23,7 @@ from monitoring.balance_logger import BalanceLogger
 from monitoring.csv_logger import CSVLogger
 from monitoring.fill_detection import detect_fill_from_balance_delta
 from monitoring.fill_economics import estimate_spread_capture_xrp
+from monitoring.ledger_fills import LedgerFill, LedgerFillScanner
 from monitoring.telegram_alerts import TelegramAlerts
 from risk.drawdown import (
     DrawdownMonitor,
@@ -33,6 +34,7 @@ from risk.drawdown import (
 from risk.kill_switch import KillSwitch
 from core import BotPerception, DecisionLog, VERSION, get_profile
 from core.perception import BUILT_IN_PROFILES
+from core.profile_execution import ProfileExecution, resolve_profile_execution
 from utils.auto_profile_state import (
     clear_auto_profile_pending,
     load_auto_profile_state,
@@ -89,11 +91,19 @@ class TradingEngine:
         self._last_cycle_balances: Optional[tuple[float, float]] = None
         self._prev_kill_active = False
         self._fill_quality = FillQualityTracker()
+        self._ledger_fill_scanner = LedgerFillScanner()
         self._active_profile_last_cycle: Optional[str] = None
         self._last_market_condition: Optional[str] = None
         self._last_liquidity_level: Optional[str] = None
         self._last_quote_mid: Optional[float] = None
+        self._last_full_refresh_mid: Optional[float] = None
         self._consecutive_spread_failures: int = 0
+        self._rpc_failure_streak: int = 0
+        self._poll_counter: int = 0
+        self._session_offers_cancelled: int = 0
+        self._session_offers_kept: int = 0
+        self._session_fills: int = 0
+        self._recent_fill_keys: set = set()
 
     def _restore_price_history(self) -> List[dict]:
         """Continue chart history across engine restarts (from runtime_state.json)."""
@@ -126,16 +136,37 @@ class TradingEngine:
                 ENGINE_STOP_FILE.unlink(missing_ok=True)
                 logger.info("Stop requested via GUI — shutting down engine loop.")
                 break
+            config = BotConfig.load()
+            self.config = config
+            profile = get_profile(config.active_profile)
+            exec_cfg = resolve_profile_execution(profile, config)
+            tiered = bool(getattr(config, "tiered_refresh_enabled", True))
+            if tiered:
+                self._poll_counter += 1
+                full_refresh = self._poll_counter >= exec_cfg.full_refresh_every_n_polls
+                if full_refresh:
+                    self._poll_counter = 0
+            else:
+                full_refresh = True
             try:
-                await self._run_cycle()
+                await self._run_cycle(full_refresh=full_refresh, exec_cfg=exec_cfg)
+                self._rpc_failure_streak = 0
             except Exception as exc:
+                self._rpc_failure_streak += 1
                 logger.exception("Engine cycle failed: %s", exc)
                 self._persist_error(str(exc))
+                if self.connector and not config.dry_run:
+                    await self._maybe_kill_on_rpc_failures(config, self.connector)
             if ENGINE_STOP_FILE.exists():
                 ENGINE_STOP_FILE.unlink(missing_ok=True)
                 logger.info("Stop requested via GUI — shutting down engine loop.")
                 break
-            await asyncio.sleep(self.config.order_refresh_time_seconds)
+            sleep_sec = (
+                exec_cfg.book_poll_interval_seconds
+                if tiered
+                else max(30, int(config.order_refresh_time_seconds))
+            )
+            await asyncio.sleep(sleep_sec)
     def stop(self) -> None:
         self._running = False
     async def cancel_all_offers(self) -> int:
@@ -151,7 +182,12 @@ class TradingEngine:
             network=XRPLNetworkConfig(json_rpc_url=config.resolved_rpc_url()),
         )
         return await connector.cancel_all_offers()
-    async def _run_cycle(self) -> None:
+    async def _run_cycle(
+        self,
+        *,
+        full_refresh: bool = True,
+        exec_cfg: Optional[ProfileExecution] = None,
+    ) -> None:
         config = BotConfig.load()
         self.config = config
         self.order_manager.config = config
@@ -178,6 +214,9 @@ class TradingEngine:
         self._active_profile_last_cycle = config.active_profile
 
         profile = get_profile(config.active_profile)
+        if exec_cfg is None:
+            exec_cfg = resolve_profile_execution(profile, config)
+        self._fill_quality.set_toxic_threshold_pct(exec_cfg.markout_toxic_threshold_pct)
         perception = BotPerception(active_profile=profile)
         if not config.bot_account_address.strip():
             msg = (
@@ -239,6 +278,11 @@ class TradingEngine:
                 self.decision_log.add("profile", "Kill switch cleared — drawdown baseline reset.")
             self._prev_kill_active = self.kill_switch.is_active()
             if not config.dry_run:
+                await self._scan_ledger_fills(
+                    config=config,
+                    connector=connector,
+                    mid_price=mid_price,
+                )
                 self._detect_and_log_fills(
                     config=config,
                     balance_xrp=balance_xrp,
@@ -289,6 +333,66 @@ class TradingEngine:
             if mid_price is not None:
                 self._record_price_tick(mid=mid_price, bid=best_bid, ask=best_ask)
                 self._fill_quality.note_mid(mid_price)
+
+            if (
+                not full_refresh
+                and mid_price
+                and self._last_full_refresh_mid
+                and self._last_full_refresh_mid > 0
+            ):
+                move_pct = (
+                    abs(mid_price - self._last_full_refresh_mid)
+                    / self._last_full_refresh_mid
+                    * 100.0
+                )
+                if move_pct >= exec_cfg.mid_requote_trigger_pct:
+                    full_refresh = True
+                    self.decision_log.add(
+                        "execution",
+                        f"Mid moved {move_pct:.2f}% — full quote refresh "
+                        f"(profile {profile.name} trigger {exec_cfg.mid_requote_trigger_pct:.2f}%)",
+                    )
+
+            fill_quality = self._fill_quality.assess()
+
+            if not full_refresh:
+                self.decision_log.add(
+                    "execution",
+                    f"Book poll only ({exec_cfg.book_poll_interval_seconds}s cadence, "
+                    f"profile {profile.name}) — queue preserved.",
+                )
+                open_offers = await connector.get_open_offers()
+                if self._session_baseline_xrp is None:
+                    self._session_baseline_xrp = balance_xrp
+                    self._session_baseline_rlusd = rlusd_balance
+                    self._session_baseline_mid = mid_price
+                    self._session_baseline_portfolio_xrp = portfolio_value
+                self._cycle_count += 1
+                execution_summary = (
+                    f"Book poll — toxic ratio {fill_quality.toxic_ratio:.0%}, "
+                    f"cancel/fill {self._cancel_per_fill_ratio():.1f}"
+                )
+                self._persist_state(
+                    perception=perception,
+                    config=config,
+                    balance_xrp=balance_xrp,
+                    balance_rlusd=rlusd_balance,
+                    open_offers=open_offers,
+                    quote_intents=[],
+                    placed_count=0,
+                    execution_summary=execution_summary,
+                    best_bid=best_bid,
+                    best_ask=best_ask,
+                    preflight=preflight,
+                    portfolio_value=portfolio_value,
+                    drawdown_pct=drawdown_pct,
+                    market_assessment=market_assessment,
+                    fill_quality=fill_quality,
+                    exec_cfg=exec_cfg,
+                    full_refresh=False,
+                )
+                self._last_cycle_balances = (balance_xrp, rlusd_balance)
+                return
 
             if config.auto_profile_switching:
                 from utils.operator_activity import minutes_since_save_config
@@ -352,7 +456,9 @@ class TradingEngine:
                         msg = (
                             f"Auto-switched profile {old} → {proposed} "
                             f"(operator idle, {market_assessment.condition_label} market, "
-                            f"confirmed {confirm_cycles} cycles)"
+                            f"confirmed {confirm_cycles} cycles | "
+                            f"vol={volatility_pct:.2f}% liq={liquidity.liquidity_score:.2f} "
+                            f"book_spread={book_spread_pct:.3f}%)"
                         )
                         self.decision_log.add("profile", msg)
                         self.csv_logger.log_major(
@@ -515,8 +621,22 @@ class TradingEngine:
                 and preflight.ready
                 and not live_blocked_by_spread
             ):
-                self._last_quote_mid = mid_price
-                placed_count = await self._refresh_orders(quote_plan.intents)
+                refresh_paused = (
+                    fill_quality.recent_fills >= 3
+                    and fill_quality.toxic_ratio >= exec_cfg.toxic_refresh_pause_ratio
+                )
+                if refresh_paused:
+                    self.decision_log.add(
+                        "execution",
+                        f"Refresh paused — toxic ratio {fill_quality.toxic_ratio:.0%} "
+                        f">= profile {profile.name} limit {exec_cfg.toxic_refresh_pause_ratio:.0%}",
+                    )
+                else:
+                    self._last_quote_mid = mid_price
+                    placed_count = await self._refresh_orders(
+                        quote_plan.intents, exec_cfg=exec_cfg
+                    )
+                    self._last_full_refresh_mid = mid_price
             open_offers = await connector.get_open_offers()
             if self._session_baseline_xrp is None:
                 self._session_baseline_xrp = balance_xrp
@@ -567,6 +687,8 @@ class TradingEngine:
                 dynamic_min_edge_enabled=bool(
                     getattr(config, "dynamic_min_edge_enabled", False)
                 ),
+                exec_cfg=exec_cfg,
+                full_refresh=True,
             )
             spread_ok = spread_validation.ok if spread_validation else False
             logger.info(
@@ -679,6 +801,113 @@ class TradingEngine:
         }
         with self._decision_log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record) + "\n")
+    def _cancel_per_fill_ratio(self) -> float:
+        if self._session_fills <= 0:
+            return float(self._session_offers_cancelled)
+        return self._session_offers_cancelled / self._session_fills
+
+    async def _scan_ledger_fills(
+        self,
+        *,
+        config: BotConfig,
+        connector: XRPLConnector,
+        mid_price: Optional[float],
+    ) -> None:
+        try:
+            txs = await connector.fetch_account_transactions(limit=40)
+        except Exception as exc:
+            self.decision_log.add("fill", f"Ledger tx scan failed: {exc}")
+            return
+        fills = self._ledger_fill_scanner.scan_transactions(
+            txs,
+            account=config.bot_account_address.strip(),
+            rlusd_currency=config.resolved_rlusd_currency_code(),
+            rlusd_issuer=config.resolved_rlusd_issuer(),
+        )
+        for fill in fills:
+            self._log_fill(
+                config=config,
+                side=fill.side,
+                xrp_amount=fill.xrp_amount,
+                rlusd_amount=fill.rlusd_amount,
+                price=fill.price_rlusd_per_xrp,
+                mid_price=mid_price,
+                tx_hash=fill.tx_hash,
+                fill_source=fill.source,
+                balance_xrp=0.0,
+                balance_rlusd=0.0,
+            )
+
+    def _log_fill(
+        self,
+        *,
+        config: BotConfig,
+        side: str,
+        xrp_amount: float,
+        rlusd_amount: float,
+        price: float,
+        mid_price: Optional[float],
+        tx_hash: str = "",
+        fill_source: str = "balance_delta",
+        balance_xrp: float = 0.0,
+        balance_rlusd: float = 0.0,
+    ) -> None:
+        cycle = self._cycle_count + 1
+        dedupe_key = (cycle, side, round(xrp_amount, 2), round(rlusd_amount, 2), tx_hash[:8])
+        if dedupe_key in self._recent_fill_keys:
+            return
+        self._recent_fill_keys.add(dedupe_key)
+        if len(self._recent_fill_keys) > 40:
+            self._recent_fill_keys = set(list(self._recent_fill_keys)[-20:])
+
+        mid_at_quote = self._last_quote_mid or mid_price
+        profit_xrp = estimate_spread_capture_xrp(
+            side=side,
+            xrp_amount=xrp_amount,
+            fill_price_rlusd_per_xrp=price,
+            mid_at_quote_rlusd_per_xrp=mid_at_quote,
+        )
+        self._fill_quality.note_fill(
+            side=side,
+            xrp_amount=xrp_amount,
+            price=price,
+            mid_at_fill=mid_price or price,
+            tx_hash=tx_hash,
+            fill_source=fill_source,
+        )
+        self._session_fills += 1
+        src_note = "ledger" if fill_source == "ledger" else "balance delta"
+        notes = (
+            f"Fill via {src_note}; spread capture ~{profit_xrp:+.4f} XRP "
+            f"@ mid {mid_at_quote or 'n/a'}"
+        )
+        if tx_hash:
+            notes += f"; tx {tx_hash}"
+        common = dict(
+            network=config.network_name(),
+            xrp_amount=xrp_amount,
+            rlusd_amount=rlusd_amount,
+            price_rlusd_per_xrp=price,
+            profit_xrp_equiv=profit_xrp,
+            tx_hash=tx_hash,
+            cycle=cycle,
+            notes=notes,
+            balance_xrp_after=balance_xrp,
+            balance_rlusd_after=balance_rlusd,
+        )
+        if side == "SELL":
+            self.csv_logger.log_sell(**common)
+            self.decision_log.add(
+                "fill",
+                f"SELL ~{xrp_amount:.4f} XRP for {rlusd_amount:.4f} RLUSD ({src_note})",
+            )
+        else:
+            self.csv_logger.log_buy(**common)
+            self.decision_log.add(
+                "fill",
+                f"BUY ~{xrp_amount:.4f} XRP for {rlusd_amount:.4f} RLUSD ({src_note})",
+            )
+
     def _detect_and_log_fills(
         self,
         *,
@@ -699,47 +928,28 @@ class TradingEngine:
         )
         if not fill:
             return
-        mid_at_quote = self._last_quote_mid or mid_price
-        profit_xrp = estimate_spread_capture_xrp(
+        self._log_fill(
+            config=config,
             side=str(fill["side"]),
-            xrp_amount=float(fill["xrp_amount"]),
-            fill_price_rlusd_per_xrp=float(fill["price_rlusd_per_xrp"]),
-            mid_at_quote_rlusd_per_xrp=mid_at_quote,
-        )
-        self._fill_quality.note_fill(
-            side=str(fill["side"]),
-            xrp_amount=float(fill["xrp_amount"]),
-            price=float(fill["price_rlusd_per_xrp"]),
-            mid_at_fill=mid_price or float(fill["price_rlusd_per_xrp"]),
-        )
-        cycle = self._cycle_count + 1
-        notes = (
-            f"Inferred from balance delta; spread capture ~{profit_xrp:+.4f} XRP "
-            f"@ mid {mid_at_quote or 'n/a'} (verify on ledger for taxes)."
-        )
-        common = dict(
-            network=config.network_name(),
             xrp_amount=float(fill["xrp_amount"]),
             rlusd_amount=float(fill["rlusd_amount"]),
-            price_rlusd_per_xrp=float(fill["price_rlusd_per_xrp"]),
-            profit_xrp_equiv=profit_xrp,
-            cycle=cycle,
-            notes=notes,
-            balance_xrp_after=balance_xrp,
-            balance_rlusd_after=rlusd_balance,
+            price=float(fill["price_rlusd_per_xrp"]),
+            mid_price=mid_price,
+            fill_source="balance_delta",
+            balance_xrp=balance_xrp,
+            balance_rlusd=rlusd_balance,
         )
-        if fill["side"] == "SELL":
-            self.csv_logger.log_sell(**common)
-            self.decision_log.add(
-                "fill",
-                f"SELL ~{common['xrp_amount']:.4f} XRP for {common['rlusd_amount']:.4f} RLUSD",
-            )
-        else:
-            self.csv_logger.log_buy(**common)
-            self.decision_log.add(
-                "fill",
-                f"BUY ~{common['xrp_amount']:.4f} XRP for {common['rlusd_amount']:.4f} RLUSD",
-            )
+
+    async def _maybe_kill_on_rpc_failures(
+        self, config: BotConfig, connector: XRPLConnector
+    ) -> None:
+        limit = int(getattr(config, "rpc_failure_kill_streak", 6))
+        if limit <= 0 or self._rpc_failure_streak < limit:
+            return
+        if self.kill_switch.is_active():
+            return
+        reason = f"RPC/ledger failure streak {self._rpc_failure_streak} (limit {limit})"
+        await self._activate_kill_switch(connector, config, reason)
 
     async def _maybe_kill_on_spread_failures(
         self, config: BotConfig, connector: XRPLConnector
@@ -771,7 +981,9 @@ class TradingEngine:
         )
         await self._activate_kill_switch(connector, config, reason)
 
-    async def _refresh_orders(self, intents: List[QuoteIntent]) -> int:
+    async def _refresh_orders(
+        self, intents: List[QuoteIntent], *, exec_cfg: Optional[ProfileExecution] = None
+    ) -> int:
         if self.config.dry_run:
             self.decision_log.add(
                 "execution",
@@ -779,21 +991,21 @@ class TradingEngine:
             )
             return 0
 
+        profile = get_profile(self.config.active_profile)
+        if exec_cfg is None:
+            exec_cfg = resolve_profile_execution(profile, self.config)
         selective = bool(getattr(self.config, "selective_order_refresh", True))
         open_offers = await self.connector.get_open_offers()
         cancelled = 0
         placed = 0
+        kept = 0
 
         if selective and intents:
             plan = plan_order_sync(
                 intents,
                 open_offers,
-                price_tolerance_pct=float(
-                    getattr(self.config, "order_price_tolerance_pct", 0.08)
-                ),
-                size_tolerance_xrp=float(
-                    getattr(self.config, "order_size_tolerance_xrp", 0.75)
-                ),
+                price_tolerance_pct=exec_cfg.order_price_tolerance_pct,
+                size_tolerance_xrp=exec_cfg.order_size_tolerance_xrp,
             )
             for seq in plan.cancel_sequences:
                 try:
@@ -802,14 +1014,20 @@ class TradingEngine:
                 except Exception as exc:
                     self.decision_log.add("execution", f"Cancel seq {seq} failed: {exc}")
             to_place = plan.place_intents
-            if plan.kept_count:
+            kept = plan.kept_count
+            self._session_offers_kept += kept
+            self._session_offers_cancelled += cancelled
+            if plan.kept_count or plan.cancel_sequences or to_place:
                 self.decision_log.add(
                     "execution",
-                    f"Kept {plan.kept_count} matching offer(s); "
-                    f"cancel {len(plan.cancel_sequences)}, place {len(to_place)}.",
+                    f"Profile {profile.name} sync: kept {plan.kept_count}, "
+                    f"cancel {len(plan.cancel_sequences)}, place {len(to_place)} "
+                    f"(tol {exec_cfg.order_price_tolerance_pct:.2f}% / "
+                    f"{exec_cfg.order_size_tolerance_xrp:.2f} XRP).",
                 )
         else:
             cancelled = await self.connector.cancel_all_offers()
+            self._session_offers_cancelled += cancelled
             to_place = list(intents)
             self.decision_log.add(
                 "execution", f"Cancelled {cancelled} open offers before refresh."
@@ -859,6 +1077,8 @@ class TradingEngine:
         effective_min_edge_pct: float = 0.0,
         edge_resolution_summary: str = "",
         dynamic_min_edge_enabled: bool = False,
+        exec_cfg: Optional[ProfileExecution] = None,
+        full_refresh: bool = True,
     ) -> None:
         decisions = [
             {"ts_utc": e.ts_utc, "category": e.category, "message": e.message}
@@ -978,6 +1198,20 @@ class TradingEngine:
             ),
             fill_quality_score=float(fill_quality.score) if fill_quality else 100.0,
             fill_quality_summary=str(fill_quality.summary) if fill_quality else "",
+            toxic_fill_ratio=float(fill_quality.toxic_ratio) if fill_quality else 0.0,
+            toxic_fill_ratio_30s=float(fill_quality.toxic_ratio_30s) if fill_quality else 0.0,
+            mean_markout_30s_pct=float(fill_quality.mean_markout_30s_pct) if fill_quality else 0.0,
+            offers_cancelled_session=self._session_offers_cancelled,
+            offers_kept_session=self._session_offers_kept,
+            fills_session=self._session_fills,
+            cancel_per_fill=self._cancel_per_fill_ratio(),
+            book_poll_interval_seconds=int(exec_cfg.book_poll_interval_seconds) if exec_cfg else 15,
+            full_quote_refresh_seconds=int(
+                exec_cfg.book_poll_interval_seconds * exec_cfg.full_refresh_every_n_polls
+            )
+            if exec_cfg
+            else int(getattr(config, "order_refresh_time_seconds", 60)),
+            last_cycle_full_refresh=full_refresh,
             rebalance_action=str(rebalance.action) if rebalance else "",
             rebalance_summary=str(rebalance.summary) if rebalance else "",
             pause_bids=bool(quote_adjustments.pause_bids) if quote_adjustments else False,
