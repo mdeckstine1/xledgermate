@@ -309,6 +309,27 @@ def send_funds(destination: str, amount: float, asset: str = "XRP") -> tuple[boo
     return True, f"Sent {amount} {asset.upper()} to {dest}."
 
 
+def manual_rebalance_check() -> tuple[bool, str]:
+    """Live balances + rebalance advice; updates runtime_state.json (in-process, no subprocess)."""
+    import asyncio
+    import concurrent.futures
+
+    from config.settings import BotConfig
+    from utils.manual_rebalance import run_manual_rebalance_check
+
+    def _run_async() -> str:
+        return asyncio.run(run_manual_rebalance_check(BotConfig.load()))
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            message = pool.submit(_run_async).result(timeout=120)
+        return True, message
+    except concurrent.futures.TimeoutError:
+        return False, "Rebalance check timed out after 120s."
+    except Exception as exc:
+        return False, str(exc)[-2000:]
+
+
 def run_single_cycle() -> tuple[bool, str]:
     """Run one market cycle in a subprocess (no asyncio inside Streamlit)."""
     result = subprocess.run(

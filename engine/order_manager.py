@@ -84,7 +84,7 @@ class OrderManager:
         adj = adjustments or QuoteAdjustments()
         spendable_xrp = max(0.0, xrp_balance - self.config.xrp_reserve)
         min_size = max(0.0, self.config.min_order_size_xrp)
-        risk_cap = max(min_size, self.config.risk_capital_xrp)
+        risk_cap = max(min_size, self.config.effective_risk_capital_xrp(mid_price))
 
         bid_budget_rlusd = rlusd_balance
         ask_budget_xrp = min(spendable_xrp, risk_cap)

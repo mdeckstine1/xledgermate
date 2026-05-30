@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
-from core.perception import BUILT_IN_PROFILES, Profile
+from utils.profile_recommendation import (
+    AUTO_SWITCH_PROFILES,
+    normalize_profile_recommendation,
+)
 
 # Condition tiers (defensive bot: default conservative).
 CONDITION_FAVORABLE = "favorable"
@@ -75,7 +78,7 @@ def ideal_for_profit_mode(
     liquidity_level: str,
     book_spread_status: str,
 ) -> bool:
-    """True when calm, liquid, tight book — best regime for profit_mode."""
+    """True when calm, liquid, tight book — best regime for competitive quoting (tight_spread)."""
     return (
         condition == CONDITION_FAVORABLE
         and volatility_level == "low"
@@ -110,9 +113,9 @@ def recommend_profile(
             book_spread_status=book_spread_status,
         ):
             return (
-                "profit_mode",
-                "Good conditions for tight spreads — low volatility, deep liquidity, tight book; "
-                "Profit mode maximizes size and edge capture.",
+                "tight_spread",
+                "Ideal competitive book — low volatility, deep liquidity, tight spread. "
+                "Tight spread is recommended; select Profit mode manually only if you want maximum aggression.",
             )
         return "tight_spread", "Stable vol and decent liquidity — Tight spread can compete for edge."
     # neutral
@@ -164,6 +167,7 @@ def assess_market_conditions(
         liquidity_level=liq_level,
         book_spread_status=spread_status,
     )
+    recommended, reason = normalize_profile_recommendation(recommended, reason)
 
     summary = (
         f"Market {CONDITION_LABELS[condition].lower()} | vol {vol_level} ({volatility_pct:.2f}%) | "
@@ -194,12 +198,12 @@ def profile_for_auto_switch(
 ) -> Optional[str]:
     """
     Profile to apply when auto-switching is on and operator is idle.
-    Uses the same recommendation as the GUI (all built-in profiles).
+    Uses the GUI recommendation but never auto-switches to profit_mode (manual only).
     Returns None if already on the recommended profile.
     """
     proposed = (assessment.recommended_profile or "").strip().lower()
     current = (active_profile or "safe").strip().lower()
-    if proposed not in BUILT_IN_PROFILES or proposed == current:
+    if proposed not in AUTO_SWITCH_PROFILES or proposed == current:
         return None
     return proposed
 

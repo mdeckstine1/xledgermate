@@ -1,6 +1,6 @@
 # XLedgerMate — Plain-English Operator Manual
 
-*Version 1.3.7 · For humans who remember when “save” meant a floppy disk*
+*Version 1.3.8 · For humans who remember when “save” meant a floppy disk*
 
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
@@ -50,7 +50,7 @@ To the right of the logo you will see **Market conditions** — how the bot read
 - **Market** — Favorable, Neutral, Defensive, or Hostile (color-coded).
 - **Vol / Liq / Spread** — Volatility level, liquidity score, and how wide the book is.
 - **Health score** — 0–100 summary in the caption below (higher = nicer for quoting).
-- **Suggested profile** — e.g. **Profit mode** when volatility is low, liquidity is high, and the book is tight; **Tight spread** for favorable but not ideal books. Green check if it matches your active profile; otherwise use **Apply** (no separate Save Config needed).
+- **Suggested profile** — e.g. **Tight spread** when volatility is low, liquidity is high, and the book is tight; **Safe** or defensive profiles when conditions worsen. **Profit mode** is never suggested automatically — select it manually on Controls if you want maximum aggression. Green check if suggestion matches your active profile; otherwise use **Apply** (no separate Save Config needed).
 
 The Dashboard also shows **Why these quotes?** when the engine explains its spread/size choices (e.g. “defensive market → wider + smaller”).
 
@@ -217,7 +217,7 @@ Leave “notify each cycle” off unless you enjoy constant buzzing.
 
 ## Version & history
 
-- Current version: **1.3.3** (see `VERSION` file).
+- Current version: **1.3.8** (see `VERSION` file).
 - What changed release-by-release: **`CHANGELOG.md`** in the project folder.
 
 ---

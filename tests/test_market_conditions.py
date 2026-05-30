@@ -38,7 +38,7 @@ def test_defensive_on_high_vol() -> None:
     assert a.condition in (CONDITION_DEFENSIVE, "hostile")
 
 
-def test_recommend_profit_mode_on_ideal_book() -> None:
+def test_recommend_tight_spread_on_ideal_book() -> None:
     assert ideal_for_profit_mode(
         condition="favorable",
         volatility_level="low",
@@ -51,8 +51,9 @@ def test_recommend_profit_mode_on_ideal_book() -> None:
         liquidity_level="high",
         book_spread_status="tight",
     )
-    assert profile == "profit_mode"
+    assert profile == "tight_spread"
     assert "tight spread" in reason.lower()
+    assert "profit mode" in reason.lower()
 
 
 def test_favorable_moderate_vol_recommends_tight_spread_not_profit() -> None:
@@ -65,16 +66,28 @@ def test_favorable_moderate_vol_recommends_tight_spread_not_profit() -> None:
     assert profile == "tight_spread"
 
 
-def test_auto_switch_can_move_to_profit_mode() -> None:
+def test_normalize_maps_legacy_profit_suggestion() -> None:
+    from utils.profile_recommendation import normalize_profile_recommendation
+
+    profile, reason = normalize_profile_recommendation(
+        "profit_mode",
+        "Good conditions for tight spreads — Profit mode maximizes size.",
+    )
+    assert profile == "tight_spread"
+    assert "manual" in reason.lower()
+
+
+def test_auto_switch_never_targets_profit_mode() -> None:
     a = assess_market_conditions(
         volatility_pct=0.05,
         liquidity_score=0.7,
         book_spread_pct=0.1,
         active_profile="safe",
     )
-    assert a.recommended_profile == "profit_mode"
-    assert profile_for_auto_switch(a, active_profile="safe") == "profit_mode"
-    assert profile_for_auto_switch(a, active_profile="profit_mode") is None
+    assert a.recommended_profile == "tight_spread"
+    assert profile_for_auto_switch(a, active_profile="safe") == "tight_spread"
+    assert profile_for_auto_switch(a, active_profile="profit_mode") == "tight_spread"
+    assert profile_for_auto_switch(a, active_profile="tight_spread") is None
 
 
 def test_auto_switch_can_move_to_tight_spread() -> None:

@@ -14,6 +14,7 @@ from core.market_conditions import (
     compute_book_spread_pct,
     profile_for_auto_switch,
 )
+from utils.profile_recommendation import normalize_profile_recommendation
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_manager import OrderManager
 from monitoring.balance_logger import BalanceLogger
@@ -285,12 +286,10 @@ class TradingEngine:
                 self._fill_quality.note_mid(mid_price)
 
             if config.auto_profile_switching:
-                from utils.operator_activity import minutes_since_last_operator_action
+                from utils.operator_activity import minutes_since_save_config
 
-                inactive = (
-                    minutes_since_last_operator_action()
-                    >= config.auto_profile_inactivity_minutes
-                )
+                idle_min = minutes_since_save_config()
+                inactive = idle_min >= config.auto_profile_inactivity_minutes
                 proposed = profile_for_auto_switch(
                     market_assessment,
                     active_profile=config.active_profile,
@@ -298,6 +297,15 @@ class TradingEngine:
                 if not inactive or not proposed:
                     if not proposed:
                         clear_auto_profile_pending()
+                    elif not inactive and proposed:
+                        self.decision_log.add(
+                            "profile",
+                            (
+                                f"Auto-switch waiting: {idle_min:.0f}/"
+                                f"{config.auto_profile_inactivity_minutes} min since Save Config "
+                                f"(would switch to {proposed})"
+                            ),
+                        )
                 else:
                     confirm_cycles = max(
                         1, int(getattr(config, "auto_profile_confirm_cycles", 3))
@@ -775,6 +783,13 @@ class TradingEngine:
                 baseline_portfolio_xrp=self._session_baseline_portfolio_xrp,
             )
         pf = preflight or self._last_preflight
+        recommended_profile = config.active_profile
+        recommendation_reason = ""
+        if market_assessment:
+            recommended_profile, recommendation_reason = normalize_profile_recommendation(
+                market_assessment.recommended_profile,
+                market_assessment.recommendation_reason,
+            )
         state = RuntimeState(
             version=VERSION,
             network=config.network_name(),
@@ -832,8 +847,8 @@ class TradingEngine:
             book_spread_pct=book_spread_pct,
             book_spread_status=market_assessment.book_spread_status if market_assessment else "unknown",
             market_health_score=market_assessment.health_score if market_assessment else 0.0,
-            recommended_profile=market_assessment.recommended_profile if market_assessment else config.active_profile,
-            recommendation_reason=market_assessment.recommendation_reason if market_assessment else "",
+            recommended_profile=recommended_profile,
+            recommendation_reason=recommendation_reason,
             quote_decision_summary=quote_adjustments.decision_summary if quote_adjustments else "",
             inventory_label=quote_adjustments.inventory_label if quote_adjustments else "balanced",
             mid_momentum_pct=mid_momentum,

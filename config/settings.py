@@ -14,6 +14,8 @@ class BotConfig:
 
     # === RISK CAPITAL (ONLY the rolled-in slice from Flare) ===
     risk_capital_xrp: float = 11254.0
+    risk_capital_rlusd: float = 0.0  # used when risk_capital_unit is rlusd
+    risk_capital_unit: str = "xrp"  # "xrp" | "rlusd" — GUI entry denomination
     bot_account_address: str = ""          # ← Fill this in (your Bot Account)
     bot_secret_key: str = ""               # ← NEVER commit this to git!
 
@@ -59,7 +61,7 @@ class BotConfig:
     max_half_spread_from_mid_pct: float = 1.0      # Max distance from mid per quote leg
     require_spread_validation_for_live: bool = True
     auto_profile_switching: bool = False       # Auto-apply recommended profile when operator idle
-    auto_profile_inactivity_minutes: int = 120
+    auto_profile_inactivity_minutes: int = 30
     auto_profile_confirm_cycles: int = 3       # Same recommendation N cycles before switching
     auto_profile_switch_cooldown_minutes: int = 45  # Min gap between auto switches
 
@@ -81,6 +83,29 @@ class BotConfig:
 
     def to_dict(self):
         return asdict(self)
+
+    def risk_capital_unit_normalized(self) -> str:
+        unit = (getattr(self, "risk_capital_unit", None) or "xrp").strip().lower()
+        return "rlusd" if unit in ("rlusd", "usd") else "xrp"
+
+    def effective_risk_capital_xrp(self, mid_rlusd_per_xrp: Optional[float] = None) -> float:
+        """Quote-size cap in XRP equivalent (converts RLUSD capital when mid is known)."""
+        if self.risk_capital_unit_normalized() == "rlusd":
+            rlusd = float(getattr(self, "risk_capital_rlusd", 0) or 0)
+            if mid_rlusd_per_xrp and float(mid_rlusd_per_xrp) > 0:
+                return rlusd / float(mid_rlusd_per_xrp)
+            return float(self.risk_capital_xrp)
+        return float(self.risk_capital_xrp)
+
+    def sync_risk_capital_pair(self, mid_rlusd_per_xrp: Optional[float]) -> None:
+        """Keep XRP and RLUSD risk capital fields aligned when mid is available."""
+        if not mid_rlusd_per_xrp or float(mid_rlusd_per_xrp) <= 0:
+            return
+        mid = float(mid_rlusd_per_xrp)
+        if self.risk_capital_unit_normalized() == "rlusd":
+            self.risk_capital_xrp = float(self.risk_capital_rlusd) / mid
+        else:
+            self.risk_capital_rlusd = float(self.risk_capital_xrp) * mid
 
     def network_name(self) -> str:
         return "testnet" if self.testnet else "mainnet"
@@ -152,6 +177,11 @@ class BotConfig:
             except (TypeError, ValueError):
                 config.edge_strictness = 1.0
             updated = True
+
+        if "risk_capital_unit" not in data:
+            config.risk_capital_unit = "xrp"
+        if "risk_capital_rlusd" not in data:
+            config.risk_capital_rlusd = 0.0
 
         if allowed - set(data.keys()):
             config.save(filepath)

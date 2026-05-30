@@ -5,8 +5,14 @@ from __future__ import annotations
 import importlib
 import json
 import logging
+import sys
 from datetime import timedelta
 from pathlib import Path
+
+# Streamlit adds gui/ to sys.path; ensure repo root wins for config/, utils/, etc.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -15,15 +21,25 @@ import streamlit as st
 import config.settings as settings_module
 from config.settings import CONFIG_FILE, BotConfig
 from core.market_conditions import assess_market_conditions, compute_book_spread_pct
+from utils.profile_recommendation import normalize_profile_recommendation
 from core.perception import BUILT_IN_PROFILES, get_profile
+from utils.gui_profile_presets import (
+    PROFILE_GUI_PRESETS,
+    apply_profile_gui_preset,
+    preset_preview_lines,
+    verify_profile_on_disk,
+)
 from core.profile_edge import profile_min_edge_pct
 from core.runtime_state import QuoteIntent
+from utils.gui_runtime_sync import patch_runtime_state_file
 from utils.quote_validation import QuoteValidationResult, validate_quotes_against_book
+from strategy.inventory_balance import assess_rebalance_need
 from strategy.market_microstructure import resolve_effective_min_edge_pct
 from gui.engine_control import (
     cancel_offers_on_ledger,
     clear_kill_switch,
     is_engine_running,
+    manual_rebalance_check,
     run_single_cycle,
     send_funds,
     disable_rlusd_rippling as run_disable_rlusd_rippling,
@@ -32,7 +48,18 @@ from gui.engine_control import (
     stop_engine,
 )
 from utils.auto_profile_state import load_auto_profile_state, minutes_since_auto_switch
-from utils.operator_activity import minutes_since_last_operator_action, touch_operator_activity
+import utils.operator_activity as _operator_activity
+
+if not hasattr(_operator_activity, "minutes_since_save_config"):
+    _operator_activity = importlib.reload(_operator_activity)
+
+minutes_since_last_operator_action = _operator_activity.minutes_since_last_operator_action
+minutes_since_save_config = getattr(
+    _operator_activity,
+    "minutes_since_save_config",
+    _operator_activity.minutes_since_last_operator_action,
+)
+touch_operator_activity = _operator_activity.touch_operator_activity
 from utils.auto_profile_state import clear_auto_profile_pending
 from utils.profile_request import write_profile_request
 from utils.wallet_credentials import secret_matches_address
@@ -88,12 +115,87 @@ def _load_runtime_state() -> dict:
         return {}
 
 
-def _load_config() -> BotConfig:
-    import core.perception as perception_module
+def _load_config(*, reload_modules: bool = False) -> BotConfig:
+    """Load config.yaml. Avoid reload_modules in Streamlit — reload races with save/rerun."""
+    if reload_modules:
+        import core.perception as perception_module
 
-    importlib.reload(perception_module)
-    importlib.reload(settings_module)
+        importlib.reload(perception_module)
+        importlib.reload(settings_module)
     return settings_module.BotConfig.load()
+
+
+def _order_size_slider_cap(config: BotConfig, mid: float) -> float:
+    """Max L1/L2/L3 size from risk capital (XRP equivalent)."""
+    raw = float(config.effective_risk_capital_xrp(mid if mid > 0 else None))
+    floor = float(config.min_order_size_xrp or 1.0)
+    return max(raw, floor)
+
+
+def _clamp_order_sizes(config: BotConfig, size_cap: float) -> None:
+    cap = max(float(size_cap), 0.0)
+    for i in range(len(config.order_sizes)):
+        config.order_sizes[i] = max(0.0, min(float(config.order_sizes[i]), cap))
+
+
+def _ensure_page_config() -> None:
+    if st.session_state.get("_xledgermate_page_config"):
+        return
+    st.set_page_config(
+        page_title="XLedgerMate",
+        page_icon=str(LOGO_PATH) if LOGO_PATH.is_file() else "chart",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    st.session_state._xledgermate_page_config = True
+
+
+def _gui_clear_stale_panel_state() -> None:
+    """Drop cached st.empty() handles — storing them causes white screens on rerun."""
+    for key in (
+        "_sidebar_wallet_panel",
+        "_dash_live_panel",
+        "_hist_live_panel",
+        "_dash_config",
+        "_hist_config",
+    ):
+        st.session_state.pop(key, None)
+
+
+def _execute_gui_save(
+    config: BotConfig,
+    *,
+    engine_running: bool,
+    touch_save: bool = True,
+    apply_profile: Optional[str] = None,
+) -> tuple[bool, str]:
+    runtime = _load_runtime_state()
+    mid = float(runtime.get("mid_price") or 0) if runtime else 0.0
+    _clamp_order_sizes(config, _order_size_slider_cap(config, mid))
+    preset_note = ""
+    if apply_profile:
+        name = str(apply_profile).strip().lower()
+        if name not in BUILT_IN_PROFILES:
+            name = "safe"
+        preset_note = apply_profile_gui_preset(config, name)
+        write_profile_request(name)
+        clear_auto_profile_pending()
+    saved = _persist_config(config)
+    _gui_sync_config_display(saved, engine_running=engine_running)
+    if touch_save:
+        touch_operator_activity("save_config")
+    if apply_profile:
+        label = PROFILE_LABELS.get(saved.active_profile, saved.active_profile)
+        detail = f" ({preset_note})" if preset_note else ""
+        if engine_running:
+            refresh = max(30, int(saved.order_refresh_time_seconds))
+            return (
+                True,
+                f"Profile **{label}** applied{detail} - GUI updated; engine uses it "
+                f"within ~{refresh}s (next cycle).",
+            )
+        return True, f"Profile **{label}** applied{detail} - GUI updated now (engine stopped)."
+    return True, "Config saved - settings are live in the GUI."
 
 
 def _show_result(ok: bool, msg: str, *, fail: str = "error") -> None:
@@ -133,35 +235,172 @@ def _persist_config(config: BotConfig) -> BotConfig:
     """Save non-credential settings without clobbering credentials on disk."""
     _merge_disk_credentials(config)
     config.active_profile = (config.active_profile or "safe").strip().lower()
+    runtime = _load_runtime_state()
+    mid = float(runtime.get("mid_price") or 0) if runtime else 0.0
+    config.sync_risk_capital_pair(mid if mid > 0 else None)
+    _clamp_order_sizes(config, _order_size_slider_cap(config, mid))
     config.save()
     return _load_config()
 
 
-def _apply_active_profile(config: BotConfig, profile_name: str) -> BotConfig:
-    """Save profile to config.yaml and queue pickup on the engine's next cycle."""
-    name = (profile_name or "safe").strip().lower()
+def _gui_clear_controls_widget_state() -> None:
+    """Streamlit keys cache widget values — clear so the UI reloads from disk after save."""
+    for key in (
+        "controls_active_profile",
+        "risk_capital_unit",
+        "controls_base_spread_pct",
+        "controls_level_spread_inc",
+        "controls_refresh_sec",
+        "controls_edge_strictness",
+        "controls_dynamic_min_edge",
+    ):
+        st.session_state.pop(key, None)
+
+
+def _copy_profile_fields_from_disk(config: BotConfig, disk: BotConfig) -> None:
+    """Refresh in-memory config from disk for Controls fields tied to profiles."""
+    config.active_profile = disk.active_profile
+    config.base_spread = disk.base_spread
+    config.level_spread_increment = disk.level_spread_increment
+    config.edge_strictness = disk.edge_strictness
+    config.book_pressure_sensitivity = disk.book_pressure_sensitivity
+    config.dynamic_min_edge_enabled = disk.dynamic_min_edge_enabled
+    config.order_refresh_time_seconds = disk.order_refresh_time_seconds
+
+
+def _sync_controls_widgets_from_config(config: BotConfig) -> None:
+    """Push saved config into widget session keys (Streamlit ignores value= when key exists)."""
+    st.session_state["controls_active_profile"] = (config.active_profile or "safe").strip().lower()
+    st.session_state["controls_base_spread_pct"] = float(config.base_spread) * 100.0
+    st.session_state["controls_level_spread_inc"] = float(config.level_spread_increment) * 100.0
+    st.session_state["controls_refresh_sec"] = int(config.order_refresh_time_seconds)
+    strict = float(config.edge_strictness)
+    for option in (0.85, 1.0, 1.15):
+        if abs(option - strict) < 0.05:
+            st.session_state["controls_edge_strictness"] = option
+            break
+    else:
+        st.session_state["controls_edge_strictness"] = 1.0
+    st.session_state["controls_dynamic_min_edge"] = bool(config.dynamic_min_edge_enabled)
+
+
+def _make_apply_profile_callback(profile_name: Optional[str] = None):
+    """Return a no-arg handler for st.button(on_click=...)."""
+
+    def _handler() -> None:
+        _apply_profile_callback(profile_name)
+
+    return _handler
+
+
+def _apply_profile_callback(profile_name: Optional[str] = None) -> None:
+    """
+    Streamlit on_click handler — runs at the start of the next rerun, before widgets.
+    Writes profile presets directly to config.yaml (widgets cannot overwrite first).
+    """
+    name = (profile_name or st.session_state.get("controls_active_profile") or "safe").strip().lower()
     if name not in BUILT_IN_PROFILES:
         name = "safe"
-    config.active_profile = name
-    write_profile_request(name)
-    clear_auto_profile_pending()
-    saved = _persist_config(config)
-    touch_operator_activity("apply_profile")
-    return saved
+    try:
+        cfg = _load_config()
+        note = apply_profile_gui_preset(cfg, name)
+        write_profile_request(name)
+        clear_auto_profile_pending()
+        runtime = _load_runtime_state()
+        mid = float(runtime.get("mid_price") or 0) if runtime else 0.0
+        _clamp_order_sizes(cfg, _order_size_slider_cap(cfg, mid))
+        cfg.save()
+        verify = _load_config()
+        ok, detail = verify_profile_on_disk(name, verify)
+        if not ok:
+            st.session_state["_gui_flash_message"] = (
+                f"Apply profile failed — {detail}. "
+                f"Check that `{CONFIG_FILE}` is writable."
+            )
+            st.session_state["_gui_flash_kind"] = "error"
+        else:
+            engine_running = bool(st.session_state.get("_gui_engine_running", False))
+            _gui_sync_config_display(verify, engine_running=engine_running)
+            label = PROFILE_LABELS.get(name, name)
+            st.session_state["_gui_flash_message"] = (
+                f"Profile **{label}** saved to config.yaml ({note})."
+            )
+            st.session_state["_gui_flash_kind"] = "success"
+            st.session_state["_sync_controls_from_disk"] = True
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Apply profile callback failed")
+        st.session_state["_gui_flash_message"] = f"Apply profile failed: {exc}"
+        st.session_state["_gui_flash_kind"] = "error"
+    _gui_clear_controls_widget_state()
 
 
-def _profile_apply_hint(config: BotConfig, runtime: dict) -> None:
+def _gui_sync_config_display(config: BotConfig, *, engine_running: bool) -> None:
+    """Update runtime_state.json so market/header panels match config.yaml immediately."""
+    profile = (config.active_profile or "safe").strip().lower()
+    patch_runtime_state_file(
+        {
+            "active_profile": profile,
+            "gui_config_profile": profile,
+            "gui_config_synced": True,
+        }
+    )
+
+
+def _gui_save_and_refresh(
+    config: BotConfig,
+    *,
+    engine_running: bool,
+    touch_save: bool = True,
+    success_message: str = "Config saved - settings are live in the GUI.",
+    apply_profile: Optional[str] = None,
+) -> None:
+    try:
+        ok, msg = _execute_gui_save(
+            config,
+            engine_running=engine_running,
+            touch_save=touch_save,
+            apply_profile=apply_profile,
+        )
+        if ok and not apply_profile:
+            msg = success_message
+    except Exception as exc:
+        logging.getLogger(__name__).exception("GUI config save failed")
+        ok, msg = False, f"Config save failed: {exc}"
+    st.session_state["_gui_flash_message"] = msg
+    st.session_state["_gui_flash_kind"] = "success" if ok else "error"
+    _gui_clear_controls_widget_state()
+    _gui_clear_stale_panel_state()
+    st.rerun()
+
+
+def _gui_display_profile(config: BotConfig, runtime: dict, *, engine_running: bool) -> str:
+    """Profile shown in the GUI — config on disk when stopped, else latest engine cycle."""
+    disk = (_load_config().active_profile or "safe").strip().lower()
+    if not engine_running:
+        return disk
+    engine_name = str(runtime.get("active_profile") or disk).strip().lower()
+    return engine_name
+
+
+def _profile_apply_hint(config: BotConfig, runtime: dict, *, engine_running: bool) -> None:
     """Explain config vs last-cycle profile when they differ."""
     disk = _load_config()
     config_name = (disk.active_profile or "safe").strip().lower()
     engine_name = str(runtime.get("active_profile") or config_name).strip().lower()
-    refresh = max(30, int(config.order_refresh_time_seconds))
-    if config_name != engine_name:
-        st.info(
-            f"**Config profile:** {PROFILE_LABELS.get(config_name, config_name)} · "
-            f"**Last engine cycle:** {PROFILE_LABELS.get(engine_name, engine_name)} · "
-            f"Switch applies on the **next cycle** (within ~{refresh}s). No restart needed."
+    if config_name == engine_name:
+        return
+    if not engine_running:
+        st.caption(
+            f"Config profile **{PROFILE_LABELS.get(config_name, config_name)}** — "
+            "engine stopped (no cycle until you start)."
         )
+        return
+    refresh = max(30, int(config.order_refresh_time_seconds))
+    st.info(
+        f"**Config profile:** {PROFILE_LABELS.get(config_name, config_name)} · "
+        f"**Last engine cycle:** {PROFILE_LABELS.get(engine_name, engine_name)} · "
+        f"Engine catches up on the **next cycle** (within ~{refresh}s)."
+    )
 
 
 def _credentials_match(address: str, secret: str) -> tuple[bool, str]:
@@ -203,6 +442,51 @@ _SESSION_BALANCE_PNL_HELP = (
     "Wallet balance change only, both legs at current mid — fees and fills, "
     "not mid revaluation."
 )
+_SESSION_PNL_NOTE = "Since this engine run only — not Xaman all-time."
+_PORTFOLIO_RLUSD_HELP = (
+    "Total bot wallet in RLUSD: RLUSD balance plus XRP valued at the engine's book mid. "
+    "Xaman may differ slightly (their price feed vs DEX mid)."
+)
+
+
+def _portfolio_value_rlusd(runtime: dict) -> Optional[float]:
+    """Portfolio in RLUSD — same basis as Xaman's ~USD total (RLUSD ≈ $1)."""
+    port_xrp = runtime.get("portfolio_value_xrp")
+    mid = runtime.get("mid_price")
+    if port_xrp is not None and mid is not None and float(mid) > 0:
+        return float(port_xrp) * float(mid)
+    xrp = runtime.get("balance_xrp")
+    rlusd = runtime.get("balance_rlusd")
+    if xrp is None or rlusd is None or mid is None or float(mid) <= 0:
+        return None
+    return float(rlusd) + float(xrp) * float(mid)
+
+
+def _render_sidebar_wallet(runtime: dict) -> None:
+    """Compact sidebar: one clear portfolio total + balance line."""
+    port_rlusd = _portfolio_value_rlusd(runtime)
+    mid = runtime.get("mid_price")
+
+    if port_rlusd is not None:
+        st.metric(
+            "Portfolio",
+            f"{port_rlusd:,.2f} RLUSD",
+            help=_PORTFOLIO_RLUSD_HELP,
+        )
+        if mid is not None:
+            st.caption(f"Book mid **{_fmt_price(mid)}** RLUSD/XRP")
+    else:
+        st.caption("Portfolio — waiting for engine balances…")
+
+    xrp = runtime.get("balance_xrp")
+    rlusd = runtime.get("balance_rlusd")
+    if xrp is not None or rlusd is not None:
+        parts = []
+        if xrp is not None:
+            parts.append(f"{_fmt_xrp_balance(xrp)} XRP")
+        if rlusd is not None:
+            parts.append(f"{_fmt_rlusd_balance(rlusd)} RLUSD")
+        st.caption(" · ".join(parts))
 
 
 def _runtime_updated_age_seconds(runtime: dict) -> Optional[float]:
@@ -257,13 +541,6 @@ def _session_pnl_from_runtime(runtime: dict) -> tuple[float, float]:
     else:
         balance = float(runtime.get("session_pnl_xrp_estimate", 0.0))
     return mtm, balance
-
-
-def _render_balance_card(column: Any, runtime: dict) -> None:
-    """XRP on the main line; RLUSD on a smaller line below (fits narrow columns)."""
-    with column:
-        st.metric("Balance", _fmt_xrp_balance(runtime.get("balance_xrp")), help="Bot account XRP")
-        st.caption(f"RLUSD {_fmt_rlusd_balance(runtime.get('balance_rlusd'))}")
 
 
 def _quote_table(intents: List[dict]) -> pd.DataFrame:
@@ -338,6 +615,14 @@ def _inject_ui_alignment_styles() -> None:
             background: #fde8e8;
             border-color: #c0392b;
             color: #5c0f0f;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+            font-size: 1.65rem;
+            font-weight: 700;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stMetric"] [data-testid="stMetricLabel"] {
+            font-size: 0.95rem;
+            font-weight: 600;
         }
         </style>
         """,
@@ -516,15 +801,9 @@ def _render_operating_banners(config: BotConfig, runtime: dict) -> None:
 
 
 def _resolve_market_assessment(config: BotConfig, runtime: dict) -> dict:
-    """Use engine snapshot fields, or compute recommendation live from book metrics."""
-    rec = runtime.get("recommended_profile", "")
-    reason = runtime.get("recommendation_reason", "")
-    if rec:
-        return {
-            "recommended_profile": str(rec),
-            "recommendation_reason": str(reason),
-            "market_condition_label": runtime.get("market_condition_label", "Neutral"),
-        }
+    """Compute profile recommendation from latest book metrics (not stale runtime snapshot)."""
+    if not runtime:
+        return {}
     bid = runtime.get("best_bid_rlusd_per_xrp")
     ask = runtime.get("best_ask_rlusd_per_xrp")
     spread = float(runtime.get("book_spread_pct", 0)) or compute_book_spread_pct(bid, ask)
@@ -533,15 +812,23 @@ def _resolve_market_assessment(config: BotConfig, runtime: dict) -> dict:
         liquidity_score=float(runtime.get("liquidity_score", 0)),
         book_spread_pct=spread,
         active_profile=config.active_profile,
+        previous_condition=runtime.get("market_condition"),
+        previous_liquidity_level=runtime.get("liquidity_level"),
+    )
+    rec, reason = normalize_profile_recommendation(
+        assessment.recommended_profile,
+        assessment.recommendation_reason,
     )
     return {
-        "recommended_profile": assessment.recommended_profile,
-        "recommendation_reason": assessment.recommendation_reason,
+        "recommended_profile": rec,
+        "recommendation_reason": reason,
         "market_condition_label": assessment.condition_label,
     }
 
 
-def _render_market_conditions_panel(config: BotConfig, runtime: dict) -> None:
+def _render_market_conditions_panel(
+    config: BotConfig, runtime: dict, *, engine_running: bool
+) -> None:
     """Market conditions + profile recommendation (top of page, right of logo)."""
     if not runtime:
         st.caption("Market conditions appear after the engine runs a cycle.")
@@ -559,7 +846,7 @@ def _render_market_conditions_panel(config: BotConfig, runtime: dict) -> None:
 
     st.markdown("#### Market conditions")
     m1, m2, m3, m4, m5 = st.columns(5)
-    active = runtime.get("active_profile") or config.active_profile
+    active = _gui_display_profile(config, runtime, engine_running=engine_running)
     profile_short = PROFILE_SHORT.get(str(active), str(active)[:8])
     spread_key = str(runtime.get("book_spread_status", "unknown")).lower()
     spread_short = SPREAD_SHORT.get(spread_key, spread_key.title()[:7])
@@ -586,10 +873,11 @@ def _render_market_conditions_panel(config: BotConfig, runtime: dict) -> None:
     if runtime.get("rebalance_summary"):
         st.info(f"**Inventory steering:** {runtime.get('rebalance_summary')}")
 
-    assessment = _resolve_market_assessment(config, runtime)
+    disk_cfg = _load_config()
+    assessment = _resolve_market_assessment(disk_cfg, runtime)
     rec = assessment.get("recommended_profile", "")
     rec_label = PROFILE_LABELS.get(str(rec), str(rec)) if rec else "—"
-    active = runtime.get("active_profile") or config.active_profile
+    active = _gui_display_profile(disk_cfg, runtime, engine_running=engine_running)
     active_label = PROFILE_LABELS.get(str(active), str(active))
 
     st.markdown("#### Suggested profile")
@@ -601,27 +889,26 @@ def _render_market_conditions_panel(config: BotConfig, runtime: dict) -> None:
         st.markdown(f"**Recommended: {rec_label}**")
         st.caption(reason)
         st.caption(f"Active profile: **{active_label}**.")
-        if st.button(f"Apply {PROFILE_SHORT.get(str(rec), rec_label)}", key="apply_recommended_profile"):
-            _apply_active_profile(config, str(rec))
-            st.success(
-                f"Saved **{PROFILE_LABELS.get(str(rec), rec_label)}** — engine picks it up on the next cycle."
-            )
-            st.rerun()
+        st.button(
+            f"Apply {PROFILE_SHORT.get(str(rec), rec_label)}",
+            key="apply_recommended_profile",
+            on_click=_make_apply_profile_callback(str(rec)),
+        )
     else:
         st.caption("Profile recommendation appears after the engine reports market conditions.")
 
     if getattr(config, "auto_profile_switching", False):
-        idle = minutes_since_last_operator_action()
+        idle = minutes_since_save_config()
         need = int(getattr(config, "auto_profile_inactivity_minutes", 120))
         confirm = int(getattr(config, "auto_profile_confirm_cycles", 3))
         cooldown = int(getattr(config, "auto_profile_switch_cooldown_minutes", 45))
-        engine_rec = str(runtime.get("recommended_profile") or rec or "").strip().lower()
-        active_key = str(runtime.get("active_profile") or config.active_profile).strip().lower()
+        engine_rec = str(rec or "").strip().lower()
+        active_key = _gui_display_profile(config, runtime, engine_running=engine_running)
         ap_state = load_auto_profile_state()
         if idle < need:
             st.caption(
-                f"**Auto profile switch:** waits until **{need} min** idle "
-                f"(no Save Config / Apply profile). Now **{idle:.0f} min**."
+                f"**Auto profile switch:** waits **{need} min** after **Save Config** "
+                f"(Apply profile does not reset). Now **{idle:.0f} min**."
             )
         elif ap_state.pending_profile:
             since = minutes_since_auto_switch(ap_state)
@@ -645,35 +932,21 @@ def _render_market_conditions_panel(config: BotConfig, runtime: dict) -> None:
 
 
 def _render_header(config: BotConfig, runtime: dict, engine_running: bool) -> None:
+    """Status strip only — wallet/portfolio live in the sidebar."""
     mid = runtime.get("mid_price")
-    pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime)
     dry = runtime.get("dry_run", config.dry_run)
+    profile = _gui_display_profile(config, runtime, engine_running=engine_running)
+    profile_label = PROFILE_LABELS.get(str(profile), str(profile))
 
-    h1, h2, h3, h4, h5, h6, h7 = st.columns([1.2, 0.9, 0.9, 0.9, 0.9, 1, 1])
+    h1, h2, h3, h4, h5, h6 = st.columns([1.2, 0.9, 0.9, 1, 1, 1.1])
     status = "RUNNING" if engine_running else "STOPPED"
     h1.markdown(f"**Bot** :{'green' if engine_running else 'orange'}[{status}]")
     h2.markdown(f"**Mode** {'DRY-RUN' if dry else 'LIVE'}")
     h3.metric("Mid", _fmt_price(mid) if mid else "—", help="RLUSD per XRP")
-    h4.metric("XRP", _fmt_xrp_balance(runtime.get("balance_xrp")))
-    h5.metric("RLUSD", _fmt_rlusd_balance(runtime.get("balance_rlusd")))
-    delta_color = "normal" if pnl_mtm == 0 else ("normal" if pnl_mtm > 0 else "inverse")
-    h6.metric(
-        "Session MTM P&L",
-        f"{pnl_mtm:+.4f}",
-        help=_SESSION_MTM_HELP,
-        delta_color=delta_color,
-    )
-    h7.metric(
-        "Balance Δ P&L",
-        f"{pnl_balance:+.4f}",
-        help=_SESSION_BALANCE_PNL_HELP,
-    )
-    profile = runtime.get("active_profile") or config.active_profile
-    profile_label = PROFILE_LABELS.get(str(profile), str(profile))
-    st.caption(
-        f"{config.network_name().upper()} · {profile_label} · "
-        f"Updated {runtime.get('updated_utc', 'n/a')}"
-    )
+    h4.metric("Cycles", int(runtime.get("cycle_count", 0)))
+    h5.metric("Drawdown", f"{float(runtime.get('drawdown_pct', 0)):.3f}%")
+    h6.metric("Profile", profile_label)
+    st.caption(f"Updated {runtime.get('updated_utc', 'n/a')} · wallet & portfolio in sidebar")
 
 
 def _render_session_statistics(
@@ -747,31 +1020,16 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
         st.info("Start the bot or run one cycle to populate live data.")
         return
 
-    _profile_apply_hint(config, runtime)
+    _profile_apply_hint(config, runtime, engine_running=engine_running)
 
     pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime)
-    port = float(runtime.get("portfolio_value_xrp", 0))
-    dd = float(runtime.get("drawdown_pct", 0))
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    k1.metric("Bot status", "RUNNING" if engine_running else "STOPPED")
-    _render_balance_card(k2, runtime)
-    k3.metric(
-        "Portfolio",
-        f"{port:.4f}",
-        delta=f"{pnl_mtm:+.4f} MTM",
-        help="XRP equivalent at mid — same as cycle log.",
-    )
-    k4.metric("Drawdown", f"{dd:.3f}%")
-    k5.metric(
-        "Session MTM P&L",
-        f"{pnl_mtm:+.4f} XRP",
-        help=_SESSION_MTM_HELP,
-    )
-    k6.metric(
-        "Balance Δ P&L",
-        f"{pnl_balance:+.4f} XRP",
-        help=_SESSION_BALANCE_PNL_HELP,
-    )
+    vol = float(runtime.get("volatility_pct", 0))
+    liq = float(runtime.get("liquidity_score", 0))
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Session MTM P&L", f"{pnl_mtm:+.4f} XRP", help=_SESSION_MTM_HELP + " " + _SESSION_PNL_NOTE)
+    k2.metric("Balance Δ P&L", f"{pnl_balance:+.4f} XRP", help=_SESSION_BALANCE_PNL_HELP)
+    k3.metric("Volatility", f"{vol:.4f}%")
+    k4.metric("Liquidity", f"{liq:.4f}")
     age = _runtime_updated_age_seconds(runtime)
     stale_after = _runtime_stale_threshold_seconds(config, engine_running=engine_running)
     if age is not None and age > stale_after:
@@ -841,27 +1099,40 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
 
 
 @_fragment(run_every=timedelta(seconds=5))
-def _live_engine_panels_fragment() -> None:
-    """Refresh Dashboard and History live panels from logs/runtime_state.json."""
+def _sidebar_wallet_live_fragment() -> None:
+    if not st.session_state.get("auto_refresh", True):
+        return
+    runtime = _load_runtime_state()
+    if runtime:
+        _render_sidebar_wallet(runtime)
+
+
+@_fragment(run_every=timedelta(seconds=5))
+def _dashboard_live_fragment() -> None:
+    if not st.session_state.get("auto_refresh", True):
+        return
     runtime = _load_runtime_state()
     if not runtime:
         return
     try:
         cfg = _load_config()
     except TypeError:
-        cfg = st.session_state.get("_dash_config") or st.session_state.get("_hist_config")
-    if cfg is None:
         return
+    _update_live_dashboard(cfg, runtime)
 
-    dash = st.session_state.get("_dash_live_panel")
-    if dash is not None:
-        with dash.container():
-            _update_live_dashboard(cfg, runtime)
 
-    hist = st.session_state.get("_hist_live_panel")
-    if hist is not None:
-        with hist.container():
-            _paint_history_content(runtime, cfg)
+@_fragment(run_every=timedelta(seconds=5))
+def _history_live_fragment() -> None:
+    if not st.session_state.get("auto_refresh", True):
+        return
+    runtime = _load_runtime_state()
+    if not runtime:
+        return
+    try:
+        cfg = _load_config()
+    except TypeError:
+        return
+    _paint_history_content(runtime, cfg)
 
 
 def _render_bot_controls(config: BotConfig) -> None:
@@ -883,21 +1154,70 @@ def _render_bot_controls(config: BotConfig) -> None:
         _show_result(ok, msg, fail="warning")
         st.rerun()
     if c3.button("Run One Cycle", use_container_width=True):
-        _persist_config(config)
+        # Engine subprocess reads config.yaml — do not persist Controls widgets here
+        # (stale session_state would overwrite a profile apply on disk).
         with st.spinner("Running cycle..."):
             ok, msg = run_single_cycle()
         _show_result(ok, msg)
 
 
-def _render_controls_tab(config: BotConfig) -> None:
+def _show_rebalance_status(
+    config: BotConfig, runtime: dict, *, mid: float
+) -> None:
+    """Inventory mix from runtime snapshot or quick local estimate."""
+    xrp = runtime.get("balance_xrp")
+    rlusd = runtime.get("balance_rlusd")
+    if xrp is None and rlusd is None:
+        st.caption("Run **Check rebalance now** to load balances from the ledger.")
+        return
+
+    xrp_f = float(xrp or 0)
+    rlusd_f = float(rlusd or 0)
+    use_mid = mid if mid > 0 else float(runtime.get("mid_price") or 0)
+    total = xrp_f + (rlusd_f / use_mid if use_mid > 0 else 0)
+    ratio = (xrp_f / total) if total > 0 else 0.0
+    target = float(config.inventory_target_xrp_ratio)
+    st.caption(
+        f"Current **{ratio:.0%} XRP** · target **{target:.0%} XRP** "
+        f"({xrp_f:.2f} XRP, {rlusd_f:.2f} RLUSD)"
+    )
+
+    if use_mid > 0:
+        spendable = max(0.0, xrp_f - float(config.xrp_reserve))
+        advice = assess_rebalance_need(
+            xrp_balance=xrp_f,
+            rlusd_balance=rlusd_f,
+            mid_price=use_mid,
+            target_xrp_ratio=target,
+            spendable_xrp=spendable,
+            xrp_reserve=float(config.xrp_reserve),
+            min_order_xrp=float(config.min_order_size_xrp),
+            fund_with_xrp_only=bool(config.fund_with_xrp_only),
+        )
+        if runtime.get("rebalance_summary"):
+            st.info(runtime["rebalance_summary"])
+        elif advice.action != "hold":
+            st.info(advice.summary)
+
+
+def _render_controls_tab(
+    config: BotConfig, *, engine_running: bool, runtime: Optional[dict] = None
+) -> None:
     st.markdown("### Order bracket sizes (XRP)")
-    st.caption("Three layered quote sizes — adjust with sliders, then **Save Config** in the sidebar.")
+    st.caption(
+        "Adjust sliders, then **Save settings now** (or **Save Config** in the sidebar). "
+        "Changes apply immediately in the GUI."
+    )
+    runtime = runtime or {}
+    mid = float(runtime.get("mid_price") or 0)
+    size_cap = _order_size_slider_cap(config, mid)
+    _clamp_order_sizes(config, size_cap)
     c1, c2, c3 = st.columns(3)
     with c1:
         config.order_sizes[0] = st.slider(
             "Level 1",
             min_value=0.0,
-            max_value=float(max(config.risk_capital_xrp, 100.0)),
+            max_value=size_cap,
             value=float(config.order_sizes[0]),
             step=10.0,
         )
@@ -905,7 +1225,7 @@ def _render_controls_tab(config: BotConfig) -> None:
         config.order_sizes[1] = st.slider(
             "Level 2",
             min_value=0.0,
-            max_value=float(max(config.risk_capital_xrp, 100.0)),
+            max_value=size_cap,
             value=float(config.order_sizes[1]),
             step=25.0,
         )
@@ -913,52 +1233,150 @@ def _render_controls_tab(config: BotConfig) -> None:
         config.order_sizes[2] = st.slider(
             "Level 3",
             min_value=0.0,
-            max_value=float(max(config.risk_capital_xrp, 100.0)),
+            max_value=size_cap,
             value=float(config.order_sizes[2]),
             step=50.0,
         )
 
+    disk_cfg = _load_config()
+    if st.session_state.pop("_sync_controls_from_disk", False):
+        _copy_profile_fields_from_disk(config, disk_cfg)
+        _sync_controls_widgets_from_config(disk_cfg)
+
     st.markdown("### Spreads & timing")
+    st.caption(
+        "Profiles set **base spread**, **level increment**, and **defensive quoting** presets. "
+        "Pick a profile, click **Apply profile now** (writes config.yaml), then tweak and **Save Config**."
+    )
+    st.caption(
+        f"**Saved on disk:** profile `{disk_cfg.active_profile}`, "
+        f"base spread **{disk_cfg.base_spread * 100:.2f}%**, "
+        f"level step **{disk_cfg.level_spread_increment * 100:.2f}%**, "
+        f"edge strictness **{disk_cfg.edge_strictness:.2f}**."
+    )
+    _disk_profile_key = (disk_cfg.active_profile or "safe").strip().lower()
+    preset = PROFILE_GUI_PRESETS.get(_disk_profile_key, PROFILE_GUI_PRESETS["safe"])
+    if abs(disk_cfg.base_spread - preset.base_spread) > 1e-12:
+        st.warning(
+            f"Disk base spread **{disk_cfg.base_spread * 100:.2f}%** does not match the "
+            f"**{disk_cfg.active_profile}** preset (**{preset.base_spread * 100:.2f}%**) — "
+            "click **Apply profile now** to align."
+        )
     s1, s2, s3 = st.columns(3)
     with s1:
-        config.base_spread = st.number_input(
-            "Base spread (%)",
-            value=config.base_spread * 100,
-            step=0.01,
-            format="%.2f",
-        ) / 100
+        config.base_spread = (
+            st.number_input(
+                "Base spread (%)",
+                value=config.base_spread * 100,
+                step=0.01,
+                format="%.2f",
+                key="controls_base_spread_pct",
+                help="Starting half-spread before profile multiplier and vol/liquidity.",
+            )
+            / 100
+        )
+        config.level_spread_increment = (
+            st.number_input(
+                "Level spread step (%)",
+                value=config.level_spread_increment * 100,
+                step=0.01,
+                format="%.2f",
+                key="controls_level_spread_inc",
+                help="Added per level (L2, L3) on top of base spread.",
+            )
+            / 100
+        )
     with s2:
         config.order_refresh_time_seconds = st.number_input(
             "Refresh interval (sec)",
             value=int(config.order_refresh_time_seconds),
             step=10,
             min_value=15,
+            key="controls_refresh_sec",
         )
     with s3:
         profile_names = list(BUILT_IN_PROFILES.keys())
-        disk_profile = (_load_config().active_profile or "safe").strip().lower()
-        idx = profile_names.index(disk_profile) if disk_profile in profile_names else 0
+        disk_profile = (disk_cfg.active_profile or "safe").strip().lower()
+        if "controls_active_profile" not in st.session_state:
+            st.session_state["controls_active_profile"] = disk_profile
         picked = st.selectbox(
             "Active profile",
             profile_names,
-            index=idx,
             format_func=lambda key: PROFILE_LABELS.get(key, key),
             key="controls_active_profile",
-            help="Use Apply profile now — takes effect on the next engine cycle (~refresh interval).",
+            help="Apply profile now writes preset spreads and defensive settings to config.yaml.",
         )
         config.active_profile = picked
-        if st.button("Apply profile now", key="apply_controls_profile", use_container_width=True):
-            saved = _apply_active_profile(config, picked)
-            label = PROFILE_LABELS.get(saved.active_profile, saved.active_profile)
-            st.success(f"**{label}** saved — next engine cycle will quote with this profile.")
-            st.rerun()
+        preview = preset_preview_lines(picked)
+        if preview:
+            st.caption(preview)
+        if picked != disk_profile:
+            st.info("Profile changed — click **Apply profile now** to write presets to config.yaml.")
+        st.button(
+            "Apply profile now",
+            key="apply_controls_profile",
+            use_container_width=True,
+            type="primary",
+            on_click=_make_apply_profile_callback(),
+        )
+
+    if st.button("Save settings now", type="primary", key="save_controls_now", use_container_width=True):
+        _gui_save_and_refresh(
+            config,
+            engine_running=engine_running,
+            touch_save=True,
+            success_message="Settings saved - GUI updated from config.yaml.",
+        )
 
     st.markdown("### Risk & execution flags")
     r1, r2, r3 = st.columns(3)
     with r1:
-        config.risk_capital_xrp = st.number_input(
-            "Risk capital (XRP)", value=config.risk_capital_xrp, step=100.0
+        unit_options = ["xrp", "rlusd"]
+        unit_index = (
+            1 if config.risk_capital_unit_normalized() == "rlusd" else 0
         )
+        picked_unit = st.radio(
+            "Risk capital unit",
+            unit_options,
+            index=unit_index,
+            format_func=lambda u: "XRP" if u == "xrp" else "RLUSD",
+            horizontal=True,
+            key="risk_capital_unit",
+        )
+        config.risk_capital_unit = picked_unit
+        if picked_unit == "rlusd":
+            default_rlusd = float(getattr(config, "risk_capital_rlusd", 0) or 0)
+            if default_rlusd <= 0 and mid > 0:
+                default_rlusd = float(config.risk_capital_xrp) * mid
+            config.risk_capital_rlusd = st.number_input(
+                "Risk capital (RLUSD)",
+                min_value=0.0,
+                value=default_rlusd,
+                step=50.0,
+                format="%.2f",
+            )
+            if mid > 0:
+                config.risk_capital_xrp = float(config.risk_capital_rlusd) / mid
+                st.caption(
+                    f"≈ **{config.risk_capital_xrp:,.2f} XRP** equiv. @ mid **{_fmt_price(mid)}**"
+                )
+            else:
+                st.caption("Set mid from a cycle (or engine run) to show XRP equivalent.")
+        else:
+            config.risk_capital_xrp = st.number_input(
+                "Risk capital (XRP)",
+                min_value=0.0,
+                value=float(config.risk_capital_xrp),
+                step=10.0,
+                format="%.4f",
+            )
+            if mid > 0:
+                config.risk_capital_rlusd = float(config.risk_capital_xrp) * mid
+                st.caption(
+                    f"≈ **{config.risk_capital_rlusd:,.2f} RLUSD** @ mid **{_fmt_price(mid)}**"
+                )
+            else:
+                st.caption("RLUSD equivalent shown after the engine reports a book mid.")
     with r2:
         # MM portfolios swing on inventory mark-to-market and fill timing; a 5% cap
         # trips the kill switch too often during pilot testing. 10% is a practical
@@ -987,6 +1405,31 @@ def _render_controls_tab(config: BotConfig) -> None:
             "Fund with XRP only",
             value=getattr(config, "fund_with_xrp_only", True),
         )
+
+    st.markdown("#### Manual rebalance")
+    target_xrp = float(config.inventory_target_xrp_ratio)
+    st.caption(
+        f"Target inventory **{target_xrp:.0%} XRP** / **{1 - target_xrp:.0%} RLUSD**. "
+        "The bot does not swap on-chain — use this for live advice and Xaman/DEX swaps."
+    )
+    _show_rebalance_status(config, runtime, mid=mid)
+    if st.button(
+        "Check rebalance now",
+        key="manual_rebalance_check",
+        use_container_width=True,
+        help="Fetches ledger balances and book mid; updates sidebar and market panel immediately.",
+    ):
+        try:
+            with st.spinner("Reading ledger balances..."):
+                ok, msg = manual_rebalance_check()
+            st.session_state["_gui_flash_message"] = msg or (
+                "Rebalance check complete." if ok else "Rebalance check failed."
+            )
+            st.session_state["_gui_flash_kind"] = "success" if ok else "warning"
+        except Exception as exc:
+            st.session_state["_gui_flash_message"] = f"Rebalance check error: {exc}"
+            st.session_state["_gui_flash_kind"] = "warning"
+        st.rerun()
 
     e1, e2 = st.columns(2)
     with e1:
@@ -1044,14 +1487,16 @@ def _render_controls_tab(config: BotConfig) -> None:
 
     d1, d2, d3 = st.columns(3)
     with d1:
+        _strictness_options = list(_edge_strictness_labels.keys())
         _picked = st.selectbox(
             "Edge strictness",
-            options=list(_edge_strictness_labels.keys()),
+            options=_strictness_options,
             format_func=lambda k: _edge_strictness_labels[k],
-            index=list(_edge_strictness_labels.keys()).index(_strictness_key),
+            index=_strictness_options.index(_strictness_key),
+            key="controls_edge_strictness",
             help=(
-                "Scales each profile's built-in min edge. Change profile for a different "
-                "baseline — no separate edge slider needed."
+                "Scales each profile's min edge. **Apply profile** sets this from the preset; "
+                "you can override afterward."
             ),
         )
         config.edge_strictness = float(_picked)
@@ -1094,6 +1539,7 @@ def _render_controls_tab(config: BotConfig) -> None:
     config.dynamic_min_edge_enabled = st.toggle(
         "Dynamic min edge from live book",
         value=bool(getattr(config, "dynamic_min_edge_enabled", False)),
+        key="controls_dynamic_min_edge",
         help=(
             "Each cycle, adapt required edge to the live book spread (capped by profile target). "
             "Off = profile edge only (Option A)."
@@ -1401,45 +1847,67 @@ def _paint_history_content(runtime: dict, config: BotConfig) -> None:
 
 
 def _render_history_tab(config: BotConfig, runtime: dict) -> None:
-    st.session_state._hist_config = config
-    if "_hist_live_panel" not in st.session_state:
-        st.session_state._hist_live_panel = st.empty()
-    if not st.session_state.get("auto_refresh", True):
-        with st.session_state._hist_live_panel.container():
-            _paint_history_content(_load_runtime_state() or runtime, config)
+    if st.session_state.get("auto_refresh", True):
+        _history_live_fragment()
+    else:
+        _paint_history_content(_load_runtime_state() or runtime, config)
 
 
 def run_gui() -> None:
-    st.set_page_config(
-        page_title="XLedgerMate",
-        page_icon=str(LOGO_PATH) if LOGO_PATH.is_file() else "chart",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
+    _ensure_page_config()
     _inject_ui_alignment_styles()
+    _gui_clear_stale_panel_state()
 
     try:
         config = _load_config()
     except TypeError as exc:
         st.error(f"Config load failed: {exc}")
         st.stop()
+    except Exception as exc:
+        st.error(f"Config load failed: {exc}")
+        st.stop()
 
     runtime = _load_runtime_state()
+    mid_boot = float(runtime.get("mid_price") or 0) if runtime else 0.0
+    _clamp_order_sizes(config, _order_size_slider_cap(config, mid_boot))
     engine_running = is_engine_running()
+    st.session_state["_gui_engine_running"] = engine_running
+
+    if not engine_running and runtime:
+        disk = _load_config()
+        disk_profile = (disk.active_profile or "safe").strip().lower()
+        runtime_profile = str(runtime.get("active_profile") or "").strip().lower()
+        if runtime_profile != disk_profile:
+            _gui_sync_config_display(disk, engine_running=False)
+            runtime = _load_runtime_state()
+
+    flash = st.session_state.pop("_gui_flash_message", None)
+    flash_kind = st.session_state.pop("_gui_flash_kind", "success")
+    if flash:
+        if flash_kind == "warning":
+            st.warning(flash)
+        else:
+            st.success(flash)
 
     with st.sidebar:
         _render_brand_logo(sidebar=True)
         save_config_clicked = st.button("Save Config", type="primary", use_container_width=True)
         st.divider()
-        auto_refresh = st.toggle(
-            "Live refresh (5s)",
-            value=st.session_state.get("auto_refresh", True),
-            help="Refreshes Dashboard and History charts every 5s without reloading the whole page.",
-        )
-        st.session_state.auto_refresh = auto_refresh
-        if st.button("Refresh now", use_container_width=True):
-            st.rerun()
-        st.caption(f"Network: **{config.network_name()}**")
+        if st.session_state.get("auto_refresh", True):
+            _sidebar_wallet_live_fragment()
+        else:
+            _render_sidebar_wallet(runtime or {})
+        st.caption(f"**{config.network_name().upper()}**")
+        with st.expander("Display", expanded=False):
+            auto_refresh = st.toggle(
+                "Live refresh (5s)",
+                value=st.session_state.get("auto_refresh", True),
+                help="Refreshes Dashboard and History every 5s.",
+            )
+            st.session_state.auto_refresh = auto_refresh
+            if st.button("Refresh now", use_container_width=True):
+                _gui_clear_stale_panel_state()
+                st.rerun()
 
     _render_operating_banners(config, runtime)
 
@@ -1447,7 +1915,7 @@ def run_gui() -> None:
     with logo_col:
         _render_brand_logo()
     with market_col:
-        _render_market_conditions_panel(config, runtime)
+        _render_market_conditions_panel(config, runtime, engine_running=engine_running)
 
     if not config.bot_account_address:
         st.warning("Set your Bot Account on the **Bot Account** tab, then **Save Config**.")
@@ -1460,15 +1928,13 @@ def run_gui() -> None:
 
     with tab_dash:
         _render_bot_controls(config)
-        st.session_state._dash_config = config
-        if "_dash_live_panel" not in st.session_state:
-            st.session_state._dash_live_panel = st.empty()
-        if not st.session_state.get("auto_refresh", True):
-            with st.session_state._dash_live_panel.container():
-                _update_live_dashboard(config)
+        if st.session_state.get("auto_refresh", True):
+            _dashboard_live_fragment()
+        else:
+            _update_live_dashboard(config, runtime)
 
     with tab_ctrl:
-        _render_controls_tab(config)
+        _render_controls_tab(config, engine_running=engine_running, runtime=runtime)
 
     with tab_acct:
         _render_account_tab(config, runtime)
@@ -1479,16 +1945,17 @@ def run_gui() -> None:
     with tab_hist:
         _render_history_tab(config, runtime)
 
-    if st.session_state.get("auto_refresh", True):
-        _live_engine_panels_fragment()
-
     if save_config_clicked:
-        _persist_config(config)
-        touch_operator_activity("save_config")
-        with st.sidebar:
-            st.success("Saved")
-        st.rerun()
+        _gui_save_and_refresh(
+            config,
+            engine_running=engine_running,
+            touch_save=True,
+            success_message="Config saved - GUI updated from config.yaml.",
+        )
 
 
 if __name__ == "__main__":
-    run_gui()
+    try:
+        run_gui()
+    except Exception as exc:
+        st.exception(exc)

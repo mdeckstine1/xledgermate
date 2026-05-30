@@ -5,6 +5,34 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.3.8] — 2026-05-30 (`debug/repair-set`)
+
+**Theme:** Debug repair set — GUI save/apply reliability, profile presets, profit_mode guardrails.
+
+### Fixed
+
+- **Save Config** — White-screen / widget desync from stale session handles, double reruns, and Run One Cycle overwriting disk config.
+- **Apply profile** — Now writes spread, edge, and book-pressure presets to disk (not only `active_profile`).
+- **ImportError** — `normalize_profile_recommendation` moved to `utils/profile_recommendation.py` (avoids stale `core/` bytecode on Streamlit reload).
+- **Suggested profile** — GUI always recomputes market assessment; no stale `profit_mode` from old `runtime_state.json`.
+
+### Added
+
+- **`utils/gui_profile_presets.py`** — Source of truth for Apply-profile control values per built-in profile.
+- **`utils/profile_recommendation.py`** — Normalizes legacy `profit_mode` suggestions to `tight_spread`; defines auto-switch allowlist.
+- **`utils/gui_runtime_sync.py`**, **`utils/manual_rebalance.py`** — GUI/runtime helpers.
+- **Risk capital denomination** — `risk_capital_unit` / `risk_capital_rlusd` in settings and example config.
+- **Tests** — `test_profile_gui_presets.py`; extended market conditions tests.
+
+### Changed
+
+- **Profit mode** — Never suggested or auto-switched; operators select manually on Controls when conditions are ideal.
+- **`docs/STRATEGY_MANUAL.md`** — Rewritten in plain language with scenarios and narratives (v1.3.8).
+- **`docs/OPERATOR_MANUAL.md`** — Suggested-profile wording aligned with manual-only profit mode.
+- **Auto-switch idle default** — `auto_profile_inactivity_minutes` 120 → 30 in example config.
+
+---
+
 ## [1.3.7] — 2026-05-29 (`mainnet-live`)
 
 **Theme:** Live profile control — apply on the fly, full auto-switch with anti-flap guards.

@@ -17,9 +17,9 @@ from config.settings import BotConfig
 from connectors import XRPLConnector, XRPLNetworkConfig
 from core import VERSION
 from engine import TradingEngine
-from gui.streamlit_gui import run_gui
 from utils.logging_setup import setup_logging
 from utils.rpc_health import AMENDMENT_BLOCKED_HINT, rpc_reports_amendment_blocked
+from utils.manual_rebalance import run_manual_rebalance_check
 from utils.send_funds import send_from_bot_account
 from utils.testnet import is_testnet_mode
 
@@ -56,9 +56,13 @@ def parse_args() -> argparse.Namespace:
             "setup-trust",
             "trust-no-ripple",
             "send",
+            "rebalance-check",
         ],
         default="engine",
-        help="engine, gui, once, cancel-offers, clear-kill, setup-trust, trust-no-ripple, send",
+        help=(
+            "engine, gui, once, cancel-offers, clear-kill, setup-trust, "
+            "trust-no-ripple, send, rebalance-check"
+        ),
     )
     parser.add_argument("--to", dest="send_to", default="", help="Send destination r-address")
     parser.add_argument("--amount", type=float, default=0.0, help="Amount to send")
@@ -75,7 +79,14 @@ def log_startup_banner(config: BotConfig) -> None:
     logger.info("=" * 60)
     logger.info("XLedgerMate starting")
     logger.info("Version: v%s", VERSION)
-    logger.info("Risk capital: %.2f XRP (Bot Account only)", config.risk_capital_xrp)
+    if config.risk_capital_unit_normalized() == "rlusd":
+        logger.info(
+            "Risk capital: %.2f RLUSD (~%.2f XRP equiv. at save) (Bot Account only)",
+            config.risk_capital_rlusd,
+            config.risk_capital_xrp,
+        )
+    else:
+        logger.info("Risk capital: %.2f XRP (Bot Account only)", config.risk_capital_xrp)
     logger.info("XRPL network: %s", config.network_name())
     logger.info("XRPL RPC: %s", config.resolved_rpc_url())
     logger.info("Dry run: %s | Trading enabled: %s", config.dry_run, config.trading_enabled)
@@ -155,6 +166,11 @@ async def run_engine_async(config: BotConfig, mode: str, args: argparse.Namespac
         await engine._run_cycle()
         logger.info("Single cycle complete.")
         return
+    if mode == "rebalance-check":
+        summary = await run_manual_rebalance_check(config)
+        # Windows consoles may be cp1252; keep output ASCII-safe.
+        print(summary.encode("ascii", errors="replace").decode("ascii"))
+        return
     _register_engine_pid_cleanup()
     try:
         await engine.run()
@@ -172,6 +188,8 @@ if __name__ == "__main__":
         log_startup_banner(config)
 
         if args.mode == "gui":
+            from gui.streamlit_gui import run_gui
+
             run_gui()
         elif args.mode in {
             "engine",
@@ -181,6 +199,7 @@ if __name__ == "__main__":
             "setup-trust",
             "trust-no-ripple",
             "send",
+            "rebalance-check",
         }:
             asyncio.run(run_engine_async(config, args.mode, args))
         else:

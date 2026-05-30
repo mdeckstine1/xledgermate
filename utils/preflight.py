@@ -109,10 +109,18 @@ def evaluate_preflight(
     else:
         checks.append(f"Active order levels: {len(active_sizes)}")
 
-    if xrp_balance > config.risk_capital_xrp * 1.05:
+    cap_xrp = config.effective_risk_capital_xrp(mid_price)
+    if xrp_balance > cap_xrp * 1.05:
+        if config.risk_capital_unit_normalized() == "rlusd":
+            cap_label = (
+                f"{config.risk_capital_rlusd:.0f} RLUSD "
+                f"(~{cap_xrp:.0f} XRP @ mid)"
+            )
+        else:
+            cap_label = f"{cap_xrp:.0f} XRP"
         warnings.append(
-            f"Wallet XRP ({xrp_balance:.0f}) exceeds risk_capital_xrp "
-            f"({config.risk_capital_xrp:.0f}) — caps still apply to quote sizes"
+            f"Wallet XRP ({xrp_balance:.0f}) exceeds risk capital "
+            f"({cap_label}) — caps still apply to quote sizes"
         )
 
     ready = len(errors) == 0

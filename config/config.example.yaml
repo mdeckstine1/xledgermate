@@ -2,6 +2,8 @@
 # config.yaml is gitignored and never committed.
 
 risk_capital_xrp: 11254.0
+risk_capital_rlusd: 0.0
+risk_capital_unit: xrp
 bot_account_address: ""
 bot_secret_key: ""
 
@@ -40,7 +42,7 @@ max_quote_improve_touch_pct: 0.15
 max_half_spread_from_mid_pct: 1.0
 require_spread_validation_for_live: true
 auto_profile_switching: false
-auto_profile_inactivity_minutes: 120
+auto_profile_inactivity_minutes: 30
 auto_profile_confirm_cycles: 3
 auto_profile_switch_cooldown_minutes: 45
 
