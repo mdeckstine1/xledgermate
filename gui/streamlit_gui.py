@@ -106,6 +106,118 @@ def _load_runtime_state() -> dict:
         return {}
 
 
+_SIDEBAR_WALLET_CACHE_KEY = "_sidebar_wallet_snapshot"
+
+_WALLET_SNAPSHOT_KEYS = (
+    "portfolio_value_xrp",
+    "mid_price",
+    "balance_xrp",
+    "balance_rlusd",
+    "updated_utc",
+)
+
+
+def _wallet_fields_from_runtime(runtime: dict) -> dict:
+    out: dict = {}
+    for key in _WALLET_SNAPSHOT_KEYS:
+        val = runtime.get(key)
+        if val is not None and val != "":
+            out[key] = val
+    return out
+
+
+def _wallet_fields_from_portfolio_csv() -> dict:
+    """Last logged cycle — survives engine restarts and brief runtime gaps."""
+    df = _load_portfolio_snapshots(limit=1)
+    if df.empty:
+        return {}
+    row = df.iloc[-1]
+    out: dict = {}
+    if "portfolio_xrp_equiv" in row:
+        out["portfolio_value_xrp"] = float(row["portfolio_xrp_equiv"])
+    if "mid_rlusd_per_xrp" in row:
+        out["mid_price"] = float(row["mid_rlusd_per_xrp"])
+    if "xrp_balance" in row:
+        out["balance_xrp"] = float(row["xrp_balance"])
+    if "rlusd_balance" in row:
+        out["balance_rlusd"] = float(row["rlusd_balance"])
+    if "timestamp_utc" in row:
+        out["updated_utc"] = str(row["timestamp_utc"])
+    return out
+
+
+def _update_sidebar_wallet_cache(runtime: dict) -> None:
+    snap = _wallet_fields_from_runtime(runtime)
+    if not snap:
+        return
+    prior = st.session_state.get(_SIDEBAR_WALLET_CACHE_KEY) or {}
+    st.session_state[_SIDEBAR_WALLET_CACHE_KEY] = {**prior, **snap}
+
+
+def _sidebar_wallet_display_runtime(fresh: Optional[dict] = None) -> tuple[dict, bool]:
+    """
+    Merge fresh engine state with session cache and last CSV snapshot.
+
+    Returns (display_runtime, is_stale) — never an empty dict if we have any history.
+    """
+    fresh = fresh if fresh is not None else {}
+    if fresh:
+        _update_sidebar_wallet_cache(fresh)
+
+    cached = dict(st.session_state.get(_SIDEBAR_WALLET_CACHE_KEY) or {})
+    if not cached.get("portfolio_value_xrp") and not cached.get("balance_xrp"):
+        cached = {**_wallet_fields_from_portfolio_csv(), **cached}
+        if cached:
+            st.session_state[_SIDEBAR_WALLET_CACHE_KEY] = cached
+
+    display = {**cached}
+    for key, val in fresh.items():
+        if val is not None and val != "":
+            display[key] = val
+
+    fresh_has_portfolio = fresh.get("portfolio_value_xrp") is not None
+    fresh_has_balances = fresh.get("balance_xrp") is not None or fresh.get("balance_rlusd") is not None
+    using_cache = bool(display) and not fresh_has_portfolio and cached.get("portfolio_value_xrp") is not None
+    age = _runtime_updated_age_seconds(display)
+    stale = using_cache or (age is not None and age > 45.0)
+    return display, stale
+
+
+_BALANCE_SHARES_CACHE_KEY = "_balance_shares_cache"
+
+
+def _balances_unchanged(a: dict, b: dict, *, tol_xrp: float = 0.01) -> bool:
+    ax = a.get("balance_xrp")
+    bx = b.get("balance_xrp")
+    ar = a.get("balance_rlusd")
+    br = b.get("balance_rlusd")
+    if ax is None or bx is None:
+        return False
+    if abs(float(ax) - float(bx)) > tol_xrp:
+        return False
+    if ar is not None and br is not None and abs(float(ar) - float(br)) > 0.01:
+        return False
+    return True
+
+
+def _balance_shares_for_display(display: dict) -> tuple[Optional[float], Optional[float]]:
+    """Portfolio share % — cached when mid briefly unavailable on poll cycles."""
+    mid = float(display.get("mid_price") or 0)
+    xrp_share, rlusd_share = balance_value_shares(display, mid=mid)
+    if xrp_share is not None:
+        st.session_state[_BALANCE_SHARES_CACHE_KEY] = {
+            "xrp_share": xrp_share,
+            "rlusd_share": rlusd_share,
+            "balance_xrp": display.get("balance_xrp"),
+            "balance_rlusd": display.get("balance_rlusd"),
+        }
+        return xrp_share, rlusd_share
+    cached = st.session_state.get(_BALANCE_SHARES_CACHE_KEY) or {}
+    if cached and _balances_unchanged(display, cached):
+        return cached.get("xrp_share"), cached.get("rlusd_share")
+    return None, None
+
+
 def _load_config(*, reload_modules: bool = False) -> BotConfig:
     """Load config.yaml. Avoid reload_modules in Streamlit — reload races with save/rerun."""
     if reload_modules:
@@ -431,10 +543,14 @@ _PORTFOLIO_RLUSD_HELP = (
 )
 
 
-def _render_sidebar_wallet(runtime: dict) -> None:
-    """Compact sidebar: one clear portfolio total + balance line."""
-    port_rlusd = _portfolio_value_rlusd(runtime)
-    mid = runtime.get("mid_price")
+def _render_sidebar_wallet(runtime: dict, *, stale: bool = False) -> None:
+    """Compact sidebar: portfolio total + balances — keeps last known values while refreshing."""
+    display, is_stale = _sidebar_wallet_display_runtime(runtime)
+    stale = stale or is_stale
+
+    port_rlusd = _portfolio_value_rlusd(display)
+    port_xrp = display.get("portfolio_value_xrp")
+    mid = display.get("mid_price")
 
     if port_rlusd is not None:
         st.metric(
@@ -442,13 +558,22 @@ def _render_sidebar_wallet(runtime: dict) -> None:
             f"{port_rlusd:,.2f} RLUSD",
             help=_PORTFOLIO_RLUSD_HELP,
         )
-        if mid is not None:
-            st.caption(f"Book mid **{_fmt_price(mid)}** RLUSD/XRP")
+    elif port_xrp is not None:
+        st.metric(
+            "Portfolio",
+            f"{float(port_xrp):,.4f} XRP",
+            help="Total at last book mid — RLUSD display resumes when mid is available.",
+        )
     else:
-        st.caption("Portfolio — waiting for engine balances…")
+        st.metric("Portfolio", "—", help="Start the engine to load balances.")
 
-    xrp = runtime.get("balance_xrp")
-    rlusd = runtime.get("balance_rlusd")
+    if mid is not None:
+        st.caption(f"Book mid **{_fmt_price(mid)}** RLUSD/XRP")
+    elif port_xrp is not None:
+        st.caption("Book mid updating…")
+
+    xrp = display.get("balance_xrp")
+    rlusd = display.get("balance_rlusd")
     if xrp is not None or rlusd is not None:
         parts = []
         if xrp is not None:
@@ -456,6 +581,14 @@ def _render_sidebar_wallet(runtime: dict) -> None:
         if rlusd is not None:
             parts.append(f"{_fmt_rlusd_balance(rlusd)} RLUSD")
         st.caption(" · ".join(parts))
+
+    age = _runtime_updated_age_seconds(display)
+    if stale and age is not None:
+        st.caption(f"*Last known · {int(age)}s ago — engine refreshing…*")
+    elif stale:
+        st.caption("*Last known balance — engine refreshing…*")
+    elif age is not None and age > 30:
+        st.caption(f"Updated {int(age)}s ago")
 
 
 def _runtime_updated_age_seconds(runtime: dict) -> Optional[float]:
@@ -814,18 +947,20 @@ def _render_session_statistics(
 
 def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) -> None:
     """Dashboard — at-a-glance overview for long monitoring sessions."""
-    if runtime is None:
-        runtime = _load_runtime_state()
+    fresh = runtime if runtime is not None else (_load_runtime_state() or {})
+    display, data_stale = _sidebar_wallet_display_runtime(fresh)
     engine_running = is_engine_running()
 
-    if not runtime:
+    if not display and not fresh:
         st.info("Start the bot or run one cycle to populate live data.")
         return
+
+    runtime = {**display, **{k: v for k, v in fresh.items() if v is not None and v != ""}}
 
     _profile_apply_hint(config, runtime, engine_running=engine_running)
 
     pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime)
-    port = float(runtime.get("portfolio_value_xrp", 0))
+    port = float(runtime.get("portfolio_value_xrp", 0) or 0)
     dd = float(runtime.get("drawdown_pct", 0))
     dry = runtime.get("dry_run", config.dry_run)
 
@@ -851,8 +986,7 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
     b1, b2, b3 = st.columns(3)
     xrp = runtime.get("balance_xrp")
     rlusd = runtime.get("balance_rlusd")
-    mid = float(runtime.get("mid_price") or 0)
-    xrp_share, rlusd_share = balance_value_shares(runtime, mid=mid)
+    xrp_share, rlusd_share = _balance_shares_for_display(display)
     b1.metric(
         "XRP balance",
         fmt_balance_with_share(
@@ -874,6 +1008,9 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
         int(runtime.get("open_offers_count", 0)),
         delta=f"cycle {int(runtime.get('cycle_count', 0))}",
     )
+
+    if data_stale and xrp_share is None and (xrp is not None or rlusd is not None):
+        st.caption("*Balance shares use last known mid — engine refreshing…*")
 
     st.caption(
         f"{'DRY-RUN' if dry else 'LIVE'} · "
@@ -971,9 +1108,8 @@ def _sidebar_wallet_live_fragment() -> None:
     if not st.session_state.get("auto_refresh", True):
         return
     _ensure_theme()
-    runtime = _load_runtime_state()
-    if runtime:
-        _render_sidebar_wallet(runtime)
+    fresh = _load_runtime_state() or {}
+    _render_sidebar_wallet(fresh)
 
 
 @_fragment(run_every=timedelta(seconds=5))
@@ -1656,6 +1792,11 @@ def run_gui() -> None:
 
     runtime = _load_runtime_state() or {}
     mid_boot = float(runtime.get("mid_price") or 0) if runtime else 0.0
+    _update_sidebar_wallet_cache(runtime)
+    if not st.session_state.get(_SIDEBAR_WALLET_CACHE_KEY):
+        csv_snap = _wallet_fields_from_portfolio_csv()
+        if csv_snap:
+            st.session_state[_SIDEBAR_WALLET_CACHE_KEY] = csv_snap
     _clamp_order_sizes(config, _order_size_slider_cap(config, mid_boot))
     engine_running = is_engine_running()
     st.session_state["_gui_engine_running"] = engine_running

@@ -390,6 +390,7 @@ class TradingEngine:
                     fill_quality=fill_quality,
                     exec_cfg=exec_cfg,
                     full_refresh=False,
+                    mid_price=mid_price,
                 )
                 self._last_cycle_balances = (balance_xrp, rlusd_balance)
                 return
@@ -689,6 +690,7 @@ class TradingEngine:
                 ),
                 exec_cfg=exec_cfg,
                 full_refresh=True,
+                mid_price=mid_price,
             )
             spread_ok = spread_validation.ok if spread_validation else False
             logger.info(
@@ -1079,12 +1081,27 @@ class TradingEngine:
         dynamic_min_edge_enabled: bool = False,
         exec_cfg: Optional[ProfileExecution] = None,
         full_refresh: bool = True,
+        mid_price: Optional[float] = None,
     ) -> None:
         decisions = [
             {"ts_utc": e.ts_utc, "category": e.category, "message": e.message}
             for e in self.decision_log.recent_newest_first(limit=60)
         ]
-        mid = perception.mid_price or 0.0
+        prior_mid: Optional[float] = None
+        try:
+            existing = self.state_store.load()
+            if existing and existing.mid_price is not None and float(existing.mid_price) > 0:
+                prior_mid = float(existing.mid_price)
+        except (TypeError, ValueError, AttributeError):
+            prior_mid = None
+        if mid_price is not None and float(mid_price) > 0:
+            mid = float(mid_price)
+        elif perception.mid_price is not None and float(perception.mid_price) > 0:
+            mid = float(perception.mid_price)
+        elif prior_mid is not None:
+            mid = prior_mid
+        else:
+            mid = 0.0
         pnl_balance = 0.0
         pnl_mtm = 0.0
         if (
@@ -1127,7 +1144,7 @@ class TradingEngine:
             portfolio_value_xrp=portfolio_value,
             drawdown_pct=drawdown_pct,
             active_profile=perception.active_profile.name,
-            mid_price=perception.mid_price,
+            mid_price=mid if mid > 0 else perception.mid_price,
             best_bid_rlusd_per_xrp=best_bid,
             best_ask_rlusd_per_xrp=best_ask,
             price_is_testnet_book=config.testnet,
