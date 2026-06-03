@@ -36,7 +36,11 @@ max_daily_drawdown_percent: 10.0
 min_drawdown_percent: 2.0
 max_drawdown_percent: 25.0
 inventory_target_xrp_ratio: 0.55
+inventory_mode: market_make
 inventory_max_deviation: 0.12
+inventory_hard_pause_deviation: 0.22
+max_leg_size_pct_of_capital: 0.12
+inventory_overshoot_slack: 0.03
 edge_strictness: 1.0
 dynamic_min_edge_enabled: true
 book_pressure_sensitivity: 1.0

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from config.settings import BotConfig
+from config.settings import BotConfig, patch_config_file
 from connectors import XRPLConnector, XRPLNetworkConfig
 from connectors.xrpl_connector import is_plausible_rlusd_per_xrp
 from core.market_conditions import (
@@ -15,10 +15,11 @@ from core.market_conditions import (
     is_more_defensive_than,
     profile_for_auto_switch,
 )
+from utils.book_visibility import enrich_open_offers, quote_visibility
 from utils.profile_recommendation import normalize_profile_recommendation
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_manager import OrderManager
-from engine.order_sync import plan_order_sync
+from engine.order_sync import offers_off_touch, plan_order_sync
 from monitoring.balance_logger import BalanceLogger
 from monitoring.csv_logger import CSVLogger
 from monitoring.fill_detection import detect_fill_from_balance_delta
@@ -104,6 +105,12 @@ class TradingEngine:
         self._session_offers_kept: int = 0
         self._session_fills: int = 0
         self._recent_fill_keys: set = set()
+        self._last_quote_adjustments: Optional[Any] = None
+        self._last_mid_momentum: float = 0.0
+        self._last_rebalance: Optional[Any] = None
+        self._last_effective_min_edge_pct: float = 0.0
+        self._last_edge_resolution_summary: str = ""
+        self._last_dynamic_min_edge_enabled: bool = False
 
     def _restore_price_history(self) -> List[dict]:
         """Continue chart history across engine restarts (from runtime_state.json)."""
@@ -144,6 +151,8 @@ class TradingEngine:
             if tiered:
                 self._poll_counter += 1
                 full_refresh = self._poll_counter >= exec_cfg.full_refresh_every_n_polls
+                if self._cycle_count == 0:
+                    full_refresh = True
                 if full_refresh:
                     self._poll_counter = 0
             else:
@@ -200,7 +209,7 @@ class TradingEngine:
         if requested and requested != config.active_profile:
             old = config.active_profile
             config.active_profile = requested
-            config.save()
+            patch_config_file({"active_profile": requested})
             self.config = config
             self.order_manager.config = config
             msg = f"Operator profile {old} → {requested} (no engine restart)"
@@ -352,8 +361,34 @@ class TradingEngine:
                         f"Mid moved {move_pct:.2f}% — full quote refresh "
                         f"(profile {profile.name} trigger {exec_cfg.mid_requote_trigger_pct:.2f}%)",
                     )
+                elif move_pct >= 0.03 and mid_price and self._last_full_refresh_mid:
+                    total = balance_xrp + (rlusd_balance / mid_price if mid_price else 0)
+                    xrp_ratio = balance_xrp / total if total > 0 else 1.0
+                    if xrp_ratio < float(config.inventory_target_xrp_ratio) - float(
+                        getattr(config, "inventory_max_deviation", 0.12)
+                    ):
+                        full_refresh = True
+                        self.decision_log.add(
+                            "execution",
+                            f"Mid moved {move_pct:.2f}% while RLUSD-heavy — "
+                            f"refresh bid at touch",
+                        )
 
             fill_quality = self._fill_quality.assess()
+
+            if not full_refresh:
+                open_offers = await connector.get_open_offers()
+                if offers_off_touch(
+                    open_offers,
+                    best_bid=best_bid,
+                    best_ask=best_ask,
+                    max_worse_than_touch_pct=0.08,
+                ):
+                    full_refresh = True
+                    self.decision_log.add(
+                        "execution",
+                        "Open offers off touch (>8 bps) — forcing full quote refresh.",
+                    )
 
             if not full_refresh:
                 self.decision_log.add(
@@ -391,6 +426,13 @@ class TradingEngine:
                     exec_cfg=exec_cfg,
                     full_refresh=False,
                     mid_price=mid_price,
+                    quote_adjustments=self._last_quote_adjustments,
+                    mid_momentum=self._last_mid_momentum,
+                    spread_validation=self._last_spread_validation,
+                    rebalance=self._last_rebalance,
+                    effective_min_edge_pct=self._last_effective_min_edge_pct,
+                    edge_resolution_summary=self._last_edge_resolution_summary,
+                    dynamic_min_edge_enabled=self._last_dynamic_min_edge_enabled,
                 )
                 self._last_cycle_balances = (balance_xrp, rlusd_balance)
                 return
@@ -404,10 +446,17 @@ class TradingEngine:
                     market_assessment,
                     active_profile=config.active_profile,
                 )
-                if not inactive or not proposed:
+                aggressive_ok = bool(
+                    proposed
+                    and market_assessment.condition == "favorable"
+                    and not is_more_defensive_than(config.active_profile, proposed)
+                )
+                can_proceed = bool(proposed and (inactive or aggressive_ok))
+
+                if not can_proceed:
                     if not proposed:
                         clear_auto_profile_pending()
-                    elif not inactive and proposed:
+                    elif not inactive and not aggressive_ok:
                         self.decision_log.add(
                             "profile",
                             (
@@ -420,8 +469,10 @@ class TradingEngine:
                     confirm_cycles = max(
                         1, int(getattr(config, "auto_profile_confirm_cycles", 3))
                     )
-                    if proposed and not is_more_defensive_than(
-                        config.active_profile, proposed
+                    if (
+                        proposed
+                        and not is_more_defensive_than(config.active_profile, proposed)
+                        and not aggressive_ok
                     ):
                         confirm_cycles += 2
                         self.decision_log.add(
@@ -445,7 +496,7 @@ class TradingEngine:
                     ):
                         old = config.active_profile
                         config.active_profile = proposed
-                        config.save()
+                        patch_config_file({"active_profile": proposed})
                         profile = get_profile(proposed)
                         perception.active_profile = profile
                         ap_state.last_auto_switch_utc = datetime.now(
@@ -454,9 +505,14 @@ class TradingEngine:
                         ap_state.pending_profile = None
                         ap_state.pending_cycles = 0
                         save_auto_profile_state(ap_state)
+                        trigger = (
+                            "favorable market"
+                            if aggressive_ok and not inactive
+                            else "operator idle"
+                        )
                         msg = (
                             f"Auto-switched profile {old} → {proposed} "
-                            f"(operator idle, {market_assessment.condition_label} market, "
+                            f"({trigger}, {market_assessment.condition_label} market, "
                             f"confirmed {confirm_cycles} cycles | "
                             f"vol={volatility_pct:.2f}% liq={liquidity.liquidity_score:.2f} "
                             f"book_spread={book_spread_pct:.3f}%)"
@@ -520,6 +576,22 @@ class TradingEngine:
                 inventory_max_deviation=float(
                     getattr(config, "inventory_max_deviation", 0.12)
                 ),
+                inventory_mode=str(getattr(config, "inventory_mode", "market_make")),
+                inventory_hard_pause_deviation=float(
+                    getattr(config, "inventory_hard_pause_deviation", 0.22)
+                ),
+            )
+            inv_mode = str(getattr(config, "inventory_mode", "market_make")).strip().lower()
+            self._last_quote_adjustments = quote_adjustments
+            self._last_mid_momentum = mid_momentum
+            self._last_effective_min_edge_pct = effective_min_edge
+            self._last_edge_resolution_summary = edge_resolution
+            self._last_dynamic_min_edge_enabled = bool(
+                getattr(config, "dynamic_min_edge_enabled", False)
+            )
+            self.decision_log.add(
+                "mode",
+                f"Inventory mode: {inv_mode} (profile {profile.name})",
             )
             if fill_quality and not self.kill_switch.is_active():
                 await self._maybe_kill_on_toxic_fills(
@@ -537,6 +609,7 @@ class TradingEngine:
                 fund_with_xrp_only=config.fund_with_xrp_only,
             )
             self.decision_log.add("inventory", rebalance.summary)
+            self._last_rebalance = rebalance
             self.decision_log.add("edge", edge_resolution)
             adjusted_spreads = apply_spread_adjustments(
                 spread_result.effective_spreads_pct,
@@ -635,7 +708,12 @@ class TradingEngine:
                 else:
                     self._last_quote_mid = mid_price
                     placed_count = await self._refresh_orders(
-                        quote_plan.intents, exec_cfg=exec_cfg
+                        quote_plan.intents,
+                        exec_cfg=exec_cfg,
+                        join_touch=bool(quote_adjustments.join_touch),
+                        touch_backoff_pct=float(quote_adjustments.touch_backoff_pct),
+                        best_bid=best_bid,
+                        best_ask=best_ask,
                     )
                     self._last_full_refresh_mid = mid_price
             open_offers = await connector.get_open_offers()
@@ -984,7 +1062,14 @@ class TradingEngine:
         await self._activate_kill_switch(connector, config, reason)
 
     async def _refresh_orders(
-        self, intents: List[QuoteIntent], *, exec_cfg: Optional[ProfileExecution] = None
+        self,
+        intents: List[QuoteIntent],
+        *,
+        exec_cfg: Optional[ProfileExecution] = None,
+        join_touch: bool = False,
+        touch_backoff_pct: float = 0.0,
+        best_bid: Optional[float] = None,
+        best_ask: Optional[float] = None,
     ) -> int:
         if self.config.dry_run:
             self.decision_log.add(
@@ -1003,11 +1088,27 @@ class TradingEngine:
         kept = 0
 
         if selective and intents:
+            max_worse = float(
+                getattr(self.config, "max_quote_worse_than_touch_pct", 0.50)
+            )
+            preserve_worse = (
+                max(0.04, float(touch_backoff_pct) + 0.04)
+                if join_touch
+                else max_worse
+            )
             plan = plan_order_sync(
                 intents,
                 open_offers,
                 price_tolerance_pct=exec_cfg.order_price_tolerance_pct,
                 size_tolerance_xrp=exec_cfg.order_size_tolerance_xrp,
+                best_bid=best_bid,
+                best_ask=best_ask,
+                max_worse_than_touch_pct=max_worse,
+                preserve_queue_max_worse_pct=preserve_worse,
+                max_improve_touch_pct=float(
+                    getattr(self.config, "max_quote_improve_touch_pct", 0.15)
+                ),
+                preserve_touch_queue=join_touch,
             )
             for seq in plan.cancel_sequences:
                 try:
@@ -1129,6 +1230,12 @@ class TradingEngine:
                 market_assessment.recommended_profile,
                 market_assessment.recommendation_reason,
             )
+        enriched_offers = enrich_open_offers(
+            open_offers, best_bid=best_bid, best_ask=best_ask
+        )
+        quotes_at_touch, worst_vs_touch_bps, quote_visibility_summary = quote_visibility(
+            enriched_offers
+        )
         state = RuntimeState(
             version=VERSION,
             network=config.network_name(),
@@ -1153,16 +1260,8 @@ class TradingEngine:
             effective_spreads_pct=perception.effective_spreads_pct,
             balance_xrp=balance_xrp,
             balance_rlusd=balance_rlusd,
-            open_offers_count=len(open_offers),
-            open_offers=[
-                {
-                    "sequence": int(o.sequence),
-                    "side": str(o.side),
-                    "price": float(o.price),
-                    "size_xrp": float(o.size_xrp),
-                }
-                for o in open_offers
-            ],
+            open_offers_count=len(enriched_offers),
+            open_offers=enriched_offers,
             cycle_count=self._cycle_count,
             offers_placed_last_cycle=placed_count,
             last_execution_summary=execution_summary,
@@ -1233,10 +1332,15 @@ class TradingEngine:
             rebalance_summary=str(rebalance.summary) if rebalance else "",
             pause_bids=bool(quote_adjustments.pause_bids) if quote_adjustments else False,
             pause_asks=bool(quote_adjustments.pause_asks) if quote_adjustments else False,
+            inventory_mode=str(getattr(config, "inventory_mode", "market_make")),
             effective_min_edge_pct=effective_min_edge_pct,
             edge_resolution_summary=edge_resolution_summary,
             dynamic_min_edge_enabled=dynamic_min_edge_enabled,
             edge_strictness=float(getattr(config, "edge_strictness", 1.0)),
+            join_touch_active=bool(quote_adjustments.join_touch) if quote_adjustments else False,
+            quotes_at_touch=quotes_at_touch,
+            worst_vs_touch_bps=worst_vs_touch_bps,
+            quote_visibility_summary=quote_visibility_summary,
         )
         self.state_store.save(state)
     def _persist_error(self, message: str) -> None:

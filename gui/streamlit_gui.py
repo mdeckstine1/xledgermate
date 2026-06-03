@@ -6,6 +6,7 @@ import importlib
 import json
 import logging
 import sys
+from dataclasses import fields
 from datetime import timedelta
 from pathlib import Path
 
@@ -23,12 +24,9 @@ from config.settings import CONFIG_FILE, BotConfig
 from core.market_conditions import assess_market_conditions, compute_book_spread_pct
 from utils.profile_recommendation import normalize_profile_recommendation
 from core.perception import BUILT_IN_PROFILES
-from utils.gui_profile_presets import (
-    apply_profile_gui_preset,
-    preset_preview_lines,
-    verify_profile_on_disk,
-)
+from utils import gui_profile_presets as gui_profile_presets_module
 from core.runtime_state import QuoteIntent
+from utils.book_visibility import quote_visibility
 from utils.gui_runtime_sync import patch_runtime_state_file
 from utils.quote_validation import QuoteValidationResult, validate_quotes_against_book
 from strategy.inventory_balance import assess_rebalance_need
@@ -86,6 +84,31 @@ PROFILE_SHORT = {
     "profit_mode": "Profit",
 }
 
+INVENTORY_MODE_OPTIONS = ("market_make", "rebalance")
+INVENTORY_MODE_LABELS = {
+    "market_make": "Market make",
+    "rebalance": "Inventory rebalance",
+}
+INVENTORY_MODE_DESCRIPTIONS = {
+    "market_make": (
+        "**Two-sided** — bid and ask at touch. Size skew steers inventory. "
+        "Profit from spread on round trips. Saved to config; engine picks it up next cycle."
+    ),
+    "rebalance": (
+        "**One-sided** — pauses the vulnerable side when inventory skew exceeds ±12%. "
+        "Faster inventory correction, not classic market making."
+    ),
+}
+
+
+def _normalize_inventory_mode(raw: str) -> str:
+    mode = (raw or "market_make").strip().lower()
+    return mode if mode in INVENTORY_MODE_LABELS else "market_make"
+
+
+def _inventory_mode_label(mode: str) -> str:
+    return INVENTORY_MODE_LABELS.get(_normalize_inventory_mode(mode), "Market make")
+
 try:
     _fragment = st.fragment
 except AttributeError:  # pragma: no cover - older Streamlit
@@ -104,6 +127,62 @@ def _load_runtime_state() -> dict:
         return json.loads(RUNTIME_STATE_PATH.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
+
+
+def _effective_network(
+    config: BotConfig,
+    runtime: Optional[dict],
+    *,
+    engine_running: bool,
+) -> tuple[bool, str]:
+    """
+    Network for status bar and alerts — prefer live engine runtime over disk config.
+    Disk config can still say testnet while the engine is on mainnet (or vice versa).
+    """
+    runtime = runtime or {}
+    net = str(runtime.get("network") or "").strip().lower()
+    if net in ("mainnet", "testnet"):
+        return net == "testnet", net
+
+    if engine_running or runtime.get("cycle_count", 0):
+        rpc = str(runtime.get("rpc_url") or "").lower()
+        if "altnet" in rpc or "testnet" in rpc:
+            return True, "testnet"
+        if rpc:
+            return False, "mainnet"
+
+    is_testnet = bool(config.testnet)
+    return is_testnet, "testnet" if is_testnet else "mainnet"
+
+
+def _align_config_network_to_engine(config: BotConfig) -> Optional[str]:
+    """
+    If the engine is live, keep saved config aligned with runtime network.
+    Prevents disk default testnet:true from surviving after a mainnet session.
+    Returns a note for the save flash message, or None.
+    """
+    if not is_engine_running():
+        return None
+    runtime = _load_runtime_state()
+    if not runtime.get("network") and not runtime.get("rpc_url"):
+        return None
+    is_testnet, network = _effective_network(
+        config, runtime, engine_running=True
+    )
+    if bool(config.testnet) == is_testnet:
+        return None
+    config.testnet = is_testnet
+    return (
+        f"Network kept as **{network}** to match the running engine "
+        f"(disk had {'testnet' if not is_testnet else 'mainnet'})."
+    )
+
+
+def _config_network_mismatch(config: BotConfig, runtime: dict, *, is_testnet: bool) -> bool:
+    """True when saved config network disagrees with the running engine."""
+    if not runtime.get("cycle_count") and not is_engine_running():
+        return False
+    return bool(config.testnet) != is_testnet
 
 
 _SIDEBAR_WALLET_CACHE_KEY = "_sidebar_wallet_snapshot"
@@ -263,6 +342,26 @@ def _ensure_theme() -> None:
     inject_theme()
 
 
+_COMMAND_BAR_SLOT_KEY = "_command_bar_slot"
+
+
+def _command_bar_slot():
+    """Single placeholder for the top command bar (avoids duplicate headers on fragment refresh)."""
+    if _COMMAND_BAR_SLOT_KEY not in st.session_state:
+        st.session_state[_COMMAND_BAR_SLOT_KEY] = st.empty()
+    return st.session_state[_COMMAND_BAR_SLOT_KEY]
+
+
+def _paint_command_bar(
+    config: BotConfig,
+    runtime: dict,
+    *,
+    engine_running: bool,
+) -> None:
+    with _command_bar_slot().container():
+        _render_command_bar(config, runtime, engine_running=engine_running)
+
+
 def _gui_clear_stale_panel_state() -> None:
     """Drop cached st.empty() handles — storing them causes white screens on rerun."""
     for key in (
@@ -271,6 +370,7 @@ def _gui_clear_stale_panel_state() -> None:
         "_hist_live_panel",
         "_dash_config",
         "_hist_config",
+        _COMMAND_BAR_SLOT_KEY,
     ):
         st.session_state.pop(key, None)
 
@@ -290,10 +390,10 @@ def _execute_gui_save(
         name = str(apply_profile).strip().lower()
         if name not in BUILT_IN_PROFILES:
             name = "safe"
-        preset_note = apply_profile_gui_preset(config, name)
+        preset_note = gui_profile_presets_module.apply_profile_gui_preset(config, name)
         write_profile_request(name)
         clear_auto_profile_pending()
-    saved = _persist_config(config)
+    saved, network_note = _persist_config(config)
     _gui_sync_config_display(saved, engine_running=engine_running)
     if touch_save:
         touch_operator_activity("save_config")
@@ -302,13 +402,19 @@ def _execute_gui_save(
         detail = f" ({preset_note})" if preset_note else ""
         if engine_running:
             refresh = max(30, int(saved.order_refresh_time_seconds))
-            return (
-                True,
+            msg = (
                 f"Profile **{label}** applied{detail} - GUI updated; engine uses it "
-                f"within ~{refresh}s (next cycle).",
+                f"within ~{refresh}s (next cycle)."
             )
-        return True, f"Profile **{label}** applied{detail} - GUI updated now (engine stopped)."
-    return True, "Config saved - settings are live in the GUI."
+        else:
+            msg = f"Profile **{label}** applied{detail} - GUI updated now (engine stopped)."
+        if network_note:
+            msg = f"{msg} {network_note}"
+        return True, msg
+    msg = "Config saved - settings are live in the GUI."
+    if network_note:
+        msg = f"{msg} {network_note}"
+    return True, msg
 
 
 def _show_result(ok: bool, msg: str, *, fail: str = "error") -> None:
@@ -344,16 +450,22 @@ def _save_credentials_to_disk(address: str, secret: str) -> tuple[bool, str]:
     return True, f"Credentials saved to `{CONFIG_FILE.name}`."
 
 
-def _persist_config(config: BotConfig) -> BotConfig:
-    """Save non-credential settings without clobbering credentials on disk."""
-    _merge_disk_credentials(config)
-    config.active_profile = (config.active_profile or "safe").strip().lower()
+def _persist_config(config: BotConfig) -> tuple[BotConfig, Optional[str]]:
+    """Merge GUI edits onto disk config — never wipe credentials or unrelated disk fields."""
+    disk = _load_config()
+    merged = disk
+    for field in fields(BotConfig):
+        if field.name in ("bot_account_address", "bot_secret_key"):
+            continue
+        setattr(merged, field.name, getattr(config, field.name))
+    merged.active_profile = (merged.active_profile or "safe").strip().lower()
     runtime = _load_runtime_state()
     mid = float(runtime.get("mid_price") or 0) if runtime else 0.0
-    config.sync_risk_capital_pair(mid if mid > 0 else None)
-    _clamp_order_sizes(config, _order_size_slider_cap(config, mid))
-    config.save()
-    return _load_config()
+    merged.sync_risk_capital_pair(mid if mid > 0 else None)
+    _clamp_order_sizes(merged, _order_size_slider_cap(merged, mid))
+    network_note = _align_config_network_to_engine(merged)
+    merged.save()
+    return _load_config(), network_note
 
 
 def _gui_clear_controls_widget_state() -> None:
@@ -366,6 +478,11 @@ def _gui_clear_controls_widget_state() -> None:
         "controls_refresh_sec",
         "controls_edge_strictness",
         "controls_dynamic_min_edge",
+        "controls_inventory_mode",
+        "controls_inventory_target",
+        "controls_hard_pause_dev",
+        "controls_rebalance_dev",
+        "controls_max_leg_pct",
     ):
         st.session_state.pop(key, None)
 
@@ -373,6 +490,7 @@ def _gui_clear_controls_widget_state() -> None:
 def _copy_profile_fields_from_disk(config: BotConfig, disk: BotConfig) -> None:
     """Refresh in-memory config from disk for Controls fields tied to profiles."""
     config.active_profile = disk.active_profile
+    config.inventory_mode = getattr(disk, "inventory_mode", "market_make")
     config.base_spread = disk.base_spread
     config.level_spread_increment = disk.level_spread_increment
     config.edge_strictness = disk.edge_strictness
@@ -395,6 +513,9 @@ def _sync_controls_widgets_from_config(config: BotConfig) -> None:
     else:
         st.session_state["controls_edge_strictness"] = 1.0
     st.session_state["controls_dynamic_min_edge"] = bool(config.dynamic_min_edge_enabled)
+    st.session_state["controls_inventory_mode"] = _normalize_inventory_mode(
+        getattr(config, "inventory_mode", "market_make")
+    )
 
 
 def _make_apply_profile_callback(profile_name: Optional[str] = None):
@@ -416,15 +537,15 @@ def _apply_profile_callback(profile_name: Optional[str] = None) -> None:
         name = "safe"
     try:
         cfg = _load_config()
-        note = apply_profile_gui_preset(cfg, name)
+        note = gui_profile_presets_module.apply_profile_gui_preset(cfg, name)
         write_profile_request(name)
         clear_auto_profile_pending()
         runtime = _load_runtime_state()
         mid = float(runtime.get("mid_price") or 0) if runtime else 0.0
         _clamp_order_sizes(cfg, _order_size_slider_cap(cfg, mid))
-        cfg.save()
+        _persist_config(cfg)
         verify = _load_config()
-        ok, detail = verify_profile_on_disk(name, verify)
+        ok, detail = gui_profile_presets_module.verify_profile_on_disk(name, verify)
         if not ok:
             st.session_state["_gui_flash_message"] = (
                 f"Apply profile failed — {detail}. "
@@ -486,33 +607,39 @@ def _gui_save_and_refresh(
     st.rerun()
 
 
-def _gui_display_profile(config: BotConfig, runtime: dict, *, engine_running: bool) -> str:
-    """Profile shown in the GUI — config on disk when stopped, else latest engine cycle."""
+def _resolve_profiles(
+    config: BotConfig, runtime: dict, *, engine_running: bool
+) -> tuple[str, str]:
+    """Return (config.yaml profile, engine live profile)."""
     disk = (_load_config().active_profile or "safe").strip().lower()
     if not engine_running:
-        return disk
-    engine_name = str(runtime.get("active_profile") or disk).strip().lower()
-    return engine_name
+        return disk, disk
+    engine = str(runtime.get("active_profile") or disk).strip().lower()
+    return disk, engine
 
 
-def _profile_apply_hint(config: BotConfig, runtime: dict, *, engine_running: bool) -> None:
-    """Explain config vs last-cycle profile when they differ."""
-    disk = _load_config()
-    config_name = (disk.active_profile or "safe").strip().lower()
-    engine_name = str(runtime.get("active_profile") or config_name).strip().lower()
-    if config_name == engine_name:
-        return
-    if not engine_running:
-        st.caption(
-            f"Config profile **{PROFILE_LABELS.get(config_name, config_name)}** — "
-            "engine stopped (no cycle until you start)."
-        )
-        return
+def _gui_display_profile(config: BotConfig, runtime: dict, *, engine_running: bool) -> str:
+    """Profile shown in the GUI — config on disk when stopped, else latest engine cycle."""
+    _disk, engine = _resolve_profiles(config, runtime, engine_running=engine_running)
+    return engine if engine_running else _disk
+
+
+def _profile_sync_alert_html(
+    config: BotConfig, runtime: dict, *, engine_running: bool
+) -> str:
+    """One-line alert when config.yaml and engine profile differ."""
+    disk_name, engine_name = _resolve_profiles(
+        config, runtime, engine_running=engine_running
+    )
+    if not engine_running or disk_name == engine_name:
+        return ""
+    disk_label = PROFILE_LABELS.get(disk_name, disk_name)
+    engine_label = PROFILE_LABELS.get(engine_name, engine_name)
     refresh = max(30, int(config.order_refresh_time_seconds))
-    st.info(
-        f"**Config profile:** {PROFILE_LABELS.get(config_name, config_name)} · "
-        f"**Last engine cycle:** {PROFILE_LABELS.get(engine_name, engine_name)} · "
-        f"Engine catches up on the **next cycle** (within ~{refresh}s)."
+    return (
+        f"<b>Profile sync</b> — engine is quoting <b>{engine_label}</b>; "
+        f"config.yaml is still <b>{disk_label}</b>. "
+        f"Apply profile or Save Config to align (engine may auto-switch within ~{refresh}s)."
     )
 
 
@@ -652,16 +779,23 @@ def _quote_table(intents: List[dict]) -> pd.DataFrame:
 
 
 def _open_offers_table(offers: List[dict]) -> pd.DataFrame:
-    columns = ["Side", "Price (RLUSD/XRP)", "Size (XRP)", "Offer seq"]
+    columns = ["Side", "Price (RLUSD/XRP)", "Size (XRP)", "vs touch", "Offer seq"]
     if not offers:
         return pd.DataFrame(columns=columns)
     rows = []
     for offer in offers:
+        bps = offer.get("vs_touch_bps")
+        if bps is None:
+            vs = "—"
+        else:
+            bps_f = float(bps)
+            vs = f"{bps_f:+.1f} bps" if abs(bps_f) >= 0.05 else "at touch"
         rows.append(
             {
                 "Side": str(offer.get("side", "")).upper(),
                 "Price (RLUSD/XRP)": f"{float(offer.get('price', 0)):.6f}",
                 "Size (XRP)": f"{float(offer.get('size_xrp', 0)):.2f}",
+                "vs touch": vs,
                 "Offer seq": int(offer.get("sequence", 0)),
             }
         )
@@ -779,6 +913,29 @@ def _render_alert_strip(config: BotConfig, runtime: dict) -> None:
     """Critical alerts only — keep the main view calm."""
     runtime = _load_runtime_state() or runtime
     dry = bool(runtime.get("dry_run", config.dry_run))
+    engine_running = is_engine_running()
+    is_testnet, _network = _effective_network(
+        config, runtime, engine_running=engine_running
+    )
+
+    if _config_network_mismatch(config, runtime, is_testnet=is_testnet):
+        st.markdown(
+            alert_box(
+                f"<b>Config mismatch</b> — engine is on <b>{_network}</b> but saved config says "
+                f"<b>{config.network_name()}</b>. Save Config or restart the engine to align.",
+                "warn",
+            ),
+            unsafe_allow_html=True,
+        )
+
+    profile_alert = _profile_sync_alert_html(
+        config, runtime, engine_running=engine_running
+    )
+    if profile_alert:
+        st.markdown(
+            alert_box(profile_alert, "warn"),
+            unsafe_allow_html=True,
+        )
 
     if runtime.get("kill_switch_active"):
         st.markdown(
@@ -795,7 +952,7 @@ def _render_alert_strip(config: BotConfig, runtime: dict) -> None:
             unsafe_allow_html=True,
         )
 
-    if not dry and not config.testnet:
+    if not dry and not is_testnet:
         st.markdown(
             alert_box(
                 "<b>Mainnet live</b> — real orders on the ledger. Spread check must pass each cycle.",
@@ -803,19 +960,64 @@ def _render_alert_strip(config: BotConfig, runtime: dict) -> None:
             ),
             unsafe_allow_html=True,
         )
-    elif dry and not config.testnet:
+    elif dry and not is_testnet:
         st.markdown(
             alert_box("Dry-run — quotes are planned only; nothing submits to mainnet.", "info"),
             unsafe_allow_html=True,
         )
 
-    if not dry and config.testnet:
+    if not dry and is_testnet:
         st.markdown(
             alert_box("Live on testnet — real testnet orders (play money).", "warn"),
             unsafe_allow_html=True,
         )
 
-    if not config.testnet and runtime.get("cycle_count", 0) > 0:
+    if engine_running and not dry:
+        offers = runtime.get("open_offers") or []
+        if offers:
+            at_touch = runtime.get("quotes_at_touch")
+            if at_touch is None:
+                _, worst, summary = quote_visibility(offers)
+                at_touch = worst <= 8.0
+            else:
+                summary = str(runtime.get("quote_visibility_summary") or "")
+            if not at_touch:
+                join = runtime.get("join_touch_active")
+                hint = (
+                    " Restart the engine to load join-touch fixes."
+                    if not join
+                    else ""
+                )
+                st.markdown(
+                    alert_box(
+                        f"<b>Storefront hidden</b> — {summary}"
+                        f" Not in the visible queue.{hint}",
+                        "danger",
+                    ),
+                    unsafe_allow_html=True,
+                )
+            elif (
+                runtime.get("pause_asks") and not runtime.get("pause_bids")
+                and str(getattr(config, "inventory_mode", "market_make")).lower() == "rebalance"
+            ):
+                st.markdown(
+                    alert_box(
+                        "<b>One-sided rebalance</b> — RLUSD-heavy: only bids (buying XRP). "
+                        "Switch to market_make mode for two-sided spread capture.",
+                        "warn",
+                    ),
+                    unsafe_allow_html=True,
+                )
+        elif int(runtime.get("open_offers_count", 0) or 0) == 0:
+            st.markdown(
+                alert_box(
+                    "<b>No offers on the ledger</b> — nothing for takers to hit.",
+                    "warn",
+                ),
+                unsafe_allow_html=True,
+            )
+
+    if not is_testnet and runtime.get("cycle_count", 0) > 0:
         spread = _spread_validation_from_runtime(runtime, config)
         if spread and not spread.ok:
             err = spread.errors[0] if spread.errors else spread.summary
@@ -962,8 +1164,6 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
 
     runtime = {**display, **{k: v for k, v in fresh.items() if v is not None and v != ""}}
 
-    _profile_apply_hint(config, runtime, engine_running=engine_running)
-
     pnl_mtm, pnl_balance = _session_pnl_from_runtime(runtime)
     port = float(runtime.get("portfolio_value_xrp", 0) or 0)
     dd = float(runtime.get("drawdown_pct", 0))
@@ -1078,13 +1278,25 @@ def _render_command_bar(
     pnl_mtm, pnl_balance = _session_pnl_from_runtime(display if display else runtime) if (display or runtime) else (0.0, 0.0)
     profile = _gui_display_profile(config, display or runtime, engine_running=engine_running)
     profile_label = PROFILE_LABELS.get(str(profile), str(profile))
+    disk_name, engine_name = _resolve_profiles(
+        config, display or runtime, engine_running=engine_running
+    )
+    if engine_running and disk_name != engine_name:
+        profile_label = f"{profile_label} (live)"
     dry = bool((display or runtime).get("dry_run", config.dry_run)) if (display or runtime) else config.dry_run
     bar_runtime = display or runtime
+    is_testnet, network = _effective_network(
+        config, bar_runtime, engine_running=engine_running
+    )
+    inv_mode = _normalize_inventory_mode(
+        str(bar_runtime.get("inventory_mode") or getattr(config, "inventory_mode", "market_make"))
+    )
     render_header_bar(
         engine_running=engine_running,
         dry_run=dry,
-        testnet=config.testnet,
+        testnet=is_testnet,
         profile_label=profile_label,
+        operating_mode_label=_inventory_mode_label(inv_mode),
         market_label=str(bar_runtime.get("market_condition_label", "—")),
         market_condition=str(bar_runtime.get("market_condition", "neutral")),
         pnl_mtm=pnl_mtm,
@@ -1095,7 +1307,7 @@ def _render_command_bar(
             else None
         ),
         mid=bar_runtime.get("mid_price"),
-        network=config.network_name(),
+        network=network,
         fills_session=int(bar_runtime.get("fills_session", 0) or 0),
     )
 
@@ -1108,7 +1320,7 @@ def _command_bar_live_fragment(config: BotConfig) -> None:
     _ensure_theme()
     runtime = _load_runtime_state() or {}
     engine_running = is_engine_running()
-    _render_command_bar(config, runtime, engine_running=engine_running)
+    _paint_command_bar(config, runtime, engine_running=engine_running)
 
 
 @_fragment(run_every=timedelta(seconds=5))
@@ -1173,7 +1385,7 @@ def _render_sidebar_commands(config: BotConfig) -> None:
         if disk.bot_account_address.strip() and _credentials_match(
             disk.bot_account_address, disk.bot_secret_key
         )[0]:
-            _persist_config(config)
+            _persist_config(config)[0]
             ok, msg = start_engine(force_restart=True)
             _show_result(ok, msg, fail="warning")
             st.rerun()
@@ -1249,6 +1461,7 @@ def _render_controls_tab(
 
     st.caption(
         f"Saved on disk: **{PROFILE_LABELS.get(disk_cfg.active_profile, disk_cfg.active_profile)}** · "
+        f"**{_inventory_mode_label(getattr(disk_cfg, 'inventory_mode', 'market_make'))}** · "
         f"base **{disk_cfg.base_spread * 100:.2f}%** · edge **{disk_cfg.edge_strictness:.2f}**"
     )
 
@@ -1264,7 +1477,7 @@ def _render_controls_tab(
             key="controls_active_profile",
         )
         config.active_profile = picked
-        preview = preset_preview_lines(picked)
+        preview = gui_profile_presets_module.preset_preview_lines(picked)
         if preview:
             st.caption(preview)
         if picked != disk_profile:
@@ -1276,6 +1489,78 @@ def _render_controls_tab(
             type="primary",
             on_click=_make_apply_profile_callback(),
         )
+
+        st.markdown("**Operating mode** *(saved with profile or Save settings)*")
+        disk_mode = _normalize_inventory_mode(getattr(disk_cfg, "inventory_mode", "market_make"))
+        if "controls_inventory_mode" not in st.session_state:
+            st.session_state["controls_inventory_mode"] = disk_mode
+        st.radio(
+            "Inventory behavior",
+            INVENTORY_MODE_OPTIONS,
+            format_func=lambda k: INVENTORY_MODE_LABELS[k],
+            key="controls_inventory_mode",
+            horizontal=True,
+        )
+        config.inventory_mode = _normalize_inventory_mode(
+            st.session_state["controls_inventory_mode"]
+        )
+        preset_mode = _normalize_inventory_mode(
+            gui_profile_presets_module.preset_inventory_mode(picked)
+        )
+        if config.inventory_mode != preset_mode:
+            st.caption(
+                f"Profile **{PROFILE_LABELS.get(picked, picked)}** default is "
+                f"**{_inventory_mode_label(preset_mode)}** — override above or Apply profile to reset."
+            )
+        else:
+            st.caption(INVENTORY_MODE_DESCRIPTIONS[config.inventory_mode])
+        inv1, inv2, inv3 = st.columns(3)
+        with inv1:
+            config.inventory_target_xrp_ratio = st.slider(
+                "Target XRP share",
+                0.35,
+                0.75,
+                float(getattr(config, "inventory_target_xrp_ratio", 0.55)),
+                0.01,
+                key="controls_inventory_target",
+            )
+        with inv2:
+            if config.inventory_mode == "market_make":
+                config.inventory_hard_pause_deviation = st.slider(
+                    "Hard pause side at skew (±)",
+                    0.15,
+                    0.35,
+                    float(getattr(config, "inventory_hard_pause_deviation", 0.22)),
+                    0.01,
+                    key="controls_hard_pause_dev",
+                )
+            else:
+                config.inventory_max_deviation = st.slider(
+                    "Pause side at skew (±)",
+                    0.06,
+                    0.20,
+                    float(getattr(config, "inventory_max_deviation", 0.12)),
+                    0.01,
+                    key="controls_rebalance_dev",
+                )
+        with inv3:
+            config.max_leg_size_pct_of_capital = st.slider(
+                "Max clip (% of capital)",
+                0.05,
+                0.25,
+                float(getattr(config, "max_leg_size_pct_of_capital", 0.12)),
+                0.01,
+                key="controls_max_leg_pct",
+            )
+            config.inventory_overshoot_slack = st.slider(
+                "MM overshoot slack (±)",
+                0.0,
+                0.08,
+                float(getattr(config, "inventory_overshoot_slack", 0.03)),
+                0.01,
+                key="controls_overshoot_slack",
+                help="Rebalance legs stop at target. MM allows this much past target per fill.",
+            )
 
         s1, s2, s3 = st.columns(3)
         with s1:
@@ -1466,6 +1751,12 @@ def _render_inventory_tab(config: BotConfig, runtime: dict) -> None:
     else:
         i3.metric("XRP share", "—")
     i4.metric("Inventory", runtime.get("inventory_label", "—"))
+    mode_label = _inventory_mode_label(
+        str(runtime.get("inventory_mode") or getattr(config, "inventory_mode", "market_make"))
+    )
+    st.caption(
+        f"Operating mode: **{mode_label}** — set under Controls → Profile & spreads"
+    )
 
     _show_rebalance_status(config, runtime, mid=mid)
     if st.button("Check rebalance now", key="inv_rebalance_check", use_container_width=True):
@@ -1540,7 +1831,9 @@ def _render_account_tab(config: BotConfig, runtime: dict) -> None:
         ok, msg = _save_credentials_to_disk(address, secret)
         if ok:
             touch_operator_activity("save_credentials")
-            st.success(msg)
+            st.success(
+                f"{msg} A backup copy is also kept in `config/credentials.local.yaml`."
+            )
             st.rerun()
         else:
             st.error(msg)
@@ -1606,7 +1899,7 @@ def _render_account_tab(config: BotConfig, runtime: dict) -> None:
             st.error("Enter amount > 0.")
         else:
             config.send_destination_default = send_dest.strip()
-            _persist_config(config)
+            _persist_config(config)[0]
             with st.spinner("Sending..."):
                 ok, msg = send_funds(send_dest.strip(), send_amount, send_asset)
             _show_result(ok, msg)
@@ -1617,7 +1910,19 @@ def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
         _render_account_tab(config, runtime)
 
     with st.expander("Network & RPC", expanded=False):
-        config.testnet = st.toggle("Use testnet", value=config.testnet)
+        engine_running = is_engine_running()
+        live_testnet, live_network = _effective_network(
+            config, runtime, engine_running=engine_running
+        )
+        if engine_running and bool(config.testnet) != live_testnet:
+            st.warning(
+                f"Running engine is on **{live_network}** but saved config says "
+                f"**{config.network_name()}**. Save Config will align disk to the live engine."
+            )
+        config.testnet = st.toggle(
+            "Use testnet",
+            value=live_testnet if engine_running else config.testnet,
+        )
         if not config.testnet:
             st.caption("Mainnet — use dry-run first; verify preflight before live trading.")
         config.xrpl_testnet_rpc_url = st.text_input(
@@ -1678,7 +1983,7 @@ def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
 
             KillSwitch().activate("GUI emergency stop")
             config.trading_enabled = False
-            _persist_config(config)
+            _persist_config(config)[0]
             stop_engine()
             if not config.dry_run:
                 cancel_offers_on_ledger()
@@ -1785,8 +2090,21 @@ def _render_history_tab(config: BotConfig, runtime: dict) -> None:
     _render_logs_tab(config, runtime)
 
 
+def _refresh_profile_preset_bindings() -> None:
+    """Reload preset module so Streamlit picks up ProfileGuiPreset schema changes."""
+    ver_key = "_xlm_gui_presets_ver"
+    mod_ver = int(getattr(gui_profile_presets_module, "PRESET_MODULE_VERSION", 0))
+    if st.session_state.get(ver_key) == mod_ver:
+        return
+    importlib.reload(gui_profile_presets_module)
+    st.session_state[ver_key] = int(
+        getattr(gui_profile_presets_module, "PRESET_MODULE_VERSION", mod_ver)
+    )
+
+
 def run_gui() -> None:
     _ensure_page_config()
+    _refresh_profile_preset_bindings()
     _gui_clear_stale_panel_state()
 
     try:
@@ -1826,6 +2144,8 @@ def run_gui() -> None:
             st.success(flash)
 
     with st.sidebar:
+        _render_brand_logo(sidebar=True)
+        st.divider()
         st.markdown("##### Engine")
         _render_sidebar_commands(config)
         st.divider()
@@ -1848,7 +2168,7 @@ def run_gui() -> None:
     if st.session_state.get("auto_refresh", True):
         _command_bar_live_fragment(config)
     else:
-        _render_command_bar(config, runtime, engine_running=engine_running)
+        _paint_command_bar(config, runtime, engine_running=engine_running)
 
     tab_dash, tab_ctrl, tab_inv, tab_logs, tab_adv = st.tabs(
         ["Dashboard", "Controls", "Inventory", "Logs", "Advanced"]

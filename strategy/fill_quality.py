@@ -164,6 +164,13 @@ class FillQualityTracker:
                 f"Fill quality mixed ({toxic}/{n} adverse, "
                 f"30s ratio {toxic_ratio_30s:.0%}) → cautious"
             )
+        elif toxic_ratio >= 0.18:
+            size_mult = 0.65
+            spread_mult = 1.15
+            summary = (
+                f"Fill quality stressed ({toxic}/{n} adverse, "
+                f"30s ratio {toxic_ratio_30s:.0%}) → toxicity bailout sizing"
+            )
         else:
             summary = (
                 f"Fill quality OK ({n} fills, {toxic} adverse, "

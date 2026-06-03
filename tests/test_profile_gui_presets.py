@@ -15,6 +15,13 @@ def test_apply_safe_preset_updates_spread_and_edge():
     assert config.edge_strictness == 1.0
     assert config.dynamic_min_edge_enabled is False
     assert config.book_pressure_sensitivity == 1.25
+    assert config.inventory_mode == "rebalance"
+
+
+def test_apply_tight_spread_sets_market_make():
+    config = BotConfig()
+    apply_profile_gui_preset(config, "tight_spread")
+    assert config.inventory_mode == "market_make"
 
 
 def test_apply_profit_mode_preset_is_tighter():

@@ -42,6 +42,100 @@ class MarketAssessment:
     summary: str
 
 
+@dataclass(frozen=True)
+class QuotingPosture:
+    """
+    How aggressively to quote given market assessment + active profile.
+    Drives join-touch vs widen-away — must follow condition tier, not override it.
+    """
+
+    join_touch: bool
+    touch_backoff_pct: float = 0.0
+    size_mult: float = 1.0
+    summary: str = ""
+
+
+# Per profile when book is live but thinner than edge: (touch backoff %, size scale).
+_PROFILE_TOUCH_BY_CONDITION: dict[str, tuple[float, float]] = {
+    "profit_mode": (0.0, 0.78),
+    "tight_spread": (0.0, 0.72),
+    "safe": (0.0, 0.58),
+    "thin_liquidity": (0.04, 0.50),
+    "high_volatility": (0.06, 0.42),
+}
+
+
+_TIGHT_BOOK_MAX_SPREAD_PCT = 0.20  # At or below this, quotes must join the touch to get fills.
+
+
+def resolve_quoting_posture(
+    assessment: MarketAssessment,
+    profile_name: str,
+    *,
+    market_edge_met: bool,
+) -> QuotingPosture:
+    """
+    Map market conditions → quoting posture for the active profile.
+
+    - Favorable/neutral/defensive + thin book → participate near touch (condition policy).
+    - Hostile → capital preservation; no join-touch.
+    - Wide book + edge already met → spread-from-mid is fine.
+    - Tight/normal book → join touch even when edge is met (spread model sits off-queue).
+    """
+    if assessment.condition == CONDITION_HOSTILE:
+        return QuotingPosture(
+            join_touch=False,
+            summary=f"{assessment.condition_label} → preserve capital, no touch join",
+        )
+
+    book_needs_touch = assessment.book_spread_pct > 0 and (
+        assessment.book_spread_pct <= _TIGHT_BOOK_MAX_SPREAD_PCT
+        or assessment.book_spread_status in ("tight", "normal")
+    )
+
+    if market_edge_met and not book_needs_touch:
+        return QuotingPosture(
+            join_touch=False,
+            summary="edge met + wide book → quote from spread model",
+        )
+
+    if assessment.book_spread_pct <= 0:
+        return QuotingPosture(
+            join_touch=False,
+            summary="no book spread → quote from spread model",
+        )
+
+    name = (profile_name or "safe").strip().lower()
+    backoff, size = _PROFILE_TOUCH_BY_CONDITION.get(name, (0.05, 0.52))
+
+    if assessment.condition == CONDITION_DEFENSIVE:
+        backoff = max(backoff, 0.05)
+        size *= 0.85
+        cond_note = f"{assessment.condition_label} + vol {assessment.volatility_level}"
+    elif assessment.condition == CONDITION_NEUTRAL:
+        cond_note = "Neutral"
+        if name in ("thin_liquidity", "high_volatility"):
+            backoff = max(backoff, 0.03)
+    else:
+        cond_note = assessment.condition_label
+
+    if backoff <= 0:
+        touch_note = "join L1 at touch"
+    else:
+        touch_note = f"L1 near touch +{backoff:.2f}%"
+
+    return QuotingPosture(
+        join_touch=True,
+        touch_backoff_pct=backoff,
+        size_mult=size,
+        summary=(
+            f"{cond_note} | book {assessment.book_spread_status} "
+            f"({assessment.book_spread_pct:.3f}%) → {touch_note} "
+            f"({name}, capped size)"
+        ),
+    )
+
+
 def compute_book_spread_pct(
     best_bid: Optional[float],
     best_ask: Optional[float],
@@ -99,7 +193,10 @@ def recommend_profile(
         return "safe", "Hostile conditions — use Safe until volatility and liquidity improve."
     if condition == CONDITION_DEFENSIVE:
         if volatility_level == "high":
-            return "high_volatility", "Elevated volatility — High volatility profile widens protection."
+            return (
+                "high_volatility",
+                "Elevated volatility — High volatility profile; near-touch with smaller size until vol subsides.",
+            )
         if liquidity_level == "low":
             return "thin_liquidity", "Thin book — Thin liquidity profile reduces adverse selection risk."
         return "safe", "Mixed stress — Safe is the default defensive posture."
@@ -115,9 +212,12 @@ def recommend_profile(
             return (
                 "tight_spread",
                 "Ideal competitive book — low volatility, deep liquidity, tight spread. "
-                "Tight spread is recommended; select Profit mode manually only if you want maximum aggression.",
+                "Queue at touch when edge is thin; select Profit mode manually only for max aggression.",
             )
-        return "tight_spread", "Stable vol and decent liquidity — Tight spread can compete for edge."
+        return (
+            "tight_spread",
+            "Stable vol and decent liquidity — compete near touch; widen only if conditions turn hostile.",
+        )
     # neutral
     if volatility_level == "high":
         return "high_volatility", "Moderate overall but volatility elevated."

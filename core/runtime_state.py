@@ -87,6 +87,7 @@ class RuntimeState:
     rebalance_summary: str = ""
     pause_bids: bool = False
     pause_asks: bool = False
+    inventory_mode: str = "market_make"
     effective_min_edge_pct: float = 0.0
     edge_resolution_summary: str = ""
     dynamic_min_edge_enabled: bool = False
@@ -102,6 +103,10 @@ class RuntimeState:
     book_poll_interval_seconds: int = 15
     full_quote_refresh_seconds: int = 60
     last_cycle_full_refresh: bool = True
+    join_touch_active: bool = False
+    quotes_at_touch: bool = True
+    worst_vs_touch_bps: float = 0.0
+    quote_visibility_summary: str = ""
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -210,6 +215,7 @@ class RuntimeStateStore:
             rebalance_summary=str(data.get("rebalance_summary", "")),
             pause_bids=bool(data.get("pause_bids", False)),
             pause_asks=bool(data.get("pause_asks", False)),
+            inventory_mode=str(data.get("inventory_mode", "market_make")),
             effective_min_edge_pct=float(data.get("effective_min_edge_pct", 0.0)),
             edge_resolution_summary=str(data.get("edge_resolution_summary", "")),
             dynamic_min_edge_enabled=bool(data.get("dynamic_min_edge_enabled", False)),

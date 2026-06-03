@@ -121,7 +121,7 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         order_keep_size_tolerance_xrp=1.0,
         book_poll_interval_seconds=20,
         full_quote_refresh_seconds=60,
-        toxic_refresh_pause_ratio=0.35,
+        toxic_refresh_pause_ratio=0.22,
         markout_toxic_threshold_pct=0.04,
     ),
     "high_volatility": Profile(

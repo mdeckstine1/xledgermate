@@ -5,6 +5,120 @@ from typing import List, Optional, Union
 import yaml
 
 CONFIG_FILE = Path(__file__).resolve().parent / "config.yaml"
+CREDENTIALS_SIDECAR_NAME = "credentials.local.yaml"
+_CREDENTIAL_FIELDS = ("bot_account_address", "bot_secret_key")
+
+
+def credentials_sidecar_path(config_path: Optional[Union[str, Path]] = None) -> Path:
+    path = Path(config_path) if config_path else CONFIG_FILE
+    return path.parent / CREDENTIALS_SIDECAR_NAME
+
+
+def _read_yaml_dict(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _inject_preserved_credentials(data: dict, path: Path) -> None:
+    """Restore credentials from sidecar, live file, or .bak when a save would blank them."""
+    sidecar = _read_yaml_dict(credentials_sidecar_path(path))
+    backup = _read_yaml_dict(path.with_suffix(path.suffix + ".bak"))
+    existing = _read_yaml_dict(path)
+    for source in (sidecar, existing, backup):
+        if not source:
+            continue
+        for key in _CREDENTIAL_FIELDS:
+            if str(data.get(key) or "").strip():
+                continue
+            old_val = str(source.get(key) or "").strip()
+            if old_val:
+                data[key] = source[key]
+
+
+def _preserve_stored_credentials(config: "BotConfig", path: Path) -> None:
+    """Never let a general settings save wipe credentials already on disk."""
+    existing = _read_yaml_dict(path)
+    sidecar = _read_yaml_dict(credentials_sidecar_path(path))
+    for key in _CREDENTIAL_FIELDS:
+        new_val = str(getattr(config, key, "") or "").strip()
+        old_val = str(existing.get(key) or "").strip()
+        side_val = str(sidecar.get(key) or "").strip()
+        if not new_val and side_val:
+            setattr(config, key, sidecar[key])
+        elif not new_val and old_val:
+            setattr(config, key, existing[key])
+
+
+def _merge_credentials_into_config(config: "BotConfig", path: Path) -> None:
+    """Load credentials from sidecar first, then config.yaml (sidecar wins)."""
+    sidecar = _read_yaml_dict(credentials_sidecar_path(path))
+    main = _read_yaml_dict(path)
+    backup = _read_yaml_dict(path.with_suffix(path.suffix + ".bak"))
+    for key in _CREDENTIAL_FIELDS:
+        for source in (sidecar, main, backup):
+            val = str(source.get(key) or "").strip()
+            if val:
+                setattr(config, key, source[key])
+                break
+
+
+def _write_credentials_sidecar(config: "BotConfig", path: Path) -> None:
+    creds = {
+        key: getattr(config, key)
+        for key in _CREDENTIAL_FIELDS
+        if str(getattr(config, key, "") or "").strip()
+    }
+    if not creds:
+        return
+    sidecar_path = credentials_sidecar_path(path)
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+    with sidecar_path.open("w", encoding="utf-8") as handle:
+        yaml.dump(creds, handle, default_flow_style=False, sort_keys=False)
+
+
+def _backup_config_file(path: Path) -> None:
+    if not path.exists():
+        return
+    try:
+        backup = path.with_suffix(path.suffix + ".bak")
+        backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _write_yaml_dict(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _inject_preserved_credentials(data, path)
+    _backup_config_file(path)
+    with path.open("w", encoding="utf-8") as handle:
+        yaml.dump(data, handle, default_flow_style=False, sort_keys=False)
+
+
+def patch_config_file(updates: dict, filepath: Optional[Union[str, Path]] = None) -> None:
+    """Update specific keys on disk without touching bot credentials."""
+    path = Path(filepath) if filepath else CONFIG_FILE
+    allowed = {item.name for item in fields(BotConfig)}
+    data = _read_yaml_dict(path)
+    _inject_preserved_credentials(data, path)
+    for key, value in updates.items():
+        if key in _CREDENTIAL_FIELDS or key not in allowed:
+            continue
+        data[key] = value
+    _write_yaml_dict(path, data)
+
+
+def _config_from_dict(cls: type["BotConfig"], data: dict) -> "BotConfig":
+    config = cls()
+    allowed = {item.name for item in fields(cls)}
+    for key, value in data.items():
+        if key in allowed:
+            setattr(config, key, value)
+    return config
 
 
 @dataclass
@@ -53,7 +167,11 @@ class BotConfig:
     min_drawdown_percent: float = 2.0
     max_drawdown_percent: float = 25.0
     inventory_target_xrp_ratio: float = 0.55   # Slightly XRP-heavy (supports your $27 thesis)
-    inventory_max_deviation: float = 0.12      # Pause bids/asks when XRP share exceeds target ± this
+    inventory_mode: str = "market_make"        # market_make = two-sided spread capture; rebalance = pause side
+    inventory_max_deviation: float = 0.12      # Rebalance mode: pause side beyond this (ratio points)
+    inventory_hard_pause_deviation: float = 0.22  # MM mode: only hard-pause beyond this skew
+    max_leg_size_pct_of_capital: float = 0.12  # Cap one quote leg (~12% of risk capital)
+    inventory_overshoot_slack: float = 0.03  # MM: max ratio beyond target one fill may reach
     min_edge_pct: float = 0.10                 # Legacy; migrated to edge_strictness on load
     edge_strictness: float = 1.0                 # Scales profile min edge: 0.85 low, 1.0 normal, 1.15 strict
     dynamic_min_edge_enabled: bool = True        # Adapt min edge to live book spread each cycle
@@ -141,59 +259,82 @@ class BotConfig:
     def save(self, filepath: Optional[Union[str, Path]] = None) -> None:
         """Save current config to YAML."""
         path = Path(filepath) if filepath else CONFIG_FILE
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as handle:
-            yaml.dump(self.to_dict(), handle, default_flow_style=False, sort_keys=False)
+        _preserve_stored_credentials(self, path)
+        data = self.to_dict()
+        _inject_preserved_credentials(data, path)
+        for key in _CREDENTIAL_FIELDS:
+            val = str(data.get(key) or "").strip()
+            if val:
+                setattr(self, key, data[key])
+        _write_credentials_sidecar(self, path)
+        _write_yaml_dict(path, data)
 
     @classmethod
     def load(cls, filepath: Optional[Union[str, Path]] = None) -> "BotConfig":
         """Load from YAML, merging with defaults (never cls(**yaml) — avoids legacy key crashes)."""
-        config = cls()
         path = Path(filepath) if filepath else CONFIG_FILE
 
         if not path.exists():
+            config = cls()
             config.save(filepath)
             return config
 
-        with path.open("r", encoding="utf-8") as handle:
-            data = yaml.safe_load(handle) or {}
+        raw = path.read_text(encoding="utf-8")
+        try:
+            parsed = yaml.safe_load(raw)
+        except yaml.YAMLError:
+            parsed = None
 
-        if not isinstance(data, dict):
-            data = {}
+        if parsed is None and raw.strip():
+            # Corrupt file — do not overwrite operator settings with factory defaults.
+            return _config_from_dict(cls, {})
+
+        data = parsed if isinstance(parsed, dict) else {}
+        if not data and raw.strip():
+            return _config_from_dict(cls, {})
 
         allowed = {item.name for item in fields(cls)}
+        merged = dict(data)
         updated = False
 
-        for key, value in data.items():
-            if key not in allowed:
-                continue
-            setattr(config, key, value)
-            updated = True
+        config = _config_from_dict(cls, data)
+        _merge_credentials_into_config(config, path)
 
-        # Legacy configs used mainnet issuer while on testnet — prefer auto-select.
         if config.testnet and config.rlusd_issuer == config.rlusd_issuer_mainnet:
             config.rlusd_issuer = ""
-            updated = True
+            if merged.get("rlusd_issuer") == config.rlusd_issuer_mainnet:
+                merged["rlusd_issuer"] = ""
+                updated = True
 
-        # Legacy min_edge_pct slider → edge_strictness (1.0 = old default 0.10%).
         if "edge_strictness" not in data and "min_edge_pct" in data:
             try:
                 legacy = float(data["min_edge_pct"])
                 config.edge_strictness = max(0.85, min(1.15, legacy / 0.10))
             except (TypeError, ValueError):
                 config.edge_strictness = 1.0
+            merged["edge_strictness"] = config.edge_strictness
+            updated = True
+
+        missing = allowed - set(data.keys())
+        for key in missing:
+            merged[key] = getattr(config, key)
             updated = True
 
         if "risk_capital_unit" not in data:
-            config.risk_capital_unit = "xrp"
+            merged["risk_capital_unit"] = "xrp"
+            updated = True
         if "risk_capital_rlusd" not in data:
-            config.risk_capital_rlusd = 0.0
+            merged["risk_capital_rlusd"] = 0.0
+            updated = True
 
-        if allowed - set(data.keys()):
-            config.save(filepath)
-        elif updated:
-            config.save(filepath)
+        if missing or updated:
+            _inject_preserved_credentials(merged, path)
+            _write_yaml_dict(path, merged)
 
+        config = _config_from_dict(cls, _read_yaml_dict(path))
+        _merge_credentials_into_config(config, path)
+        if any(str(getattr(config, k, "") or "").strip() for k in _CREDENTIAL_FIELDS):
+            _write_credentials_sidecar(config, path)
         return config
 
 

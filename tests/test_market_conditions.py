@@ -4,6 +4,7 @@ from core.market_conditions import (
     ideal_for_profit_mode,
     profile_for_auto_switch,
     recommend_profile,
+    resolve_quoting_posture,
 )
 
 
@@ -111,3 +112,56 @@ def test_profit_mode_profile_exists_and_is_aggressive() -> None:
     assert profit.size_multiplier > tight.size_multiplier
     assert profit.min_edge_pct < tight.min_edge_pct
     assert profit.aggression > tight.aggression
+
+
+def test_quoting_posture_joins_touch_when_favorable_and_edge_thin() -> None:
+    assessment = assess_market_conditions(
+        volatility_pct=0.0,
+        liquidity_score=0.85,
+        book_spread_pct=0.044,
+        active_profile="tight_spread",
+    )
+    posture = resolve_quoting_posture(
+        assessment, "tight_spread", market_edge_met=False
+    )
+    assert posture.join_touch is True
+    assert posture.touch_backoff_pct == 0.0
+    assert "Favorable" in posture.summary
+
+
+def test_quoting_posture_defensive_high_vol_near_touch() -> None:
+    assessment = assess_market_conditions(
+        volatility_pct=0.5,
+        liquidity_score=0.6,
+        book_spread_pct=0.044,
+        active_profile="high_volatility",
+    )
+    posture = resolve_quoting_posture(
+        assessment, "high_volatility", market_edge_met=False
+    )
+    assert posture.join_touch is True
+    assert posture.touch_backoff_pct >= 0.05
+
+
+def test_quoting_posture_hostile_no_touch() -> None:
+    assessment = assess_market_conditions(
+        volatility_pct=1.2,
+        liquidity_score=0.15,
+        book_spread_pct=0.044,
+        active_profile="safe",
+    )
+    assert assessment.condition == "hostile"
+    posture = resolve_quoting_posture(assessment, "safe", market_edge_met=False)
+    assert posture.join_touch is False
+
+
+def test_quoting_posture_joins_touch_when_edge_met_on_tight_book() -> None:
+    assessment = assess_market_conditions(
+        volatility_pct=0.0,
+        liquidity_score=0.95,
+        book_spread_pct=0.07,
+        active_profile="safe",
+    )
+    posture = resolve_quoting_posture(assessment, "safe", market_edge_met=True)
+    assert posture.join_touch is True
+    assert posture.touch_backoff_pct == 0.0

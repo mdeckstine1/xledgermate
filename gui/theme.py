@@ -287,6 +287,7 @@ def render_header_bar(
     dry_run: bool,
     testnet: bool,
     profile_label: str,
+    operating_mode_label: str = "Market make",
     market_label: str,
     market_condition: str,
     pnl_mtm: float,
@@ -319,6 +320,7 @@ def render_header_bar(
             header_stat("Session P&L", format_pnl(pnl_mtm), value_class=pnl_class(pnl_mtm)),
             header_stat("Balance Δ", format_pnl(pnl_balance), value_class=pnl_class(pnl_balance)),
             header_stat("Profile", profile_label),
+            header_stat("Mode", operating_mode_label),
             header_stat("Mid", mid_str),
             header_stat("Fills", str(int(fills_session))),
         ]

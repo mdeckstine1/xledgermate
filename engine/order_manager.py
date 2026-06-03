@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from config.settings import BotConfig
 from core.runtime_state import QuoteIntent
+from risk.inventory_limits import cap_leg_size_for_inventory
 from strategy.quote_decision import QuoteAdjustments
 
 # Hard cap per side (percent of mid) so inventory skew cannot post absurd quotes.
@@ -113,13 +114,39 @@ class OrderManager:
             )
 
             size = min(configured_size, risk_cap) * adj.size_multiplier
+            max_leg_pct = float(getattr(self.config, "max_leg_size_pct_of_capital", 0.12))
+            if max_leg_pct > 0:
+                size = min(size, max(risk_cap * max_leg_pct, min_size))
             bid_size = size * adj.bid_size_multiplier
             ask_size = size * adj.ask_size_multiplier
+
+            overshoot_slack = float(getattr(self.config, "inventory_overshoot_slack", 0.03))
+            inv_cap_kwargs = dict(
+                xrp_balance=xrp_balance,
+                rlusd_balance=rlusd_balance,
+                mid_price=mid_price,
+                target_xrp_ratio=float(self.config.inventory_target_xrp_ratio),
+                xrp_reserve=float(self.config.xrp_reserve),
+                inventory_mode=str(getattr(self.config, "inventory_mode", "market_make")),
+                overshoot_slack=overshoot_slack,
+                pause_bids=adj.pause_bids,
+                pause_asks=adj.pause_asks,
+                min_size=min_size,
+            )
+            bid_size = cap_leg_size_for_inventory(side="bid", size_xrp=bid_size, **inv_cap_kwargs)
+            ask_size = cap_leg_size_for_inventory(side="ask", size_xrp=ask_size, **inv_cap_kwargs)
 
             bid_anchor = mid_price * (1.0 + adj.bid_anchor_shift_pct / 100.0)
             ask_anchor = mid_price * (1.0 + adj.ask_anchor_shift_pct / 100.0)
             bid_price = bid_anchor * (1.0 - bid_spread)
             ask_price = ask_anchor * (1.0 + ask_spread)
+
+            if adj.join_touch and level == 1:
+                backoff = max(0.0, adj.touch_backoff_pct) / 100.0
+                if best_bid is not None and best_bid > 0:
+                    bid_price = best_bid * (1.0 - backoff)
+                if best_ask is not None and best_ask > 0:
+                    ask_price = best_ask * (1.0 + backoff)
 
             clamp_kwargs = dict(
                 mid_price=mid_price,
@@ -182,7 +209,9 @@ class OrderManager:
             note += f" ({skipped} legs skipped: size/balance/reserve/pause)"
         if self.config.fund_with_xrp_only and bid_levels == 0 and ask_levels > 0:
             note += " | bids off until you hold RLUSD"
-        if not adj.min_edge_met:
+        if adj.join_touch:
+            note += " | join-touch L1 (queue at best bid/ask)"
+        elif not adj.min_edge_met:
             note += " | min-edge guard active"
 
         return QuotePlan(intents=intents, reason=note)

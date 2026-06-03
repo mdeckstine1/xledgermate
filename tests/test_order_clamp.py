@@ -61,3 +61,25 @@ def test_xrp_only_build_quotes_near_book() -> None:
     assert len(plan.intents) == 1
     assert plan.intents[0].side == "ask"
     assert plan.intents[0].price <= 1.328 * 1.005
+
+
+def test_join_touch_l1_matches_book() -> None:
+    config = BotConfig()
+    config.order_sizes = [50.0, 0.0, 0.0]
+    om = OrderManager(config)
+    adj = QuoteAdjustments(join_touch=True)
+    plan = om.build_quotes(
+        mid_price=1.336783,
+        spreads_pct={1: 0.12},
+        xrp_balance=120.0,
+        rlusd_balance=170.0,
+        adjustments=adj,
+        best_bid=1.336489,
+        best_ask=1.337077,
+    )
+    bids = [i for i in plan.intents if i.side == "bid"]
+    asks = [i for i in plan.intents if i.side == "ask"]
+    assert len(bids) == 1
+    assert len(asks) == 1
+    assert abs(bids[0].price - 1.336489) < 1e-9
+    assert abs(asks[0].price - 1.337077) < 1e-9
