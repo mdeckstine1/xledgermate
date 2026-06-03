@@ -51,6 +51,7 @@ spread_failure_kill_cycles: 8
 toxic_fill_ratio_kill_threshold: 0.55
 toxic_fill_min_count: 5
 max_quote_worse_than_touch_pct: 0.50
+competitive_off_touch_max_worse_pct: 0.12
 max_quote_improve_touch_pct: 0.15
 max_half_spread_from_mid_pct: 1.0
 require_spread_validation_for_live: true

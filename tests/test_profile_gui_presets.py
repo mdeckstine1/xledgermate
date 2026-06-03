@@ -14,7 +14,7 @@ def test_apply_safe_preset_updates_spread_and_edge():
     assert config.base_spread == 0.0010
     assert config.edge_strictness == 1.0
     assert config.dynamic_min_edge_enabled is False
-    assert config.book_pressure_sensitivity == 1.25
+    assert config.book_pressure_sensitivity == 1.0
     assert config.inventory_mode == "rebalance"
 
 

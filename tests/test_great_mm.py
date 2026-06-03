@@ -57,7 +57,7 @@ def test_spread_capture_sell_above_mid_positive() -> None:
     assert profit > 0
 
 
-def test_tight_spread_joins_touch_when_book_thinner_than_edge() -> None:
+def test_tight_spread_steps_off_touch_when_book_thinner_than_edge() -> None:
     assessment = assess_market_conditions(
         volatility_pct=0.0,
         liquidity_score=0.85,
@@ -80,13 +80,14 @@ def test_tight_spread_joins_touch_when_book_thinner_than_edge() -> None:
         book_spread_pct=0.044,
         depth_imbalance=-0.7,
         min_edge_pct=0.08,
+        inventory_mode="market_make",
     )
-    assert adj.join_touch is True
-    assert "join L1 at touch" in adj.decision_summary or "Favorable" in adj.decision_summary
-    assert "widen both sides" not in adj.decision_summary
+    assert adj.join_touch
+    assert adj.touch_mode == "near_touch"
+    assert "near-touch" in adj.decision_summary
 
 
-def test_safe_joins_touch_on_thin_book() -> None:
+def test_safe_near_touch_on_thin_book_without_full_edge() -> None:
     assessment = assess_market_conditions(
         volatility_pct=0.0,
         liquidity_score=0.85,
@@ -110,12 +111,42 @@ def test_safe_joins_touch_on_thin_book() -> None:
         depth_imbalance=0.0,
         min_edge_pct=0.12,
     )
+    assert adj.join_touch
+    assert adj.touch_mode == "near_touch"
+    assert "near-touch" in adj.decision_summary
+
+
+def test_safe_joins_touch_when_book_pays_edge() -> None:
+    assessment = assess_market_conditions(
+        volatility_pct=0.0,
+        liquidity_score=0.85,
+        book_spread_pct=0.30,
+        active_profile="safe",
+    )
+    inv = assess_inventory(
+        xrp_balance=130.0,
+        rlusd_balance=100.0,
+        mid_price=1.235,
+        target_xrp_ratio=0.55,
+        skew_strength=1.45,
+    )
+    adj = build_quote_adjustments(
+        profile=get_profile("safe"),
+        assessment=assessment,
+        inventory=inv,
+        mid_momentum_pct=0.0,
+        effective_spread_l1_pct=0.16,
+        book_spread_pct=0.30,
+        depth_imbalance=0.0,
+        min_edge_pct=0.12,
+        inventory_mode="market_make",
+    )
     assert adj.join_touch is True
-    assert "join L1 at touch" in adj.decision_summary or "Favorable" in adj.decision_summary
-    assert "widen both sides" not in adj.decision_summary
+    assert adj.touch_mode == "at_touch"
+    assert "at touch" in adj.decision_summary.casefold()
 
 
-def test_high_volatility_near_touch_on_thin_book() -> None:
+def test_high_volatility_steps_off_touch_on_thin_book() -> None:
     assessment = assess_market_conditions(
         volatility_pct=0.0,
         liquidity_score=0.85,
@@ -139,9 +170,9 @@ def test_high_volatility_near_touch_on_thin_book() -> None:
         depth_imbalance=0.0,
         min_edge_pct=0.13,
     )
-    assert adj.join_touch is True
-    assert adj.touch_backoff_pct == 0.06
-    assert "near touch" in adj.decision_summary or "Defensive" in adj.decision_summary
+    assert adj.join_touch
+    assert adj.touch_mode == "near_touch"
+    assert "near-touch" in adj.decision_summary
 
 
 def test_rebalance_rlusd_heavy_bids_at_touch() -> None:

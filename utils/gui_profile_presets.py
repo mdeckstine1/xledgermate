@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from config.settings import BotConfig
 
 # Bump when preset table or apply logic changes (invalidates old .pyc expectations).
-PRESET_MODULE_VERSION = 5
+PRESET_MODULE_VERSION = 6
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ PROFILE_GUI_PRESETS: Dict[str, ProfileGuiPreset] = {
         base_spread=0.0010,
         level_spread_increment=0.0005,
         edge_strictness=1.0,
-        book_pressure_sensitivity=1.25,
+        book_pressure_sensitivity=1.0,
         dynamic_min_edge_enabled=False,
         inventory_mode="rebalance",
     ),
@@ -40,7 +40,7 @@ PROFILE_GUI_PRESETS: Dict[str, ProfileGuiPreset] = {
         base_spread=0.0012,
         level_spread_increment=0.0006,
         edge_strictness=1.15,
-        book_pressure_sensitivity=1.35,
+        book_pressure_sensitivity=1.0,
         dynamic_min_edge_enabled=False,
         inventory_mode="rebalance",
     ),
@@ -48,7 +48,7 @@ PROFILE_GUI_PRESETS: Dict[str, ProfileGuiPreset] = {
         base_spread=0.0011,
         level_spread_increment=0.0005,
         edge_strictness=1.0,
-        book_pressure_sensitivity=1.50,
+        book_pressure_sensitivity=1.0,
         dynamic_min_edge_enabled=False,
         inventory_mode="rebalance",
     ),
@@ -56,7 +56,7 @@ PROFILE_GUI_PRESETS: Dict[str, ProfileGuiPreset] = {
         base_spread=0.0006,
         level_spread_increment=0.0003,
         edge_strictness=0.85,
-        book_pressure_sensitivity=0.85,
+        book_pressure_sensitivity=1.0,
         dynamic_min_edge_enabled=True,
         inventory_mode="market_make",
     ),
@@ -64,7 +64,7 @@ PROFILE_GUI_PRESETS: Dict[str, ProfileGuiPreset] = {
         base_spread=0.0004,
         level_spread_increment=0.0002,
         edge_strictness=0.85,
-        book_pressure_sensitivity=0.72,
+        book_pressure_sensitivity=1.0,
         dynamic_min_edge_enabled=True,
         inventory_mode="market_make",
     ),

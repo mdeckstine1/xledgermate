@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from config.settings import BotConfig
+from core.quote_caps import effective_max_worse_than_touch_pct
 from core.runtime_state import QuoteIntent
 from risk.inventory_limits import cap_leg_size_for_inventory
 from strategy.quote_decision import QuoteAdjustments
@@ -148,13 +149,21 @@ class OrderManager:
                 if best_ask is not None and best_ask > 0:
                     ask_price = best_ask * (1.0 + backoff)
 
+            max_worse = effective_max_worse_than_touch_pct(
+                join_touch=adj.join_touch and level == 1,
+                policy_cap_pct=float(getattr(adj, "max_worse_than_touch_pct", 0.0) or 0.0),
+                max_quote_worse_than_touch_pct=float(
+                    getattr(self.config, "max_quote_worse_than_touch_pct", 0.50)
+                ),
+                competitive_off_touch_max_worse_pct=float(
+                    getattr(self.config, "competitive_off_touch_max_worse_pct", 0.12)
+                ),
+            )
             clamp_kwargs = dict(
                 mid_price=mid_price,
                 best_bid=best_bid,
                 best_ask=best_ask,
-                max_worse_than_touch_pct=float(
-                    getattr(self.config, "max_quote_worse_than_touch_pct", 0.50)
-                ),
+                max_worse_than_touch_pct=max_worse,
                 max_improve_touch_pct=float(
                     getattr(self.config, "max_quote_improve_touch_pct", 0.15)
                 ),

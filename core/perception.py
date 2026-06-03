@@ -28,6 +28,8 @@ class Profile:
     book_poll_interval_seconds: int = 15
     full_quote_refresh_seconds: int = 60
     toxic_refresh_pause_ratio: float = 0.40
+    toxic_no_touch_ratio: float = 0.20
+    toxic_pause_side_ratio: float = 0.18
     markout_toxic_threshold_pct: float = 0.04
 
 
@@ -122,6 +124,8 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         book_poll_interval_seconds=20,
         full_quote_refresh_seconds=60,
         toxic_refresh_pause_ratio=0.22,
+        toxic_no_touch_ratio=0.20,
+        toxic_pause_side_ratio=0.18,
         markout_toxic_threshold_pct=0.04,
     ),
     "high_volatility": Profile(
@@ -147,6 +151,8 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         book_poll_interval_seconds=20,
         full_quote_refresh_seconds=90,
         toxic_refresh_pause_ratio=0.28,
+        toxic_no_touch_ratio=0.18,
+        toxic_pause_side_ratio=0.18,
         markout_toxic_threshold_pct=0.035,
     ),
     "thin_liquidity": Profile(
@@ -172,6 +178,8 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         book_poll_interval_seconds=20,
         full_quote_refresh_seconds=75,
         toxic_refresh_pause_ratio=0.30,
+        toxic_no_touch_ratio=0.18,
+        toxic_pause_side_ratio=0.17,
         markout_toxic_threshold_pct=0.04,
     ),
     "tight_spread": Profile(
@@ -197,6 +205,8 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         book_poll_interval_seconds=15,
         full_quote_refresh_seconds=45,
         toxic_refresh_pause_ratio=0.45,
+        toxic_no_touch_ratio=0.22,
+        toxic_pause_side_ratio=0.20,
         markout_toxic_threshold_pct=0.05,
     ),
     "profit_mode": Profile(
@@ -222,6 +232,8 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         book_poll_interval_seconds=15,
         full_quote_refresh_seconds=30,
         toxic_refresh_pause_ratio=0.50,
+        toxic_no_touch_ratio=0.25,
+        toxic_pause_side_ratio=0.22,
         markout_toxic_threshold_pct=0.06,
     ),
 }

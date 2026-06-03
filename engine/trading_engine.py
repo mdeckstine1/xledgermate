@@ -36,6 +36,7 @@ from risk.kill_switch import KillSwitch
 from core import BotPerception, DecisionLog, VERSION, get_profile
 from core.perception import BUILT_IN_PROFILES
 from core.profile_execution import ProfileExecution, resolve_profile_execution
+from core.quote_caps import effective_max_worse_than_touch_pct
 from utils.auto_profile_state import (
     clear_auto_profile_pending,
     load_auto_profile_state,
@@ -378,16 +379,32 @@ class TradingEngine:
 
             if not full_refresh:
                 open_offers = await connector.get_open_offers()
+                poll_adj = self._last_quote_adjustments
+                poll_max_worse = effective_max_worse_than_touch_pct(
+                    join_touch=bool(poll_adj.join_touch) if poll_adj else False,
+                    policy_cap_pct=float(
+                        getattr(poll_adj, "max_worse_than_touch_pct", 0.0) or 0.0
+                    )
+                    if poll_adj
+                    else 0.0,
+                    max_quote_worse_than_touch_pct=float(
+                        getattr(config, "max_quote_worse_than_touch_pct", 0.50)
+                    ),
+                    competitive_off_touch_max_worse_pct=float(
+                        getattr(config, "competitive_off_touch_max_worse_pct", 0.12)
+                    ),
+                )
                 if offers_off_touch(
                     open_offers,
                     best_bid=best_bid,
                     best_ask=best_ask,
-                    max_worse_than_touch_pct=0.08,
+                    max_worse_than_touch_pct=poll_max_worse,
                 ):
                     full_refresh = True
                     self.decision_log.add(
                         "execution",
-                        "Open offers off touch (>8 bps) — forcing full quote refresh.",
+                        f"Open offers off touch (>{poll_max_worse * 100:.2f}% cap) "
+                        "— forcing full quote refresh.",
                     )
 
             if not full_refresh:
@@ -565,9 +582,6 @@ class TradingEngine:
                 book_spread_pct=book_spread_pct,
                 depth_imbalance=liquidity.depth_imbalance,
                 min_edge_pct=effective_min_edge,
-                book_pressure_sensitivity=float(
-                    getattr(config, "book_pressure_sensitivity", 1.0)
-                ),
                 fill_quality=fill_quality,
                 fund_with_xrp_only=config.fund_with_xrp_only,
                 rlusd_balance=rlusd_balance,
@@ -577,9 +591,6 @@ class TradingEngine:
                     getattr(config, "inventory_max_deviation", 0.12)
                 ),
                 inventory_mode=str(getattr(config, "inventory_mode", "market_make")),
-                inventory_hard_pause_deviation=float(
-                    getattr(config, "inventory_hard_pause_deviation", 0.22)
-                ),
             )
             inv_mode = str(getattr(config, "inventory_mode", "market_make")).strip().lower()
             self._last_quote_adjustments = quote_adjustments
@@ -647,6 +658,18 @@ class TradingEngine:
                     self.decision_log.add("quotes", "Skipped — preflight not ready.")
 
             intents_for_check = quote_plan.intents if quote_plan else []
+            validate_max_worse = effective_max_worse_than_touch_pct(
+                join_touch=bool(quote_adjustments.join_touch),
+                policy_cap_pct=float(
+                    quote_adjustments.max_worse_than_touch_pct or 0.0
+                ),
+                max_quote_worse_than_touch_pct=float(
+                    getattr(config, "max_quote_worse_than_touch_pct", 0.50)
+                ),
+                competitive_off_touch_max_worse_pct=float(
+                    getattr(config, "competitive_off_touch_max_worse_pct", 0.12)
+                ),
+            )
             spread_validation = validate_quotes_against_book(
                 intents_for_check,
                 mid_price=mid_price,
@@ -655,9 +678,7 @@ class TradingEngine:
                 max_half_spread_from_mid_pct=float(
                     getattr(config, "max_half_spread_from_mid_pct", 1.0)
                 ),
-                max_worse_than_touch_pct=float(
-                    getattr(config, "max_quote_worse_than_touch_pct", 0.50)
-                ),
+                max_worse_than_touch_pct=validate_max_worse,
                 max_improve_touch_pct=float(
                     getattr(config, "max_quote_improve_touch_pct", 0.15)
                 ),
@@ -712,6 +733,7 @@ class TradingEngine:
                         exec_cfg=exec_cfg,
                         join_touch=bool(quote_adjustments.join_touch),
                         touch_backoff_pct=float(quote_adjustments.touch_backoff_pct),
+                        max_worse_than_touch_pct=validate_max_worse,
                         best_bid=best_bid,
                         best_ask=best_ask,
                     )
@@ -1068,6 +1090,7 @@ class TradingEngine:
         exec_cfg: Optional[ProfileExecution] = None,
         join_touch: bool = False,
         touch_backoff_pct: float = 0.0,
+        max_worse_than_touch_pct: Optional[float] = None,
         best_bid: Optional[float] = None,
         best_ask: Optional[float] = None,
     ) -> int:
@@ -1089,7 +1112,9 @@ class TradingEngine:
 
         if selective and intents:
             max_worse = float(
-                getattr(self.config, "max_quote_worse_than_touch_pct", 0.50)
+                max_worse_than_touch_pct
+                if max_worse_than_touch_pct is not None
+                else getattr(self.config, "max_quote_worse_than_touch_pct", 0.50)
             )
             preserve_worse = (
                 max(0.04, float(touch_backoff_pct) + 0.04)
@@ -1288,6 +1313,12 @@ class TradingEngine:
             recommended_profile=recommended_profile,
             recommendation_reason=recommendation_reason,
             quote_decision_summary=quote_adjustments.decision_summary if quote_adjustments else "",
+            quoting_policy_label=(
+                quote_adjustments.quoting_policy_label if quote_adjustments else ""
+            ),
+            quoting_touch_mode=(
+                quote_adjustments.touch_mode if quote_adjustments else ""
+            ),
             inventory_label=quote_adjustments.inventory_label if quote_adjustments else "balanced",
             mid_momentum_pct=mid_momentum,
             spread_validation_ok=bool(spread_validation.ok) if spread_validation else False,

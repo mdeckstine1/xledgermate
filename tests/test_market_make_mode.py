@@ -96,9 +96,14 @@ def test_market_make_shows_bailout_line_on_safe_profile() -> None:
         inventory_mode=INVENTORY_MODE_MARKET_MAKE,
     )
     assert "operating mode: market make" in adj.decision_summary
-    assert "MM bailout → asks at touch only" in adj.decision_summary
     assert adj.pause_bids
     assert not adj.pause_asks
+    assert "inventory bailout" in adj.decision_summary
+    assert (
+        "near-touch" in adj.decision_summary
+        or "off touch" in adj.decision_summary
+        or "step off touch" in adj.decision_summary
+    )
 
 
 def test_rebalance_mode_pauses_side() -> None:

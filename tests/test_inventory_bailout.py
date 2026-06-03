@@ -77,7 +77,12 @@ def test_market_make_heavy_skew_one_sided_ask_bailout() -> None:
     assert adj.pause_bids
     assert not adj.pause_asks
     assert "inventory bailout" in adj.decision_summary
-    assert "MM bailout → asks at touch only" in adj.decision_summary
+    assert adj.pause_bids and not adj.pause_asks
+    assert (
+        "near-touch" in adj.decision_summary
+        or "off touch" in adj.decision_summary
+        or "step off touch" in adj.decision_summary
+    )
 
 
 def test_toxic_bailout_pauses_bids_when_xrp_heavy() -> None:

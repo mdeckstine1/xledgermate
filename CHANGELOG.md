@@ -7,6 +7,33 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.4.1] — 2026-06-03 (`tier-2-polish`)
+
+**Theme:** Unified dynamic quoting, audit cleanup, visibility on thin books.
+
+### Added
+
+- **Dynamic quoting policy** (`core/dynamic_quoting_policy.py`) — single resolver for at-touch / near-touch / spread-mid / off-book posture from profile bounds + market health + toxicity.
+- **Shared caps** (`core/quote_caps.py`, `core/toxicity.py`) — one touch-distance cap and adverse-ratio helper across order manager, validation, and refresh.
+- **Marquee ticker** (`gui/ticker.py`) — policy line and decision feed above the command bar.
+- **Profile toxicity fields** — `toxic_no_touch_ratio`, `toxic_pause_side_ratio` per built-in profile.
+- **Docs** — [`docs/AUDIT_REPORT.md`](docs/AUDIT_REPORT.md) (conflicts found and fixed).
+
+### Changed
+
+- **Quote decisions** — removed legacy `resolve_quoting_posture`; self-bailout runs after policy; earlier pause on XRP-heavy + falling tape.
+- **Book pressure** — profile sensitivity only (GUI preset sets config scale 1.0 to avoid double-multiply).
+- **Poll refresh** — off-touch threshold uses policy visibility cap, not hardcoded 8 bps.
+- **`RuntimeStateStore.load()`** — restores Tier-2 metrics (toxic ratios, refresh cadence, quoting policy label).
+- **GUI** — one inventory pause slider; market suggestion uses engine profile when running.
+
+### Removed
+
+- **`resolve_quoting_posture`** / `QuotingPosture` (superseded by dynamic policy).
+- **`competitive_near_touch_max_backoff_pct`** config key (unused; backoff in profile bounds).
+
+---
+
 ## [1.4.0] — 2026-05-30 (`tier-2-fix`)
 
 **Theme:** Tier 2 execution + truth — profile-owned queue cadence, ledger fills, multi-horizon markout.

@@ -1,6 +1,6 @@
 # XLedgerMate — Strategy Manual
 
-*Version 1.3.9 · What the bot is trying to do with your money, in plain language*
+*Version 1.4.1 · What the bot is trying to do with your money, in plain language*
 
 This document is about **strategy and risk**, not which buttons to press. For setup, tabs, and wallet steps, see [`OPERATOR_MANUAL.md`](OPERATOR_MANUAL.md).  
 For the engineering roadmap (good → great MM), see [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
@@ -44,6 +44,7 @@ Each refresh, it looks at the live order book and your balances, then decides **
 | **Minimum edge** | “Is there enough room to cover fees and a little profit?” If not → usually **smaller size**, not hero quotes. |
 | **Inventory** | Too much XRP → favor sells (asks); too much RLUSD → favor buys (bids). |
 | **Profile mode** | Your chosen risk posture (`safe`, `tight_spread`, etc.) sets the baseline. |
+| **Dynamic quoting policy** | Each cycle picks **at-touch**, **near-touch**, **spread-mid**, or **off-book** from profile bounds + health + toxicity (one resolver — no conflicting “posture” paths). |
 | **Your saved settings** | Base spread %, order sizes, risk capital — the starting point you confirmed in the GUI. |
 
 When two goals conflict, **protection usually wins**. Example: you are heavy XRP and want to sell, but price is falling hard — the bot may still **protect the bid side** or pause rather than blindly chase inventory.
@@ -160,7 +161,7 @@ When you click **Apply profile now**, the bot writes a **preset package** to you
 - **Base spread %** (how far from mid you start before adjustments)  
 - **Level step %** (how much wider level 2 and 3 are vs level 1)  
 - **Edge strictness** (Low / Normal / Strict — how picky about minimum profit)  
-- **Book pressure sensitivity** (how much the bot reacts when the book is stacked on one side)  
+- **Book pressure sensitivity** — preset saves **1.0** on disk; the **profile** owns the real multiplier (e.g. safe **1.25×**) so Apply does not double-stack pressure.  
 - **Dynamic min edge** (on/off — whether required profit can relax slightly when the book itself is very tight)
 
 You should see a line on Controls like **“Saved on disk: profile … base spread …”**. If the base spread shown there does not match the profile you think you are on (e.g. **safe** but still **0.03%**), your quotes are still using the old spread — click **Apply profile now** again.
@@ -203,6 +204,29 @@ Wednesday: You wonder why the bot still trades like tight.
 | **Analogy** | “Is the juice worth the squeeze?” | “Am I about to post a quote miles from the market?” |
 
 Tighter profiles (**tight_spread**, **profit_mode**) accept thinner edge; they do **not** turn off spread guard on mainnet.
+
+---
+
+## Dynamic quoting policy (v1.4.1)
+
+Each cycle the engine runs **one** policy resolver. It chooses how close quotes sit to the live best bid/ask:
+
+| Mode | When | What you see |
+|------|------|----------------|
+| **At-touch** | Book pays required edge; tight/normal spread | Small L1 backoff; two-sided when inventory allows |
+| **Near-touch** | Book thinner than edge but market favorable/neutral | Joins L1 with backoff sized to edge gap — **visible** without blind pickoff |
+| **Spread-mid** | Hostile, wide book, or edge not met | Quotes from spread model; capped **≤8–14%** from touch (profile) |
+| **Off-book** | Toxicity ≥ profile no-touch limit (~18–25%) | No L1 join; may pause refresh; unload side only |
+
+**Toxicity ladder (profile-owned, not one magic number):**
+
+1. **Markout** — single fill adverse if price moves ~4+ bps against you within 30s.  
+2. **Pause side** (~18%) — stop bidding (or asking) when skew + adverse fills align.  
+3. **No touch** (~20% safe) — policy steps off L1 entirely.  
+4. **Pause refresh** (~22% safe) — skip cancel/replace until quality improves.  
+5. **Kill** (55% after 5+ fills) — emergency stop.
+
+**Toxic @30s at 100%** with only one or two fills means “every fill that has a 30s score so far was bad” — not necessarily a broken bot. Check **Toxic ratio**, inventory skew, and whether you **bought XRP into a falling tape** while already XRP-heavy.
 
 ### Example — edge guard
 

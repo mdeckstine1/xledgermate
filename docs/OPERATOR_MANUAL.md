@@ -1,6 +1,6 @@
 # XLedgerMate — Plain-English Operator Manual
 
-*Version 1.4.0 · For humans who remember when “save” meant a floppy disk*
+*Version 1.4.1 · For humans who remember when “save” meant a floppy disk*
 
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
@@ -27,6 +27,19 @@ This guide assumes you are **not** a programmer. You have a **Bot Account** (a s
 If the browser does not open, type that address in Chrome or Edge yourself.
 
 **To stop:** Close the browser tab if you like, but also close the black engine window — or use **Stop Bot** in the Dashboard (see below).
+
+---
+
+## Scrolling ticker (above the command bar)
+
+When the engine is running, a **marquee** under the logo shows the latest status in plain English:
+
+- **Policy line first** — e.g. `Policy: near-touch 0.085% | relevant ≤0.10% from touch` (how close quotes sit vs the live book).
+- **Pause flags** — “bids paused” / “asks paused” when inventory or toxicity rules stop a side.
+- **Fill quality** — mixed / poor when recent fills look adverse.
+- Long **decision text** is split into short segments so you can scan without opening the log.
+
+If the engine is stopped, the ticker says so and shows the **last saved cycle** from `logs/runtime_state.json`.
 
 ---
 
@@ -90,7 +103,8 @@ Turn **Live refresh (5s)** on in the left sidebar if you want numbers to update 
 **Defensive quoting** (same tab):
 
 - **Edge strictness** — Scales your profile’s built-in minimum edge (Low / Normal / Strict). Each profile owns its own target (e.g. `tight_spread` ≈ 0.08%).
-- **Dynamic min edge** — Optional: adapts required edge to live book spread (never above profile cap).
+- **Dynamic min edge** — Optional: adapts required edge to live book spread (never above profile cap). **Safe** preset leaves this **off** until you turn it on; **tight_spread** / **profit_mode** presets turn it **on**.
+- **Pause side at skew (±)** — One slider for both modes: when XRP share is this far from target (default **12%**), the bot pauses the vulnerable side (inventory bailout).
 - **Max daily drawdown %** — Kill switch if portfolio drops this much in a day (default **10%**; range 2–25% in GUI).
 - **Auto profile switching** — Off by default. When on, after you have been idle for the configured minutes, the engine switches only when the **Suggested profile** stays the same for **several cycles** and the **cooldown** since the last auto-switch has passed. Stops rapid flipping when the book jitters at tier boundaries.
 - **Auto-switch after idle (min)** — How long you must leave it alone before auto-switch can fire (default 120 min).
@@ -134,6 +148,18 @@ If numbers look frozen, confirm **Live refresh (5s)** is on and check **Engine s
 | **Trust line** | Permission slip to hold RLUSD in that wallet. |
 | **Market condition** | Bot’s read of the book: Favorable → Hostile. Defensive = widen and shrink. |
 | **Profile** | Named risk posture (`safe`, `thin_liquidity`, etc.). Drives spreads and size. |
+| **Toxic ratio** | Share of recent fills classified adverse (markout). Drives defensive sizing and pauses. |
+| **Toxic @30s** | Same idea using only fills with a completed 30-second markout — can read **100%** with only one bad fill; use **Toxic ratio** for the fuller picture. |
+| **Quoting policy** | Short line in the ticker: at-touch, near-touch, spread-mid, or off-book when toxicity is high. |
+
+### Dashboard metrics (Tier 2)
+
+| Metric | Plain English |
+|--------|----------------|
+| **Toxic ratio** | Adverse fills ÷ recent fills. Above your profile’s refresh limit (~22% on **safe**), the bot may **pause order refresh** until quality improves. |
+| **Toxic @30s** | Stricter short-horizon view; noisy with few fills. |
+| **Cancel / fill** | How many cancels per fill this session — lower is better (queue preservation). |
+| **Refresh cadence** | Poll interval vs full refresh (from active profile). |
 
 ---
 
@@ -181,6 +207,8 @@ Stay on **dry-run** until step 5 passes consistently. The engine **blocks live o
 | “Preflight failed” | Read the red/yellow messages; usually trust line, zero sizes, or no mid price. |
 | `amendmentBlocked` / “need upgrade” | Your **mainnet RPC** hit an outdated node (common on `xrplcluster.com`). In **Advanced**, set Mainnet RPC to `https://s1.ripple.com:51234`, **Save Config**, retry. |
 | Spread check red on mainnet | Planned quotes are too far from **live** best bid/ask. Stay in **dry-run**; adjust **Live spread guard** on Controls or profile until Dashboard shows **Spread check OK**. Live orders are blocked until it passes. If the engine log says `spread_check=OK` but the panel shows FAIL, **Stop Bot → Start Bot** after an update (v1.3.3+ shows the engine’s last-cycle result). |
+| **Toxic @30s** stuck at 100% | Often **one or two fills** and a bad 30s markout — not “every fill ever.” Check **Toxic ratio**, ticker **Policy**, and whether **bids paused** after buying into a falling market. |
+| Quotes far from touch but “OK” | On thin books the bot may use **near-touch** (small backoff) or **spread-mid** with a **visibility cap** (~8–14% from touch by profile) — read the **Policy** line in the ticker. |
 
 **Emergency stop** (Advanced) — Disables trading, stops engine, sets kill switch, cancels offers (if not dry-run). Use when you want everything off *now*.
 
@@ -217,7 +245,8 @@ Leave “notify each cycle” off unless you enjoy constant buzzing.
 
 ## Version & history
 
-- Current version: **1.4.0** (see `VERSION` file).
+- Current version: **1.4.1** (see `VERSION` file).
+- Code audit notes (quoting conflicts resolved): **[`AUDIT_REPORT.md`](AUDIT_REPORT.md)**.
 - What changed release-by-release: **`CHANGELOG.md`** in the project folder.
 - Roadmap to “great” MM (checklist): **[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)**.
 

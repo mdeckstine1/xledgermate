@@ -70,6 +70,8 @@ class RuntimeState:
     recommended_profile: str = "safe"
     recommendation_reason: str = ""
     quote_decision_summary: str = ""
+    quoting_policy_label: str = ""
+    quoting_touch_mode: str = ""
     inventory_label: str = "balanced"
     mid_momentum_pct: float = 0.0
     spread_validation_ok: bool = False
@@ -223,4 +225,20 @@ class RuntimeStateStore:
             recent_decisions=list(data.get("recent_decisions", [])),
             last_error=data.get("last_error"),
             updated_utc=data.get("updated_utc"),
+            quoting_policy_label=str(data.get("quoting_policy_label", "")),
+            quoting_touch_mode=str(data.get("quoting_touch_mode", "")),
+            toxic_fill_ratio=float(data.get("toxic_fill_ratio", 0.0)),
+            toxic_fill_ratio_30s=float(data.get("toxic_fill_ratio_30s", 0.0)),
+            mean_markout_30s_pct=float(data.get("mean_markout_30s_pct", 0.0)),
+            offers_cancelled_session=int(data.get("offers_cancelled_session", 0)),
+            offers_kept_session=int(data.get("offers_kept_session", 0)),
+            fills_session=int(data.get("fills_session", 0)),
+            cancel_per_fill=float(data.get("cancel_per_fill", 0.0)),
+            book_poll_interval_seconds=int(data.get("book_poll_interval_seconds", 15)),
+            full_quote_refresh_seconds=int(data.get("full_quote_refresh_seconds", 60)),
+            last_cycle_full_refresh=bool(data.get("last_cycle_full_refresh", True)),
+            join_touch_active=bool(data.get("join_touch_active", False)),
+            quotes_at_touch=bool(data.get("quotes_at_touch", True)),
+            worst_vs_touch_bps=float(data.get("worst_vs_touch_bps", 0.0)),
+            quote_visibility_summary=str(data.get("quote_visibility_summary", "")),
         )

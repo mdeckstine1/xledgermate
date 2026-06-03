@@ -41,7 +41,8 @@ from gui.formatters import (
     portfolio_value_rlusd as _portfolio_value_rlusd,
     session_pnl_from_runtime as _session_pnl_from_runtime,
 )
-from gui.theme import alert_box, inject_theme, render_header_bar
+from gui.ticker import build_ticker_items
+from gui.theme import alert_box, inject_theme, render_header_bar, render_marquee_ticker
 from gui.engine_control import (
     cancel_offers_on_ledger,
     clear_kill_switch,
@@ -1027,18 +1028,24 @@ def _render_alert_strip(config: BotConfig, runtime: dict) -> None:
             )
 
 
-def _resolve_market_assessment(config: BotConfig, runtime: dict) -> dict:
+def _resolve_market_assessment(
+    config: BotConfig,
+    runtime: dict,
+    *,
+    engine_running: bool = False,
+) -> dict:
     """Compute profile recommendation from latest book metrics (not stale runtime snapshot)."""
     if not runtime:
         return {}
     bid = runtime.get("best_bid_rlusd_per_xrp")
     ask = runtime.get("best_ask_rlusd_per_xrp")
     spread = float(runtime.get("book_spread_pct", 0)) or compute_book_spread_pct(bid, ask)
+    active = _gui_display_profile(config, runtime, engine_running=engine_running)
     assessment = assess_market_conditions(
         volatility_pct=float(runtime.get("volatility_pct", 0)),
         liquidity_score=float(runtime.get("liquidity_score", 0)),
         book_spread_pct=spread,
-        active_profile=config.active_profile,
+        active_profile=active,
         previous_condition=runtime.get("market_condition"),
         previous_liquidity_level=runtime.get("liquidity_level"),
     )
@@ -1058,7 +1065,9 @@ def _render_market_suggestion(config: BotConfig, runtime: dict, *, engine_runnin
     if not runtime:
         return
 
-    assessment = _resolve_market_assessment(config, runtime)
+    assessment = _resolve_market_assessment(
+        config, runtime, engine_running=engine_running
+    )
     rec = assessment.get("recommended_profile", "")
     rec_label = PROFILE_LABELS.get(str(rec), str(rec)) if rec else "—"
     active = _gui_display_profile(config, runtime, engine_running=engine_running)
@@ -1291,6 +1300,26 @@ def _render_command_bar(
     inv_mode = _normalize_inventory_mode(
         str(bar_runtime.get("inventory_mode") or getattr(config, "inventory_mode", "market_make"))
     )
+    ticker_notices: list[str] = []
+    if _config_network_mismatch(config, bar_runtime, is_testnet=is_testnet):
+        ticker_notices.append(
+            f"Config mismatch — engine on {network.upper()}, "
+            f"saved config says {config.network_name().upper()}"
+        )
+    if _profile_sync_alert_html(config, bar_runtime, engine_running=engine_running):
+        disk_name, engine_name = _resolve_profiles(
+            config, bar_runtime, engine_running=engine_running
+        )
+        ticker_notices.append(
+            f"Profile sync — engine {PROFILE_LABELS.get(engine_name, engine_name)} "
+            f"vs config {PROFILE_LABELS.get(disk_name, disk_name)}"
+        )
+    ticker_items = build_ticker_items(
+        bar_runtime,
+        engine_running=engine_running,
+        extra_notices=ticker_notices,
+    )
+    render_marquee_ticker(ticker_items, engine_running=engine_running)
     render_header_bar(
         engine_running=engine_running,
         dry_run=dry,
@@ -1525,24 +1554,15 @@ def _render_controls_tab(
                 key="controls_inventory_target",
             )
         with inv2:
-            if config.inventory_mode == "market_make":
-                config.inventory_hard_pause_deviation = st.slider(
-                    "Hard pause side at skew (±)",
-                    0.15,
-                    0.35,
-                    float(getattr(config, "inventory_hard_pause_deviation", 0.22)),
-                    0.01,
-                    key="controls_hard_pause_dev",
-                )
-            else:
-                config.inventory_max_deviation = st.slider(
-                    "Pause side at skew (±)",
-                    0.06,
-                    0.20,
-                    float(getattr(config, "inventory_max_deviation", 0.12)),
-                    0.01,
-                    key="controls_rebalance_dev",
-                )
+            config.inventory_max_deviation = st.slider(
+                "Pause side at skew (±)",
+                0.06,
+                0.25,
+                float(getattr(config, "inventory_max_deviation", 0.12)),
+                0.01,
+                key="controls_inventory_max_dev",
+                help="Market-make and rebalance: pause the vulnerable side beyond this deviation.",
+            )
         with inv3:
             config.max_leg_size_pct_of_capital = st.slider(
                 "Max clip (% of capital)",

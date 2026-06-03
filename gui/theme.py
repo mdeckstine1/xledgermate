@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Sequence
+
+from gui.ticker import TickerItem, build_ticker_items, format_ticker_track_html
 
 
 def inject_theme() -> None:
@@ -233,6 +235,77 @@ def inject_theme() -> None:
             border-color: var(--xlm-border);
             opacity: 0.5;
         }
+
+        /* ── Marquee ticker (above header) ── */
+        .xlm-marquee-wrap {
+            overflow: hidden;
+            width: 100%;
+            margin-bottom: 0.55rem;
+            background: var(--xlm-surface);
+            border: 1px solid var(--xlm-border);
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+
+        .xlm-marquee-viewport {
+            overflow: hidden;
+            width: 100%;
+            padding: 0.42rem 0;
+            mask-image: linear-gradient(
+                90deg,
+                transparent 0%,
+                #000 4%,
+                #000 96%,
+                transparent 100%
+            );
+        }
+
+        .xlm-marquee-track {
+            display: inline-flex;
+            flex-direction: row;
+            align-items: center;
+            white-space: nowrap;
+            will-change: transform;
+            animation: xlm-marquee-scroll var(--xlm-marquee-duration, 50s) linear infinite;
+        }
+
+        .xlm-marquee-track:hover {
+            animation-play-state: paused;
+        }
+
+        @keyframes xlm-marquee-scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        .xlm-marquee-item {
+            font-size: 0.8rem;
+            color: var(--xlm-muted);
+            letter-spacing: 0.01em;
+        }
+
+        .xlm-marquee-sep {
+            font-size: 0.8rem;
+            color: var(--xlm-border);
+            padding: 0 0.35rem;
+        }
+
+        .xlm-marquee-quote { color: #b8c0d4; }
+        .xlm-marquee-info { color: var(--xlm-muted); }
+        .xlm-marquee-success { color: var(--xlm-green); }
+        .xlm-marquee-warn { color: var(--xlm-amber); }
+        .xlm-marquee-danger { color: var(--xlm-red); }
+
+        @media (prefers-reduced-motion: reduce) {
+            .xlm-marquee-viewport {
+                overflow-x: auto;
+                mask-image: none;
+            }
+            .xlm-marquee-track {
+                animation: none;
+                padding: 0 0.75rem;
+            }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -279,6 +352,37 @@ def market_pill_variant(condition: str) -> str:
         "hostile": "hostile",
     }
     return mapping.get(str(condition).lower(), "")
+
+
+def render_marquee_ticker(
+    items: Sequence[TickerItem],
+    *,
+    engine_running: bool = True,
+) -> None:
+    """Scrolling status ticker above the header bar."""
+    import streamlit as st
+
+    if not items:
+        return
+
+    track = format_ticker_track_html(items)
+    # Duplicate content for seamless CSS loop (translate -50%).
+    loop_body = f"{track}<span class='xlm-marquee-sep'> · </span>{track}"
+    char_count = sum(len(item.text) for item in items)
+    duration_s = max(28, min(90, 18 + char_count * 0.35))
+    if not engine_running:
+        duration_s = min(duration_s, 40)
+
+    html = f"""
+    <div class="xlm-marquee-wrap" title="Live quote &amp; status feed">
+        <div class="xlm-marquee-viewport">
+            <div class="xlm-marquee-track" style="--xlm-marquee-duration: {duration_s}s;">
+                {loop_body}
+            </div>
+        </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_header_bar(

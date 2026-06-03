@@ -169,7 +169,7 @@ class BotConfig:
     inventory_target_xrp_ratio: float = 0.55   # Slightly XRP-heavy (supports your $27 thesis)
     inventory_mode: str = "market_make"        # market_make = two-sided spread capture; rebalance = pause side
     inventory_max_deviation: float = 0.12      # Rebalance mode: pause side beyond this (ratio points)
-    inventory_hard_pause_deviation: float = 0.22  # MM mode: only hard-pause beyond this skew
+    inventory_hard_pause_deviation: float = 0.22  # Legacy YAML only; pause uses inventory_max_deviation
     max_leg_size_pct_of_capital: float = 0.12  # Cap one quote leg (~12% of risk capital)
     inventory_overshoot_slack: float = 0.03  # MM: max ratio beyond target one fill may reach
     min_edge_pct: float = 0.10                 # Legacy; migrated to edge_strictness on load
@@ -184,6 +184,7 @@ class BotConfig:
     toxic_fill_min_count: int = 5              # Minimum fills before toxic-ratio kill applies
     # Live spread guard: planned quotes must sit near book bid/ask (validated each cycle).
     max_quote_worse_than_touch_pct: float = 0.50   # Max % ask above best ask / bid below best bid
+    competitive_off_touch_max_worse_pct: float = 0.12  # Cap distance from touch when not joining L1
     max_quote_improve_touch_pct: float = 0.15      # Max % allowed to cross/improve touch
     max_half_spread_from_mid_pct: float = 1.0      # Max distance from mid per quote leg
     require_spread_validation_for_live: bool = True

@@ -1,11 +1,12 @@
+from core.dynamic_quoting_policy import TOUCH_AT, TOUCH_OFF, TOUCH_SPREAD, resolve_dynamic_quoting_policy
 from core.market_conditions import (
     CONDITION_DEFENSIVE,
     assess_market_conditions,
     ideal_for_profit_mode,
     profile_for_auto_switch,
     recommend_profile,
-    resolve_quoting_posture,
 )
+from core.perception import get_profile
 
 
 def test_recommend_safe_on_hostile() -> None:
@@ -114,36 +115,26 @@ def test_profit_mode_profile_exists_and_is_aggressive() -> None:
     assert profit.aggression > tight.aggression
 
 
-def test_quoting_posture_joins_touch_when_favorable_and_edge_thin() -> None:
+def test_dynamic_policy_near_touch_when_edge_not_met() -> None:
     assessment = assess_market_conditions(
         volatility_pct=0.0,
         liquidity_score=0.85,
         book_spread_pct=0.044,
         active_profile="tight_spread",
     )
-    posture = resolve_quoting_posture(
-        assessment, "tight_spread", market_edge_met=False
-    )
-    assert posture.join_touch is True
-    assert posture.touch_backoff_pct == 0.0
-    assert "Favorable" in posture.summary
-
-
-def test_quoting_posture_defensive_high_vol_near_touch() -> None:
-    assessment = assess_market_conditions(
-        volatility_pct=0.5,
-        liquidity_score=0.6,
+    policy = resolve_dynamic_quoting_policy(
+        profile=get_profile("tight_spread"),
+        assessment=assessment,
         book_spread_pct=0.044,
-        active_profile="high_volatility",
+        effective_min_edge_pct=0.08,
+        effective_spread_l1_pct=0.12,
+        mm_mode=True,
     )
-    posture = resolve_quoting_posture(
-        assessment, "high_volatility", market_edge_met=False
-    )
-    assert posture.join_touch is True
-    assert posture.touch_backoff_pct >= 0.05
+    assert policy.touch_mode in ("near_touch", "spread_mid")
+    assert "thin book" in policy.summary or "step off" in policy.summary
 
 
-def test_quoting_posture_hostile_no_touch() -> None:
+def test_dynamic_policy_hostile_no_touch() -> None:
     assessment = assess_market_conditions(
         volatility_pct=1.2,
         liquidity_score=0.15,
@@ -151,17 +142,32 @@ def test_quoting_posture_hostile_no_touch() -> None:
         active_profile="safe",
     )
     assert assessment.condition == "hostile"
-    posture = resolve_quoting_posture(assessment, "safe", market_edge_met=False)
-    assert posture.join_touch is False
+    policy = resolve_dynamic_quoting_policy(
+        profile=get_profile("safe"),
+        assessment=assessment,
+        book_spread_pct=0.044,
+        effective_min_edge_pct=0.12,
+        effective_spread_l1_pct=0.16,
+        mm_mode=True,
+    )
+    assert policy.touch_mode == TOUCH_SPREAD
+    assert not policy.join_touch
 
 
-def test_quoting_posture_joins_touch_when_edge_met_on_tight_book() -> None:
+def test_dynamic_policy_at_touch_when_edge_met_on_tight_book() -> None:
     assessment = assess_market_conditions(
         volatility_pct=0.0,
         liquidity_score=0.95,
-        book_spread_pct=0.07,
+        book_spread_pct=0.14,
         active_profile="safe",
     )
-    posture = resolve_quoting_posture(assessment, "safe", market_edge_met=True)
-    assert posture.join_touch is True
-    assert posture.touch_backoff_pct == 0.0
+    policy = resolve_dynamic_quoting_policy(
+        profile=get_profile("safe"),
+        assessment=assessment,
+        book_spread_pct=0.14,
+        effective_min_edge_pct=0.12,
+        effective_spread_l1_pct=0.16,
+        mm_mode=True,
+    )
+    assert policy.touch_mode == TOUCH_AT
+    assert policy.join_touch is True
