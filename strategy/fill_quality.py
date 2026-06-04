@@ -51,6 +51,12 @@ class FillQualityTracker:
     def set_toxic_threshold_pct(self, threshold: float) -> None:
         self._toxic_threshold_pct = max(0.01, float(threshold))
 
+    def reset(self) -> None:
+        """Clear rolling fill window (e.g. after operator restart or stuck toxic pause)."""
+        self._pending = None
+        self._markout_pending.clear()
+        self._records.clear()
+
     @staticmethod
     def _is_toxic(side: str, move_pct: float, threshold: float) -> bool:
         if side == "SELL":

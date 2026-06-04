@@ -247,6 +247,20 @@ def inject_theme() -> None:
             box-sizing: border-box;
         }
 
+        .xlm-marquee-status {
+            margin-bottom: 0.3rem;
+            background: rgba(18, 22, 32, 0.92);
+            border-color: rgba(255, 180, 80, 0.22);
+        }
+
+        .xlm-marquee-status .xlm-marquee-viewport {
+            padding: 0.3rem 0;
+        }
+
+        .xlm-marquee-feed {
+            margin-bottom: 0.55rem;
+        }
+
         .xlm-marquee-viewport {
             overflow: hidden;
             width: 100%;
@@ -358,8 +372,9 @@ def render_marquee_ticker(
     items: Sequence[TickerItem],
     *,
     engine_running: bool = True,
+    variant: str = "feed",
 ) -> None:
-    """Scrolling status ticker above the header bar."""
+    """Scrolling ticker above the header bar (variant: status | feed)."""
     import streamlit as st
 
     if not items:
@@ -370,11 +385,21 @@ def render_marquee_ticker(
     loop_body = f"{track}<span class='xlm-marquee-sep'> · </span>{track}"
     char_count = sum(len(item.text) for item in items)
     duration_s = max(28, min(90, 18 + char_count * 0.35))
+    if variant == "status":
+        duration_s = max(24, min(70, 14 + char_count * 0.3))
     if not engine_running:
         duration_s = min(duration_s, 40)
 
+    wrap_class = "xlm-marquee-wrap"
+    if variant == "status":
+        wrap_class += " xlm-marquee-status"
+        title = "Operator status"
+    else:
+        wrap_class += " xlm-marquee-feed"
+        title = "Live quote &amp; engine feed"
+
     html = f"""
-    <div class="xlm-marquee-wrap" title="Live quote &amp; status feed">
+    <div class="{wrap_class}" title="{title}">
         <div class="xlm-marquee-viewport">
             <div class="xlm-marquee-track" style="--xlm-marquee-duration: {duration_s}s;">
                 {loop_body}

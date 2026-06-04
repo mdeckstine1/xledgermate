@@ -1,6 +1,10 @@
 """Book visibility helpers for queue position."""
 
-from utils.book_visibility import offer_vs_touch_bps, quote_visibility
+from utils.book_visibility import (
+    invisible_offer_sequences,
+    offer_vs_touch_bps,
+    quote_visibility,
+)
 
 
 def test_bid_below_touch_is_invisible() -> None:
@@ -27,3 +31,18 @@ def test_bid_at_touch_is_visible() -> None:
     visible, worst, _ = quote_visibility(offers)
     assert visible
     assert worst == 0.0
+
+
+def test_invisible_offer_sequences_stale_ask() -> None:
+    class Offer:
+        sequence = 99
+        side = "ask"
+        price = 1.22
+
+    stale = invisible_offer_sequences(
+        [Offer()],
+        best_bid=1.20,
+        best_ask=1.203,
+        max_visible_bps=8.0,
+    )
+    assert stale == [99]

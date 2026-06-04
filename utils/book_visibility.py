@@ -102,3 +102,44 @@ def quote_visibility(
         f"Off the storefront — worst quote is {worst:.1f} bps behind touch "
         f"(>{max_visible_bps:.0f} bps is invisible to takers).",
     )
+
+
+def _penalty_bps_from_touch(
+    *,
+    side: str,
+    vs_touch_bps: float | None,
+) -> float:
+    """Non-negative bps behind the competitive queue (0 = at touch)."""
+    if vs_touch_bps is None:
+        return 0.0
+    if str(side).lower() == "bid":
+        return max(0.0, -float(vs_touch_bps))
+    return max(0.0, float(vs_touch_bps))
+
+
+def invisible_offer_sequences(
+    offers: Sequence[Any],
+    *,
+    best_bid: float | None,
+    best_ask: float | None,
+    max_visible_bps: float = VISIBLE_MAX_BPS,
+) -> list[int]:
+    """Ledger sequences farther than max_visible_bps from touch (storefront hygiene)."""
+    stale: list[int] = []
+    for offer in offers:
+        if isinstance(offer, Mapping):
+            side = str(offer.get("side", ""))
+            price = float(offer.get("price", 0))
+            seq = int(offer.get("sequence", 0))
+        else:
+            side = str(getattr(offer, "side", ""))
+            price = float(getattr(offer, "price", 0))
+            seq = int(getattr(offer, "sequence", 0))
+        if seq <= 0 or price <= 0:
+            continue
+        bps = offer_vs_touch_bps(
+            side=side, price=price, best_bid=best_bid, best_ask=best_ask
+        )
+        if _penalty_bps_from_touch(side=side, vs_touch_bps=bps) > max_visible_bps:
+            stale.append(seq)
+    return stale

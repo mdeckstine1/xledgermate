@@ -48,8 +48,9 @@ selective_order_refresh: true
 order_price_tolerance_pct: 0.08
 order_size_tolerance_xrp: 0.75
 spread_failure_kill_cycles: 8
-toxic_fill_ratio_kill_threshold: 0.55
-toxic_fill_min_count: 5
+toxic_fill_kill_enabled: false
+toxic_fill_ratio_kill_threshold: 0.75
+toxic_fill_min_count: 12
 max_quote_worse_than_touch_pct: 0.50
 competitive_off_touch_max_worse_pct: 0.12
 max_quote_improve_touch_pct: 0.15

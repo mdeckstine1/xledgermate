@@ -153,6 +153,19 @@ def stop_all_engines() -> tuple[int, str]:
     return len(stopped), f"Stopped {len(stopped)} engine process(es): {stopped}"
 
 
+def is_kill_switch_active() -> bool:
+    """Read kill_switch.json directly (not stale runtime_state.json)."""
+    from risk.kill_switch import KillSwitch
+
+    return KillSwitch().is_active()
+
+
+def kill_switch_reason() -> str:
+    from risk.kill_switch import KillSwitch
+
+    return KillSwitch().reason
+
+
 def is_engine_running() -> bool:
     pids = _find_engine_pids()
     if pids:
@@ -204,6 +217,24 @@ def stop_engine() -> tuple[bool, str]:
     if count == 0:
         return False, "Engine is not running."
     return True, msg
+
+
+def restart_engine(*, clear_kill: bool = True) -> tuple[bool, str]:
+    """
+    Stop all engine processes and start fresh.
+
+    By default clears the persisted kill switch (survives ordinary restarts) and
+    resets the in-memory toxic fill window on the new process.
+    """
+    parts: list[str] = []
+    if clear_kill:
+        ok_kill, kill_msg = clear_kill_switch()
+        parts.append(kill_msg if ok_kill else f"Kill clear failed: {kill_msg}")
+    stop_all_engines()
+    time.sleep(0.5)
+    ok, start_msg = start_engine(force_restart=False)
+    parts.append(start_msg)
+    return ok, " ".join(parts)
 
 
 def cancel_offers_on_ledger() -> tuple[bool, str]:

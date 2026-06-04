@@ -179,9 +179,10 @@ class BotConfig:
     selective_order_refresh: bool = True     # Keep matching offers; cancel/replace only when quotes move
     order_price_tolerance_pct: float = 0.08    # Match open offer if within this % of planned price
     order_size_tolerance_xrp: float = 0.75     # Match open offer if size within this XRP
-    spread_failure_kill_cycles: int = 8        # Consecutive live spread-check failures → kill switch
-    toxic_fill_ratio_kill_threshold: float = 0.55  # Kill if toxic/recent fills exceeds this
-    toxic_fill_min_count: int = 5              # Minimum fills before toxic-ratio kill applies
+    spread_failure_kill_cycles: int = 8        # Consecutive live spread-check failures → kill switch (0=off)
+    toxic_fill_kill_enabled: bool = False      # False = pause/off-book only; no kill on markout ratio
+    toxic_fill_ratio_kill_threshold: float = 0.75  # Kill if toxic/recent fills exceeds this (when enabled)
+    toxic_fill_min_count: int = 12             # Minimum fills before toxic-ratio kill applies
     # Live spread guard: planned quotes must sit near book bid/ask (validated each cycle).
     max_quote_worse_than_touch_pct: float = 0.50   # Max % ask above best ask / bid below best bid
     competitive_off_touch_max_worse_pct: float = 0.12  # Cap distance from touch when not joining L1

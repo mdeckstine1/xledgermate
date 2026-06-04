@@ -90,16 +90,6 @@ def build_ticker_items(
     items: list[TickerItem] = []
     seen: set[str] = set()
 
-    if runtime.get("kill_switch_active"):
-        reason = str(runtime.get("kill_switch_reason") or "trading halted").strip()
-        _add(
-            items,
-            seen,
-            text=f"Kill switch — {reason}",
-            kind="danger",
-            priority=0,
-        )
-
     for notice in extra_notices or ():
         _add(items, seen, text=str(notice), kind="warn", priority=1)
 

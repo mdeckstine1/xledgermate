@@ -28,6 +28,7 @@ from utils import gui_profile_presets as gui_profile_presets_module
 from core.runtime_state import QuoteIntent
 from utils.book_visibility import quote_visibility
 from utils.gui_runtime_sync import patch_runtime_state_file
+from utils.session_insights import build_session_insights
 from utils.quote_validation import QuoteValidationResult, validate_quotes_against_book
 from strategy.inventory_balance import assess_rebalance_need
 from gui.formatters import (
@@ -42,16 +43,20 @@ from gui.formatters import (
     session_pnl_from_runtime as _session_pnl_from_runtime,
 )
 from gui.ticker import build_ticker_items
-from gui.theme import alert_box, inject_theme, render_header_bar, render_marquee_ticker
+from gui.status_ticker import StatusTickerInput, build_status_ticker_items
+from gui.theme import inject_theme, render_header_bar, render_marquee_ticker
 from gui.engine_control import (
     cancel_offers_on_ledger,
     clear_kill_switch,
+    is_kill_switch_active,
+    kill_switch_reason,
     is_engine_running,
     manual_rebalance_check,
     run_single_cycle,
     send_funds,
     disable_rlusd_rippling as run_disable_rlusd_rippling,
     setup_trust_line as run_setup_trust,
+    restart_engine,
     start_engine,
     stop_engine,
 )
@@ -326,6 +331,66 @@ def _clamp_order_sizes(config: BotConfig, size_cap: float) -> None:
         config.order_sizes[i] = max(0.0, min(float(config.order_sizes[i]), cap))
 
 
+def _order_size_level_control(
+    label: str,
+    index: int,
+    size_cap: float,
+    *,
+    default: float = 0.0,
+    slider_step: float = 1.0,
+) -> float:
+    """
+    Number field (value from store) + slider (keyed).
+
+    Streamlit forbids writing to a widget key after it is drawn — use a separate
+    store key for the typed value and sync before the slider is instantiated.
+    """
+    cap = float(size_cap)
+    store_key = f"controls_order_size_store_{index}"
+    slider_key = f"controls_order_size_{index}_slider"
+
+    if store_key not in st.session_state:
+        st.session_state[store_key] = float(default)
+    if slider_key not in st.session_state:
+        st.session_state[slider_key] = float(st.session_state[store_key])
+
+    stored = max(0.0, min(float(st.session_state[store_key]), cap))
+    st.session_state[store_key] = stored
+    if abs(float(st.session_state[slider_key]) - stored) > 1e-6:
+        st.session_state[slider_key] = stored
+
+    col_num, col_slider = st.columns([1, 3])
+    with col_num:
+        typed = st.number_input(
+            label,
+            min_value=0.0,
+            max_value=cap,
+            value=stored,
+            step=1.0,
+            format="%.1f",
+        )
+    typed = max(0.0, min(float(typed), cap))
+    st.session_state[store_key] = typed
+    if abs(float(st.session_state[slider_key]) - typed) > 1e-6:
+        st.session_state[slider_key] = typed
+
+    with col_slider:
+        st.slider(
+            label,
+            min_value=0.0,
+            max_value=cap,
+            step=float(slider_step),
+            key=slider_key,
+            label_visibility="collapsed",
+        )
+
+    slid = max(0.0, min(float(st.session_state[slider_key]), cap))
+    if abs(slid - typed) > 1e-6:
+        st.session_state[store_key] = slid
+        return slid
+    return typed
+
+
 def _ensure_page_config() -> None:
     if not st.session_state.get("_xledgermate_page_config"):
         st.set_page_config(
@@ -484,6 +549,12 @@ def _gui_clear_controls_widget_state() -> None:
         "controls_hard_pause_dev",
         "controls_rebalance_dev",
         "controls_max_leg_pct",
+        "controls_order_size_store_0",
+        "controls_order_size_0_slider",
+        "controls_order_size_store_1",
+        "controls_order_size_1_slider",
+        "controls_order_size_store_2",
+        "controls_order_size_2_slider",
     ):
         st.session_state.pop(key, None)
 
@@ -517,6 +588,10 @@ def _sync_controls_widgets_from_config(config: BotConfig) -> None:
     st.session_state["controls_inventory_mode"] = _normalize_inventory_mode(
         getattr(config, "inventory_mode", "market_make")
     )
+    for i in range(3):
+        val = float(config.order_sizes[i]) if i < len(config.order_sizes) else 0.0
+        st.session_state[f"controls_order_size_store_{i}"] = val
+        st.session_state[f"controls_order_size_{i}_slider"] = val
 
 
 def _make_apply_profile_callback(profile_name: Optional[str] = None):
@@ -625,10 +700,9 @@ def _gui_display_profile(config: BotConfig, runtime: dict, *, engine_running: bo
     return engine if engine_running else _disk
 
 
-def _profile_sync_alert_html(
+def _profile_sync_ticker_text(
     config: BotConfig, runtime: dict, *, engine_running: bool
 ) -> str:
-    """One-line alert when config.yaml and engine profile differ."""
     disk_name, engine_name = _resolve_profiles(
         config, runtime, engine_running=engine_running
     )
@@ -638,9 +712,8 @@ def _profile_sync_alert_html(
     engine_label = PROFILE_LABELS.get(engine_name, engine_name)
     refresh = max(30, int(config.order_refresh_time_seconds))
     return (
-        f"<b>Profile sync</b> — engine is quoting <b>{engine_label}</b>; "
-        f"config.yaml is still <b>{disk_label}</b>. "
-        f"Apply profile or Save Config to align (engine may auto-switch within ~{refresh}s)."
+        f"Profile sync — engine {engine_label}, config {disk_label}; "
+        f"apply profile or save config (auto-switch ~{refresh}s)"
     )
 
 
@@ -910,122 +983,71 @@ def _render_spread_check_panel(runtime: dict, config: BotConfig, *, compact: boo
             _show_dataframe(pd.DataFrame(result.lines), height=220)
 
 
-def _render_alert_strip(config: BotConfig, runtime: dict) -> None:
-    """Critical alerts only — keep the main view calm."""
+def _status_ticker_input(
+    config: BotConfig,
+    runtime: dict,
+    *,
+    engine_running: bool,
+    session_headline: str = "",
+    session_status: str = "",
+) -> StatusTickerInput:
+    """Collect fields for the operator status marquee."""
     runtime = _load_runtime_state() or runtime
     dry = bool(runtime.get("dry_run", config.dry_run))
-    engine_running = is_engine_running()
-    is_testnet, _network = _effective_network(
+    is_testnet, network = _effective_network(
         config, runtime, engine_running=engine_running
     )
+    offers = runtime.get("open_offers") or []
+    at_touch: Optional[bool] = None
+    visibility_summary = str(runtime.get("quote_visibility_summary") or "")
+    if offers:
+        at_touch = runtime.get("quotes_at_touch")
+        if at_touch is None:
+            _, _worst, visibility_summary = quote_visibility(offers)
+            at_touch = _worst <= 8.0
+        elif not visibility_summary:
+            _, _worst, visibility_summary = quote_visibility(offers)
 
-    if _config_network_mismatch(config, runtime, is_testnet=is_testnet):
-        st.markdown(
-            alert_box(
-                f"<b>Config mismatch</b> — engine is on <b>{_network}</b> but saved config says "
-                f"<b>{config.network_name()}</b>. Save Config or restart the engine to align.",
-                "warn",
-            ),
-            unsafe_allow_html=True,
-        )
-
-    profile_alert = _profile_sync_alert_html(
-        config, runtime, engine_running=engine_running
-    )
-    if profile_alert:
-        st.markdown(
-            alert_box(profile_alert, "warn"),
-            unsafe_allow_html=True,
-        )
-
-    if runtime.get("kill_switch_active"):
-        st.markdown(
-            alert_box(
-                f"Kill switch active — {runtime.get('kill_switch_reason', 'trading halted')}",
-                "danger",
-            ),
-            unsafe_allow_html=True,
-        )
-
-    if not config.bot_account_address:
-        st.markdown(
-            alert_box("Set Bot Account credentials under <b>Advanced → Bot account</b>.", "warn"),
-            unsafe_allow_html=True,
-        )
-
-    if not dry and not is_testnet:
-        st.markdown(
-            alert_box(
-                "<b>Mainnet live</b> — real orders on the ledger. Spread check must pass each cycle.",
-                "danger",
-            ),
-            unsafe_allow_html=True,
-        )
-    elif dry and not is_testnet:
-        st.markdown(
-            alert_box("Dry-run — quotes are planned only; nothing submits to mainnet.", "info"),
-            unsafe_allow_html=True,
-        )
-
-    if not dry and is_testnet:
-        st.markdown(
-            alert_box("Live on testnet — real testnet orders (play money).", "warn"),
-            unsafe_allow_html=True,
-        )
-
-    if engine_running and not dry:
-        offers = runtime.get("open_offers") or []
-        if offers:
-            at_touch = runtime.get("quotes_at_touch")
-            if at_touch is None:
-                _, worst, summary = quote_visibility(offers)
-                at_touch = worst <= 8.0
-            else:
-                summary = str(runtime.get("quote_visibility_summary") or "")
-            if not at_touch:
-                join = runtime.get("join_touch_active")
-                hint = (
-                    " Restart the engine to load join-touch fixes."
-                    if not join
-                    else ""
-                )
-                st.markdown(
-                    alert_box(
-                        f"<b>Storefront hidden</b> — {summary}"
-                        f" Not in the visible queue.{hint}",
-                        "danger",
-                    ),
-                    unsafe_allow_html=True,
-                )
-            elif (
-                runtime.get("pause_asks") and not runtime.get("pause_bids")
-                and str(getattr(config, "inventory_mode", "market_make")).lower() == "rebalance"
-            ):
-                st.markdown(
-                    alert_box(
-                        "<b>One-sided rebalance</b> — RLUSD-heavy: only bids (buying XRP). "
-                        "Switch to market_make mode for two-sided spread capture.",
-                        "warn",
-                    ),
-                    unsafe_allow_html=True,
-                )
-        elif int(runtime.get("open_offers_count", 0) or 0) == 0:
-            st.markdown(
-                alert_box(
-                    "<b>No offers on the ledger</b> — nothing for takers to hit.",
-                    "warn",
-                ),
-                unsafe_allow_html=True,
-            )
-
-    if not is_testnet and runtime.get("cycle_count", 0) > 0:
+    spread_failed = False
+    spread_err = ""
+    if not is_testnet and int(runtime.get("cycle_count", 0) or 0) > 0:
         spread = _spread_validation_from_runtime(runtime, config)
         if spread and not spread.ok:
-            err = spread.errors[0] if spread.errors else spread.summary
-            st.markdown(
-                alert_box(f"<b>Spread check failed</b> — live orders blocked. {err}", "danger"),
-                unsafe_allow_html=True,
-            )
+            spread_failed = True
+            spread_err = spread.errors[0] if spread.errors else spread.summary
+
+    return StatusTickerInput(
+        dry_run=dry,
+        is_testnet=is_testnet,
+        engine_running=engine_running,
+        has_bot_account=bool(config.bot_account_address),
+        config_network_mismatch=_config_network_mismatch(
+            config, runtime, is_testnet=is_testnet
+        ),
+        engine_network=network,
+        saved_network=config.network_name(),
+        profile_sync_text=_profile_sync_ticker_text(
+            config, runtime, engine_running=engine_running
+        ),
+        kill_switch_active=is_kill_switch_active(),
+        kill_switch_reason=kill_switch_reason() if is_kill_switch_active() else "",
+        open_offers_count=int(runtime.get("open_offers_count", 0) or 0),
+        offers_at_touch=at_touch if offers else None,
+        quote_visibility_summary=visibility_summary,
+        join_touch_active=runtime.get("join_touch_active"),
+        pause_bids=bool(runtime.get("pause_bids")),
+        pause_asks=bool(runtime.get("pause_asks")),
+        inventory_mode=str(
+            runtime.get("inventory_mode") or getattr(config, "inventory_mode", "market_make")
+        ),
+        cycle_count=int(runtime.get("cycle_count", 0) or 0),
+        spread_check_failed=spread_failed,
+        spread_check_error=spread_err,
+        session_status=session_status,
+        session_headline=session_headline,
+        market_condition_label=str(runtime.get("market_condition_label") or ""),
+        last_execution_summary=str(runtime.get("last_execution_summary") or ""),
+    )
 
 
 def _resolve_market_assessment(
@@ -1058,6 +1080,57 @@ def _resolve_market_assessment(
         "recommendation_reason": reason,
         "market_condition_label": assessment.condition_label,
     }
+
+
+def _render_session_insights(config: BotConfig, runtime: dict) -> None:
+    """Fill economics + operator hints from trades CSV and live runtime."""
+    target = float(getattr(config, "inventory_target_xrp_ratio", 0.55))
+    profile_name = (runtime.get("active_profile") or config.active_profile or "safe").strip().lower()
+    try:
+        from core.perception import get_profile
+
+        toxic_limit = float(get_profile(profile_name).toxic_refresh_pause_ratio)
+    except Exception:
+        toxic_limit = 0.22
+
+    insights = build_session_insights(
+        runtime,
+        target_xrp_ratio=target,
+        toxic_refresh_limit=toxic_limit,
+    )
+
+    st.markdown("#### Session insights")
+    st.caption(insights.headline)
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Fills (session)", insights.fill_count, help=insights.window_label)
+    c2.metric("Spread capture", f"{insights.capture_xrp:+.4f} XRP", help="Sum of profit_xrp_equiv in trades CSV")
+    c3.metric("Per fill", f"{insights.capture_per_fill_xrp:+.4f} XRP")
+    c4.metric(
+        "Inventory",
+        f"{insights.xrp_share_pct:.0f}% XRP",
+        delta=f"{insights.inventory_deviation_pct:+.0f} vs {insights.target_xrp_share_pct:.0f}%",
+    )
+    c5.metric(
+        "Buy / sell vol",
+        f"{insights.buy_xrp:.1f} / {insights.sell_xrp:.1f}",
+        help=f"Net XRP {insights.net_xrp:+.1f} (bought − sold)",
+    )
+
+    st.caption(
+        f"{insights.window_label} · "
+        f"{insights.buy_count} buys / {insights.sell_count} sells · "
+        f"negative capture {insights.negative_capture_count}/{max(1, insights.fill_count)}"
+    )
+
+    if insights.suggestions:
+        for line in insights.suggestions:
+            st.markdown(f"- {line}")
+
+    if insights.notes:
+        with st.expander("Insight notes", expanded=False):
+            for line in insights.notes:
+                st.caption(line)
 
 
 def _render_market_suggestion(config: BotConfig, runtime: dict, *, engine_running: bool) -> None:
@@ -1242,6 +1315,8 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
     st.divider()
     _render_market_suggestion(config, runtime, engine_running=engine_running)
 
+    _render_session_insights(config, runtime)
+
     # ── Recent decisions (clean) ──
     st.markdown("#### Recent activity")
     decisions_df = clean_decisions_table(runtime, limit=10)
@@ -1275,14 +1350,35 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
             st.caption("No quote intents yet.")
 
 
+def _session_insights_for_ticker(
+    config: BotConfig, runtime: dict
+) -> tuple[str, str]:
+    """Headline + status for operator marquee (lightweight when runtime empty)."""
+    if not runtime:
+        return "", ""
+    target = float(getattr(config, "inventory_target_xrp_ratio", 0.55))
+    profile_name = (runtime.get("active_profile") or config.active_profile or "safe").strip().lower()
+    try:
+        from core.perception import get_profile
+
+        toxic_limit = float(get_profile(profile_name).toxic_refresh_pause_ratio)
+    except Exception:
+        toxic_limit = 0.22
+    insights = build_session_insights(
+        runtime,
+        target_xrp_ratio=target,
+        toxic_refresh_limit=toxic_limit,
+    )
+    return insights.headline, insights.status
+
+
 def _render_command_bar(
     config: BotConfig,
     runtime: dict,
     *,
     engine_running: bool,
 ) -> None:
-    """Alerts + top status bar (HTML — requires inject_theme CSS)."""
-    _render_alert_strip(config, runtime)
+    """Status marquee + quote feed + header bar (requires inject_theme CSS)."""
     display, _ = _sidebar_wallet_display_runtime(runtime)
     pnl_mtm, pnl_balance = _session_pnl_from_runtime(display if display else runtime) if (display or runtime) else (0.0, 0.0)
     profile = _gui_display_profile(config, display or runtime, engine_running=engine_running)
@@ -1300,26 +1396,24 @@ def _render_command_bar(
     inv_mode = _normalize_inventory_mode(
         str(bar_runtime.get("inventory_mode") or getattr(config, "inventory_mode", "market_make"))
     )
-    ticker_notices: list[str] = []
-    if _config_network_mismatch(config, bar_runtime, is_testnet=is_testnet):
-        ticker_notices.append(
-            f"Config mismatch — engine on {network.upper()}, "
-            f"saved config says {config.network_name().upper()}"
+    session_headline, session_status = _session_insights_for_ticker(config, bar_runtime)
+    status_items = build_status_ticker_items(
+        _status_ticker_input(
+            config,
+            bar_runtime,
+            engine_running=engine_running,
+            session_headline=session_headline,
+            session_status=session_status,
         )
-    if _profile_sync_alert_html(config, bar_runtime, engine_running=engine_running):
-        disk_name, engine_name = _resolve_profiles(
-            config, bar_runtime, engine_running=engine_running
-        )
-        ticker_notices.append(
-            f"Profile sync — engine {PROFILE_LABELS.get(engine_name, engine_name)} "
-            f"vs config {PROFILE_LABELS.get(disk_name, disk_name)}"
-        )
+    )
+    render_marquee_ticker(
+        status_items, engine_running=engine_running, variant="status"
+    )
     ticker_items = build_ticker_items(
         bar_runtime,
         engine_running=engine_running,
-        extra_notices=ticker_notices,
     )
-    render_marquee_ticker(ticker_items, engine_running=engine_running)
+    render_marquee_ticker(ticker_items, engine_running=engine_running, variant="feed")
     render_header_bar(
         engine_running=engine_running,
         dry_run=dry,
@@ -1406,25 +1500,94 @@ def _inventory_live_fragment() -> None:
     _render_inventory_tab(cfg, runtime)
 
 
+def _engine_start_precheck() -> tuple[bool, str]:
+    disk = _load_config()
+    if not disk.bot_account_address.strip():
+        return False, "Set bot account under Advanced → Bot account, then Save Config."
+    ok_cred, cred_msg = _credentials_match(
+        disk.bot_account_address, disk.bot_secret_key
+    )
+    if not ok_cred:
+        return False, cred_msg
+    return True, ""
+
+
 def _render_sidebar_commands(config: BotConfig) -> None:
     """Always-visible engine controls in the sidebar."""
     engine_running = is_engine_running()
-    if st.button("▶ Start Bot", type="primary", disabled=engine_running, use_container_width=True):
-        disk = _load_config()
-        if disk.bot_account_address.strip() and _credentials_match(
-            disk.bot_account_address, disk.bot_secret_key
-        )[0]:
+    runtime = _load_runtime_state() or {}
+    kill_active = is_kill_switch_active()
+    kill_reason = kill_switch_reason() if kill_active else ""
+    last_exec = str(runtime.get("last_execution_summary") or "")
+    refresh_paused = "Refresh paused" in last_exec or "refresh paused" in last_exec.lower()
+
+    if kill_active:
+        st.error(f"**Kill switch ON** — {kill_reason or 'trading halted'}")
+        st.caption(
+            "Restart alone does not fix this until kill is cleared. "
+            "**Clear kill switch** below, or use **Restart engine** (clears kill + restarts)."
+        )
+        if st.button(
+            "Clear kill switch",
+            type="primary",
+            use_container_width=True,
+            help="Writes logs/kill_switch.json inactive and updates runtime_state.json.",
+        ):
+            ok, msg = clear_kill_switch()
+            _show_result(ok, msg, fail="error")
+            st.rerun()
+
+    if engine_running:
+        st.success("Engine running")
+    else:
+        st.caption("Engine stopped")
+
+    if refresh_paused and engine_running and not kill_active:
+        st.warning(
+            "Refresh paused (toxic window). Existing offers stay; new refresh is blocked. "
+            "**Restart engine** clears the in-memory fill window, or wait for an automatic "
+            "probe after ~3 min with no offers."
+        )
+
+    ready, block_msg = _engine_start_precheck()
+    c_start, c_stop = st.columns(2)
+    with c_start:
+        if st.button(
+            "Start",
+            type="primary",
+            disabled=engine_running or not ready,
+            use_container_width=True,
+            help="Start the trading engine (new console window).",
+        ):
             _persist_config(config)[0]
             ok, msg = start_engine(force_restart=True)
             _show_result(ok, msg, fail="warning")
             st.rerun()
-        else:
-            st.error("Save credentials under Advanced first.")
-    if st.button("■ Stop Bot", disabled=not engine_running, use_container_width=True):
-        ok, msg = stop_engine()
+    with c_stop:
+        if st.button(
+            "Stop",
+            disabled=not engine_running,
+            use_container_width=True,
+            help="Graceful stop via stop file, then terminate engine process.",
+        ):
+            ok, msg = stop_engine()
+            _show_result(ok, msg, fail="warning")
+            st.rerun()
+
+    if not ready:
+        st.caption(block_msg)
+
+    if st.button(
+        "Restart engine",
+        disabled=not engine_running,
+        use_container_width=True,
+        help="Stop, clear kill switch, start fresh — also resets in-memory toxic fill window.",
+    ):
+        ok, msg = restart_engine(clear_kill=True)
         _show_result(ok, msg, fail="warning")
         st.rerun()
-    if st.button("Run One Cycle", use_container_width=True):
+
+    if st.button("Run one cycle", use_container_width=True):
         with st.spinner("Running cycle..."):
             ok, msg = run_single_cycle()
         _show_result(ok, msg)
@@ -1479,6 +1642,8 @@ def _render_controls_tab(
 ) -> None:
     """Settings grouped in expanders — less overwhelming than one long scroll."""
     runtime = runtime or {}
+    with st.expander("Engine", expanded=not engine_running):
+        _render_sidebar_commands(config)
     mid = float(runtime.get("mid_price") or 0)
     size_cap = _order_size_slider_cap(config, mid)
     _clamp_order_sizes(config, size_cap)
@@ -1628,13 +1793,35 @@ def _render_controls_tab(
             )
 
     with st.expander("Order sizes (XRP)", expanded=False):
+        st.caption(
+            f"Type a size or use the slider (max **{size_cap:.0f} XRP** from risk capital). "
+            "Save Config for the engine to pick up L1."
+        )
         c1, c2, c3 = st.columns(3)
         with c1:
-            config.order_sizes[0] = st.slider("Level 1", 0.0, size_cap, float(config.order_sizes[0]), 10.0)
+            config.order_sizes[0] = _order_size_level_control(
+                "L1 (XRP)",
+                0,
+                size_cap,
+                default=float(config.order_sizes[0]),
+                slider_step=1.0,
+            )
         with c2:
-            config.order_sizes[1] = st.slider("Level 2", 0.0, size_cap, float(config.order_sizes[1]), 25.0)
+            config.order_sizes[1] = _order_size_level_control(
+                "L2 (XRP)",
+                1,
+                size_cap,
+                default=float(config.order_sizes[1]),
+                slider_step=1.0,
+            )
         with c3:
-            config.order_sizes[2] = st.slider("Level 3", 0.0, size_cap, float(config.order_sizes[2]), 50.0)
+            config.order_sizes[2] = _order_size_level_control(
+                "L3 (XRP)",
+                2,
+                size_cap,
+                default=float(config.order_sizes[2]),
+                slider_step=1.0,
+            )
 
     with st.expander("Risk capital & drawdown", expanded=False):
         r1, r2 = st.columns(2)
@@ -1980,11 +2167,75 @@ def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
             ).send_test()
             _show_result(ok, msg)
 
-    with st.expander("Safety & emergency", expanded=False):
-        if runtime.get("kill_switch_active"):
-            st.error(f"Kill switch active: {runtime.get('kill_switch_reason', '')}")
+    with st.expander(
+        "Safety & emergency",
+        expanded=bool(runtime.get("kill_switch_active") or is_kill_switch_active()),
+    ):
+        if is_kill_switch_active():
+            st.error(f"Kill switch active: {kill_switch_reason()}")
+        elif runtime.get("kill_switch_active"):
+            st.warning(
+                "Runtime snapshot shows kill active but kill_switch.json is clear — "
+                "wait for the next engine cycle or click **Clear kill switch**."
+            )
         else:
             st.success("Kill switch inactive")
+
+        st.markdown("**Kill triggers**")
+        config.toxic_fill_kill_enabled = st.toggle(
+            "Kill on toxic fill ratio (emergency)",
+            value=bool(getattr(config, "toxic_fill_kill_enabled", False)),
+            help=(
+                "Off (recommended for safe pilot): toxic episodes use refresh pause / off-book only. "
+                "On: halts trading when markout-toxic ratio exceeds threshold over many fills."
+            ),
+            key="adv_toxic_fill_kill_enabled",
+        )
+        t1, t2 = st.columns(2)
+        with t1:
+            config.toxic_fill_min_count = int(
+                st.number_input(
+                    "Toxic kill min fills",
+                    min_value=3,
+                    max_value=30,
+                    value=int(getattr(config, "toxic_fill_min_count", 12)),
+                    step=1,
+                    disabled=not config.toxic_fill_kill_enabled,
+                    key="adv_toxic_fill_min_count",
+                )
+            )
+        with t2:
+            pct = int(
+                round(
+                    float(getattr(config, "toxic_fill_ratio_kill_threshold", 0.75))
+                    * 100
+                )
+            )
+            config.toxic_fill_ratio_kill_threshold = (
+                st.slider(
+                    "Toxic kill ratio %",
+                    min_value=50,
+                    max_value=95,
+                    value=pct,
+                    step=5,
+                    disabled=not config.toxic_fill_kill_enabled,
+                    key="adv_toxic_fill_kill_threshold",
+                )
+                / 100.0
+            )
+        config.spread_failure_kill_cycles = int(
+            st.number_input(
+                "Spread-check fail cycles → kill (0=off)",
+                min_value=0,
+                max_value=20,
+                value=int(getattr(config, "spread_failure_kill_cycles", 8)),
+                step=1,
+                key="adv_spread_failure_kill_cycles",
+            )
+        )
+        if st.button("Save kill settings", use_container_width=True):
+            _persist_config(config)[0]
+            st.success("Kill settings saved — engine picks up next cycle.")
 
         a1, a2, a3 = st.columns(3)
         if a1.button("Clear kill switch"):

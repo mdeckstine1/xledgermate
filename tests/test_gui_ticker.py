@@ -20,13 +20,13 @@ def test_build_ticker_splits_quote_decision_summary() -> None:
     assert any(item.kind == "warn" for item in items)
 
 
-def test_kill_switch_first_priority() -> None:
+def test_kill_switch_not_in_quote_feed() -> None:
+    """Kill switch lives on the status marquee, not the quote feed."""
     items = build_ticker_items(
         {"kill_switch_active": True, "kill_switch_reason": "drawdown"},
         engine_running=True,
     )
-    assert items[0].priority == 0
-    assert "Kill switch" in items[0].text
+    assert not any("Kill switch" in item.text for item in items)
 
 
 def test_format_ticker_escapes_html() -> None:

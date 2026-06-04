@@ -224,7 +224,7 @@ Each cycle the engine runs **one** policy resolver. It chooses how close quotes 
 2. **Pause side** (~18%) — stop bidding (or asking) when skew + adverse fills align.  
 3. **No touch** (~20% safe) — policy steps off L1 entirely.  
 4. **Pause refresh** (~22% safe) — skip cancel/replace until quality improves.  
-5. **Kill** (55% after 5+ fills) — emergency stop.
+5. **Kill** (optional, off by default on pilot) — hard halt if `toxic_fill_kill_enabled` and ratio exceeds threshold over many fills. **Safe pilot:** use refresh pause + off-book only; enable kill later if you want a nuclear stop.
 
 **Toxic @30s at 100%** with only one or two fills means “every fill that has a 30s score so far was bad” — not necessarily a broken bot. Check **Toxic ratio**, inventory skew, and whether you **bought XRP into a falling tape** while already XRP-heavy.
 
