@@ -232,6 +232,7 @@ Stay on **dry-run** until step 5 passes consistently. The engine **blocks live o
 | RLUSD is 0 | Normal until faucet pays you after trust line exists. |
 | Price looks insane (millions) | Stop Bot → Start Bot again (kills stale engines). |
 | Kill switch active | Advanced tab → **Clear kill switch** after you understand why it fired. Page refreshes; drawdown baseline resets on next cycle. |
+| Kill: “Session balance PnL … limit” | **Advanced → Kill settings**: session lost more than **Session balance loss → kill** (default **0.35 XRP**) after **min fills** (default **25**). Uses balance PnL at honest mids — set **0** to disable. Clear kill → restart if you want a fresh session baseline. |
 | Kill: “Daily portfolio drawdown 40%” but wallet looks fine | Often a **stale book** tick (v1.4.2+ skips that). Clear kill → **Restart engine**; check log for `crossed or stale` / `ask=0`. |
 | “Preflight failed” | Read the red/yellow messages; usually trust line, zero sizes, or no mid price. |
 | `amendmentBlocked` / “need upgrade” | Your **mainnet RPC** hit an outdated node (common on `xrplcluster.com`). In **Advanced**, set Mainnet RPC to `https://s1.ripple.com:51234`, **Save Config**, retry. |

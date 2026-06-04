@@ -19,7 +19,7 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ### Added
 
-- **Session balance loss kill** — Optional halt when balance PnL &lt; **−0.35 XRP** after **≥25 fills** (`session_balance_loss_kill_xrp`, `session_balance_loss_kill_min_fills`; `0` = off).
+- **Session balance loss kill** — Optional halt when balance PnL &lt; **−0.35 XRP** after **≥25 fills** (`session_balance_loss_kill_xrp`, `session_balance_loss_kill_min_fills`; `0` = off). Configurable in **Advanced → Kill settings**.
 - **`scripts/portfolio_bleed_analysis.py`** — Balance drift across mainnet runs.
 - **Tests** — `tests/test_book_mid_integrity.py`, `tests/test_trustworthy_mid.py`.
 

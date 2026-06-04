@@ -2251,6 +2251,38 @@ def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
                 key="adv_spread_failure_kill_cycles",
             )
         )
+        st.caption(
+            "Session balance kill uses **balance PnL** (not MTM) since engine start — "
+            "honest mids only (v1.4.3+)."
+        )
+        s1, s2 = st.columns(2)
+        with s1:
+            config.session_balance_loss_kill_xrp = float(
+                st.number_input(
+                    "Session balance loss → kill (XRP, 0=off)",
+                    min_value=0.0,
+                    max_value=5.0,
+                    value=float(
+                        getattr(config, "session_balance_loss_kill_xrp", 0.35)
+                    ),
+                    step=0.05,
+                    format="%.2f",
+                    key="adv_session_balance_loss_kill_xrp",
+                )
+            )
+        with s2:
+            config.session_balance_loss_kill_min_fills = int(
+                st.number_input(
+                    "Session balance kill min fills",
+                    min_value=0,
+                    max_value=100,
+                    value=int(
+                        getattr(config, "session_balance_loss_kill_min_fills", 25)
+                    ),
+                    step=1,
+                    key="adv_session_balance_loss_kill_min_fills",
+                )
+            )
         if st.button("Save kill settings", use_container_width=True):
             _persist_config(config)[0]
             st.success("Kill settings saved — engine picks up next cycle.")
