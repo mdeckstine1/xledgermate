@@ -15,7 +15,12 @@ from core.market_conditions import (
     is_more_defensive_than,
     profile_for_auto_switch,
 )
-from utils.book_visibility import enrich_open_offers, quote_visibility
+from utils.book_visibility import (
+    enrich_open_offers,
+    invisible_offer_sequences,
+    quote_visibility,
+    VISIBLE_MAX_BPS,
+)
 from utils.profile_recommendation import normalize_profile_recommendation
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_manager import OrderManager
@@ -112,6 +117,7 @@ class TradingEngine:
         self._last_effective_min_edge_pct: float = 0.0
         self._last_edge_resolution_summary: str = ""
         self._last_dynamic_min_edge_enabled: bool = False
+        self._refresh_pause_empty_streak: int = 0
 
     def _restore_price_history(self) -> List[dict]:
         """Continue chart history across engine restarts (from runtime_state.json)."""
@@ -279,13 +285,25 @@ class TradingEngine:
                     ),
                 )
                 mid_price = None
-            portfolio_value = self.drawdown_monitor.update_portfolio(
-                balance_xrp, rlusd_balance, mid_price or 0.0
+            mark_mid = (
+                mid_price
+                if mid_price is not None and is_plausible_rlusd_per_xrp(mid_price)
+                else None
             )
+            portfolio_value, drawdown_mark_applied = self.drawdown_monitor.update_portfolio(
+                balance_xrp, rlusd_balance, mark_mid
+            )
+            if not drawdown_mark_applied:
+                self.decision_log.add(
+                    "drawdown",
+                    "Skipped daily drawdown mark — invalid or missing mid "
+                    "(stale/crossed book); kill not evaluated this cycle.",
+                )
             self.kill_switch.reload()
             if getattr(self, "_prev_kill_active", False) and not self.kill_switch.is_active():
-                self.drawdown_monitor.reset_baseline(portfolio_value)
-                self.decision_log.add("profile", "Kill switch cleared — drawdown baseline reset.")
+                if drawdown_mark_applied and portfolio_value > 0:
+                    self.drawdown_monitor.reset_baseline(portfolio_value)
+                    self.decision_log.add("profile", "Kill switch cleared — drawdown baseline reset.")
             self._prev_kill_active = self.kill_switch.is_active()
             if not config.dry_run:
                 await self._scan_ledger_fills(
@@ -300,7 +318,11 @@ class TradingEngine:
                     mid_price=mid_price,
                 )
             drawdown_pct = self.drawdown_monitor.get_drawdown_percent()
-            if self.drawdown_monitor.is_kill_switch_triggered() and not self.kill_switch.is_active():
+            if (
+                drawdown_mark_applied
+                and self.drawdown_monitor.is_kill_switch_triggered()
+                and not self.kill_switch.is_active()
+            ):
                 await self._activate_kill_switch(
                     connector,
                     config,
@@ -414,6 +436,14 @@ class TradingEngine:
                     f"profile {profile.name}) — queue preserved.",
                 )
                 open_offers = await connector.get_open_offers()
+                if not self.kill_switch.is_active() and not config.dry_run:
+                    await self._cancel_invisible_storefront_offers(
+                        connector,
+                        open_offers,
+                        best_bid=best_bid,
+                        best_ask=best_ask,
+                    )
+                    open_offers = await connector.get_open_offers()
                 if self._session_baseline_xrp is None:
                     self._session_baseline_xrp = balance_xrp
                     self._session_baseline_rlusd = rlusd_balance
@@ -716,17 +746,58 @@ class TradingEngine:
                 and preflight.ready
                 and not live_blocked_by_spread
             ):
+                open_offers_pre = await connector.get_open_offers()
+                if not self.kill_switch.is_active():
+                    await self._cancel_invisible_storefront_offers(
+                        connector,
+                        open_offers_pre,
+                        best_bid=best_bid,
+                        best_ask=best_ask,
+                    )
+                    open_offers_pre = await connector.get_open_offers()
+                no_storefront = len(open_offers_pre) == 0
                 refresh_paused = (
                     fill_quality.recent_fills >= 3
                     and fill_quality.toxic_ratio >= exec_cfg.toxic_refresh_pause_ratio
                 )
-                if refresh_paused:
+                if refresh_paused and no_storefront:
+                    self._refresh_pause_empty_streak += 1
+                else:
+                    self._refresh_pause_empty_streak = 0
+
+                probe_after = 3
+                reset_after = 6
+                force_probe = (
+                    refresh_paused
+                    and no_storefront
+                    and self._refresh_pause_empty_streak >= probe_after
+                )
+                if (
+                    force_probe
+                    and self._refresh_pause_empty_streak >= reset_after
+                ):
+                    self._fill_quality.reset()
+                    fill_quality = self._fill_quality.assess()
+                    refresh_paused = False
+                    self.decision_log.add(
+                        "execution",
+                        "No offers while toxic refresh paused — fill-quality window reset; "
+                        "resuming order refresh",
+                    )
+
+                if refresh_paused and not force_probe:
                     self.decision_log.add(
                         "execution",
                         f"Refresh paused — toxic ratio {fill_quality.toxic_ratio:.0%} "
                         f">= profile {profile.name} limit {exec_cfg.toxic_refresh_pause_ratio:.0%}",
                     )
                 else:
+                    if force_probe:
+                        self.decision_log.add(
+                            "execution",
+                            "Toxic refresh paused but no ledger offers — probe refresh "
+                            f"({self._refresh_pause_empty_streak} cycles empty)",
+                        )
                     self._last_quote_mid = mid_price
                     placed_count = await self._refresh_orders(
                         quote_plan.intents,
@@ -1070,8 +1141,12 @@ class TradingEngine:
     async def _maybe_kill_on_toxic_fills(
         self, config: BotConfig, fill_quality: Any, connector: XRPLConnector
     ) -> None:
-        min_fills = int(getattr(config, "toxic_fill_min_count", 5))
-        threshold = float(getattr(config, "toxic_fill_ratio_kill_threshold", 0.55))
+        if not bool(getattr(config, "toxic_fill_kill_enabled", False)):
+            return
+        min_fills = int(getattr(config, "toxic_fill_min_count", 12))
+        threshold = float(getattr(config, "toxic_fill_ratio_kill_threshold", 0.75))
+        if min_fills <= 0 or threshold <= 0:
+            return
         if fill_quality.recent_fills < min_fills:
             return
         ratio = fill_quality.toxic_fills / max(1, fill_quality.recent_fills)
@@ -1082,6 +1157,42 @@ class TradingEngine:
             f"(threshold {threshold:.0%})"
         )
         await self._activate_kill_switch(connector, config, reason)
+
+    async def _cancel_invisible_storefront_offers(
+        self,
+        connector: XRPLConnector,
+        open_offers: List[Any],
+        *,
+        best_bid: Optional[float],
+        best_ask: Optional[float],
+        max_visible_bps: float = VISIBLE_MAX_BPS,
+    ) -> int:
+        """Cancel ledger offers too far from touch (runs even when refresh is paused)."""
+        if self.config.dry_run or not open_offers:
+            return 0
+        sequences = invisible_offer_sequences(
+            open_offers,
+            best_bid=best_bid,
+            best_ask=best_ask,
+            max_visible_bps=max_visible_bps,
+        )
+        cancelled = 0
+        for seq in sequences:
+            try:
+                await connector.cancel_offer(seq)
+                cancelled += 1
+                self._session_offers_cancelled += 1
+            except Exception as exc:
+                self.decision_log.add(
+                    "execution", f"Cancel stale storefront seq {seq} failed: {exc}"
+                )
+        if cancelled:
+            self.decision_log.add(
+                "execution",
+                f"Storefront hygiene — cancelled {cancelled} offer(s) "
+                f">{max_visible_bps:.0f} bps from touch (invisible to takers).",
+            )
+        return cancelled
 
     async def _refresh_orders(
         self,

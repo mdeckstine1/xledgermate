@@ -1,8 +1,19 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Align with connectors.xrpl_connector.is_plausible_rlusd_per_xrp (avoid import cycle).
+_MIN_RLUSD_PER_XRP = 1e-8
+_MAX_RLUSD_PER_XRP = 100.0
+
+
+def is_valid_portfolio_mid(mid_rlusd_per_xrp: Optional[float]) -> bool:
+    """Mid suitable for MTM / daily drawdown (rejects zero, negative, raw quality)."""
+    if mid_rlusd_per_xrp is None:
+        return False
+    return _MIN_RLUSD_PER_XRP < float(mid_rlusd_per_xrp) <= _MAX_RLUSD_PER_XRP
 
 
 def portfolio_value_xrp(xrp_balance: float, rlusd_balance: float, mid_rlusd_per_xrp: float) -> float:
@@ -42,15 +53,32 @@ class DrawdownMonitor:
         self.daily_start_time = datetime.utcnow()
         self.current_value: Optional[float] = None
 
-    def update_portfolio(self, xrp_balance: float, rlusd_balance: float, mid_rlusd_per_xrp: float) -> float:
-        value = portfolio_value_xrp(xrp_balance, rlusd_balance, mid_rlusd_per_xrp)
+    def update_portfolio(
+        self,
+        xrp_balance: float,
+        rlusd_balance: float,
+        mid_rlusd_per_xrp: Optional[float],
+    ) -> Tuple[float, bool]:
+        """
+        Mark portfolio at mid for daily drawdown tracking.
+
+        Returns (portfolio_value, mark_applied). When mid is invalid (stale/crossed
+        book, RPC glitch), state is unchanged and mark_applied is False so kill
+        must not run on an XRP-only mark that ignores RLUSD.
+        """
+        if not is_valid_portfolio_mid(mid_rlusd_per_xrp):
+            if self.current_value is not None:
+                return self.current_value, False
+            return 0.0, False
+
+        value = portfolio_value_xrp(xrp_balance, rlusd_balance, float(mid_rlusd_per_xrp))
         now = datetime.utcnow()
         if self.daily_start_value is None or now.date() > self.daily_start_time.date():
             self.daily_start_value = value
             self.daily_start_time = now
             logger.info("New daily portfolio baseline: %.4f XRP equiv.", value)
         self.current_value = value
-        return value
+        return value, True
 
     def reset_baseline(self, value: Optional[float] = None) -> None:
         """Operator cleared kill switch — restart drawdown from current portfolio."""

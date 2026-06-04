@@ -7,6 +7,20 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.4.2] — 2026-06-04 (`tier-2-polish`)
+
+**Theme:** Drawdown kill safety on stale order books.
+
+### Fixed
+
+- **Daily drawdown kill** — Invalid or missing mid (crossed/stale book, `ask=0`) no longer marks portfolio as XRP-only and trips a false ~40% drawdown kill. Drawdown state is unchanged for that cycle; kill is evaluated only after a valid RLUSD/XRP mid mark (`risk/drawdown.py`, `engine/trading_engine.py`).
+
+### Added
+
+- **`is_valid_portfolio_mid`** and tests for invalid-mid drawdown guard (`tests/test_drawdown.py`).
+
+---
+
 ## [1.4.1] — 2026-06-03 (`tier-2-polish`)
 
 **Theme:** Unified dynamic quoting, audit cleanup, visibility on thin books.

@@ -67,6 +67,34 @@ To the right of the logo you will see **Market conditions** — how the bot read
 
 The Dashboard also shows **Why these quotes?** when the engine explains its spread/size choices (e.g. “defensive market → wider + smaller”).
 
+**Session insights** (below market suggestion) summarizes **fills since the last engine start** from `logs/trades_YYYY-MM.csv`:
+
+- **Spread capture** — sum of `profit_xrp_equiv` on BUY/SELL rows (economics of fills, not MTM).
+- **Per fill** — average capture per trade.
+- **Inventory** — XRP share vs your target (e.g. 55%).
+- **Buy / sell volume** — net XRP bought vs sold in the session window.
+
+Defensive/cautious headlines also scroll in the **top status marquee** (above the quote feed). The dashboard section shows metrics and suggestions only (no duplicate alert boxes). Bullet suggestions call out dynamic edge, cancel/fill churn, and inventory skew when relevant.
+
+**Top marquees (all pages):**
+
+1. **Status** — mainnet/dry-run, no offers, spread check, profile sync, session defensive/cautious.
+2. **Quote feed** — policy label, pauses, fill quality, quote decision summary.
+
+### Engine (sidebar + Controls → Engine)
+
+| Button | Action |
+|--------|--------|
+| **Start** | Launch `main.py --mode engine` in a new console window |
+| **Stop** | Request graceful stop, then terminate engine process(es) |
+| **Restart engine** | Stop + **clear kill switch** + start — also resets in-memory toxic refresh pause; config unchanged |
+| **Clear kill switch** | Required if kill is ON — kill is stored in `logs/kill_switch.json` and **survives** engine restart until cleared |
+
+**Toxic-fill kill (mainnet pilot):** Default is **off** (`toxic_fill_kill_enabled: false`). Bad markouts still trigger **refresh pause** and **off-book** policy on the **safe** profile — you are protected without a full halt. Turn toxic kill **on** only after you want a hard stop at e.g. **75% over 12+ fills**. Configure under **Advanced → Safety & emergency**.
+| **Run one cycle** | Single `once` cycle without leaving the engine running |
+
+**Refresh paused** (toxic ratio ≥ profile limit with ≥3 recent fills) blocks cancel/replace but keeps existing ledger offers. If you have **no offers** and are stuck, use **Restart engine**, or wait for the bot to **probe refresh** after ~3 full cycles (~3 min on safe) with an empty storefront, then **reset the fill window** after ~6 empty cycles.
+
 ---
 
 ## The control panel — five tabs
@@ -105,7 +133,7 @@ Turn **Live refresh (5s)** on in the left sidebar if you want numbers to update 
 - **Edge strictness** — Scales your profile’s built-in minimum edge (Low / Normal / Strict). Each profile owns its own target (e.g. `tight_spread` ≈ 0.08%).
 - **Dynamic min edge** — Optional: adapts required edge to live book spread (never above profile cap). **Safe** preset leaves this **off** until you turn it on; **tight_spread** / **profit_mode** presets turn it **on**.
 - **Pause side at skew (±)** — One slider for both modes: when XRP share is this far from target (default **12%**), the bot pauses the vulnerable side (inventory bailout).
-- **Max daily drawdown %** — Kill switch if portfolio drops this much in a day (default **10%**; range 2–25% in GUI).
+- **Max daily drawdown %** — Kill switch if portfolio drops this much in a day (default **10%**; range 2–25% in GUI). Measured on **full portfolio** (XRP + RLUSD at mid). If the book feed is stale or crossed for one cycle, the engine **skips** that drawdown check instead of counting RLUSD as zero (avoids false kills like “39% drawdown” while session P&amp;L is flat).
 - **Auto profile switching** — Off by default. When on, after you have been idle for the configured minutes, the engine switches only when the **Suggested profile** stays the same for **several cycles** and the **cooldown** since the last auto-switch has passed. Stops rapid flipping when the book jitters at tier boundaries.
 - **Auto-switch after idle (min)** — How long you must leave it alone before auto-switch can fire (default 120 min).
 
@@ -204,6 +232,7 @@ Stay on **dry-run** until step 5 passes consistently. The engine **blocks live o
 | RLUSD is 0 | Normal until faucet pays you after trust line exists. |
 | Price looks insane (millions) | Stop Bot → Start Bot again (kills stale engines). |
 | Kill switch active | Advanced tab → **Clear kill switch** after you understand why it fired. Page refreshes; drawdown baseline resets on next cycle. |
+| Kill: “Daily portfolio drawdown 40%” but wallet looks fine | Often a **stale book** tick (v1.4.2+ skips that). Clear kill → **Restart engine**; check log for `crossed or stale` / `ask=0`. |
 | “Preflight failed” | Read the red/yellow messages; usually trust line, zero sizes, or no mid price. |
 | `amendmentBlocked` / “need upgrade” | Your **mainnet RPC** hit an outdated node (common on `xrplcluster.com`). In **Advanced**, set Mainnet RPC to `https://s1.ripple.com:51234`, **Save Config**, retry. |
 | Spread check red on mainnet | Planned quotes are too far from **live** best bid/ask. Stay in **dry-run**; adjust **Live spread guard** on Controls or profile until Dashboard shows **Spread check OK**. Live orders are blocked until it passes. If the engine log says `spread_check=OK` but the panel shows FAIL, **Stop Bot → Start Bot** after an update (v1.3.3+ shows the engine’s last-cycle result). |
