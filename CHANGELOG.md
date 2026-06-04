@@ -14,6 +14,9 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 ### Fixed
 
 - **Toxicity gates on small samples** — `safe` requires **8 fills** before off-book / pause-side / refresh-pause use toxic ratio (fixes 50% on 4 fills emptying the book). Early window uses softer fill-quality sizing only.
+- **Toxicity hysteresis** — off-book enters at 20% adverse, exits below **15%** (avoids flicker at 22–25%).
+- **Risk capital sync** — GUI warns when config capital ≠ live portfolio; one-click sync (`utils/risk_capital_sync.py`).
+- **Weekly skim report** — `scripts/weekly_skim_report.py` with Gate 1/2 checklist and capture bps.
 
 - **Daily drawdown kill** — Invalid or missing mid (crossed/stale book, `ask=0`) no longer marks portfolio as XRP-only and trips a false ~40% drawdown kill. Drawdown state is unchanged for that cycle; kill is evaluated only after a valid RLUSD/XRP mid mark (`risk/drawdown.py`, `engine/trading_engine.py`).
 

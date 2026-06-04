@@ -42,6 +42,7 @@ from core import BotPerception, DecisionLog, VERSION, get_profile
 from core.perception import BUILT_IN_PROFILES
 from core.profile_execution import ProfileExecution, resolve_profile_execution
 from core.quote_caps import effective_max_worse_than_touch_pct
+from core.toxicity import update_toxic_off_touch_latch
 from utils.auto_profile_state import (
     clear_auto_profile_pending,
     load_auto_profile_state,
@@ -118,6 +119,7 @@ class TradingEngine:
         self._last_edge_resolution_summary: str = ""
         self._last_dynamic_min_edge_enabled: bool = False
         self._refresh_pause_empty_streak: int = 0
+        self._toxic_off_touch_latched: bool = False
 
     def _restore_price_history(self) -> List[dict]:
         """Continue chart history across engine restarts (from runtime_state.json)."""
@@ -597,6 +599,11 @@ class TradingEngine:
             )
             l1_spread = spread_result.effective_spreads_pct.get(1, config.base_spread * 100.0)
             fill_quality = self._fill_quality.assess()
+            self._toxic_off_touch_latched = update_toxic_off_touch_latch(
+                self._toxic_off_touch_latched,
+                fill_quality,
+                profile,
+            )
             effective_min_edge, edge_resolution = resolve_effective_min_edge_pct(
                 profile=profile,
                 edge_strictness=float(getattr(config, "edge_strictness", 1.0)),
@@ -621,6 +628,7 @@ class TradingEngine:
                     getattr(config, "inventory_max_deviation", 0.12)
                 ),
                 inventory_mode=str(getattr(config, "inventory_mode", "market_make")),
+                toxic_off_touch_latched=self._toxic_off_touch_latched,
             )
             inv_mode = str(getattr(config, "inventory_mode", "market_make")).strip().lower()
             self._last_quote_adjustments = quote_adjustments

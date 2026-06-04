@@ -18,7 +18,7 @@ from core.market_conditions import (
     MarketAssessment,
 )
 from core.perception import Profile
-from core.toxicity import effective_toxic_ratio, gates_apply_for_fill_count
+from core.toxicity import effective_toxic_ratio, gates_apply_for_fill_count, toxic_off_touch_active
 from strategy.fill_quality import FillQualityState
 from strategy.market_microstructure import MarketEdgeAssessment, assess_market_edge
 
@@ -166,6 +166,7 @@ def resolve_dynamic_quoting_policy(
     fill_quality: Optional[FillQualityState] = None,
     mm_mode: bool = True,
     mid_momentum_pct: float = 0.0,
+    toxic_off_touch_latched: bool = False,
 ) -> DynamicQuotingPolicy:
     """
     Single resolver for touch posture and storefront visibility.
@@ -199,9 +200,10 @@ def resolve_dynamic_quoting_policy(
         f"health {assessment.health_score:.0f}/100"
     ]
 
-    if gates_apply_for_fill_count(fq.recent_fills, min_fills_for_gates=min_gate_fills) and toxic >= no_touch_ratio:
+    if toxic_off_touch_active(toxic_off_touch_latched, fq, profile):
+        exit_r = float(getattr(profile, "toxic_no_touch_exit_ratio", no_touch_ratio * 0.75))
         parts.append(
-            f"toxicity {toxic:.0%} → no touch (limit {no_touch_ratio:.0%})"
+            f"toxicity {toxic:.0%} → no touch (enter {no_touch_ratio:.0%} / exit {exit_r:.0%})"
         )
         label = f"Policy: off-book (toxic {toxic:.0%}) | max {max_worse * 100:.2f}% from touch"
         return DynamicQuotingPolicy(

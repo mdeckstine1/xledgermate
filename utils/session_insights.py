@@ -190,9 +190,18 @@ def build_session_insights(
             f"{n} fills but only {capture_xrp:+.4f} XRP capture — churn may exceed edge; widen or slow refresh."
         )
 
-    if toxic_30 >= 0.5 and n <= 4:
+    if n < 8:
+        notes.append(
+            f"Toxic gates use ratio only after 8 fills (now {n}) — high % on few fills is noise."
+        )
+    elif toxic_30 >= 0.5 and n <= 4:
         notes.append(
             f"Toxic @30s {toxic_30:.0%} on {n} fill(s) — small sample; trust Toxic ratio more."
+        )
+
+    if n >= 40 and capture_xrp > 0 and toxic < 0.25:
+        notes.append(
+            "Gate 1 validation metrics met (fills, capture, toxic) — consider Gate 2 tight_spread when stable."
         )
 
     if policy:

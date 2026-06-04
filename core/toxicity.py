@@ -6,6 +6,41 @@ from core.perception import Profile
 from strategy.fill_quality import FillQualityState
 
 
+def _exit_no_touch_ratio(profile: Profile) -> float:
+    enter = float(profile.toxic_no_touch_ratio)
+    return float(getattr(profile, "toxic_no_touch_exit_ratio", enter * 0.75))
+
+
+def update_toxic_off_touch_latch(
+    latched: bool,
+    fq: FillQualityState,
+    profile: Profile,
+) -> bool:
+    """
+    Hysteresis for off-book: enter at toxic_no_touch_ratio, exit below exit ratio.
+    """
+    min_fills = int(getattr(profile, "toxic_min_fills_for_gates", 8))
+    if not gates_apply_for_fill_count(fq.recent_fills, min_fills_for_gates=min_fills):
+        return False
+    toxic = effective_toxic_ratio(fq, min_fills_for_gates=min_fills)
+    enter = float(profile.toxic_no_touch_ratio)
+    exit_ratio = _exit_no_touch_ratio(profile)
+    if toxic >= enter:
+        return True
+    if toxic < exit_ratio:
+        return False
+    return latched
+
+
+def toxic_off_touch_active(
+    latched: bool,
+    fq: FillQualityState,
+    profile: Profile,
+) -> bool:
+    """Whether dynamic policy should force off-book from toxicity."""
+    return update_toxic_off_touch_latch(latched, fq, profile)
+
+
 def effective_toxic_ratio(
     fq: FillQualityState,
     *,

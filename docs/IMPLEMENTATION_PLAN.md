@@ -198,11 +198,12 @@ Priority order:
 
 | # | Item | Why |
 |---|------|-----|
-| 1 | **Risk capital = live portfolio** sync (GUI save + engine sizing) | Sizing and `max_leg_size_pct` match ~246 XRP reality |
-| 2 | **`competitive_pilot` profile or preset** | Higher touch relevance; toxicity **hysteresis** (exit defense below enter); widen/shrink before off-book / refresh-stop |
-| 3 | **Weekly skim report** script | bps/fill, toxic %, time-on-book estimate, policy mix %, capture XRP — Gate 1/2 decisions from data |
-| 4 | **Join-touch when favorable + edge met** | Use queue preservation at L1 when health high (`join_touch`, `order_sync`) |
-| 5 | **Persist fill-quality / toxic rolling stats** across restarts (optional decay) | Less noisy re-entry after restart |
+| 1 | **Risk capital = live portfolio** sync (GUI save + engine sizing) | [x] GUI warn + **Sync risk capital to live portfolio** (`utils/risk_capital_sync.py`) |
+| 2 | **Toxicity hysteresis + min fills** | [x] ≥8 fills before gates; enter 20% / exit 15% off-book on `safe` |
+| 3 | **Weekly skim report** script | [x] `scripts/weekly_skim_report.py` — Gate 1/2 checklist, bps, visibility proxy |
+| 4 | **`competitive_pilot` profile or preset** | Higher touch relevance; widen/shrink before off-book / refresh-stop |
+| 5 | **Join-touch when favorable + edge met** | Use queue preservation at L1 when health high (`join_touch`, `order_sync`) |
+| 6 | **Persist fill-quality / toxic rolling stats** across restarts (optional decay) | Less noisy re-entry after restart |
 
 **Explicitly not required for field Gate 2:** local ML / neural model — use logs + caps first.
 
@@ -283,7 +284,8 @@ Use with Gate 1/2 pass criteria. Copy to spreadsheet or `logs/review_YYYY-MM-DD.
 | 2026-06-04 | v1.4.2 | False drawdown kill fix; GUI stack, session insights, toxic kill default off |
 | 2026-06-04 | Mainnet pilot | ~80-fill session +0.41 XRP capture; false 40% drawdown kill diagnosed |
 | 2026-06-04 | **Field gates** | Merged pilot assessment + deployment path into this plan |
-| | Gate 1 pass | Post-v1.4.2 validation session (≥40 fills, stable visibility) |
+| 2026-06-04 | **Gate 1 ~pass** | ~76 fills, +0.29 XRP capture, toxic 25% — sync risk capital; Gate 2 when stable |
+| | Gate 1 pass (formal) | Post-v1.4.2 validation session (≥40 fills, stable visibility) |
 | | Gate 2 pass | `tight_spread` competitive pilot (≥100 fills, toxic &lt; 20%) |
 | | Tier 2.5 started | Risk capital sync, competitive_pilot, weekly skim report |
 

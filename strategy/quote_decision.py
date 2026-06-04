@@ -247,6 +247,7 @@ def build_quote_adjustments(
     target_xrp_ratio: float = 0.55,
     inventory_max_deviation: float = 0.12,
     inventory_mode: str = "market_make",
+    toxic_off_touch_latched: bool = False,
 ) -> QuoteAdjustments:
     """Combine profile, market, inventory, momentum, book pressure, and fill quality."""
     adj = QuoteAdjustments(inventory_label=inventory.label)
@@ -375,6 +376,7 @@ def build_quote_adjustments(
         fill_quality=fq,
         mm_mode=mm_mode,
         mid_momentum_pct=mid_momentum_pct,
+        toxic_off_touch_latched=toxic_off_touch_latched,
     )
     apply_dynamic_quoting_policy(adj, policy, parts=parts)
 

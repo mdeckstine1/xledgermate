@@ -1824,6 +1824,24 @@ def _render_controls_tab(
             )
 
     with st.expander("Risk capital & drawdown", expanded=False):
+        from utils.risk_capital_sync import live_portfolio_xrp, suggest_risk_capital_sync
+
+        live_port = live_portfolio_xrp(runtime)
+        configured_cap = float(config.effective_risk_capital_xrp(mid if mid > 0 else None))
+        suggested, cap_warn = suggest_risk_capital_sync(runtime, configured_cap)
+        if cap_warn:
+            st.warning(cap_warn)
+        if live_port is not None and suggested is not None:
+            if st.button(
+                "Sync risk capital to live portfolio",
+                key="sync_risk_capital_live",
+                help=f"Sets risk capital to {suggested:.2f} XRP (current wallet mark).",
+            ):
+                config.risk_capital_xrp = float(suggested)
+                config.risk_capital_unit = "xrp"
+                if mid > 0:
+                    config.risk_capital_rlusd = float(suggested) * mid
+                st.session_state["_risk_capital_synced"] = True
         r1, r2 = st.columns(2)
         with r1:
             unit_options = ["xrp", "rlusd"]

@@ -29,6 +29,7 @@ class Profile:
     full_quote_refresh_seconds: int = 60
     toxic_refresh_pause_ratio: float = 0.40
     toxic_no_touch_ratio: float = 0.20
+    toxic_no_touch_exit_ratio: float = 0.15  # hysteresis: exit off-book below this
     toxic_pause_side_ratio: float = 0.18
     toxic_min_fills_for_gates: int = 8  # off-book / pause-side need this many fills
     markout_toxic_threshold_pct: float = 0.04
@@ -126,6 +127,7 @@ BUILT_IN_PROFILES: Dict[str, Profile] = {
         full_quote_refresh_seconds=60,
         toxic_refresh_pause_ratio=0.22,
         toxic_no_touch_ratio=0.20,
+        toxic_no_touch_exit_ratio=0.15,
         toxic_pause_side_ratio=0.18,
         toxic_min_fills_for_gates=8,
         markout_toxic_threshold_pct=0.04,
