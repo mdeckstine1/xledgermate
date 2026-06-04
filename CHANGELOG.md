@@ -9,9 +9,11 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ## [1.4.2] — 2026-06-04 (`tier-2-polish`)
 
-**Theme:** Drawdown kill safety on stale order books.
+**Theme:** Drawdown kill safety on stale order books; toxicity gates need enough fills.
 
 ### Fixed
+
+- **Toxicity gates on small samples** — `safe` requires **8 fills** before off-book / pause-side / refresh-pause use toxic ratio (fixes 50% on 4 fills emptying the book). Early window uses softer fill-quality sizing only.
 
 - **Daily drawdown kill** — Invalid or missing mid (crossed/stale book, `ask=0`) no longer marks portfolio as XRP-only and trips a false ~40% drawdown kill. Drawdown state is unchanged for that cycle; kill is evaluated only after a valid RLUSD/XRP mid mark (`risk/drawdown.py`, `engine/trading_engine.py`).
 

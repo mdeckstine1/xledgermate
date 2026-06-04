@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from core.toxicity import effective_toxic_ratio
+from core.toxicity import effective_toxic_ratio, gates_apply_for_fill_count
 from core.dynamic_quoting_policy import (
     TOUCH_AT,
     TOUCH_NEAR,
@@ -169,7 +169,8 @@ def _apply_self_bailout(
         return
 
     deviation = inventory.xrp_ratio - target_xrp_ratio
-    toxic = effective_toxic_ratio(fq)
+    min_gate_fills = int(getattr(profile, "toxic_min_fills_for_gates", 8))
+    toxic = effective_toxic_ratio(fq, min_fills_for_gates=min_gate_fills)
     pause_side_ratio = float(profile.toxic_pause_side_ratio)
 
     if deviation > 0.05 and mid_momentum_pct < -0.04:
@@ -179,7 +180,7 @@ def _apply_self_bailout(
                 "inventory bailout: XRP-heavy + falling tape → pause bids"
             )
 
-    if fq.recent_fills >= 3 and toxic >= pause_side_ratio:
+    if gates_apply_for_fill_count(fq.recent_fills, min_fills_for_gates=min_gate_fills) and toxic >= pause_side_ratio:
         if deviation > 0.05 and not adj.pause_bids:
             adj.pause_bids = True
             parts.append(

@@ -18,7 +18,7 @@ from core.market_conditions import (
     MarketAssessment,
 )
 from core.perception import Profile
-from core.toxicity import effective_toxic_ratio
+from core.toxicity import effective_toxic_ratio, gates_apply_for_fill_count
 from strategy.fill_quality import FillQualityState
 from strategy.market_microstructure import MarketEdgeAssessment, assess_market_edge
 
@@ -178,7 +178,8 @@ def resolve_dynamic_quoting_policy(
     """
     bounds = profile_quoting_bounds(profile)
     fq = fill_quality or FillQualityState()
-    toxic = effective_toxic_ratio(fq)
+    min_gate_fills = int(getattr(profile, "toxic_min_fills_for_gates", 8))
+    toxic = effective_toxic_ratio(fq, min_fills_for_gates=min_gate_fills)
     no_touch_ratio = float(profile.toxic_no_touch_ratio)
     relevance = _relevance_factor(assessment, profile)
     required = float(effective_min_edge_pct) + float(xrpl_fee_bps) / 100.0
@@ -198,7 +199,7 @@ def resolve_dynamic_quoting_policy(
         f"health {assessment.health_score:.0f}/100"
     ]
 
-    if fq.recent_fills >= 3 and toxic >= no_touch_ratio:
+    if gates_apply_for_fill_count(fq.recent_fills, min_fills_for_gates=min_gate_fills) and toxic >= no_touch_ratio:
         parts.append(
             f"toxicity {toxic:.0%} → no touch (limit {no_touch_ratio:.0%})"
         )

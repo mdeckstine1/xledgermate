@@ -756,8 +756,9 @@ class TradingEngine:
                     )
                     open_offers_pre = await connector.get_open_offers()
                 no_storefront = len(open_offers_pre) == 0
+                min_gate_fills = int(getattr(profile, "toxic_min_fills_for_gates", 8))
                 refresh_paused = (
-                    fill_quality.recent_fills >= 3
+                    fill_quality.recent_fills >= min_gate_fills
                     and fill_quality.toxic_ratio >= exec_cfg.toxic_refresh_pause_ratio
                 )
                 if refresh_paused and no_storefront:
