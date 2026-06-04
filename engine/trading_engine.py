@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from config.settings import BotConfig, patch_config_file
 from connectors import XRPLConnector, XRPLNetworkConfig
-from connectors.xrpl_connector import is_plausible_rlusd_per_xrp
+from connectors.xrpl_connector import is_trustworthy_rlusd_mid
 from core.market_conditions import (
     assess_market_conditions,
     compute_book_spread_pct,
@@ -120,6 +120,27 @@ class TradingEngine:
         self._last_dynamic_min_edge_enabled: bool = False
         self._refresh_pause_empty_streak: int = 0
         self._toxic_off_touch_latched: bool = False
+        self._last_valid_mid: Optional[float] = None
+        self._last_best_bid: Optional[float] = None
+        self._last_best_ask: Optional[float] = None
+
+    def _trustworthy_mid(
+        self,
+        mid: Optional[float],
+        *,
+        best_bid: Optional[float] = None,
+        best_ask: Optional[float] = None,
+    ) -> Optional[float]:
+        """Return mid if plausible and book not crossed; else last valid mid if OK."""
+        bid = best_bid if best_bid is not None else self._last_best_bid
+        ask = best_ask if best_ask is not None else self._last_best_ask
+        if mid is not None and is_trustworthy_rlusd_mid(mid, best_bid=bid, best_ask=ask):
+            return float(mid)
+        if self._last_valid_mid is not None and is_trustworthy_rlusd_mid(
+            self._last_valid_mid, best_bid=bid, best_ask=ask
+        ):
+            return float(self._last_valid_mid)
+        return None
 
     def _restore_price_history(self) -> List[dict]:
         """Continue chart history across engine restarts (from runtime_state.json)."""
@@ -277,30 +298,82 @@ class TradingEngine:
             order_book = await connector.fetch_xrp_rlusd_order_book()
             liquidity = connector.compute_liquidity_metrics(order_book)
             best_bid, best_ask = connector.compute_best_prices(order_book)
+            self._last_best_bid, self._last_best_ask = best_bid, best_ask
             mid_price = connector.compute_mid_price(order_book)
-            if mid_price is not None and not is_plausible_rlusd_per_xrp(mid_price):
+            if mid_price is not None and not is_trustworthy_rlusd_mid(
+                mid_price, best_bid=best_bid, best_ask=best_ask
+            ):
                 self.decision_log.add(
                     "quotes",
                     (
                         f"Skipped quotes: invalid mid={mid_price:.6f} "
-                        "(looks like raw XRPL quality, not RLUSD/XRP)."
+                        f"(bid={best_bid} ask={best_ask}) — crossed/stale or wrong units."
                     ),
                 )
                 mid_price = None
+            elif mid_price is not None:
+                self._last_valid_mid = float(mid_price)
             mark_mid = (
                 mid_price
-                if mid_price is not None and is_plausible_rlusd_per_xrp(mid_price)
-                else None
+                if mid_price is not None
+                else self._last_valid_mid
             )
+            if mid_price is None and mark_mid is not None:
+                self.decision_log.add(
+                    "market",
+                    f"Using last valid mid {mark_mid:.6f} RLUSD/XRP (book stale/crossed).",
+                )
             portfolio_value, drawdown_mark_applied = self.drawdown_monitor.update_portfolio(
-                balance_xrp, rlusd_balance, mark_mid
+                balance_xrp,
+                rlusd_balance,
+                mid_price,
             )
+            if mid_price is not None:
+                portfolio_value = portfolio_value_xrp(
+                    balance_xrp, rlusd_balance, mid_price
+                )
+            elif self._last_valid_mid and self._last_valid_mid > 0:
+                portfolio_value = portfolio_value_xrp(
+                    balance_xrp, rlusd_balance, self._last_valid_mid
+                )
+            elif self.drawdown_monitor.current_value is not None:
+                portfolio_value = float(self.drawdown_monitor.current_value)
             if not drawdown_mark_applied:
                 self.decision_log.add(
                     "drawdown",
                     "Skipped daily drawdown mark — invalid or missing mid "
                     "(stale/crossed book); kill not evaluated this cycle.",
                 )
+            mark_mid_pnl = self._trustworthy_mid(
+                mid_price, best_bid=best_bid, best_ask=best_ask
+            )
+            if (
+                not config.dry_run
+                and self._session_baseline_xrp is not None
+                and self._session_baseline_rlusd is not None
+                and mark_mid_pnl is not None
+                and self._session_fills >= int(config.session_balance_loss_kill_min_fills)
+                and float(config.session_balance_loss_kill_xrp) > 0
+                and not self.kill_switch.is_active()
+            ):
+                session_bal_pnl = session_pnl_balance_delta_xrp(
+                    balance_xrp=balance_xrp,
+                    balance_rlusd=rlusd_balance,
+                    baseline_xrp=self._session_baseline_xrp,
+                    baseline_rlusd=self._session_baseline_rlusd,
+                    mid_rlusd_per_xrp=mark_mid_pnl,
+                )
+                loss_limit = float(config.session_balance_loss_kill_xrp)
+                if session_bal_pnl < -loss_limit:
+                    await self._activate_kill_switch(
+                        connector,
+                        config,
+                        (
+                            f"Session balance PnL {session_bal_pnl:+.4f} XRP "
+                            f"(limit -{loss_limit:.2f} after "
+                            f"{self._session_fills} fills)"
+                        ),
+                    )
             self.kill_switch.reload()
             if getattr(self, "_prev_kill_active", False) and not self.kill_switch.is_active():
                 if drawdown_mark_applied and portfolio_value > 0:
@@ -447,10 +520,14 @@ class TradingEngine:
                     )
                     open_offers = await connector.get_open_offers()
                 if self._session_baseline_xrp is None:
-                    self._session_baseline_xrp = balance_xrp
-                    self._session_baseline_rlusd = rlusd_balance
-                    self._session_baseline_mid = mid_price
-                    self._session_baseline_portfolio_xrp = portfolio_value
+                    baseline_mid = self._trustworthy_mid(
+                        mid_price, best_bid=best_bid, best_ask=best_ask
+                    )
+                    if baseline_mid is not None:
+                        self._session_baseline_xrp = balance_xrp
+                        self._session_baseline_rlusd = rlusd_balance
+                        self._session_baseline_mid = baseline_mid
+                        self._session_baseline_portfolio_xrp = portfolio_value
                 self._cycle_count += 1
                 execution_summary = (
                     f"Book poll — toxic ratio {fill_quality.toxic_ratio:.0%}, "
@@ -820,10 +897,14 @@ class TradingEngine:
                     self._last_full_refresh_mid = mid_price
             open_offers = await connector.get_open_offers()
             if self._session_baseline_xrp is None:
-                self._session_baseline_xrp = balance_xrp
-                self._session_baseline_rlusd = rlusd_balance
-                self._session_baseline_mid = mid_price
-                self._session_baseline_portfolio_xrp = portfolio_value
+                baseline_mid = self._trustworthy_mid(
+                    mid_price, best_bid=best_bid, best_ask=best_ask
+                )
+                if baseline_mid is not None:
+                    self._session_baseline_xrp = balance_xrp
+                    self._session_baseline_rlusd = rlusd_balance
+                    self._session_baseline_mid = baseline_mid
+                    self._session_baseline_portfolio_xrp = portfolio_value
             execution_summary = self._execution_summary(config, placed_count)
             self._cycle_count += 1
             self.balance_logger.log_snapshot(
@@ -1042,18 +1123,21 @@ class TradingEngine:
         if len(self._recent_fill_keys) > 40:
             self._recent_fill_keys = set(list(self._recent_fill_keys)[-20:])
 
-        mid_at_quote = self._last_quote_mid or mid_price
+        mid_at_quote = self._trustworthy_mid(
+            self._last_quote_mid or mid_price,
+        )
         profit_xrp = estimate_spread_capture_xrp(
             side=side,
             xrp_amount=xrp_amount,
             fill_price_rlusd_per_xrp=price,
             mid_at_quote_rlusd_per_xrp=mid_at_quote,
         )
+        mid_at_fill = self._trustworthy_mid(mid_price) or mid_at_quote or price
         self._fill_quality.note_fill(
             side=side,
             xrp_amount=xrp_amount,
             price=price,
-            mid_at_fill=mid_price or price,
+            mid_at_fill=mid_at_fill,
             tx_hash=tx_hash,
             fill_source=fill_source,
         )
@@ -1340,14 +1424,19 @@ class TradingEngine:
                 prior_mid = float(existing.mid_price)
         except (TypeError, ValueError, AttributeError):
             prior_mid = None
-        if mid_price is not None and float(mid_price) > 0:
-            mid = float(mid_price)
-        elif perception.mid_price is not None and float(perception.mid_price) > 0:
-            mid = float(perception.mid_price)
-        elif prior_mid is not None:
-            mid = prior_mid
-        else:
+        mid = self._trustworthy_mid(
+            mid_price, best_bid=best_bid, best_ask=best_ask
+        )
+        if mid is None and perception.mid_price is not None:
+            mid = self._trustworthy_mid(float(perception.mid_price))
+        if mid is None and prior_mid is not None:
+            mid = self._trustworthy_mid(
+                prior_mid, best_bid=best_bid, best_ask=best_ask
+            )
+        if mid is None:
             mid = 0.0
+        if mid > 0 and portfolio_value > 0:
+            portfolio_value = portfolio_value_xrp(balance_xrp, balance_rlusd, mid)
         pnl_balance = 0.0
         pnl_mtm = 0.0
         if (

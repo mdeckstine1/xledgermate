@@ -1,6 +1,6 @@
 # XLedgerMate — Implementation Plan: Good → Great MM
 
-*Updated: 2026-06-04 · v1.4.2 on `tier-2-polish` · mainnet pilot ~246 XRP*
+*Updated: 2026-06-04 · v1.4.3 on `tier-2-polish` · mainnet pilot ~247 XRP · Gate 1 next*
 
 ## North star
 
@@ -26,7 +26,7 @@ The stack **looks** like a market maker (quotes, spread, inventory skew, ledger 
 | **Profile** | `safe` — wide floors, quick off-book @ ~20% toxic | `tight_spread` after gates; `profit_mode` manual only |
 | **Capital model** | `risk_capital_*` in config ≫ wallet (e.g. 11k vs ~246 XRP) | **Risk capital = live portfolio** in GUI |
 | **Data** | Fragmented sessions (kills, restarts) | **≥50 fills** per stable config before tuning |
-| **Kill** | False drawdown on stale mid (fixed v1.4.2) | Kill only on real marks + operator-understood triggers |
+| **Kill** | False drawdown / inflated portfolio on crossed book (fixed v1.4.2–1.4.3) | Kill only on real marks + operator-understood triggers |
 
 **Mainnet pilot reference (2026-06-03/04):** One continuous session **~80 fills**, **+0.41 XRP** logged spread capture, **~6%** negative-capture fills, balanced BUY/SELL — proves plumbing and spread economics; **not** sufficient alone to declare field-ready (toxic ~22%, defense-dominated visibility, false drawdown kill before fix).
 
@@ -111,7 +111,7 @@ Operator promotion path while logging continues. Do **not** scale size or switch
 | **Protection** | Toxic gates on **small N** (≥3 fills) still flip off-book at 20–22% | `strategy/fill_quality.py`, profile toxicity fields |
 | **Automation** | No hysteresis on toxicity exit; no `competitive_pilot` preset | Tier 2.5 below |
 
-*Resolved in v1.4.2:* false daily drawdown kill on stale/crossed book (`risk/drawdown.py`, `engine/trading_engine.py`). *Resolved in v1.4.2 stack:* toxic fill kill off by default; fill-quality reset when toxic pause + empty book.
+*Resolved in v1.4.2:* false daily drawdown kill on stale/crossed book (`risk/drawdown.py`, `engine/trading_engine.py`). *Resolved in v1.4.3:* crossed book no longer marks portfolio at ~0.28 RLUSD/XRP; session PnL and fill capture use last valid mid. *Resolved in v1.4.2 stack:* toxic fill kill off by default; fill-quality reset when toxic pause + empty book.
 
 ---
 

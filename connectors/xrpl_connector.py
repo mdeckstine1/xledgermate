@@ -15,13 +15,38 @@ from utils.wallet_credentials import wallet_from_bot_secret
 logger = logging.getLogger(__name__)
 
 # RLUSD/XRP on ledger is typically ~0.5–5; raw XRPL "quality" is ~1e8+.
+_MIN_PLAUSIBLE_RLUSD_PER_XRP = 0.45
 _MAX_PLAUSIBLE_RLUSD_PER_XRP = 100.0
+_CROSSED_BOOK_ASK_TOLERANCE = 1.05
 
 
 def is_plausible_rlusd_per_xrp(price: Optional[float]) -> bool:
     if price is None:
         return False
-    return 1e-8 < price <= _MAX_PLAUSIBLE_RLUSD_PER_XRP
+    return _MIN_PLAUSIBLE_RLUSD_PER_XRP < price <= _MAX_PLAUSIBLE_RLUSD_PER_XRP
+
+
+def is_book_crossed(best_bid: Optional[float], best_ask: Optional[float]) -> bool:
+    if best_bid is None or best_ask is None or best_bid <= 0 or best_ask <= 0:
+        return False
+    return best_bid > best_ask * _CROSSED_BOOK_ASK_TOLERANCE
+
+
+def is_trustworthy_rlusd_mid(
+    mid: Optional[float],
+    *,
+    best_bid: Optional[float] = None,
+    best_ask: Optional[float] = None,
+) -> bool:
+    """Reject raw-quality mids and crossed/stale books (bid >> ask)."""
+    if not is_plausible_rlusd_per_xrp(mid):
+        return False
+    if is_book_crossed(best_bid, best_ask):
+        return False
+    if best_bid is None or best_ask is None or best_bid <= 0 or best_ask <= 0:
+        return True
+    lo, hi = min(best_bid, best_ask), max(best_bid, best_ask)
+    return lo * 0.92 <= float(mid) <= hi * 1.08
 
 try:
     from xrpl.asyncio.clients import AsyncJsonRpcClient
@@ -469,14 +494,14 @@ class XRPLConnector:
         best_ask = min(asks, key=lambda x: x["price"])["price"]
         if best_bid <= 0 or best_ask <= 0:
             return None
-        # Ignore crossed/invalid books (testnet often has stale liquidity).
-        if best_bid > best_ask * 1.05:
+        # Crossed book: do not use a lone ask as mid (inflates portfolio / false drawdown).
+        if is_book_crossed(best_bid, best_ask):
             logger.warning(
-                "Order book crossed or stale (bid=%.6f ask=%.6f); using ask as mid.",
+                "Order book crossed or stale (bid=%.6f ask=%.6f); mid unavailable this cycle.",
                 best_bid,
                 best_ask,
             )
-            return best_ask
+            return None
         return (best_bid + best_ask) / 2.0
 
     def update_and_estimate_volatility_pct(self, mid_price: Optional[float]) -> float:

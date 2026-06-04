@@ -180,6 +180,8 @@ class BotConfig:
     order_price_tolerance_pct: float = 0.08    # Match open offer if within this % of planned price
     order_size_tolerance_xrp: float = 0.75     # Match open offer if size within this XRP
     spread_failure_kill_cycles: int = 8        # Consecutive live spread-check failures → kill switch (0=off)
+    session_balance_loss_kill_xrp: float = 0.35  # Kill if session balance PnL below -this (0=off)
+    session_balance_loss_kill_min_fills: int = 25  # Min fills before session balance kill applies
     toxic_fill_kill_enabled: bool = False      # False = pause/off-book only; no kill on markout ratio
     toxic_fill_ratio_kill_threshold: float = 0.75  # Kill if toxic/recent fills exceeds this (when enabled)
     toxic_fill_min_count: int = 12             # Minimum fills before toxic-ratio kill applies

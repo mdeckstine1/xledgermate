@@ -7,6 +7,24 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.4.3] — 2026-06-04 (`tier-2-polish`)
+
+**Theme:** Crossed-book portfolio truth; Gate 1 safety before competitive pilot.
+
+### Fixed
+
+- **Crossed / inverted order book** — `compute_mid_price` returns `None` when bid ≫ ask (no longer uses stale ask as mid). Rejects RLUSD/XRP &lt; 0.45. Portfolio, session PnL, and GUI use **last valid mid** when the book is bad (`connectors/xrpl_connector.py`, `engine/trading_engine.py`).
+- **False spread-capture on fills** — Fill logging uses trustworthy mids only (avoids −12 XRP phantom lines on bad books).
+- **Session baseline** — Set only after a trustworthy mid (not on first crossed-book tick).
+
+### Added
+
+- **Session balance loss kill** — Optional halt when balance PnL &lt; **−0.35 XRP** after **≥25 fills** (`session_balance_loss_kill_xrp`, `session_balance_loss_kill_min_fills`; `0` = off).
+- **`scripts/portfolio_bleed_analysis.py`** — Balance drift across mainnet runs.
+- **Tests** — `tests/test_book_mid_integrity.py`, `tests/test_trustworthy_mid.py`.
+
+---
+
 ## [1.4.2] — 2026-06-04 (`tier-2-polish`)
 
 **Theme:** Drawdown kill safety on stale order books; toxicity gates need enough fills.
