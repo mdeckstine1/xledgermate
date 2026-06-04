@@ -1,6 +1,6 @@
 # XLedgerMate — Strategy Manual
 
-*Version 1.4.2 · What the bot is trying to do with your money, in plain language*
+*Version 1.4.3 · What the bot is trying to do with your money, in plain language*
 
 This document is about **strategy and risk**, not which buttons to press. For setup, tabs, and wallet steps, see [`OPERATOR_MANUAL.md`](OPERATOR_MANUAL.md).  
 For the engineering roadmap and **pilot → field deployment gates** (validation, competitive pilot, scale), see [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
@@ -225,8 +225,17 @@ Each cycle the engine runs **one** policy resolver. It chooses how close quotes 
 3. **No touch** (~20% safe) — policy steps off L1 entirely.  
 4. **Pause refresh** (~22% safe) — skip cancel/replace until quality improves.  
 5. **Kill** (optional, off by default on pilot) — hard halt if `toxic_fill_kill_enabled` and ratio exceeds threshold over many fills. **Safe pilot:** use refresh pause + off-book only; enable kill later if you want a nuclear stop.
+6. **Session balance kill** (v1.4.3, on by default) — if **balance PnL** since engine start falls below **−0.35 XRP** after **≥25 fills**, the bot halts. This uses **real balance change** at honest mids, not MTM. Tune or disable in **Advanced → Kill settings** (`0` XRP = off).
 
 **Toxic @30s at 100%** with only one or two fills means “every fill that has a 30s score so far was bad” — not necessarily a broken bot. Check **Toxic ratio**, inventory skew, and whether you **bought XRP into a falling tape** while already XRP-heavy.
+
+### Portfolio marking when the book glitches (v1.4.3)
+
+Sometimes the XRPL book feed shows an **inverted** top of book (bid ~1.16 RLUSD/XRP, ask ~0.28). That is **not** a real price — using the ask as “mid” would show **400+ XRP** portfolio on a **~247 XRP** wallet and fake **+280 XRP** session PnL.
+
+The engine now **refuses** that mid for marking, drawdown, and fill capture. It keeps the **last valid mid** for display until the book recovers. You may see `Using last valid mid` or `Skipped daily drawdown mark` in the log. **Trust balance PnL and your wallet on Xaman** over a one-cycle MTM spike.
+
+**Growing holdings (long-term goal):** The bot should compound **total XRP-equivalent** through **positive balance PnL** sessions, not through inventory luck or bad marks. Until **Gate 1** passes (see implementation plan), run **`safe`** and treat small weekly balance gains as success — not hero size or `tight_spread` while toxic is high.
 
 ### Example — edge guard
 

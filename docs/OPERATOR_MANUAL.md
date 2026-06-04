@@ -117,7 +117,9 @@ You will see:
 - **Quote ladder** — The three levels the bot *wants* to post.
 
 **Session P&L — why two numbers?**  
-Portfolio can rise when **mid moves** even if you did not trade (common when you are XRP-heavy and RLUSD/XRP mid dips). **Session MTM P&L** includes that. **Balance Δ P&L** stays near zero until a fill or fee changes XRP/RLUSD balances. Both reset when you restart the engine.
+Portfolio can rise when **mid moves** even if you did not trade (common when you are XRP-heavy and RLUSD/XRP mid dips). **Session MTM P&L** includes that. **Balance Δ P&L** stays near zero until a fill or fee changes XRP/RLUSD balances — **use Balance Δ for Gate 1** and for whether holdings are really growing. Both reset when you restart the engine.
+
+If the book is **inverted** (bid much higher than ask), v1.4.3+ keeps the **last valid mid** for portfolio display and skips bogus drawdown marks. If you ever see **400+ XRP** on a **~247** wallet, stop and **Restart engine** after pulling latest code; do not trust that readout.
 
 Turn **Live refresh (5s)** on in the left sidebar if you want numbers to update automatically.
 
@@ -149,7 +151,12 @@ After changing anything important: click **Save Config** in the sidebar.
 
 ### Advanced (for later)
 
-- Testnet vs mainnet, RPC URLs, Telegram alerts, **Emergency stop**, cancel all offers.
+- Testnet vs mainnet, RPC URLs, Telegram alerts, **Safety & emergency** / **Kill settings**, **Emergency stop**, cancel all offers.
+- **Kill settings** (save with **Save kill settings**):
+  - **Spread-check fail cycles → kill** — consecutive spread validation failures (default 8; `0` = off).
+  - **Session balance loss → kill (XRP)** — halts if **Balance Δ P&L** since engine start is below **−this** (default **0.35**; `0` = off).
+  - **Session balance kill min fills** — only after this many session fills (default **25**).
+  - **Toxic-fill kill** — optional hard stop on toxic ratio (default **off** on pilot; use off-book instead).
 - Log file locations are listed at the bottom.
 
 ### History (charts and diary)

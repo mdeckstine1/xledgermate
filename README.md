@@ -11,7 +11,7 @@ XRPL XRP/RLUSD market-making bot (v1) focused on:
 ```text
 xledgermate/
 ├── main.py                 # App entrypoint
-├── VERSION                 # Release version (1.2.1)
+├── VERSION                 # Release version (1.4.3)
 ├── CHANGELOG.md            # Version history
 ├── docs/OPERATOR_MANUAL.md # Non-technical operator guide
 ├── requirements.txt
@@ -80,10 +80,10 @@ xledgermate/
 ## Branches
 
 - `main` — stable baseline on GitHub
+- `tier-2-polish` — **current mainnet pilot** (v1.4.3+: crossed-book guards, session balance kill, Tier 2 execution)
 - `development` — integration branch for phased work
 - `testnet` — testnet hardening (preflight, kill switch, portfolio drawdown, trust line tools)
-- `mainnet-prep` — mainnet dry-run, live book, spread validation (merged target: v1.2.1)
-- `mainnet-pilot` — small live mainnet pilot (`dry_run: false`, tiny sizes)
+- `mainnet-prep` / `mainnet-pilot` — earlier mainnet phases (merged into tier-2 line)
 
 ## Mainnet prep (v1.2.1)
 
@@ -122,7 +122,10 @@ Before **live** testnet (`dry_run: false`): run `setup-trust`, fund RLUSD, set n
 
 ## Versioning
 
-- Current version: **1.2.1** (`VERSION` file)
+- Current version: see [`VERSION`](VERSION) (e.g. **1.4.3**)
 - Release notes: [`CHANGELOG.md`](CHANGELOG.md)
-- Plain-English guide: [`docs/OPERATOR_MANUAL.md`](docs/OPERATOR_MANUAL.md)
+- Operator guide: [`docs/OPERATOR_MANUAL.md`](docs/OPERATOR_MANUAL.md)
+- Strategy + gates: [`docs/STRATEGY_MANUAL.md`](docs/STRATEGY_MANUAL.md), [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
+- Mainnet pilot: [`docs/MAINNET_PILOT.md`](docs/MAINNET_PILOT.md)
+- Session metrics: `python scripts/weekly_skim_report.py`, `python scripts/analyze_session.py`
 - Runtime: `core.version.VERSION`

@@ -1,6 +1,6 @@
 # XLedgerMate — Implementation Plan: Good → Great MM
 
-*Updated: 2026-06-04 · v1.4.3 on `tier-2-polish` · mainnet pilot ~247 XRP · Gate 1 next*
+*Updated: 2026-06-05 · v1.4.3 on `tier-2-polish` · mainnet pilot ~247 XRP · **Gate 1 validation in progress** (use `safe`)*
 
 ## North star
 
@@ -38,25 +38,29 @@ Operator promotion path while logging continues. Do **not** scale size or switch
 
 ### Gate 1 — Validation run (current)
 
-*v1.4.2+ on mainnet; collect clean post-fix data.*
+*v1.4.3+ on mainnet; collect clean post-fix data. Do **not** stay on `tight_spread` until this gate passes.*
 
 **Setup**
 
-- [ ] Pull `tier-2-polish` (drawdown stale-mid fix + GUI/safety stack).
-- [ ] Clear kill switch → **Restart engine** (drawdown baseline = wallet).
-- [ ] Set **risk capital** in GUI to **~live portfolio XRP** (not Flare roll-up placeholder).
-- [ ] Stay **`safe`**: L1 **10–15 XRP**, L2/L3 **0**; optional **dynamic min edge ON** if book routinely tight.
+- [x] Pull `tier-2-polish` through **v1.4.3** (drawdown fix, crossed-book portfolio truth, session balance kill, GUI kill settings).
+- [ ] Clear kill switch → **Restart engine** (drawdown + session baselines = wallet).
+- [x] Set **risk capital** in GUI to **~live portfolio XRP** ( **Sync risk capital to live portfolio** ; not 11k placeholder).
+- [ ] Stay **`safe`**: L1 **10–15 XRP**, L2/L3 **0**; **dynamic min edge OFF** until book routinely tight.
 - [ ] `toxic_fill_kill_enabled: false` (refresh pause / off-book only).
+- [ ] **Session balance kill** (Advanced → Kill settings): default **0.35 XRP** after **25 fills** (`0` = off). Uses **balance PnL**, not MTM.
 
 **Pass when (one uninterrupted session)**
 
 - [ ] **≥40 fills** logged in trades CSV since engine start.
 - [ ] Toxic ratio **&lt; 25%** over rolling window (Dashboard / runtime).
-- [ ] Spread capture (sum `profit_xrp_equiv`) **positive**.
-- [ ] **No false drawdown kill**; decision log may show `Skipped daily drawdown mark` on bad book ticks.
+- [ ] Spread capture (sum `profit_xrp_equiv`) **positive** (no phantom −12 lines from bad mids).
+- [ ] **Session balance PnL ≥ 0** (Dashboard **Balance Δ P&L** — real coin change at honest mids).
+- [ ] **No false drawdown kill**; no **529 XRP** portfolio spikes — decision log may show `Skipped daily drawdown mark` or `Using last valid mid` on bad book ticks.
 - [ ] **Offers visible &gt; ~70%** of runtime (not stuck 0 offers + off-book).
 
-**Tools:** `python scripts/analyze_session.py`, Dashboard session insights, `logs/decisions.jsonl`.
+**Tools:** `python scripts/weekly_skim_report.py`, `python scripts/analyze_session.py`, `python scripts/portfolio_bleed_analysis.py`, Dashboard session insights, `logs/decisions.jsonl`.
+
+**Status (2026-06-05):** Recent short sessions show **positive capture** but **toxic ~33%**, **&lt;40 fills**, and prior multi-run balance drift **~−0.45 XRP** — **Gate 1 not passed**; continue on `safe`.
 
 ### Gate 2 — Competitive pilot (`tight_spread`, same capital)
 
@@ -92,7 +96,8 @@ Operator promotion path while logging continues. Do **not** scale size or switch
 - [x] Five built-in profiles + auto-switch (never auto `profit_mode`)
 - [x] Live spread validation before mainnet placement
 - [x] Ledger fills + balance-delta fallback; multi-horizon markout (30s / 5m)
-- [x] Portfolio drawdown kill (invalid mid guard v1.4.2) + toxic / spread / RPC kills
+- [x] Portfolio drawdown kill (invalid mid guard v1.4.2) + toxic / spread / RPC / **session balance** kills
+- [x] Crossed-book guard — no mid from inverted bid/ask; portfolio + session PnL use **last valid mid** (v1.4.3)
 - [x] Selective order refresh + tiered book poll (`order_sync.py`, profile execution)
 - [x] Inventory steering + hard pause sides (`risk/inventory_limits.py`)
 - [x] Operator GUI — session insights, status marquee, engine restart / clear kill
@@ -107,11 +112,12 @@ Operator promotion path while logging continues. Do **not** scale size or switch
 |------|--------------|---------------|
 | **Skim / competitive** | `safe` steps off touch early; defense stack often yields **0 intents**; not “compete at touch when favorable” | `core/dynamic_quoting_policy.py`, `strategy/quote_decision.py`, profiles in `core/perception.py` |
 | **Capital truth** | `risk_capital_xrp` can dwarf wallet → sizing caps meaningless | `config/settings.py`, `gui/streamlit_gui.py` |
-| **Assessment** | No weekly skim rollup (bps/fill, time-on-book, policy mix) | `scripts/analyze_session.py` (partial), new report TBD |
-| **Protection** | Toxic gates on **small N** (≥3 fills) still flip off-book at 20–22% | `strategy/fill_quality.py`, profile toxicity fields |
-| **Automation** | No hysteresis on toxicity exit; no `competitive_pilot` preset | Tier 2.5 below |
+| **Assessment** | Weekly skim exists; need consistent Gate 1 sessions logged | `scripts/weekly_skim_report.py`, `scripts/portfolio_bleed_analysis.py` |
+| **Book feed** | Inverted book (bid ~1.16, ask ~0.28) still appears on RPC — engine guards marks; **root BookOffers fix TBD** | `connectors/xrpl_connector.py` |
+| **Skim gate** | Quotes still placed when `market_edge_met` false on thin books | `strategy/market_microstructure.py`, `quote_decision.py` |
+| **Automation** | No `competitive_pilot` preset; no edge-required quoting | Tier 2.5 below |
 
-*Resolved in v1.4.2:* false daily drawdown kill on stale/crossed book (`risk/drawdown.py`, `engine/trading_engine.py`). *Resolved in v1.4.3:* crossed book no longer marks portfolio at ~0.28 RLUSD/XRP; session PnL and fill capture use last valid mid. *Resolved in v1.4.2 stack:* toxic fill kill off by default; fill-quality reset when toxic pause + empty book.
+*Resolved in v1.4.2:* false daily drawdown kill on stale/crossed book (`risk/drawdown.py`, `engine/trading_engine.py`). *Resolved in v1.4.3:* crossed book no longer marks portfolio at ~0.28 RLUSD/XRP; session PnL and fill capture use last valid mid; session baseline only on trustworthy mid; fill capture uses trustworthy mids. *Resolved in v1.4.2 stack:* toxic fill kill off by default; fill-quality reset when toxic pause + empty book; toxicity hysteresis (≥8 fills, enter 20% / exit 15%).
 
 ---
 
@@ -124,7 +130,7 @@ Operator promotion path while logging continues. Do **not** scale size or switch
 - [x] `dynamic_min_edge_enabled` in example + `BotConfig` default
 - [x] Example L2 depth skim (`order_sizes: [50, 15, 0]` or pilot `[15, 0, 0]`)
 - [x] `auto_rollover_enabled` removed (stub)
-- [ ] **Risk capital in GUI = wallet portfolio** (operator rule until code sync)
+- [x] **Risk capital in GUI = wallet portfolio** (`utils/risk_capital_sync.py` + Advanced sync button)
 - [ ] Confirm secrets only in local `config.yaml` (never committed)
 
 ### Code
@@ -175,6 +181,7 @@ Operator promotion path while logging continues. Do **not** scale size or switch
 
 - [x] Spread failures, toxic ratio (configurable), RPC streak
 - [x] Daily drawdown — **skip mark when mid invalid** (v1.4.2)
+- [x] **Session balance loss kill** — balance PnL &lt; limit after N fills (v1.4.3; GUI Advanced)
 - [x] `toxic_fill_kill_enabled: false` default for safe pilot
 
 ### 7. Auto-switch guard
@@ -201,9 +208,12 @@ Priority order:
 | 1 | **Risk capital = live portfolio** sync (GUI save + engine sizing) | [x] GUI warn + **Sync risk capital to live portfolio** (`utils/risk_capital_sync.py`) |
 | 2 | **Toxicity hysteresis + min fills** | [x] ≥8 fills before gates; enter 20% / exit 15% off-book on `safe` |
 | 3 | **Weekly skim report** script | [x] `scripts/weekly_skim_report.py` — Gate 1/2 checklist, bps, visibility proxy |
+| 3b | **Portfolio bleed analysis** script | [x] `scripts/portfolio_bleed_analysis.py` — balance drift per mainnet run |
 | 4 | **`competitive_pilot` profile or preset** | Higher touch relevance; widen/shrink before off-book / refresh-stop |
 | 5 | **Join-touch when favorable + edge met** | Use queue preservation at L1 when health high (`join_touch`, `order_sync`) |
-| 6 | **Persist fill-quality / toxic rolling stats** across restarts (optional decay) | Less noisy re-entry after restart |
+| 5b | **Block live quotes when `market_edge_met` false** | Stop paying for fills on books tighter than edge |
+| 6 | **Fix BookOffers ask inversion** (~0.28 RLUSD/XRP ghost ask) | Stops spread-check storms and inverted-book cycles at source |
+| 7 | **Persist fill-quality / toxic rolling stats** across restarts (optional decay) | Less noisy re-entry after restart |
 
 **Explicitly not required for field Gate 2:** local ML / neural model — use logs + caps first.
 
@@ -240,7 +250,9 @@ Use with Gate 1/2 pass criteria. Copy to spreadsheet or `logs/review_YYYY-MM-DD.
 - [ ] Markout @ 30s mean by side
 - [ ] Hours outside ±6% of inventory target (55% XRP)
 - [ ] Max intraday inventory deviation (%)
-- [ ] Drawdown % vs limit; kill activations (note false kills pre-v1.4.2)
+- [ ] Drawdown % vs limit; kill activations (note false kills pre-v1.4.3)
+- [ ] **Session balance PnL** vs limit (Gate 1 scoreboard; not MTM alone)
+- [ ] Portfolio readout stable (spot-check: no 400+ XRP on ~247 wallet)
 
 ### Execution & automation
 
@@ -255,7 +267,7 @@ Use with Gate 1/2 pass criteria. Copy to spreadsheet or `logs/review_YYYY-MM-DD.
 
 | Question | Minimum data |
 |----------|----------------|
-| Go / no-go pilot (continue on `safe`?) | **≥40 fills**, positive capture, one post-v1.4.2 session |
+| Go / no-go pilot (continue on `safe`?) | **≥40 fills**, positive capture, **balance PnL ≥ 0**, one post-v1.4.3 session |
 | Parameter / profile tuning | **≥50 fills**, one stable config, toxic &lt; 25% |
 | Declare field-ready competitive MM | Gate 2 + **≥100 fills** `tight_spread`, toxic &lt; 20% / 50 fills, 2+ weeks |
 | ML / auto-learning | **Not yet** — need clean continuous logs first |
@@ -269,8 +281,10 @@ Use with Gate 1/2 pass criteria. Copy to spreadsheet or `logs/review_YYYY-MM-DD.
 3. **Spread check FAIL** — fix profile or stay dry-run; never override on mainnet.
 4. **Session red + high toxic** — step down profile or pause; don’t widen into pickoff.
 5. **Scale capital or L1 size** only after **Gate 2** metrics stable **2+ weeks**.
-6. **After kill clear** — restart engine so drawdown baseline resets; read kill reason in `logs/kill_switch.json`.
-7. **Keep logging** through Gate 1 even if economics look good — visibility and policy mix matter as much as capture XRP.
+6. **After kill clear** — restart engine so drawdown + **session** baselines reset; read kill reason in `logs/kill_switch.json`.
+7. **Scoreboard = balance PnL** for Gate 1; use MTM only when book is sane (bid/ask not inverted).
+8. **Keep logging** through Gate 1 even if economics look good — visibility and policy mix matter as much as capture XRP.
+9. **Growing holdings** — target **weekly balance PnL ≥ 0** on `safe` before `tight_spread` or larger clips; total wallet ~246→247 is noise until gates pass.
 
 ---
 
@@ -285,9 +299,11 @@ Use with Gate 1/2 pass criteria. Copy to spreadsheet or `logs/review_YYYY-MM-DD.
 | 2026-06-04 | Mainnet pilot | ~80-fill session +0.41 XRP capture; false 40% drawdown kill diagnosed |
 | 2026-06-04 | **Field gates** | Merged pilot assessment + deployment path into this plan |
 | 2026-06-04 | **Gate 1 ~pass** | ~76 fills, +0.29 XRP capture, toxic 25% — sync risk capital; Gate 2 when stable |
-| | Gate 1 pass (formal) | Post-v1.4.2 validation session (≥40 fills, stable visibility) |
+| 2026-06-04 | **v1.4.3** | Crossed-book portfolio truth; session balance kill; fill capture + baseline fixes |
+| 2026-06-05 | **Gate 1 open** | Short sessions: capture +, toxic ~33%, &lt;40 fills; multi-run balance ~−0.43 XRP — stay on `safe` |
+| | Gate 1 pass (formal) | Post-v1.4.3 session: ≥40 fills, toxic &lt;25%, capture +, **balance PnL ≥ 0**, visibility &gt;70% |
 | | Gate 2 pass | `tight_spread` competitive pilot (≥100 fills, toxic &lt; 20%) |
-| | Tier 2.5 started | Risk capital sync, competitive_pilot, weekly skim report |
+| | Tier 2.5 next | `competitive_pilot`, edge-met gate, BookOffers ask fix |
 
 ---
 
@@ -310,6 +326,9 @@ Edge:      strategy/market_microstructure.py::resolve_effective_min_edge_pct
 Fills:     monitoring/ledger_fills.py + monitoring/fill_detection.py
 Orders:    engine/trading_engine.py::_refresh_orders + engine/order_sync.py
 Drawdown:  risk/drawdown.py (invalid mid → skip mark + no kill)
+Book mid:  connectors/xrpl_connector.py (is_trustworthy_rlusd_mid, is_book_crossed)
 Insights:  utils/session_insights.py + scripts/analyze_session.py
+Reports:   scripts/weekly_skim_report.py, scripts/portfolio_bleed_analysis.py
 Config:    config/settings.py, config/config.yaml (local, gitignored)
+Kill GUI:  gui/streamlit_gui.py (Advanced → Kill settings)
 ```

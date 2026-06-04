@@ -11,6 +11,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 **Theme:** Crossed-book portfolio truth; Gate 1 safety before competitive pilot.
 
+**Docs (2026-06-05):** [`IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md), [`STRATEGY_MANUAL.md`](docs/STRATEGY_MANUAL.md), [`OPERATOR_MANUAL.md`](docs/OPERATOR_MANUAL.md), [`MAINNET_PILOT.md`](docs/MAINNET_PILOT.md), [`README.md`](README.md) — Gate 1 criteria (balance PnL), v1.4.3 kills, Tier 2.5 backlog.
+
 ### Fixed
 
 - **Crossed / inverted order book** — `compute_mid_price` returns `None` when bid ≫ ask (no longer uses stale ask as mid). Rejects RLUSD/XRP &lt; 0.45. Portfolio, session PnL, and GUI use **last valid mid** when the book is bad (`connectors/xrpl_connector.py`, `engine/trading_engine.py`).

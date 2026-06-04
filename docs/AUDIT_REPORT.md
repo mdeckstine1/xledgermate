@@ -31,3 +31,13 @@ Audit date: 2026-06-03. Fixes applied in the same pass unless noted.
 
 - **Toxic @30s 100%** with 1–2 fills is a small-sample artifact; see session notes in chat.
 - Enable `dynamic_min_edge_enabled` on **safe** if you want book-based edge (GUI preset had it off).
+
+## Follow-up (post v1.4.3 — see [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md))
+
+| Item | Status |
+|------|--------|
+| Crossed book inflating portfolio / false drawdown | **Fixed** — `is_trustworthy_rlusd_mid`, last valid mid, session baseline guard |
+| Phantom fill capture on bad mid | **Fixed** — trustworthy mid in `_log_fill` |
+| Inverted BookOffers ask (~0.28) at RPC | **Open** — engine defends; root connector fix Tier 2.5 |
+| Quotes when `market_edge_met` false | **Open** — edge-required gate Tier 2.5 |
+| Gate 1 formal pass on mainnet | **Open** — use `safe`, balance PnL scoreboard |
