@@ -7,6 +7,16 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.4.4] — 2026-06-05 (`tier-2-polish`)
+
+**Theme:** Gate 1 runs survive bad book ticks without spread-fail kill.
+
+### Fixed
+
+- **Spread-fail kill on bad book feed** — Missing, incomplete, or **inverted** book no longer increments the consecutive spread-failure streak or trips kill (`book_unreliable` on `QuoteValidationResult`). Live orders still pause until the book is sane.
+
+---
+
 ## [1.4.3] — 2026-06-04 (`tier-2-polish`)
 
 **Theme:** Crossed-book portfolio truth; Gate 1 safety before competitive pilot.

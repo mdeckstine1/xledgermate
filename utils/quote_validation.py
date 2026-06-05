@@ -21,6 +21,8 @@ class QuoteValidationResult:
     warnings: List[str] = field(default_factory=list)
     checks: List[str] = field(default_factory=list)
     lines: List[Dict[str, Any]] = field(default_factory=list)
+    # Bad RPC book (no mid, crossed, incomplete) — pause live orders but do not streak toward kill.
+    book_unreliable: bool = False
 
     def summary_for_live(self) -> str:
         if self.ok:
@@ -63,6 +65,7 @@ def validate_quotes_against_book(
             ok=False,
             summary="Spread check skipped — no mid price.",
             errors=["No valid mid price for spread check"],
+            book_unreliable=True,
         )
 
     if best_bid is None or best_ask is None or best_bid <= 0 or best_ask <= 0:
@@ -70,11 +73,18 @@ def validate_quotes_against_book(
             ok=False,
             summary="Spread check skipped — incomplete book.",
             errors=["Live best bid/ask required for spread check"],
+            book_unreliable=True,
         )
 
     if best_ask < best_bid:
         errors.append(
             f"Inverted book (bid {best_bid:.6f} > ask {best_ask:.6f}) — check RLUSD pair"
+        )
+        return QuoteValidationResult(
+            ok=False,
+            summary="Spread check skipped — inverted book.",
+            errors=errors,
+            book_unreliable=True,
         )
 
     book_spread_pct = _pct_diff(best_bid, best_ask)

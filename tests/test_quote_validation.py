@@ -49,6 +49,29 @@ def test_bid_too_far_below_touch_fails() -> None:
     assert any("below best bid" in e for e in result.errors)
 
 
+def test_no_mid_is_book_unreliable() -> None:
+    result = validate_quotes_against_book(
+        [],
+        mid_price=None,
+        best_bid=1.17,
+        best_ask=1.18,
+    )
+    assert not result.ok
+    assert result.book_unreliable
+
+
+def test_inverted_book_is_book_unreliable() -> None:
+    result = validate_quotes_against_book(
+        [],
+        mid_price=0.28,
+        best_bid=1.164,
+        best_ask=0.283,
+    )
+    assert not result.ok
+    assert result.book_unreliable
+    assert any("Inverted" in e for e in result.errors)
+
+
 def test_absurd_ask_fails() -> None:
     mid = 1.32
     best_bid = 1.319
@@ -62,4 +85,5 @@ def test_absurd_ask_fails() -> None:
         max_worse_than_touch_pct=0.50,
     )
     assert not result.ok
+    assert not result.book_unreliable
     assert any("above best ask" in e for e in result.errors)

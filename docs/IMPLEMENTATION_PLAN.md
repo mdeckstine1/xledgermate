@@ -1,6 +1,6 @@
 # XLedgerMate — Implementation Plan: Good → Great MM
 
-*Updated: 2026-06-05 · v1.4.3 on `tier-2-polish` · mainnet pilot ~247 XRP · **Gate 1 validation in progress** (use `safe`)*
+*Updated: 2026-06-05 · v1.4.4 on `tier-2-polish` · mainnet pilot ~247 XRP · **Gate 1 validation in progress** (use `safe`)*
 
 ## North star
 
@@ -42,7 +42,7 @@ Operator promotion path while logging continues. Do **not** scale size or switch
 
 **Setup**
 
-- [x] Pull `tier-2-polish` through **v1.4.3** (drawdown fix, crossed-book portfolio truth, session balance kill, GUI kill settings).
+- [x] Pull `tier-2-polish` through **v1.4.4** (drawdown fix, crossed-book truth, session balance kill, **no spread-kill on bad book feed**).
 - [ ] Clear kill switch → **Restart engine** (drawdown + session baselines = wallet).
 - [x] Set **risk capital** in GUI to **~live portfolio XRP** ( **Sync risk capital to live portfolio** ; not 11k placeholder).
 - [ ] Stay **`safe`**: L1 **10–15 XRP**, L2/L3 **0**; **dynamic min edge OFF** until book routinely tight.
@@ -300,7 +300,8 @@ Use with Gate 1/2 pass criteria. Copy to spreadsheet or `logs/review_YYYY-MM-DD.
 | 2026-06-04 | **Field gates** | Merged pilot assessment + deployment path into this plan |
 | 2026-06-04 | **Gate 1 ~pass** | ~76 fills, +0.29 XRP capture, toxic 25% — sync risk capital; Gate 2 when stable |
 | 2026-06-04 | **v1.4.3** | Crossed-book portfolio truth; session balance kill; fill capture + baseline fixes |
-| 2026-06-05 | **Gate 1 open** | Short sessions: capture +, toxic ~33%, &lt;40 fills; multi-run balance ~−0.43 XRP — stay on `safe` |
+| 2026-06-05 | **v1.4.4** | Spread-fail kill exempts bad book feed (Gate 1 can survive inverted-mid nights) |
+| 2026-06-05 | **Gate 1 open** | 16 fills, capture +, balance PnL +; toxic 25% + spread-kill blocked run — stay on `safe` |
 | | Gate 1 pass (formal) | Post-v1.4.3 session: ≥40 fills, toxic &lt;25%, capture +, **balance PnL ≥ 0**, visibility &gt;70% |
 | | Gate 2 pass | `tight_spread` competitive pilot (≥100 fills, toxic &lt; 20%) |
 | | Tier 2.5 next | `competitive_pilot`, edge-met gate, BookOffers ask fix |

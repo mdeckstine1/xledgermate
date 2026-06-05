@@ -814,12 +814,21 @@ class TradingEngine:
                 and not spread_validation.ok
             )
             if live_blocked_by_spread:
-                self._consecutive_spread_failures += 1
-                self.decision_log.add(
-                    "execution",
-                    "Live orders blocked — spread check failed (fix spreads or stay in dry-run).",
-                )
-                await self._maybe_kill_on_spread_failures(config, connector)
+                if getattr(spread_validation, "book_unreliable", False):
+                    self._consecutive_spread_failures = 0
+                    self.decision_log.add(
+                        "execution",
+                        "Live orders paused — book feed unreliable "
+                        "(no/inverted mid); spread-fail kill not armed.",
+                    )
+                else:
+                    self._consecutive_spread_failures += 1
+                    self.decision_log.add(
+                        "execution",
+                        "Live orders blocked — spread check failed "
+                        "(fix spreads or stay in dry-run).",
+                    )
+                    await self._maybe_kill_on_spread_failures(config, connector)
             else:
                 self._consecutive_spread_failures = 0
 
