@@ -72,7 +72,7 @@ groks input/
 | [vps/07_VPS_BEGINNER_RUNBOOK.md](vps/07_VPS_BEGINNER_RUNBOOK.md) | First VPS setup |
 | [vps/dashboard/README.md](vps/dashboard/README.md) | Light monitoring GUI |
 | [vps/full_gui/README.md](vps/full_gui/README.md) | Full GUI + systemd ownership rules |
-| [collab/README.md](collab/README.md) | Collab branch folder (`grok-tier-2-collab`) |
+| [collab/README.md](collab/README.md) | **Grok ↔ Cursor inbox** — [TO_CURSOR.md](collab/TO_CURSOR.md), [FROM_CURSOR.md](collab/FROM_CURSOR.md) |
 | [docs/04_...](docs/04_ROADMAP_FASTER_DECISIONS_AND_CLEAN_DATA_RUNS.md) | Toxic/kill spiral |
 
 ---
@@ -243,7 +243,7 @@ Sync **risk capital** to live portfolio in Full GUI when editing config; for una
 Copy into a new chat:
 
 ```
-Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md in C:\Users\micha\xledgermate first.
+Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/TO_CURSOR.md (+ FROM_CURSOR.md) in C:\Users\micha\xledgermate first.
 Context: XLedgerMate XRPL MM bot, branch grok-tier-2-collab v1.4.4, Gate 2 pilot IN PROGRESS.
 VPS: Hetzner 188.245.50.229, SSH key C:\Users\micha\.ssh\hetzner_xledgermate, repo /root/xledgermate.
 Engine owner: systemd xledgermate ONLY — never GUI Start/Restart.
