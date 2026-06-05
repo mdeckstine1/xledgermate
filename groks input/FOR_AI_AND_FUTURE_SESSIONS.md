@@ -17,6 +17,7 @@
 | 2026-06-05 | **Clean restart** — single owner = `systemctl` only; kill cleared; 0 offers; Gate 2 session baseline reset |
 | 2026-06-05 | **Gate 2 pilot started** — `tight_spread`, mainnet, 2-week discipline (don’t change profile mid-run) |
 | 2026-06-05 | **Branch `grok-tier-2-collab`** — handoff, VPS GUIs, operator docs pushed for Grok/Cursor collab |
+| 2026-06-05 | **Hourly Telegram report** — systemd timer on VPS (`xledgermate-hourly-report.timer`) |
 
 *Next expected updates: first week skim report, ≥60 fills judgment (doc 05), Tier 2.5 code deploy.*
 
@@ -94,8 +95,11 @@ groks input/
 | `xledgermate` | **Trading engine (sole owner)** | — | Do **not** start from GUI |
 | `xledgermate-gui` | Full trading GUI (`gui/streamlit_gui.py`) | **8502** | **XLedgerMate Full GUI** → `localhost:8502` |
 | `xledgermate-dashboard` | Light monitor GUI | **8501** | XLedgerMate Dashboard → `localhost:8501` |
+| `xledgermate-hourly-report.timer` | Hourly Telegram ops/fill summary | — | `scripts/hourly_telegram_report.py` |
 
 **Default operator UI:** Full GUI (8502). Dashboard (8501) is optional quick view.
+
+**Hourly Telegram report:** requires `telegram_enabled: true` + token/chat_id in VPS `config.yaml`. Install: `bash groks\ input/vps/install_hourly_telegram_timer.sh`. Manual: `.venv/bin/python scripts/hourly_telegram_report.py`
 
 **Dashboard path quirk:** Space in `groks input/` breaks systemd `WorkingDirectory`; symlink: `/root/xledgermate/groks-input-dashboard` → dashboard app.
 
