@@ -1,6 +1,6 @@
 # Handoff README — read this first (human or AI)
 
-**Last updated:** 2026-06-05 (Gate 2 running — Telegram live, VPS kill thresholds, early positive session)
+**Last updated:** 2026-06-05 (Gate 2 running; **WebSocket sandbox** on `grok-ws-feed` — not on VPS)
 **Purpose:** **New Grok session → read this file first.** Replaces chat memory for VPS, Gate 2, Telegram, kills, milestones. Path: `C:\Users\micha\xledgermate\groks input\FOR_AI_AND_FUTURE_SESSIONS.md`
 
 **Maintenance rule:** Update this file (and § Milestones) when the operator hits a milestone — VPS live, clean restart, Gate 2 start/end, profile change, major incident, git deploy to VPS, etc.
@@ -23,8 +23,9 @@
 | 2026-06-05 | **VPS kill thresholds** — `session_balance_loss_kill_xrp: 0.85`, `min_fills: 45`, `spread_failure_kill_cycles: 12` (was 0.35/25) |
 | 2026-06-05 | **Kill-loop lesson** — clear-kill alone re-fires; always **`systemctl restart`** after clear |
 | 2026-06-05 | **Gate 2 early data** — portfolio ~254 XRP equiv., session spread capture positive; **18/60** fills toward judgment (snapshot) |
+| 2026-06-05 | **WebSocket sandbox** — branch `grok-ws-feed`, folder `experimental/ws_feed/` (probe only; **not** wired to engine or VPS systemd) |
 
-*Next expected updates: first week skim report, ≥60 fills judgment (doc 05), Tier 2.5 code deploy.*
+*Next expected updates: first week skim report, ≥60 fills judgment (doc 05), Tier 2.5 code deploy (BookOffers + `market_edge_met`), WS probe results on `grok-ws-feed`.*
 
 ---
 
@@ -32,8 +33,9 @@
 
 - **Repo:** [github.com/mdeckstine1/xledgermate](https://github.com/mdeckstine1/xledgermate) — XRPL **XRP/RLUSD** market-making bot  
 - **Local path (Windows):** `C:\Users\micha\xledgermate`  
-- **Active code branch:** `grok-tier-2-collab` (from `tier-2-polish`) · version **~1.4.4**  
-- **GitHub `main` is stale (v1.0.0)** — real system is local / `tier-2-polish`  
+- **Gate 2 / VPS branch:** `grok-tier-2-collab` (from `tier-2-polish`) · version **~1.4.4** — **this is what runs on the server**  
+- **WebSocket lab branch:** `grok-ws-feed` (from `grok-tier-2-collab`) — `experimental/ws_feed/` only; **do not deploy to VPS** until Tier 3 sign-off  
+- **GitHub `main` is stale (v1.0.0)** — real system is local / `tier-2-polish`
 - **Risk model:** Only **bot wallet** trades; main “Mangie” bag must never be configured on the VPS  
 - **All live trading data** lives on VPS: `/root/xledgermate/logs/` (not on the Windows PC)
 
@@ -58,17 +60,17 @@
 ## 3. `groks input` folder map
 
 ```
-groks input/
-├── FOR_AI_AND_FUTURE_SESSIONS.md   ← THIS FILE
-├── START_HERE.md
-├── README.md
-├── collab/        TO_CURSOR.md (protocol) · THREAD.md · OPERATOR_NOTES.md
-├── docs/          Audits + roadmaps (01–05)
-└── vps/
-    ├── 07_VPS_BEGINNER_RUNBOOK.md
-    ├── 06_TWO_WEEK_DEDICATED_HOST_SETUP.md
-    ├── dashboard/     Light monitor (8501)
-    └── full_gui/      Full streamlit_gui (8502) + .exe launcher
+xledgermate/
+├── experimental/ws_feed/   ← Tier 3 WebSocket sandbox (branch grok-ws-feed; NOT on VPS)
+└── groks input/
+    ├── FOR_AI_AND_FUTURE_SESSIONS.md   ← THIS FILE
+    ├── START_HERE.md
+    ├── collab/        TO_CURSOR.md · THREAD.md · OPERATOR_NOTES.md
+    ├── docs/          Audits + roadmaps (01–05)
+    └── vps/
+        ├── 07_VPS_BEGINNER_RUNBOOK.md
+        ├── dashboard/     Light monitor (8501)
+        └── full_gui/      Full streamlit_gui (8502) + .exe launcher
 ```
 
 | Doc | Use when |
@@ -81,6 +83,31 @@ groks input/
 | [collab/THREAD.md](collab/THREAD.md) | Grok ↔ Cursor task thread |
 | [collab/OPERATOR_NOTES.md](collab/OPERATOR_NOTES.md) | Operator priorities for both AIs |
 | [docs/04_...](docs/04_ROADMAP_FASTER_DECISIONS_AND_CLEAN_DATA_RUNS.md) | Toxic/kill spiral |
+| [../experimental/ws_feed/README.md](../experimental/ws_feed/README.md) | WebSocket book probe — Tier 3, isolated from engine |
+
+---
+
+## 3b. Book data: poll (live) vs WebSocket (lab)
+
+| Mode | Where | Used by |
+|------|--------|---------|
+| **HTTP `BookOffers` poll** | VPS + Gate 2 | `trading_engine` → `XRPLConnector.fetch_xrp_rlusd_order_book()` |
+| **WebSocket subscribe** | Local `grok-ws-feed` only | `experimental/ws_feed/` — probe + future adapter |
+
+**Poll intervals (Gate 2 `tight_spread`, `tiered_refresh_enabled: true`):** ~**15s** book poll, ~**45s** full quote refresh (profile-driven; not always the yaml `order_refresh_time_seconds`).
+
+**Why two branches:** Gate 2 needs uninterrupted poll-only data on VPS while WS feed is built and compared offline.
+
+**Local probe (no engine, no orders):**
+
+```bash
+cd C:\Users\micha\xledgermate
+git checkout grok-ws-feed
+.venv\Scripts\python.exe -m experimental.ws_feed.run_probe --seconds 90
+.venv\Scripts\python.exe -m experimental.ws_feed.run_probe --http-only --seconds 30
+```
+
+**Integration later (not now):** config flag e.g. `book_feed_mode: poll|ws|ws_with_http_fallback` in `trading_engine` after probe + operator opt-in. Doc **05** / **03** place WebSocket at **Tier 3** (post–Gate 2, higher capital).
 
 ---
 
@@ -94,7 +121,7 @@ groks input/
 | **OS** | Ubuntu 26.04 LTS |
 | **SSH user** | `root` |
 | **SSH key (Windows)** | `C:\Users\micha\.ssh\hetzner_xledgermate` |
-| **Repo on VPS** | `/root/xledgermate` (branch `tier-2-polish`) |
+| **Repo on VPS** | `/root/xledgermate` (branch `tier-2-polish` or `grok-tier-2-collab` after pull — **not** `grok-ws-feed`) |
 | **Python** | 3.14 venv at `/root/xledgermate/.venv` |
 
 ### Systemd services (intended ownership)
@@ -129,9 +156,10 @@ groks input/
 | Engine via `systemd` (`xledgermate`) | Accumulate **≥60 fills**; weekly skim vs doc 05 |
 | Full GUI + Dashboard + Windows `.exe` tunnels | Optional: `git pull` `grok-tier-2-collab` on VPS |
 | Telegram kill + **hourly** report timer | Cursor: VPS operator GUI, `config.example.yaml` Gate 2 defaults |
-| VPS session kill **0.85/45** + spread kill **12** | Tier 2.5 when data justifies |
+| VPS session kill **0.85/45** + spread kill **12** | Tier 2.5 when data justifies — **Cursor P0:** BookOffers ask fix + `market_edge_met` live block ([THREAD.md](collab/THREAD.md)) |
 | Clean restart + kill clear discipline (§6b) | |
 | Operator baseline ~**234 XRP** pre-bot → ~**254** XRP equiv. early pilot (2026-06-05) | |
+| **WS sandbox** on `grok-ws-feed` (local) | WS subscribe hardening, probe vs HTTP; merge only after Gate 2 judgment |
 
 ---
 
@@ -262,6 +290,14 @@ Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md in C:\Users\micha\xledgermate —
 
 **Grok:** This file = facts. Update **§ Milestones** when something ships. **THREAD.md** only when coordinating code with Cursor.
 
+**Branch discipline:**
+
+| Task | Branch | Deploy to VPS? |
+|------|--------|----------------|
+| Gate 2 pilot, kills, Telegram, ops | `grok-tier-2-collab` | Yes (when operator pulls) |
+| WebSocket book feed | `grok-ws-feed` | **No** until Tier 3 |
+| Tier 2.5 competitive (BookOffers, edge gate) | `grok-tier-2-collab` (Cursor) | Yes after review + operator OK |
+
 ---
 
 ## 10. Troubleshooting quick table
@@ -282,7 +318,15 @@ Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md in C:\Users\micha\xledgermate —
 
 ## 11. Git note
 
-`groks input/` committed on `tier-2-polish`. VPS may lag local until `git pull` on server.
+| Branch | Purpose |
+|--------|---------|
+| `grok-tier-2-collab` | Gate 2 collab, handoff, VPS GUIs, operator docs — **production path for VPS** |
+| `grok-ws-feed` | `experimental/ws_feed/` WebSocket lab — keep off VPS until tested |
+| `tier-2-polish` | Parent; VPS may still be here until `git pull` |
+
+`groks input/` and `experimental/` committed on feature branches. VPS may lag local until `git pull` on server — **never pull `grok-ws-feed` onto the live engine host** during Gate 2.
+
+**Push WS work:** `git push -u origin grok-ws-feed` (local only until merge).
 
 **Refresh dashboard on VPS after local edits:**
 
