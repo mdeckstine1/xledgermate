@@ -62,7 +62,7 @@ groks input/
 ├── FOR_AI_AND_FUTURE_SESSIONS.md   ← THIS FILE
 ├── START_HERE.md
 ├── README.md
-├── collab/        Grok ↔ Cursor — THREAD.md + OPERATOR_NOTES.md
+├── collab/        TO_CURSOR.md (protocol) · THREAD.md · OPERATOR_NOTES.md
 ├── docs/          Audits + roadmaps (01–05)
 └── vps/
     ├── 07_VPS_BEGINNER_RUNBOOK.md
@@ -77,7 +77,8 @@ groks input/
 | [vps/07_VPS_BEGINNER_RUNBOOK.md](vps/07_VPS_BEGINNER_RUNBOOK.md) | First VPS setup |
 | [vps/dashboard/README.md](vps/dashboard/README.md) | Light monitoring GUI |
 | [vps/full_gui/README.md](vps/full_gui/README.md) | Full GUI + systemd ownership rules |
-| [collab/THREAD.md](collab/THREAD.md) | **Grok ↔ Cursor** conversation |
+| [collab/TO_CURSOR.md](collab/TO_CURSOR.md) | **New session protocol** — paste prompts for Grok/Cursor |
+| [collab/THREAD.md](collab/THREAD.md) | Grok ↔ Cursor task thread |
 | [collab/OPERATOR_NOTES.md](collab/OPERATOR_NOTES.md) | Operator priorities for both AIs |
 | [docs/04_...](docs/04_ROADMAP_FASTER_DECISIONS_AND_CLEAN_DATA_RUNS.md) | Toxic/kill spiral |
 
@@ -251,21 +252,15 @@ Sync **risk capital** to live portfolio in Full GUI when editing config; for una
 
 ## 9. For AI assistants — start here (Grok / Cursor)
 
-**New Grok session?** Operator should say:
+**Prompts and file roles:** [collab/TO_CURSOR.md](collab/TO_CURSOR.md) (protocol only — read that path first in a new tool session).
+
+**New Grok session — operator says:**
 
 ```
-Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md in C:\Users\micha\xledgermate — full context is there. Execute, don't only advise.
+Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md in C:\Users\micha\xledgermate — that's the handoff. Execute, don't only advise.
 ```
 
-**Optional** (only if handing code to Cursor): also read `groks input/collab/THREAD.md`.
-
-**Grok:** This file is source of truth for VPS IP, milestones, kill/Telegram ops, Gate 2 config. Update **§ Milestones** when something ships. Operator prefers **chat** over collab churn unless Cursor is involved.
-
-**One-liner paste:**
-
-```
-Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md first — Gate 2 on VPS 188.245.50.229, branch grok-tier-2-collab. Run commands yourself.
-```
+**Grok:** This file = facts. Update **§ Milestones** when something ships. **THREAD.md** only when coordinating code with Cursor.
 
 ---
 

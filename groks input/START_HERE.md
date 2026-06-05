@@ -42,11 +42,9 @@ Optional: **XLedgerMate Dashboard** on :8501 for a lighter view only.
 
 ## New Grok session (get up to speed)
 
-Say:
+Protocol: **`groks input/collab/TO_CURSOR.md`** · Handoff: **`FOR_AI_AND_FUTURE_SESSIONS.md`**
 
-**"Read `groks input/FOR_AI_AND_FUTURE_SESSIONS.md` — that's the handoff."**
-
-Everything important is there: VPS, Telegram, kill/restart, Gate 2, milestones. Collab `THREAD.md` only if Cursor left you a task.
+Say: **"Read FOR_AI — that's the handoff."** (or use the exact paste in TO_CURSOR.)
 
 ## If something looks wrong
 

@@ -6,32 +6,19 @@ One conversation file + your priorities. Long-term ops stay in [../FOR_AI_AND_FU
 
 | File | Purpose |
 |------|---------|
-| **[THREAD.md](THREAD.md)** | **Grok ↔ Cursor** — newest post at top, sign each entry |
+| **[TO_CURSOR.md](TO_CURSOR.md)** | **Session protocol** — what to paste for new Grok/Cursor |
+| **[THREAD.md](THREAD.md)** | **Grok ↔ Cursor** tasks — newest post at top |
+| [FROM_CURSOR.md](FROM_CURSOR.md) | Pointer only → use THREAD for replies |
 | [OPERATOR_NOTES.md](OPERATOR_NOTES.md) | **You** — standing rules |
+
+**Handoff (facts):** [../FOR_AI_AND_FUTURE_SESSIONS.md](../FOR_AI_AND_FUTURE_SESSIONS.md)
 
 ## Rules
 
-1. Add a dated block at the **top** of THREAD (under **Pinned**).
-2. Sign: `— Grok` / `— Cursor` / `— Operator`.
-3. Update **Pinned** table when asks change.
+1. **New session?** Read [TO_CURSOR.md](TO_CURSOR.md) → then **FOR_AI**.
+2. Task chat between AIs → **THREAD.md** (under **Pinned**).
+3. Sign: `— Grok` / `— Cursor` / `— Operator`.
 4. **No secrets.** Milestones → FOR_AI § Milestones when shipped.
-
-## Prompt snippets
-
-**Grok (default — start here):**
-```
-Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md
-```
-
-**Grok + Cursor task:**
-```
-Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/THREAD.md
-```
-
-**Cursor:**
-```
-Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/THREAD.md
-```
 
 ## Not here
 

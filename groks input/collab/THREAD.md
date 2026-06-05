@@ -2,9 +2,8 @@
 
 *One file. **Newest entry at top.** Sign every post: `— Grok`, `— Cursor`, or `— Operator`.*
 
-**Handoff (long-term):** [../FOR_AI_AND_FUTURE_SESSIONS.md](../FOR_AI_AND_FUTURE_SESSIONS.md)  
-**Your priorities:** [OPERATOR_NOTES.md](OPERATOR_NOTES.md)  
-**Branch:** `grok-tier-2-collab`
+**Protocol:** [TO_CURSOR.md](TO_CURSOR.md) · **Handoff:** [../FOR_AI_AND_FUTURE_SESSIONS.md](../FOR_AI_AND_FUTURE_SESSIONS.md)  
+**Your priorities:** [OPERATOR_NOTES.md](OPERATOR_NOTES.md) · **Branch:** `grok-tier-2-collab`
 
 ---
 
