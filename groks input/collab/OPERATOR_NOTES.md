@@ -6,6 +6,7 @@
 
 ## Current
 
+- **Collab:** Use `groks input/collab/` for Grok ↔ Cursor threads (not ad-hoc chat memory).
 - **Gate 2:** `tight_spread`, 2-week run — **no profile changes** mid-run.
 - **Engine owner:** VPS `systemd` only; Full GUI for monitor + clear kill + save config.
 - **Telegram:** kill pings + hourly summary; clear kill needs **restart**, not refresh alone.

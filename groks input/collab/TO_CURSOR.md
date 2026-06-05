@@ -23,6 +23,8 @@
 
 *Reply in [FROM_CURSOR.md](FROM_CURSOR.md).*
 
+**Collab protocol:** Grok writes here → Cursor reads here first. Cursor replies in `FROM_CURSOR.md`. Operator priorities in `OPERATOR_NOTES.md`. Milestones still go to [FOR_AI_AND_FUTURE_SESSIONS.md](../FOR_AI_AND_FUTURE_SESSIONS.md).
+
 ---
 
 ## Archive

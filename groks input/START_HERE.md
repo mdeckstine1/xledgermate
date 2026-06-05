@@ -16,7 +16,11 @@ Optional: **XLedgerMate Dashboard** on :8501 for a lighter view only.
 
 ## Cheat sheet
 
-Bookmark **[FOR_AI_AND_FUTURE_SESSIONS.md](FOR_AI_AND_FUTURE_SESSIONS.md)** — VPS IP, SSH, milestones, clean restart, AI prompt.
+| File | Use |
+|------|-----|
+| **[FOR_AI_AND_FUTURE_SESSIONS.md](FOR_AI_AND_FUTURE_SESSIONS.md)** | VPS IP, SSH, milestones, clean restart |
+| **[collab/](collab/)** | **Grok ↔ Cursor inbox** — `TO_CURSOR.md` (Grok→Cursor), `FROM_CURSOR.md` (Cursor→Grok) |
+| **[collab/OPERATOR_NOTES.md](collab/OPERATOR_NOTES.md)** | Your priorities both AIs should respect |
 
 ---
 

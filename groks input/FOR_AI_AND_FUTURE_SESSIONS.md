@@ -57,7 +57,7 @@ groks input/
 ├── FOR_AI_AND_FUTURE_SESSIONS.md   ← THIS FILE
 ├── START_HERE.md
 ├── README.md
-├── collab/        Grok collab branch notes & experiments (see collab/README.md)
+├── collab/        Grok ↔ Cursor inbox (TO_CURSOR / FROM_CURSOR / OPERATOR_NOTES)
 ├── docs/          Audits + roadmaps (01–05)
 └── vps/
     ├── 07_VPS_BEGINNER_RUNBOOK.md
@@ -74,6 +74,7 @@ groks input/
 | [vps/full_gui/README.md](vps/full_gui/README.md) | Full GUI + systemd ownership rules |
 | [collab/README.md](collab/README.md) | **Grok ↔ Cursor inbox** — [TO_CURSOR.md](collab/TO_CURSOR.md), [FROM_CURSOR.md](collab/FROM_CURSOR.md) |
 | [docs/04_...](docs/04_ROADMAP_FASTER_DECISIONS_AND_CLEAN_DATA_RUNS.md) | Toxic/kill spiral |
+| [collab/README.md](collab/README.md) | **Grok ↔ Cursor** — `TO_CURSOR.md`, `FROM_CURSOR.md`, `OPERATOR_NOTES.md` |
 
 ---
 
