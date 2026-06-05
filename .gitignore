@@ -8,6 +8,7 @@ __pycache__/
 config/config.yaml
 config/credentials.local.yaml
 config/*.local.yaml
+config/*.bak
 .env
 logs/
 logs/engine.pid

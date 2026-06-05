@@ -1,18 +1,23 @@
 # Grok's input — XLedgerMate review pack
 
+**New session?** Read **[FOR_AI_AND_FUTURE_SESSIONS.md](FOR_AI_AND_FUTURE_SESSIONS.md)** first (VPS IP, SSH, what's installed, daily commands).
+
 **Date:** 2026-06-05  
 **Repo:** [mdeckstine1/xledgermate](https://github.com/mdeckstine1/xledgermate)  
-**Local baseline:** `tier-2-polish` @ **v1.4.4**
+**Local baseline:** `grok-tier-2-collab` @ **v1.4.4** (collab branch; parent `tier-2-polish`)  
+**Ops:** Gate 2 pilot on Hetzner VPS — see handoff **§ Milestones**
 
-Third-party reviews and roadmaps (separate from repo `docs/`).
+Third-party reviews and roadmaps (separate from repo `docs/`). **Update [FOR_AI_AND_FUTURE_SESSIONS.md](FOR_AI_AND_FUTURE_SESSIONS.md) at milestones.**
 
 ## Layout
 
 ```
 groks input/
+├── FOR_AI_AND_FUTURE_SESSIONS.md   ← handoff + milestones (read first)
+├── START_HERE.md
 ├── README.md          ← you are here
 ├── docs/              Audits, roadmaps, metrics
-└── vps/               Dedicated host & VPS run guides
+└── vps/               VPS runbooks, dashboard (8501), full_gui (8502)
 ```
 
 ## Quick links
@@ -33,7 +38,10 @@ groks input/
 
 | Doc | Contents |
 |-----|----------|
-| [06_TWO_WEEK_DEDICATED_HOST_SETUP.md](vps/06_TWO_WEEK_DEDICATED_HOST_SETUP.md) | Dedicated PC or VPS for 2-week Gate 2 runs |
+| **[07_VPS_BEGINNER_RUNBOOK.md](vps/07_VPS_BEGINNER_RUNBOOK.md)** | **New to VPS?** Step-by-step setup, monitoring, updates, 2-week operator duties |
+| **[vps/full_gui/](vps/full_gui/)** | **Full trading GUI (8502)** — default operator UI |
+| [vps/dashboard/](vps/dashboard/) | Light monitoring GUI (8501) |
+| [06_TWO_WEEK_DEDICATED_HOST_SETUP.md](vps/06_TWO_WEEK_DEDICATED_HOST_SETUP.md) | Dedicated PC or VPS overview |
 
 ---
 
