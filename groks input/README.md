@@ -16,6 +16,7 @@ groks input/
 ├── FOR_AI_AND_FUTURE_SESSIONS.md   ← handoff + milestones (read first)
 ├── START_HERE.md
 ├── README.md          ← you are here
+├── collab/            Grok-tier-2-collab session notes & experiments
 ├── docs/              Audits, roadmaps, metrics
 └── vps/               VPS runbooks, dashboard (8501), full_gui (8502)
 ```

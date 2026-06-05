@@ -57,6 +57,7 @@ groks input/
 ├── FOR_AI_AND_FUTURE_SESSIONS.md   ← THIS FILE
 ├── START_HERE.md
 ├── README.md
+├── collab/        Grok collab branch notes & experiments (see collab/README.md)
 ├── docs/          Audits + roadmaps (01–05)
 └── vps/
     ├── 07_VPS_BEGINNER_RUNBOOK.md
@@ -71,6 +72,7 @@ groks input/
 | [vps/07_VPS_BEGINNER_RUNBOOK.md](vps/07_VPS_BEGINNER_RUNBOOK.md) | First VPS setup |
 | [vps/dashboard/README.md](vps/dashboard/README.md) | Light monitoring GUI |
 | [vps/full_gui/README.md](vps/full_gui/README.md) | Full GUI + systemd ownership rules |
+| [collab/README.md](collab/README.md) | Collab branch folder (`grok-tier-2-collab`) |
 | [docs/04_...](docs/04_ROADMAP_FASTER_DECISIONS_AND_CLEAN_DATA_RUNS.md) | Toxic/kill spiral |
 
 ---
