@@ -1,6 +1,6 @@
 # Handoff README — read this first (human or AI)
 
-**Last updated:** 2026-06-05 (Gate 2 VPS pilot — clean restart milestone)  
+**Last updated:** 2026-06-05 (Gate 2 running — Telegram live, VPS kill thresholds, early positive session)
 **Purpose:** This file replaces “memory” between Cursor/Grok sessions. Paste or ask the agent to read **`groks input/FOR_AI_AND_FUTURE_SESSIONS.md`** before doing VPS or trading work.
 
 **Maintenance rule:** Update this file (and § Milestones) when the operator hits a milestone — VPS live, clean restart, Gate 2 start/end, profile change, major incident, git deploy to VPS, etc.
@@ -19,6 +19,10 @@
 | 2026-06-05 | **Branch `grok-tier-2-collab`** — handoff, VPS GUIs, operator docs pushed for Grok/Cursor collab |
 | 2026-06-05 | **Hourly Telegram report** — systemd timer on VPS (`xledgermate-hourly-report.timer`) |
 | 2026-06-05 | **Collab → `THREAD.md`** — single Grok ↔ Cursor file (replaced TO_/FROM_) |
+| 2026-06-05 | **Telegram live on VPS** — kill alerts + hourly report; test message OK |
+| 2026-06-05 | **VPS kill thresholds** — `session_balance_loss_kill_xrp: 0.85`, `min_fills: 45`, `spread_failure_kill_cycles: 12` (was 0.35/25) |
+| 2026-06-05 | **Kill-loop lesson** — clear-kill alone re-fires; always **`systemctl restart`** after clear |
+| 2026-06-05 | **Gate 2 early data** — portfolio ~254 XRP equiv., session spread capture positive; **18/60** fills toward judgment (snapshot) |
 
 *Next expected updates: first week skim report, ≥60 fills judgment (doc 05), Tier 2.5 code deploy.*
 
@@ -103,7 +107,9 @@ groks input/
 
 **Default operator UI:** Full GUI (8502). Dashboard (8501) is optional quick view.
 
-**Hourly Telegram report:** requires `telegram_enabled: true` + token/chat_id in VPS `config.yaml`. Install: `bash groks\ input/vps/install_hourly_telegram_timer.sh`. Manual: `.venv/bin/python scripts/hourly_telegram_report.py`
+**Telegram (VPS):** kill alerts (immediate) + hourly summary (`xledgermate-hourly-report.timer`). After **clear-kill**, run **`systemctl restart xledgermate`** — not GUI Restart. Install timer: `bash "groks input/vps/install_hourly_telegram_timer.sh"`. Manual: `.venv/bin/python scripts/hourly_telegram_report.py`
+
+**Collab:** optional; use [collab/THREAD.md](collab/THREAD.md) only when handing work to **Cursor**. Operator often works via Grok chat only.
 
 **Dashboard path quirk:** Space in `groks input/` breaks systemd `WorkingDirectory`; symlink: `/root/xledgermate/groks-input-dashboard` → dashboard app.
 
@@ -112,16 +118,19 @@ groks input/
 - Copied from Windows: `config/config.yaml` + `config/credentials.local.yaml`  
 - **Do not commit** those files.  
 - Pilot flags: `active_profile: tight_spread`, `testnet: false`, `trading_enabled: true`, `dry_run: false`
+- Session kill on VPS: **0.85 XRP / 45 fills**; `telegram_enabled: true` (secrets in file only — never commit)
 
 ### What’s done vs TODO
 
 | Done | TODO (operator / next AI session) |
 |------|-----------------------------------|
 | SSH, repo, venv, config on VPS | **2-week Gate 2** — no profile changes mid-run |
-| Engine via `systemd` (`xledgermate`) | Daily: Full GUI → confirm **Running**, kill off |
-| Full GUI + Dashboard + Windows `.exe` tunnels | Weekly: `scripts/weekly_skim_report.py` on VPS |
-| Clean restart playbook (§6b) | Judge at **≥60 fills** per doc 05 |
-| Duplicate-engine lesson documented | Optional: `git pull` on VPS; Tier 2.5 fixes from roadmaps |
+| Engine via `systemd` (`xledgermate`) | Accumulate **≥60 fills**; weekly skim vs doc 05 |
+| Full GUI + Dashboard + Windows `.exe` tunnels | Optional: `git pull` `grok-tier-2-collab` on VPS |
+| Telegram kill + **hourly** report timer | Cursor: VPS operator GUI, `config.example.yaml` Gate 2 defaults |
+| VPS session kill **0.85/45** + spread kill **12** | Tier 2.5 when data justifies |
+| Clean restart + kill clear discipline (§6b) | |
+| Operator baseline ~**234 XRP** pre-bot → ~**254** XRP equiv. early pilot (2026-06-05) | |
 
 ---
 
