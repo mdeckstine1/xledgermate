@@ -57,11 +57,11 @@ class WsBookFeed:
         if AsyncWebsocketClient is None or BookOffers is None:
             raise RuntimeError("xrpl-py WebSocket client unavailable")
 
-        rlusd = self.pair.issued_rlusd_code()
         from xrpl.models.currencies import IssuedCurrency, XRP
 
+        rlusd_code = self.connector._issued_rlusd_currency_code()
         taker_gets_xrp = XRP()
-        taker_pays_rlusd = IssuedCurrency(currency=rlusd, issuer=self.pair.rlusd_issuer)
+        taker_pays_rlusd = IssuedCurrency(currency=rlusd_code, issuer=self.pair.rlusd_issuer)
 
         async with AsyncWebsocketClient(self.ws_url) as client:
             asks_raw = (

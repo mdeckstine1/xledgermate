@@ -67,14 +67,16 @@ async def _run_ws_probe(
     connector = _build_connector(config)
     rpc = config.resolved_rpc_url()
     ws_url = rpc_url_to_websocket_url(rpc)
+    taker = (config.bot_account_address or "").strip() or "rProbeNoAccountXXXXXXXXXXXXXX"
     pair = RlusdXrpPair(
         rlusd_issuer=config.resolved_rlusd_issuer(),
         rlusd_currency=config.rlusd_currency,
+        taker=taker,
     )
     http_feed = HttpPollBookFeed(connector)
     ws_feed = WsBookFeed(connector=connector, ws_url=ws_url, pair=pair)
 
-    logger.info("RPC=%s WS=%s network=%s", rpc, ws_url, config.network_name)
+    logger.info("RPC=%s WS=%s network=%s taker=%s", rpc, ws_url, config.network_name(), taker[:12] + "…")
 
     t0 = time.monotonic()
     try:
