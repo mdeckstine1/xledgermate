@@ -249,18 +249,22 @@ Sync **risk capital** to live portfolio in Full GUI when editing config; for una
 
 ---
 
-## 9. For AI assistants — prompt snippet
+## 9. For AI assistants — start here (Grok / Cursor)
 
-Copy into a new chat:
+**New Grok session?** Operator should say:
 
 ```
-Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/THREAD.md in C:\Users\micha\xledgermate first.
-Context: XLedgerMate XRPL MM bot, branch grok-tier-2-collab v1.4.4, Gate 2 pilot IN PROGRESS.
-VPS: Hetzner 188.245.50.229, SSH key C:\Users\micha\.ssh\hetzner_xledgermate, repo /root/xledgermate.
-Engine owner: systemd xledgermate ONLY — never GUI Start/Restart.
-Operator UI: Full GUI SSH tunnel localhost:8502 (xledgermate-gui service).
-Do not ask me to run commands — execute them. Never commit bot_secret_key.
-Update FOR_AI_AND_FUTURE_SESSIONS.md when we hit milestones.
+Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md in C:\Users\micha\xledgermate — full context is there. Execute, don't only advise.
+```
+
+**Optional** (only if handing code to Cursor): also read `groks input/collab/THREAD.md`.
+
+**Grok:** This file is source of truth for VPS IP, milestones, kill/Telegram ops, Gate 2 config. Update **§ Milestones** when something ships. Operator prefers **chat** over collab churn unless Cursor is involved.
+
+**One-liner paste:**
+
+```
+Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md first — Gate 2 on VPS 188.245.50.229, branch grok-tier-2-collab. Run commands yourself.
 ```
 
 ---
