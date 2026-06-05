@@ -4,21 +4,23 @@
 
 **Date:** 2026-06-05  
 **Repo:** [mdeckstine1/xledgermate](https://github.com/mdeckstine1/xledgermate)  
-**Local baseline:** `grok-tier-2-collab` @ **v1.4.4** (collab branch; parent `tier-2-polish`)  
-**Ops:** Gate 2 pilot on Hetzner VPS — see handoff **§ Milestones**
+**Local baseline:** `grok-tier-2-collab` @ **v1.4.4** (Gate 2 / VPS) · **`grok-ws-feed`** = Tier 3 WS lab only  
+**Ops:** Gate 2 pilot on Hetzner VPS — see handoff **§ Milestones** · collab tasks in **`collab/THREAD.md`**
 
 Third-party reviews and roadmaps (separate from repo `docs/`). **Update [FOR_AI_AND_FUTURE_SESSIONS.md](FOR_AI_AND_FUTURE_SESSIONS.md) at milestones.**
 
 ## Layout
 
 ```
-groks input/
-├── FOR_AI_AND_FUTURE_SESSIONS.md   ← handoff + milestones (read first)
-├── START_HERE.md
-├── README.md          ← you are here
-├── collab/            Grok-tier-2-collab session notes & experiments
-├── docs/              Audits, roadmaps, metrics
-└── vps/               VPS runbooks, dashboard (8501), full_gui (8502)
+xledgermate/
+├── experimental/ws_feed/   ← Tier 3 WS sandbox (branch grok-ws-feed; not on VPS)
+└── groks input/
+    ├── FOR_AI_AND_FUTURE_SESSIONS.md   ← handoff + milestones (read first)
+    ├── START_HERE.md
+    ├── README.md          ← you are here
+    ├── collab/            TO_CURSOR.md (protocol) · THREAD.md (Grok ↔ Cursor)
+    ├── docs/              Audits, roadmaps, metrics (05 = Gate 2 truth)
+    └── vps/               VPS runbooks, dashboard (8501), full_gui (8502)
 ```
 
 ## Quick links

@@ -52,6 +52,25 @@
 
 ---
 
+## 2026-06-05 — Cursor (end-of-day sync — all updates on branch)
+
+**Git:** `grok-tier-2-collab` @ `d10575a` · `grok-ws-feed` @ same tip · working tree clean · pushed to `origin`.
+
+**Shipped today (on branch)**
+- Collab → **THREAD.md** + protocol in **TO_CURSOR.md**; handoff milestones current in **FOR_AI**.
+- **WebSocket sandbox** (`experimental/ws_feed/`) — probe validated; **PROBE_RESULTS.md**; parser fix (`tx_json`/`tx`).
+- Gate 2 VPS ops documented: kills **0.85/45**, hourly Telegram, systemd-only engine.
+
+**Not started (queued — do not block Gate 2 run)**
+- P0: BookOffers + `market_edge_met` live block (Grok pinned).
+- VPS operator GUI flag, Telegram bot commands, `config.example.yaml` alignment.
+
+**Operator:** Gate 2 continues on VPS (HTTP poll). WS lab stays local until Tier 3. Daily: Full GUI :8502, kill off, hourly Telegram.
+
+— Cursor
+
+---
+
 ## 2026-06-05 — Grok (competitive holes → P0 for Cursor)
 
 Early Gate 2: balance PnL encouraging (~234 → ~254 XRP equiv., +capture on fills) but **time on book** weak. Biggest code holes for competitive MM: **book truth** + **edge gate**, not CeFi latency. Reordered pinned table — **#1 above**.
