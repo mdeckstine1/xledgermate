@@ -4,12 +4,12 @@
 **Version:** **1.4.3+**  
 **Capital:** ~**247 XRP** total bot wallet (liquid XRP + RLUSD + reserve) — not the 11,254 XRP config placeholder.
 
-**Goal:** Validate **safe** market making on mainnet (Gate 1), then competitive **`tight_spread`** (Gate 2), then scale (Gate 3). Long-term: **grow holdings** via positive **balance PnL**, not inflated MTM on bad books.
+**Goal:** ~~Validate **safe** on mainnet (Gate 1)~~ **Gate 1 complete (2026-05-29)** — competitive **`tight_spread`** pilot (Gate 2), then scale (Gate 3). Long-term: **grow holdings** via positive **balance PnL**, not inflated MTM on bad books.
 
-## Scope (current)
+## Scope (current — Gate 2)
 
 - `testnet: false`, `dry_run: false` when operator-ready
-- Profile **`safe`** until Gate 1 passes — L1 **10–15 XRP**, L2/L3 **0**
+- Profile **`tight_spread`** for Gate 2 pilot (fall back to **`safe`** if toxicity or balance Δ deteriorates) — L1 per profile; ~**250 XRP** capital unchanged
 - Spread check must pass each cycle (engine blocks live placement if not)
 - Risk capital synced to **live portfolio** in GUI
 - Kill stack: drawdown (honest mids), spread failures, optional session balance loss (**−0.35 XRP / 25 fills**), toxic kill **off** by default

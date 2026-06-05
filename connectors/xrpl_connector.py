@@ -120,13 +120,24 @@ class XRPLConnector:
         volatility_window: int = 120,
     ) -> None:
         self._ensure_xrpl_py_available()
+        from utils.xrpl_currency import resolve_rlusd_currency_code
+
         self.account_address = account_address
         self.secret = secret
         self.rlusd_issuer = rlusd_issuer
-        self.rlusd_currency = rlusd_currency
+        self.rlusd_currency = resolve_rlusd_currency_code(rlusd_currency)
         self.network = network or XRPLNetworkConfig()
         self.client = AsyncJsonRpcClient(self.network.json_rpc_url)
         self._mid_prices: Deque[float] = deque(maxlen=max(10, volatility_window))
+
+    def _issued_rlusd_currency_code(self) -> str:
+        """Hex/code for BookOffers — xrpl-py rejects display name 'RLUSD'."""
+        from utils.xrpl_currency import RLUSD_CURRENCY_HEX, resolve_rlusd_currency_code
+
+        code = resolve_rlusd_currency_code(self.rlusd_currency)
+        if code.upper() == "RLUSD" or len(code) < 20:
+            return RLUSD_CURRENCY_HEX
+        return code
 
     @staticmethod
     def _ensure_xrpl_py_available() -> None:
@@ -217,7 +228,7 @@ class XRPLConnector:
 
     def _rlusd_limit_amount(self, value: str) -> IssuedCurrencyAmount:
         return IssuedCurrencyAmount(
-            currency=self.rlusd_currency,
+            currency=self._issued_rlusd_currency_code(),
             issuer=self.rlusd_issuer,
             value=value,
         )
@@ -295,7 +306,7 @@ class XRPLConnector:
                 account=self.account_address,
                 destination=dest,
                 amount=IssuedCurrencyAmount(
-                    currency=self.rlusd_currency,
+                    currency=self._issued_rlusd_currency_code(),
                     issuer=self.rlusd_issuer,
                     value=f"{amount:.6f}",
                 ),
@@ -318,8 +329,9 @@ class XRPLConnector:
         self, limit: int = 40
     ) -> Dict[str, List[Dict[str, float]]]:
         taker_gets_xrp = XRP()
+        rlusd_code = self._issued_rlusd_currency_code()
         taker_pays_rlusd = IssuedCurrency(
-            currency=self.rlusd_currency,
+            currency=rlusd_code,
             issuer=self.rlusd_issuer,
         )
 
@@ -341,15 +353,78 @@ class XRPLConnector:
             "bids": self._normalize_offers(bids_raw, side="bid"),
         }
 
+    @staticmethod
+    def _offer_field(offer: Any, *keys: str) -> Any:
+        if isinstance(offer, dict):
+            for key in keys:
+                if key in offer and offer[key] is not None:
+                    return offer[key]
+            return None
+        for key in keys:
+            val = getattr(offer, key, None)
+            if val is not None:
+                return val
+        return None
+
+    @staticmethod
+    def _coerce_ledger_amount(amount: Any) -> Any:
+        """Normalize xrpl-py Amount models to str XRP drops or issued-currency dict."""
+        if amount is None or isinstance(amount, (str, dict)):
+            return amount
+        if hasattr(amount, "to_dict"):
+            try:
+                return amount.to_dict()
+            except (TypeError, ValueError, AttributeError):
+                pass
+        if hasattr(amount, "value"):
+            out: Dict[str, Any] = {"value": str(getattr(amount, "value"))}
+            currency = getattr(amount, "currency", None)
+            issuer = getattr(amount, "issuer", None)
+            if currency is not None:
+                out["currency"] = currency
+            if issuer is not None:
+                out["issuer"] = issuer
+            return out
+        return amount
+
+    async def get_open_offer_sequences(self) -> List[int]:
+        """Offer sequence numbers from AccountOffers (for cancel even if leg parse fails)."""
+        req = AccountOffers(account=self.account_address, ledger_index="validated")
+        offers = (await self._request(req)).result.get("offers", [])
+        sequences: List[int] = []
+        for offer in offers or []:
+            seq_raw = self._offer_field(offer, "seq", "Sequence", "sequence")
+            if seq_raw is None:
+                continue
+            try:
+                seq = int(seq_raw)
+            except (TypeError, ValueError):
+                continue
+            if seq > 0:
+                sequences.append(seq)
+        return sequences
+
     async def get_open_offers(self) -> List[OpenOffer]:
         req = AccountOffers(account=self.account_address, ledger_index="validated")
         offers = (await self._request(req)).result.get("offers", [])
         parsed: List[OpenOffer] = []
-        for offer in offers:
-            seq = int(offer.get("seq", 0))
-            gets = offer.get("TakerGets") or offer.get("taker_gets")
-            pays = offer.get("TakerPays") or offer.get("taker_pays")
-            if not seq or gets is None or pays is None:
+        for offer in offers or []:
+            seq_raw = self._offer_field(offer, "seq", "Sequence", "sequence")
+            if seq_raw is None:
+                continue
+            try:
+                seq = int(seq_raw)
+            except (TypeError, ValueError):
+                continue
+            if seq <= 0:
+                continue
+            gets = self._coerce_ledger_amount(
+                self._offer_field(offer, "TakerGets", "taker_gets")
+            )
+            pays = self._coerce_ledger_amount(
+                self._offer_field(offer, "TakerPays", "taker_pays")
+            )
+            if gets is None or pays is None:
                 continue
             side, price, size_xrp = self._parse_offer_legs(gets, pays)
             if side:
@@ -376,13 +451,23 @@ class XRPLConnector:
         return self._validate_tx_response(response)
 
     async def cancel_all_offers(self) -> int:
+        """Cancel every AccountOffers entry by sequence (does not rely on leg parsing)."""
         wallet = self.load_wallet()
+        sequences = await self.get_open_offer_sequences()
         cancelled = 0
-        for offer in await self.get_open_offers():
-            tx = OfferCancel(account=self.account_address, offer_sequence=offer.sequence)
+        for seq in sequences:
+            tx = OfferCancel(account=self.account_address, offer_sequence=seq)
             response = await self._sign_and_submit(tx, wallet)
             self._validate_tx_response(response)
             cancelled += 1
+            logger.info("Cancelled offer seq=%s on %s", seq, self.account_address)
+        remaining = await self.get_open_offer_sequences()
+        if remaining:
+            logger.warning(
+                "%s offer(s) still open after cancel (%s submitted).",
+                len(remaining),
+                cancelled,
+            )
         return cancelled
 
     async def place_quote(self, intent: QuoteIntent) -> str:
@@ -391,13 +476,13 @@ class XRPLConnector:
         if intent.side == "ask":
             taker_gets = str(xrp_to_drops(intent.size_xrp))
             taker_pays = IssuedCurrencyAmount(
-                currency=self.rlusd_currency,
+                currency=self._issued_rlusd_currency_code(),
                 issuer=self.rlusd_issuer,
                 value=f"{rlusd_amount:.6f}",
             )
         elif intent.side == "bid":
             taker_gets = IssuedCurrencyAmount(
-                currency=self.rlusd_currency,
+                currency=self._issued_rlusd_currency_code(),
                 issuer=self.rlusd_issuer,
                 value=f"{rlusd_amount:.6f}",
             )

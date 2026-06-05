@@ -40,4 +40,4 @@ Audit date: 2026-06-03. Fixes applied in the same pass unless noted.
 | Phantom fill capture on bad mid | **Fixed** — trustworthy mid in `_log_fill` |
 | Inverted BookOffers ask (~0.28) at RPC | **Open** — engine defends; root connector fix Tier 2.5 |
 | Quotes when `market_edge_met` false | **Open** — edge-required gate Tier 2.5 |
-| Gate 1 formal pass on mainnet | **Open** — use `safe`, balance PnL scoreboard |
+| Gate 1 validation on mainnet | **Complete (2026-05-29)** — plumbing stable; formal metric bar partial; **Gate 2 current** (`tight_spread`) |

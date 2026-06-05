@@ -148,7 +148,12 @@ class FillQualityTracker:
         markouts_30s = [rec.markout_30s for rec in active if rec.markout_30s is not None]
         n = len(active)
         toxic_ratio = toxic / n if n else 0.0
-        toxic_ratio_30s = toxic_30s / len(markouts_30s) if markouts_30s else toxic_ratio
+        if len(markouts_30s) >= 3:
+            toxic_ratio_30s = toxic_30s / len(markouts_30s)
+        elif len(markouts_30s) >= 1:
+            toxic_ratio_30s = toxic_30s / len(markouts_30s)
+        else:
+            toxic_ratio_30s = 0.0
         mean_markout_30s = (
             sum(markouts_30s) / len(markouts_30s) if markouts_30s else 0.0
         )

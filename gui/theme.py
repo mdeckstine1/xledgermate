@@ -425,6 +425,7 @@ def render_header_bar(
     mid: Optional[float],
     network: str,
     fills_session: int = 0,
+    fills_label: str = "Fills",
 ) -> None:
     """Single top command bar — status, mode, P&L, profile, market."""
     import streamlit as st
@@ -451,7 +452,7 @@ def render_header_bar(
             header_stat("Profile", profile_label),
             header_stat("Mode", operating_mode_label),
             header_stat("Mid", mid_str),
-            header_stat("Fills", str(int(fills_session))),
+            header_stat(fills_label, str(int(fills_session))),
         ]
     )
 

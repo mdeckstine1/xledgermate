@@ -235,7 +235,7 @@ Sometimes the XRPL book feed shows an **inverted** top of book (bid ~1.16 RLUSD/
 
 The engine now **refuses** that mid for marking, drawdown, and fill capture. It keeps the **last valid mid** for display until the book recovers. You may see `Using last valid mid` or `Skipped daily drawdown mark` in the log. **Trust balance PnL and your wallet on Xaman** over a one-cycle MTM spike.
 
-**Growing holdings (long-term goal):** The bot should compound **total XRP-equivalent** through **positive balance PnL** sessions, not through inventory luck or bad marks. Until **Gate 1** passes (see implementation plan), run **`safe`** and treat small weekly balance gains as success — not hero size or `tight_spread` while toxic is high.
+**Growing holdings (long-term goal):** The bot should compound **total XRP-equivalent** through **positive balance PnL** sessions, not through inventory luck or bad marks. **Gate 1 is complete** (plumbing validated on mainnet); Gate 2 uses **`tight_spread`** with the same ~250 XRP wallet. Treat toxic spikes on few fills as noise; scoreboard = **balance Δ + capture** over stable runs.
 
 ### Example — edge guard
 

@@ -16,3 +16,11 @@ def encode_currency_code(symbol: str) -> str:
         return symbol
     hex_code = str_to_hex(symbol).upper()
     return hex_code.ljust(40, "0")
+
+
+def resolve_rlusd_currency_code(currency: str) -> str:
+    """On-ledger RLUSD code for BookOffers / IssuedCurrencyAmount (not display name 'RLUSD')."""
+    symbol = (currency or "").strip().upper()
+    if symbol in {"RLUSD", RLUSD_CURRENCY_HEX} or symbol.startswith("524C555344"):
+        return RLUSD_CURRENCY_HEX
+    return encode_currency_code(currency)

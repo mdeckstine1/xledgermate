@@ -19,12 +19,11 @@ async def run_manual_rebalance_check(config: BotConfig | None = None) -> str:
     cfg = config or BotConfig.load()
     if not cfg.bot_account_address.strip():
         raise ValueError("Set bot_account_address in config before rebalancing.")
-    if not (cfg.bot_secret_key or "").strip():
-        raise ValueError("bot_secret_key is required to read balances from the ledger.")
 
+    secret = (cfg.bot_secret_key or "").strip() or None
     connector = XRPLConnector(
         account_address=cfg.bot_account_address.strip(),
-        secret=cfg.bot_secret_key,
+        secret=secret,
         rlusd_issuer=cfg.resolved_rlusd_issuer(),
         rlusd_currency=cfg.resolved_rlusd_currency_code(),
         network=XRPLNetworkConfig(json_rpc_url=cfg.resolved_rpc_url()),

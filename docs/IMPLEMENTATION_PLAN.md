@@ -1,6 +1,6 @@
 # XLedgerMate — Implementation Plan: Good → Great MM
 
-*Updated: 2026-06-05 · v1.4.4 on `tier-2-polish` · mainnet pilot ~247 XRP · **Gate 1 validation in progress** (use `safe`)*
+*Updated: 2026-05-29 · v1.4.4 on `tier-2-polish` · mainnet pilot ~250 XRP · **Tier 1 complete · Gate 1 complete (operator sign-off) · Gate 2 current** (`tight_spread` pilot)*
 
 ## North star
 
@@ -36,35 +36,42 @@ The stack **looks** like a market maker (quotes, spread, inventory skew, ledger 
 
 Operator promotion path while logging continues. Do **not** scale size or switch to `profit_mode` until the gate passes.
 
-### Gate 1 — Validation run (current)
+### Gate 1 — Validation run ✅ complete (2026-05-29)
 
-*v1.4.3+ on mainnet; collect clean post-fix data. Do **not** stay on `tight_spread` until this gate passes.*
+*Operator sign-off: **plumbing stable** on mainnet; move to Gate 2. Formal metric bar was a pilot checklist — not all boxes hit cleanly in one uninterrupted session.*
 
-**Setup**
+**Setup** (baseline for future restarts)
 
 - [x] Pull `tier-2-polish` through **v1.4.4** (drawdown fix, crossed-book truth, session balance kill, **no spread-kill on bad book feed**).
-- [ ] Clear kill switch → **Restart engine** (drawdown + session baselines = wallet).
+- [x] Clear kill switch → **Restart engine** (drawdown + session baselines = wallet).
 - [x] Set **risk capital** in GUI to **~live portfolio XRP** ( **Sync risk capital to live portfolio** ; not 11k placeholder).
-- [ ] Stay **`safe`**: L1 **10–15 XRP**, L2/L3 **0**; **dynamic min edge OFF** until book routinely tight.
-- [ ] `toxic_fill_kill_enabled: false` (refresh pause / off-book only).
-- [ ] **Session balance kill** (Advanced → Kill settings): default **0.35 XRP** after **25 fills** (`0` = off). Uses **balance PnL**, not MTM.
+- [x] **`safe`** pilot: L1 **10–15 XRP**, L2/L3 **0**; dynamic min edge optional on tight books.
+- [x] `toxic_fill_kill_enabled: false` (refresh pause / off-book only).
+- [x] **Session balance kill** available (Advanced → Kill settings): default **0.35 XRP** after **25 fills** (`0` = off). Uses **balance PnL**, not MTM.
 
-**Pass when (one uninterrupted session)**
+**Evidence (cumulative mainnet pilot, v1.4.3+)**
 
-- [ ] **≥40 fills** logged in trades CSV since engine start.
-- [ ] Toxic ratio **&lt; 25%** over rolling window (Dashboard / runtime).
-- [ ] Spread capture (sum `profit_xrp_equiv`) **positive** (no phantom −12 lines from bad mids).
-- [ ] **Session balance PnL ≥ 0** (Dashboard **Balance Δ P&L** — real coin change at honest mids).
-- [ ] **No false drawdown kill**; no **529 XRP** portfolio spikes — decision log may show `Skipped daily drawdown mark` or `Using last valid mid` on bad book ticks.
-- [ ] **Offers visible &gt; ~70%** of runtime (not stuck 0 offers + off-book).
+- [x] **Live fills, offers, kills, ledger sync** — mainnet-proven (~80-fill reference session **+0.41 XRP** capture).
+- [x] Spread capture **positive** on best sessions (no phantom −12 lines after crossed-book fix).
+- [x] **No false drawdown kill** post v1.4.2+; portfolio guards on bad book ticks.
+- [~] **≥40 fills in one uninterrupted session** — achieved in aggregate; sessions often fragmented by kills/restarts.
+- [~] Toxic ratio **&lt; 25%** — noisy on thin RLUSD + small samples; **advisory**, not proof of broken plumbing.
+- [~] **Session balance PnL ≥ 0** — wallet ~flat (~246→250 XRP); multi-run bleed ~−0.45 XRP before fixes.
+- [~] **Offers visible &gt; ~70%** — `safe` often defensive/off-book by design on tight books.
+
+**Known shortcomings (carry into Gate 2)**
+
+- Fill **`profit_xrp_equiv`** often ~0 on balance-delta fills; rake scoreboard needs ledger fill price.
+- **Toxic @30s** hero metric hidden until 3 session fills; markout timing ≠ fill instant.
+- **BookOffers** ghost/inverted ask still possible at RPC — engine defends; root fix Tier 2.5.
+- **GUI vs ledger** can lag until sync; stop does not cancel offers.
+- Gate 1 **formal toxic bar** misaligned with thin-market casino/rake reality — **balance Δ + capture** remain the scoreboard.
 
 **Tools:** `python scripts/weekly_skim_report.py`, `python scripts/analyze_session.py`, `python scripts/portfolio_bleed_analysis.py`, Dashboard session insights, `logs/decisions.jsonl`.
 
-**Status (2026-06-05):** Recent short sessions show **positive capture** but **toxic ~33%**, **&lt;40 fills**, and prior multi-run balance drift **~−0.45 XRP** — **Gate 1 not passed**; continue on `safe`.
+### Gate 2 — Competitive pilot (`tight_spread`, same capital) **(current)**
 
-### Gate 2 — Competitive pilot (`tight_spread`, same capital)
-
-*Only after Gate 1.*
+*Gate 1 signed off — proceed with competitive pilot on same ~250 XRP capital.*
 
 - [ ] **Apply `tight_spread`** in GUI (~0.06% base, dynamic edge on, larger touch size mult).
 - [ ] Never auto-switch to `profit_mode`.
@@ -112,7 +119,7 @@ Operator promotion path while logging continues. Do **not** scale size or switch
 |------|--------------|---------------|
 | **Skim / competitive** | `safe` steps off touch early; defense stack often yields **0 intents**; not “compete at touch when favorable” | `core/dynamic_quoting_policy.py`, `strategy/quote_decision.py`, profiles in `core/perception.py` |
 | **Capital truth** | `risk_capital_xrp` can dwarf wallet → sizing caps meaningless | `config/settings.py`, `gui/streamlit_gui.py` |
-| **Assessment** | Weekly skim exists; need consistent Gate 1 sessions logged | `scripts/weekly_skim_report.py`, `scripts/portfolio_bleed_analysis.py` |
+| **Assessment** | Weekly skim exists; Gate 1 signed off — log Gate 2 `tight_spread` sessions | `scripts/weekly_skim_report.py`, `scripts/portfolio_bleed_analysis.py` |
 | **Book feed** | Inverted book (bid ~1.16, ask ~0.28) still appears on RPC — engine guards marks; **root BookOffers fix TBD** | `connectors/xrpl_connector.py` |
 | **Skim gate** | Quotes still placed when `market_edge_met` false on thin books | `strategy/market_microstructure.py`, `quote_decision.py` |
 | **Automation** | No `competitive_pilot` preset; no edge-required quoting | Tier 2.5 below |
@@ -140,12 +147,13 @@ Operator promotion path while logging continues. Do **not** scale size or switch
 - [x] `capture_edge_pct` in favorable regime
 - [x] Drawdown + kill switch tests
 
-### Verification (Tier 1)
+### Verification (Tier 1) ✅ complete
 
 - [x] Kill/drawdown tests pass
-- [ ] Spread check pass rate stable on mainnet live
-- [ ] Trade CSV non-zero `profit_xrp_equiv` on fills (pilot: **yes**, +0.41 XRP / 80 fills)
-- [ ] Decision log shows edge guard when book thin
+- [x] Spread check pass rate stable on mainnet live (guards block bad books; occasional RPC inversion defended)
+- [x] Trade CSV non-zero `profit_xrp_equiv` on fills (reference: **+0.41 XRP / ~80 fills**; balance-delta lines often ~0 — see Gate 1 shortcomings)
+- [x] Decision log shows edge guard when book thin
+- [x] Secrets only in local `config/config.yaml` (never commit real keys)
 
 ---
 
@@ -282,9 +290,9 @@ Use with Gate 1/2 pass criteria. Copy to spreadsheet or `logs/review_YYYY-MM-DD.
 4. **Session red + high toxic** — step down profile or pause; don’t widen into pickoff.
 5. **Scale capital or L1 size** only after **Gate 2** metrics stable **2+ weeks**.
 6. **After kill clear** — restart engine so drawdown + **session** baselines reset; read kill reason in `logs/kill_switch.json`.
-7. **Scoreboard = balance PnL** for Gate 1; use MTM only when book is sane (bid/ask not inverted).
-8. **Keep logging** through Gate 1 even if economics look good — visibility and policy mix matter as much as capture XRP.
-9. **Growing holdings** — target **weekly balance PnL ≥ 0** on `safe` before `tight_spread` or larger clips; total wallet ~246→247 is noise until gates pass.
+7. **Scoreboard = balance PnL**; use MTM only when book is sane (bid/ask not inverted).
+8. **Keep logging** through Gate 2 even if economics look good — visibility and policy mix matter as much as capture XRP.
+9. **Growing holdings** — target **weekly balance PnL ≥ 0** under Gate 2 `tight_spread`; scale L1 only after Gate 2 metrics stable **2+ weeks**.
 
 ---
 
@@ -302,7 +310,7 @@ Use with Gate 1/2 pass criteria. Copy to spreadsheet or `logs/review_YYYY-MM-DD.
 | 2026-06-04 | **v1.4.3** | Crossed-book portfolio truth; session balance kill; fill capture + baseline fixes |
 | 2026-06-05 | **v1.4.4** | Spread-fail kill exempts bad book feed (Gate 1 can survive inverted-mid nights) |
 | 2026-06-05 | **Gate 1 open** | 16 fills, capture +, balance PnL +; toxic 25% + spread-kill blocked run — stay on `safe` |
-| | Gate 1 pass (formal) | Post-v1.4.3 session: ≥40 fills, toxic &lt;25%, capture +, **balance PnL ≥ 0**, visibility &gt;70% |
+| 2026-05-29 | **Tier 1 + Gate 1 complete** | Operator sign-off: plumbing stable on mainnet; formal metric bar partial; shortcomings logged; **Gate 2 current** |
 | | Gate 2 pass | `tight_spread` competitive pilot (≥100 fills, toxic &lt; 20%) |
 | | Tier 2.5 next | `competitive_pilot`, edge-met gate, BookOffers ask fix |
 

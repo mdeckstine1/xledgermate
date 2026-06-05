@@ -6,6 +6,7 @@ import importlib
 import json
 import logging
 import sys
+import time
 from dataclasses import fields
 from datetime import timedelta
 from pathlib import Path
@@ -27,7 +28,9 @@ from core.perception import BUILT_IN_PROFILES
 from utils import gui_profile_presets as gui_profile_presets_module
 from core.runtime_state import QuoteIntent
 from utils.book_visibility import quote_visibility
+from utils.gui_errors import format_ledger_sync_error
 from utils.gui_runtime_sync import patch_runtime_state_file
+from utils.operator_health import build_operator_health, toxic_metric_labels
 from utils.session_insights import build_session_insights
 from utils.quote_validation import QuoteValidationResult, validate_quotes_against_book
 from strategy.inventory_balance import assess_rebalance_need
@@ -263,7 +266,10 @@ def _sidebar_wallet_display_runtime(fresh: Optional[dict] = None) -> tuple[dict,
 
     fresh_fills = int(fresh.get("fills_session") or 0) if fresh else 0
     cached_fills = int(cached.get("fills_session") or 0)
-    display["fills_session"] = max(fresh_fills, cached_fills)
+    if is_engine_running():
+        display["fills_session"] = max(fresh_fills, cached_fills)
+    else:
+        display["fills_session"] = fresh_fills if fresh else cached_fills
 
     fresh_has_portfolio = fresh.get("portfolio_value_xrp") is not None
     fresh_has_balances = fresh.get("balance_xrp") is not None or fresh.get("balance_rlusd") is not None
@@ -271,6 +277,261 @@ def _sidebar_wallet_display_runtime(fresh: Optional[dict] = None) -> tuple[dict,
     age = _runtime_updated_age_seconds(display)
     stale = using_cache or (age is not None and age > 45.0)
     return display, stale
+
+
+_LEDGER_SYNC_INTERVAL_SEC = 20.0
+_LEDGER_SYNC_TS_KEY = "_ledger_sync_ts"
+_LEDGER_SYNC_SNAP_KEY = "_ledger_sync_snapshot"
+
+
+def _explorer_account_url(config: BotConfig, address: str) -> str:
+    if config.testnet:
+        return f"https://testnet.xrpl.org/accounts/{address}"
+    return f"https://xrpscan.com/account/{address}"
+
+
+def _reload_ledger_sync_modules() -> None:
+    """Streamlit keeps old module objects — reload before manual ledger sync."""
+    import connectors.xrpl_connector as xrpl_mod
+    import utils.ledger_balances as ledger_mod
+    import utils.xrpl_currency as currency_mod
+
+    importlib.reload(currency_mod)
+    importlib.reload(xrpl_mod)
+    importlib.reload(ledger_mod)
+
+
+def _try_refresh_ledger_balances(
+    config: BotConfig,
+    *,
+    force: bool = False,
+    only_when_engine_stopped: bool = False,
+) -> tuple[bool, str]:
+    """
+    Throttled RPC read of bot wallet balances → runtime_state.json.
+
+    Returns (ok, message). Empty message when skipped (within throttle window).
+    """
+    if only_when_engine_stopped and is_engine_running():
+        return True, ""
+
+    address = config.bot_account_address.strip()
+    if not address:
+        return False, "Set bot account address in Advanced → Bot account."
+
+    now = time.time()
+    last = float(st.session_state.get(_LEDGER_SYNC_TS_KEY) or 0.0)
+    if not force and last and (now - last) < _LEDGER_SYNC_INTERVAL_SEC:
+        return True, ""
+
+    import concurrent.futures
+
+    def _run() -> tuple[bool, dict, str]:
+        if force:
+            _reload_ledger_sync_modules()
+        import utils.ledger_balances as ledger_mod
+
+        return ledger_mod.sync_ledger_balances_to_runtime_sync(config)
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            ok, snap, msg = pool.submit(_run).result(timeout=90)
+    except concurrent.futures.TimeoutError:
+        return False, "Ledger sync timed out after 90s."
+    except Exception as exc:
+        return False, format_ledger_sync_error(exc)
+
+    if snap:
+        st.session_state[_LEDGER_SYNC_TS_KEY] = now
+        st.session_state[_LEDGER_SYNC_SNAP_KEY] = snap
+        cache = _wallet_fields_from_runtime(snap)
+        if cache:
+            prior = st.session_state.get(_SIDEBAR_WALLET_CACHE_KEY) or {}
+            st.session_state[_SIDEBAR_WALLET_CACHE_KEY] = {**prior, **cache}
+    return ok, msg
+
+
+def _effective_open_offers_count(runtime: dict) -> int:
+    """Prefer last ledger RPC sync over stale runtime_state engine snapshot."""
+    snap = st.session_state.get(_LEDGER_SYNC_SNAP_KEY) or {}
+    if snap.get("open_offers_count") is not None:
+        return int(snap["open_offers_count"])
+    return int(runtime.get("open_offers_count") or 0)
+
+
+def _render_stopped_engine_ledger_notice(
+    config: BotConfig, runtime: dict
+) -> None:
+    """Explain idle state; warn only when live ledger still has open offers."""
+    if is_engine_running():
+        return
+
+    stale_runtime_count = int(runtime.get("open_offers_count") or 0)
+    if stale_runtime_count > 0:
+        try:
+            _try_refresh_ledger_balances(config, force=True)
+            runtime = _load_runtime_state() or runtime
+        except (TypeError, OSError, ValueError, ImportError):
+            logger.exception("Pre-notice ledger refresh failed")
+
+    count = _effective_open_offers_count(runtime)
+    fills = int(runtime.get("fills_session") or 0)
+    updated = runtime.get("updated_utc", "")
+
+    if count > 0:
+        st.warning(
+            f"**{count} offer(s) on the DEX** — stopping the bot does not cancel them. "
+            "Use **Cancel all offers** below or under Advanced → Safety."
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Cancel all offers now", key="stopped_cancel_offers", type="primary"):
+                with st.spinner("Cancelling on ledger…"):
+                    ok, msg = cancel_offers_on_ledger()
+                st.session_state["_gui_flash_message"] = msg
+                st.session_state["_gui_flash_kind"] = "success" if ok else "error"
+                st.rerun()
+        with c2:
+            if st.button("Refresh from ledger", key="stopped_refresh_ledger"):
+                _try_refresh_ledger_balances(config, force=True)
+                st.rerun()
+    elif stale_runtime_count > 0 and count == 0:
+        st.success(
+            "**No open offers on the ledger** — the “1 offer” display was stale from the "
+            "last engine run and is now cleared."
+        )
+    else:
+        st.caption("Engine stopped · **no open offers** on ledger (RPC).")
+
+    if fills > 0:
+        st.caption(f"Session fill count from last engine run: **{fills}** (resets on next start).")
+    if updated:
+        st.caption(f"Runtime file last updated: `{updated}`")
+
+
+def _ledger_sync_age_caption() -> Optional[str]:
+    last = float(st.session_state.get(_LEDGER_SYNC_TS_KEY) or 0.0)
+    if not last:
+        return None
+    age = int(time.time() - last)
+    if age < 90:
+        return f"Balances aligned with ledger ({age}s ago)"
+    return None
+
+
+def _render_bot_wallet_ledger_panel(
+    config: BotConfig,
+    runtime: dict,
+    *,
+    sync_button_key: str,
+    engine_running: bool,
+) -> None:
+    """Controls tab: ledger-aligned balances, collapsible help, manual rebalance."""
+    addr = config.bot_account_address.strip()
+    with st.expander("Bot wallet & ledger", expanded=False):
+        if not addr:
+            st.info(
+                "Set **Bot account address** under Advanced → Bot account, then open this section again."
+            )
+            return
+
+        issuer = config.resolved_rlusd_issuer()
+        _, network = _effective_network(config, runtime, engine_running=engine_running)
+        snap = st.session_state.get(_LEDGER_SYNC_SNAP_KEY) or {}
+        xrp = runtime.get("balance_xrp", snap.get("balance_xrp"))
+        rlusd = runtime.get("balance_rlusd", snap.get("balance_rlusd"))
+        mid = float(runtime.get("mid_price") or snap.get("mid_price") or 0)
+
+        st.caption(f"`{addr}`")
+        row = st.columns([1, 1, 2])
+        with row[0]:
+            if st.button("Sync from ledger", key=sync_button_key):
+                with st.spinner("Reading validated ledger…"):
+                    ok, msg = _try_refresh_ledger_balances(config, force=True)
+                if ok:
+                    touch_operator_activity("ledger_sync")
+                    st.session_state["_gui_flash_message"] = msg or "Ledger balances synced."
+                    st.session_state["_gui_flash_kind"] = "success"
+                else:
+                    st.session_state["_gui_flash_message"] = msg
+                    st.session_state["_gui_flash_kind"] = "error"
+                st.rerun()
+        with row[2]:
+            st.link_button(
+                f"Explorer ({network})",
+                _explorer_account_url(config, addr),
+                use_container_width=True,
+            )
+        if xrp is not None or rlusd is not None:
+            b1, b2, b3 = st.columns(3)
+            if xrp is not None:
+                b1.metric("Ledger XRP", _fmt_xrp_balance(xrp))
+            if rlusd is not None:
+                b2.metric("Ledger RLUSD", _fmt_rlusd_balance(rlusd))
+            if mid > 0 and xrp is not None and rlusd is not None:
+                total_xrp = float(xrp) + float(rlusd) / mid
+                b3.metric("Total (at mid)", f"{total_xrp:.2f} XRP")
+        ledger_note = _ledger_sync_age_caption()
+        if ledger_note:
+            st.caption(ledger_note)
+
+        with st.expander("How these numbers work", expanded=False):
+            st.markdown(
+                """
+**What to trust**
+
+| Figure | Source | Match Xaman? |
+|--------|--------|----------------|
+| **Ledger XRP / RLUSD** | XRPL account (Sync from ledger) | Yes — same **bot** `r…` address |
+| **Portfolio total** | Legs + DEX **book mid** | Approximate — mid can be wrong if book is crossed |
+| **Session P&L** | Since engine start | No — not your all-time wallet change |
+
+**Manual rebalancing (bot does not swap for you)**
+
+1. **Sync from ledger** — refresh XRP/RLUSD legs.
+2. Open the **same address** in Xaman and confirm the two legs match.
+3. Click **Check rebalance now** below for skew vs your target mix.
+4. If advised, swap **in Xaman** (or another wallet) — e.g. XRP → RLUSD or the reverse.
+5. **Sync again** — then start or resume the engine.
+
+Use **ledger legs** for how much to move, not session P&L or portfolio total alone.
+The engine slowly skews quotes toward target; large fixes are manual swaps.
+                """
+            )
+
+        with st.expander("RLUSD issuer (not your wallet)", expanded=False):
+            st.code(issuer)
+            st.caption(
+                "Token issuer on XRPL — not where your bot keeps RLUSD. "
+                "Do not compare your balance to this address in Xaman."
+            )
+
+        offer_n = int(runtime.get("open_offers_count") or 0)
+        if offer_n > 0 and st.button(
+            "Cancel all offers on ledger",
+            key="controls_cancel_offers",
+            use_container_width=True,
+        ):
+            with st.spinner("Cancelling…"):
+                ok, msg = cancel_offers_on_ledger()
+            st.session_state["_gui_flash_message"] = msg
+            st.session_state["_gui_flash_kind"] = "success" if ok else "error"
+            st.rerun()
+
+        st.markdown("**Inventory vs target**")
+        _show_rebalance_status(config, runtime, mid=mid)
+        if st.button("Check rebalance now", key="controls_rebalance_check", use_container_width=True):
+            try:
+                with st.spinner("Reading ledger…"):
+                    ok, msg = manual_rebalance_check()
+                st.session_state["_gui_flash_message"] = msg or (
+                    "Rebalance check done." if ok else "Rebalance check failed."
+                )
+                st.session_state["_gui_flash_kind"] = "success" if ok else "warning"
+            except Exception as exc:
+                st.session_state["_gui_flash_message"] = str(exc)
+                st.session_state["_gui_flash_kind"] = "warning"
+            st.rerun()
 
 
 _BALANCE_SHARES_CACHE_KEY = "_balance_shares_cache"
@@ -744,8 +1005,8 @@ _SESSION_BALANCE_PNL_HELP = (
 )
 _SESSION_PNL_NOTE = "Since this engine run only — not Xaman all-time."
 _PORTFOLIO_RLUSD_HELP = (
-    "Total bot wallet in RLUSD: RLUSD balance plus XRP valued at the engine's book mid. "
-    "Xaman may differ slightly (their price feed vs DEX mid)."
+    "Total for the **bot wallet address** in RLUSD: RLUSD balance plus XRP at the DEX book mid. "
+    "Use **Sync from ledger** if XRP/RLUSD legs look wrong; portfolio still uses book mid."
 )
 
 
@@ -754,21 +1015,21 @@ def _render_sidebar_wallet(runtime: dict, *, stale: bool = False) -> None:
     display, is_stale = _sidebar_wallet_display_runtime(runtime)
     stale = stale or is_stale
 
-    port_rlusd = _portfolio_value_rlusd(display)
     port_xrp = display.get("portfolio_value_xrp")
+    port_rlusd = _portfolio_value_rlusd(display)
     mid = display.get("mid_price")
 
-    if port_rlusd is not None:
+    if port_xrp is not None:
+        st.metric(
+            "Portfolio",
+            f"{float(port_xrp):,.4f} XRP",
+            help="Bot wallet total at book mid (~250 XRP on a ~246 wallet).",
+        )
+    elif port_rlusd is not None:
         st.metric(
             "Portfolio",
             f"{port_rlusd:,.2f} RLUSD",
             help=_PORTFOLIO_RLUSD_HELP,
-        )
-    elif port_xrp is not None:
-        st.metric(
-            "Portfolio",
-            f"{float(port_xrp):,.4f} XRP",
-            help="Total at last book mid — RLUSD display resumes when mid is available.",
         )
     else:
         st.metric("Portfolio", "—", help="Start the engine to load balances.")
@@ -795,6 +1056,9 @@ def _render_sidebar_wallet(runtime: dict, *, stale: bool = False) -> None:
         st.caption("*Last known balance — engine refreshing…*")
     elif age is not None and age > 30:
         st.caption(f"Updated {int(age)}s ago")
+    ledger_note = _ledger_sync_age_caption()
+    if ledger_note:
+        st.caption(ledger_note)
 
 
 def _runtime_updated_age_seconds(runtime: dict) -> Optional[float]:
@@ -1257,12 +1521,15 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
     m2.metric("Session P&L", f"{pnl_mtm:+.4f}", help=_SESSION_MTM_HELP)
     m3.metric("Balance Δ P&L", f"{pnl_balance:+.4f}", help=_SESSION_BALANCE_PNL_HELP)
     m4.metric("Drawdown", f"{dd:.3f}%")
+    st.caption("Ledger legs & manual rebalance → **Controls → Bot wallet & ledger**")
 
     e1, e2, e3, e4 = st.columns(4)
-    toxic_pct = float(runtime.get("toxic_fill_ratio", 0.0)) * 100.0
-    toxic_30 = float(runtime.get("toxic_fill_ratio_30s", 0.0)) * 100.0
-    e1.metric("Toxic ratio", f"{toxic_pct:.0f}%", help="Adverse fills / recent (profile dampens quotes)")
-    e2.metric("Toxic @30s", f"{toxic_30:.0f}%", help="30s markout horizon")
+    profile_name = (runtime.get("active_profile") or config.active_profile or "safe").strip().lower()
+    tox_label, tox_help, tox30_label, tox30_help = toxic_metric_labels(
+        runtime, profile_name=profile_name
+    )
+    e1.metric("Toxic ratio", tox_label, help=tox_help)
+    e2.metric("Toxic @30s", tox30_label, help=tox30_help)
     e3.metric("Cancel / fill", f"{float(runtime.get('cancel_per_fill', 0.0)):.1f}", help="Lower is better — queue preservation")
     poll = int(runtime.get("book_poll_interval_seconds", 15))
     full = int(runtime.get("full_quote_refresh_seconds", 60))
@@ -1290,12 +1557,18 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
         ),
         help="RLUSD held · share of total portfolio value at book mid.",
     )
+    offer_count = (
+        int(runtime.get("open_offers_count", 0))
+        if is_engine_running()
+        else _effective_open_offers_count(runtime)
+    )
+    offer_help = "Live from ledger when engine is stopped; last engine cycle when running."
     b3.metric(
         "Open offers",
-        int(runtime.get("open_offers_count", 0)),
-        delta=f"cycle {int(runtime.get('cycle_count', 0))}",
+        offer_count,
+        delta=f"cycle {int(runtime.get('cycle_count', 0))}" if is_engine_running() else "ledger",
+        help=offer_help,
     )
-
     if data_stale and xrp_share is None and (xrp is not None or rlusd is not None):
         st.caption("*Balance shares use last known mid — engine refreshing…*")
 
@@ -1432,6 +1705,7 @@ def _render_command_bar(
         mid=bar_runtime.get("mid_price"),
         network=network,
         fills_session=int(bar_runtime.get("fills_session", 0) or 0),
+        fills_label="Fills" if engine_running else "Last-run fills",
     )
 
 
@@ -1451,6 +1725,14 @@ def _sidebar_wallet_live_fragment() -> None:
     if not st.session_state.get("auto_refresh", True):
         return
     _ensure_theme()
+    try:
+        cfg = _load_config()
+        if is_engine_running():
+            _try_refresh_ledger_balances(cfg)
+        else:
+            _try_refresh_ledger_balances(cfg, only_when_engine_stopped=True)
+    except (TypeError, OSError, ValueError, ImportError):
+        logger.exception("Sidebar ledger sync skipped")
     fresh = _load_runtime_state() or {}
     _render_sidebar_wallet(fresh)
 
@@ -1467,6 +1749,14 @@ def _dashboard_live_fragment() -> None:
         cfg = _load_config()
     except TypeError:
         return
+    try:
+        if is_engine_running():
+            _try_refresh_ledger_balances(cfg)
+        else:
+            _try_refresh_ledger_balances(cfg, only_when_engine_stopped=True)
+    except (TypeError, OSError, ValueError, ImportError):
+        logger.exception("Dashboard ledger sync skipped")
+    runtime = _load_runtime_state() or runtime
     _update_live_dashboard(cfg, runtime)
 
 
@@ -1497,6 +1787,12 @@ def _inventory_live_fragment() -> None:
         cfg = _load_config()
     except TypeError:
         return
+    try:
+        if not is_engine_running():
+            _try_refresh_ledger_balances(cfg, only_when_engine_stopped=True)
+            runtime = _load_runtime_state() or runtime
+    except (TypeError, OSError, ValueError, ImportError):
+        logger.exception("Inventory ledger sync skipped")
     _render_inventory_tab(cfg, runtime)
 
 
@@ -1571,6 +1867,11 @@ def _render_sidebar_commands(config: BotConfig) -> None:
             help="Graceful stop via stop file, then terminate engine process.",
         ):
             ok, msg = stop_engine()
+            if ok:
+                try:
+                    _try_refresh_ledger_balances(_load_config(), force=True)
+                except Exception:
+                    logger.exception("Post-stop ledger refresh failed")
             _show_result(ok, msg, fail="warning")
             st.rerun()
 
@@ -1637,11 +1938,42 @@ def _show_rebalance_status(
             st.info(advice.summary)
 
 
+def _render_run_health_panel(
+    config: BotConfig, runtime: dict, *, engine_running: bool
+) -> None:
+    """Single place for engine/ledger/toxic/book — reduces scattered warnings."""
+    profile = (runtime.get("active_profile") or config.active_profile or "safe").strip().lower()
+    ledger_n = (
+        _effective_open_offers_count(runtime) if not engine_running else None
+    )
+    health = build_operator_health(
+        runtime,
+        engine_running=engine_running,
+        profile_name=profile,
+        ledger_offer_count=ledger_n,
+    )
+    expanded = health.status != "ok"
+    with st.expander(f"Run health — {health.headline}", expanded=expanded):
+        for line in health.bullets:
+            st.markdown(f"- {line}")
+        if health.actions:
+            st.markdown("**Suggested next steps**")
+            for step in health.actions:
+                st.markdown(f"- {step}")
+
+
 def _render_controls_tab(
     config: BotConfig, *, engine_running: bool, runtime: Optional[dict] = None
 ) -> None:
     """Settings grouped in expanders — less overwhelming than one long scroll."""
     runtime = runtime or {}
+    _render_run_health_panel(config, runtime, engine_running=engine_running)
+    _render_bot_wallet_ledger_panel(
+        config,
+        runtime,
+        sync_button_key="ledger_sync_controls",
+        engine_running=engine_running,
+    )
     with st.expander("Engine", expanded=not engine_running):
         _render_sidebar_commands(config)
     mid = float(runtime.get("mid_price") or 0)
@@ -2002,14 +2334,21 @@ def _render_inventory_tab(config: BotConfig, runtime: dict) -> None:
     p2.metric("Mid", _fmt_price(runtime.get("mid_price"), 6))
     p3.metric("Best ask", _fmt_price(runtime.get("best_ask_rlusd_per_xrp"), 6))
 
-    st.markdown("#### Open offers")
+    st.markdown("#### Open offers (ledger)")
+    if not is_engine_running():
+        offer_n = _effective_open_offers_count(runtime)
+        if offer_n == 0:
+            st.caption("None on ledger (live RPC).")
     ledger_offers = runtime.get("open_offers") or []
     if ledger_offers:
         _show_dataframe(_open_offers_table(ledger_offers), height=200)
     elif int(runtime.get("open_offers_count", 0)) > 0:
-        st.caption(f"{runtime.get('open_offers_count')} offer(s) on ledger — detail on next cycle.")
+        st.caption(
+            f"{runtime.get('open_offers_count')} offer(s) on ledger — "
+            "Sync from ledger (Controls) or wait for auto-refresh."
+        )
     else:
-        st.caption("No open offers.")
+        st.caption("No open offers on ledger.")
 
     st.markdown("#### Quote ladder (planned)")
     intents = runtime.get("quote_intents", [])
@@ -2023,6 +2362,8 @@ def _render_account_tab(config: BotConfig, runtime: dict) -> None:
     disk = _load_config()
     config.bot_account_address = disk.bot_account_address
     config.bot_secret_key = disk.bot_secret_key
+
+    st.caption("Ledger sync and manual rebalance: **Controls** tab → **Bot wallet & ledger**.")
 
     st.markdown("### Bot account credentials")
     st.caption(
@@ -2065,11 +2406,10 @@ def _render_account_tab(config: BotConfig, runtime: dict) -> None:
 
     st.markdown("### Fund the bot")
     st.info(
-        "Send **XRP** to the address below (testnet faucet or transfer). "
-        "Use [tryrlusd.com](https://tryrlusd.com) with the **same** address for test RLUSD."
+        "Send **XRP** to your **bot wallet** address above (not the RLUSD issuer). "
+        "On testnet use [tryrlusd.com](https://tryrlusd.com) with that same **r…** address."
     )
     if config.bot_account_address:
-        st.code(config.bot_account_address)
         f1, f2, f3, f4 = st.columns(4)
         if f2.button("Setup RLUSD trust line"):
             disk = _load_config()
@@ -2161,9 +2501,12 @@ def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
         config.rlusd_issuer = st.text_input(
             "RLUSD issuer override",
             value=config.rlusd_issuer or "",
-            help=f"Default testnet: {RLUSD_ISSUER_TESTNET}",
+            help=f"Token issuer on XRPL — not your bot wallet. Default testnet: {RLUSD_ISSUER_TESTNET}",
         )
-        st.caption(f"Active issuer: `{config.resolved_rlusd_issuer()}`")
+        st.caption(
+            f"Active RLUSD issuer: `{config.resolved_rlusd_issuer()}` — "
+            "trust line points here; balances stay on your bot **r…** address."
+        )
 
     with st.expander("Telegram alerts", expanded=False):
         config.telegram_enabled = st.toggle("Enable Telegram", value=config.telegram_enabled)
@@ -2296,9 +2639,15 @@ def _render_advanced_tab(config: BotConfig, runtime: dict) -> None:
             else:
                 st.error(msg)
         if a2.button("Cancel all offers"):
-            with st.spinner("Cancelling..."):
+            with st.spinner("Cancelling on ledger…"):
                 ok, msg = cancel_offers_on_ledger()
-            _show_result(ok, msg)
+            if ok:
+                st.session_state["_gui_flash_message"] = msg
+                st.session_state["_gui_flash_kind"] = "success"
+            else:
+                st.session_state["_gui_flash_message"] = msg
+                st.session_state["_gui_flash_kind"] = "error"
+            st.rerun()
         if a3.button("Emergency stop"):
             from risk.kill_switch import KillSwitch
 
@@ -2459,7 +2808,9 @@ def run_gui() -> None:
     flash = st.session_state.pop("_gui_flash_message", None)
     flash_kind = st.session_state.pop("_gui_flash_kind", "success")
     if flash:
-        if flash_kind == "warning":
+        if flash_kind == "error":
+            st.error(flash)
+        elif flash_kind == "warning":
             st.warning(flash)
         else:
             st.success(flash)
@@ -2484,6 +2835,18 @@ def run_gui() -> None:
             st.session_state.auto_refresh = auto_refresh
             if st.button("Refresh now", use_container_width=True):
                 _gui_clear_stale_panel_state()
+                try:
+                    _try_refresh_ledger_balances(_load_config(), force=True)
+                except (TypeError, OSError, ValueError):
+                    pass
+                st.rerun()
+            if st.button("Sync balances from ledger", use_container_width=True):
+                with st.spinner("Reading ledger…"):
+                    ok, msg = _try_refresh_ledger_balances(_load_config(), force=True)
+                st.session_state["_gui_flash_message"] = msg or (
+                    "Ledger balances synced." if ok else "Ledger sync failed."
+                )
+                st.session_state["_gui_flash_kind"] = "success" if ok else "error"
                 st.rerun()
 
     if st.session_state.get("auto_refresh", True):

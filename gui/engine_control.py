@@ -238,18 +238,25 @@ def restart_engine(*, clear_kill: bool = True) -> tuple[bool, str]:
 
 
 def cancel_offers_on_ledger() -> tuple[bool, str]:
-    result = subprocess.run(
-        [_python_exe(), "main.py", "--mode", "cancel-offers"],
-        cwd=str(ROOT),
-        capture_output=True,
-        text=True,
-        timeout=180,
-        check=False,
-    )
-    if result.returncode != 0:
-        err = (result.stderr or result.stdout or "Unknown error").strip()
-        return False, err[-2000:]
-    return True, "All open offers cancelled on the ledger."
+    """Cancel via in-process XRPL (reliable credentials path) and refresh runtime_state."""
+    import concurrent.futures
+
+    from config.settings import BotConfig
+    from utils.offer_cancel import cancel_all_offers_and_sync_sync
+
+    def _run() -> tuple[bool, str, int, int]:
+        return cancel_all_offers_and_sync_sync(BotConfig.load())
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            ok, msg, _cancelled, _remaining = pool.submit(_run).result(timeout=180)
+    except concurrent.futures.TimeoutError:
+        return False, "Cancel offers timed out after 180s."
+    except ValueError as exc:
+        return False, str(exc)
+    except Exception as exc:
+        return False, str(exc)[-2000:]
+    return ok, msg
 
 
 def clear_kill_switch() -> tuple[bool, str]:

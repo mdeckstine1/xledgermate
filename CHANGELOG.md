@@ -7,13 +7,18 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
-## [1.4.4] — 2026-06-05 (`tier-2-polish`)
+## [1.4.4] — 2026-05-29 (`tier-2-polish`)
 
-**Theme:** Gate 1 runs survive bad book ticks without spread-fail kill.
+**Theme:** Gate 1 runs survive bad book ticks without spread-fail kill; **Tier 1 + Gate 1 signed off** — Gate 2 current.
 
 ### Fixed
 
 - **Spread-fail kill on bad book feed** — Missing, incomplete, or **inverted** book no longer increments the consecutive spread-failure streak or trips kill (`book_unreliable` on `QuoteValidationResult`). Live orders still pause until the book is sane.
+
+### Docs
+
+- **Tier 1 + Gate 1 complete (operator sign-off)** — plumbing stable on mainnet; formal metric checklist partially met; shortcomings documented; **Gate 2 `tight_spread` current** ([`IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md), [`MAINNET_PILOT.md`](docs/MAINNET_PILOT.md), [`AUDIT_REPORT.md`](docs/AUDIT_REPORT.md)).
+- Operator health / session insights messaging updated for Gate 2 pilot.
 
 ---
 

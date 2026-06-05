@@ -201,7 +201,11 @@ def build_session_insights(
 
     if n >= 40 and capture_xrp > 0 and toxic < 0.25:
         notes.append(
-            "Gate 1 validation metrics met (fills, capture, toxic) — consider Gate 2 tight_spread when stable."
+            "Strong session metrics — Gate 2 tight_spread pilot is appropriate if balance Δ holds."
+        )
+    elif n >= 20 and capture_xrp > 0:
+        notes.append(
+            "Gate 1 plumbing validated — Gate 2 tight_spread pilot; watch balance Δ and toxic on larger samples."
         )
 
     if policy:

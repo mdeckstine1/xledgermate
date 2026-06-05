@@ -254,11 +254,9 @@ class BotConfig:
         return testnet_issuer if self.testnet else mainnet_issuer
 
     def resolved_rlusd_currency_code(self) -> str:
-        from utils.xrpl_currency import RLUSD_CURRENCY_HEX, encode_currency_code
+        from utils.xrpl_currency import resolve_rlusd_currency_code
 
-        if self.rlusd_currency.upper() in {"RLUSD", RLUSD_CURRENCY_HEX}:
-            return RLUSD_CURRENCY_HEX
-        return encode_currency_code(self.rlusd_currency)
+        return resolve_rlusd_currency_code(self.rlusd_currency)
 
     def save(self, filepath: Optional[Union[str, Path]] = None) -> None:
         """Save current config to YAML."""

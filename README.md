@@ -11,7 +11,7 @@ XRPL XRP/RLUSD market-making bot (v1) focused on:
 ```text
 xledgermate/
 ├── main.py                 # App entrypoint
-├── VERSION                 # Release version (1.4.3)
+├── VERSION                 # Release version (1.4.4)
 ├── CHANGELOG.md            # Version history
 ├── docs/OPERATOR_MANUAL.md # Non-technical operator guide
 ├── requirements.txt
@@ -80,7 +80,7 @@ xledgermate/
 ## Branches
 
 - `main` — stable baseline on GitHub
-- `tier-2-polish` — **current mainnet pilot** (v1.4.3+: crossed-book guards, session balance kill, Tier 2 execution)
+- `tier-2-polish` — **current mainnet pilot** (v1.4.4: Tier 1 + Gate 1 complete; **Gate 2 `tight_spread`** in progress)
 - `development` — integration branch for phased work
 - `testnet` — testnet hardening (preflight, kill switch, portfolio drawdown, trust line tools)
 - `mainnet-prep` / `mainnet-pilot` — earlier mainnet phases (merged into tier-2 line)
@@ -122,7 +122,7 @@ Before **live** testnet (`dry_run: false`): run `setup-trust`, fund RLUSD, set n
 
 ## Versioning
 
-- Current version: see [`VERSION`](VERSION) (e.g. **1.4.3**)
+- Current version: see [`VERSION`](VERSION) (e.g. **1.4.4**)
 - Release notes: [`CHANGELOG.md`](CHANGELOG.md)
 - Operator guide: [`docs/OPERATOR_MANUAL.md`](docs/OPERATOR_MANUAL.md)
 - Strategy + gates: [`docs/STRATEGY_MANUAL.md`](docs/STRATEGY_MANUAL.md), [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
