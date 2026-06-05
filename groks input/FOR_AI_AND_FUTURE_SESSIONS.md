@@ -1,7 +1,7 @@
 # Handoff README — read this first (human or AI)
 
 **Last updated:** 2026-06-05 (Gate 2 running — Telegram live, VPS kill thresholds, early positive session)
-**Purpose:** This file replaces “memory” between Cursor/Grok sessions. Paste or ask the agent to read **`groks input/FOR_AI_AND_FUTURE_SESSIONS.md`** before doing VPS or trading work.
+**Purpose:** **New Grok session → read this file first.** Replaces chat memory for VPS, Gate 2, Telegram, kills, milestones. Path: `C:\Users\micha\xledgermate\groks input\FOR_AI_AND_FUTURE_SESSIONS.md`
 
 **Maintenance rule:** Update this file (and § Milestones) when the operator hits a milestone — VPS live, clean restart, Gate 2 start/end, profile change, major incident, git deploy to VPS, etc.
 
