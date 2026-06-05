@@ -37,7 +37,7 @@ Optional: **XLedgerMate Dashboard** on :8501 for a lighter view only.
 | 24/7 engine via systemd | ✅ |
 | Clean single-engine restart | ✅ (2026-06-05) |
 | Gate 2 pilot (`tight_spread`) | ✅ **in progress** |
-| WebSocket book feed (Tier 3) | 🔬 **local only** — `grok-ws-feed` / `experimental/ws_feed/` (VPS stays on HTTP poll) |
+| WebSocket book feed (Tier 3) | ✅ **probe validated** locally — see `experimental/ws_feed/PROBE_RESULTS.md` (VPS still HTTP poll) |
 
 ---
 

@@ -20,14 +20,15 @@
 | 3 | Telegram `/status`, guarded `/clear_kill` | Cursor | Not started |
 | 4 | Align `config.example.yaml` to Gate 2 kills (0.85/45, spread 12) | Cursor | Not started |
 | 5 | Ledger-first fill PnL in CSV; `data_pilot` profile (12s poll) | Cursor | After #1 |
-| 6 | **WebSocket book feed (Tier 3)** — `experimental/ws_feed/` on `grok-ws-feed` | Grok | **In progress — not on VPS** |
+| 6 | **WebSocket book feed (Tier 3)** — see [PROBE_RESULTS.md](../../experimental/ws_feed/PROBE_RESULTS.md) | Grok | **Probe done — engine adapter after Gate 2** |
 
-### WebSocket sandbox (2026-06-05)
+### WebSocket sandbox (2026-06-05, updated)
 
-- **Folder:** `experimental/ws_feed/` — probe only; **no** `trading_engine` / systemd wiring.
-- **Branch:** `grok-ws-feed` (from `grok-tier-2-collab`). VPS Gate 2 stays HTTP poll.
-- **Probe:** `python -m experimental.ws_feed.run_probe --seconds 90`
-- **Merge criteria:** stable mids vs HTTP, tests green, operator opts in after Gate 2 data run.
+- **Validated:** 3 min probe — 660 WS frames, 631 book applies, final mid **−0.9 bps** vs HTTP, book age **0.4s**.
+- **Fix shipped:** parse `tx_json`/`tx` (not `transaction`); RLUSD hex + `SubscribeBook.taker`.
+- **Failed 10 min run (doc only):** 2003 frames, 0 applies — same bug, log at `logs/ws_probe_10min_verbose.log`.
+- **Still not on VPS** — Gate 2 stays HTTP poll. Next: snapshots on subscribe, `BookFeed` flag, 30 min soak.
+- **Metrics file:** `experimental/ws_feed/PROBE_RESULTS.md` · handoff §3b.
 
 — Grok
 

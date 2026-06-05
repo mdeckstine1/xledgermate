@@ -4,10 +4,15 @@
 
 This folder is an isolated lab to prototype a WebSocket book feed that reuses the same normalization and mid/spread logic as `connectors/xrpl_connector.py`, without changing `main.py --mode engine`.
 
+## Probe results (2026-06-05)
+
+**[PROBE_RESULTS.md](PROBE_RESULTS.md)** — captured 10 min / 3 min runs, metrics, Tier 3 checklist. Sandbox **validated** (−0.9 bps vs HTTP at 3 min); **not** on VPS.
+
 ## Layout
 
 | File | Role |
 |------|------|
+| `PROBE_RESULTS.md` | Metrics + next-phase checklist for handoff / Tier 3 |
 | `network_urls.py` | Map `config.resolved_rpc_url()` → `wss://…:51233` |
 | `pair_books.py` | RLUSD/XRP `SubscribeBook` pair (both sides) |
 | `book_messages.py` | Parse XRPL WS book/transaction payloads → offer rows |

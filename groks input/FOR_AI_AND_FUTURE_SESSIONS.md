@@ -1,6 +1,6 @@
 # Handoff README — read this first (human or AI)
 
-**Last updated:** 2026-06-05 (Gate 2 running; **WebSocket sandbox** on `grok-ws-feed` — not on VPS)
+**Last updated:** 2026-06-05 (Gate 2 running; **WS probe validated** on `grok-ws-feed` — not on VPS)
 **Purpose:** **New Grok session → read this file first.** Replaces chat memory for VPS, Gate 2, Telegram, kills, milestones. Path: `C:\Users\micha\xledgermate\groks input\FOR_AI_AND_FUTURE_SESSIONS.md`
 
 **Maintenance rule:** Update this file (and § Milestones) when the operator hits a milestone — VPS live, clean restart, Gate 2 start/end, profile change, major incident, git deploy to VPS, etc.
@@ -24,8 +24,9 @@
 | 2026-06-05 | **Kill-loop lesson** — clear-kill alone re-fires; always **`systemctl restart`** after clear |
 | 2026-06-05 | **Gate 2 early data** — portfolio ~254 XRP equiv., session spread capture positive; **18/60** fills toward judgment (snapshot) |
 | 2026-06-05 | **WebSocket sandbox** — branch `grok-ws-feed`, folder `experimental/ws_feed/` (probe only; **not** wired to engine or VPS systemd) |
+| 2026-06-05 | **WS probe validated** — 3 min run: 660 frames, 631 book applies, final mid **−0.9 bps** vs HTTP; fix = parse `tx_json`/`tx` ([PROBE_RESULTS.md](../experimental/ws_feed/PROBE_RESULTS.md)) |
 
-*Next expected updates: first week skim report, ≥60 fills judgment (doc 05), Tier 2.5 code deploy (BookOffers + `market_edge_met`), WS probe results on `grok-ws-feed`.*
+*Next expected updates: first week skim report, ≥60 fills judgment (doc 05), Tier 2.5 deploy (BookOffers + `market_edge_met`), Tier 3 engine adapter when Gate 2 ends.*
 
 ---
 
@@ -83,7 +84,8 @@ xledgermate/
 | [collab/THREAD.md](collab/THREAD.md) | Grok ↔ Cursor task thread |
 | [collab/OPERATOR_NOTES.md](collab/OPERATOR_NOTES.md) | Operator priorities for both AIs |
 | [docs/04_...](docs/04_ROADMAP_FASTER_DECISIONS_AND_CLEAN_DATA_RUNS.md) | Toxic/kill spiral |
-| [../experimental/ws_feed/README.md](../experimental/ws_feed/README.md) | WebSocket book probe — Tier 3, isolated from engine |
+| [../experimental/ws_feed/README.md](../experimental/ws_feed/README.md) | WebSocket sandbox layout |
+| [../experimental/ws_feed/PROBE_RESULTS.md](../experimental/ws_feed/PROBE_RESULTS.md) | **Captured probe metrics + Tier 3 checklist** |
 
 ---
 
@@ -98,16 +100,40 @@ xledgermate/
 
 **Why two branches:** Gate 2 needs uninterrupted poll-only data on VPS while WS feed is built and compared offline.
 
+### WS probe results (2026-06-05) — ready for next phase
+
+Full tables: [experimental/ws_feed/PROBE_RESULTS.md](../experimental/ws_feed/PROBE_RESULTS.md)
+
+| Run | Duration | WS frames | Book applies | Final WS vs HTTP mid | Verdict |
+|-----|----------|-----------|--------------|----------------------|---------|
+| A (broken parser) | 10 min | 2,003 | **0** | +3.6 bps, **13s stale** | Ignored all txs (`transaction` key wrong) |
+| B (verbose) | 3 min | 543 | 519 | +4.1 bps | Live OfferCreate/Cancel parsing OK |
+| C (summaries) | 3 min | 660 | 631 | **−0.9 bps**, age **0.4s** | **Pass** for sandbox → Tier 3 design |
+
+**Critical fix:** rippled sends offer bodies in **`tx_json` / `tx`**, not `transaction` — see `book_messages.py` (`0f918ad`).
+
+**Operational notes:**
+
+- RLUSD book stream ~**3 frames/s** on mainnet (vs ~1 HTTP snapshot / 15s).
+- Incremental book can drift **±10 bps** mid-run; HTTP refresh every 45s + end alignment ~1 bps.
+- **`--verbose`:** one line per WS frame; without it: HTTP lines + `[WS summary]` every 30–60s.
+
 **Local probe (no engine, no orders):**
 
-```bash
+```powershell
 cd C:\Users\micha\xledgermate
 git checkout grok-ws-feed
-.venv\Scripts\python.exe -m experimental.ws_feed.run_probe --seconds 90
-.venv\Scripts\python.exe -m experimental.ws_feed.run_probe --http-only --seconds 30
+.\.venv\Scripts\python.exe -m experimental.ws_feed.run_probe --seconds 180 --summary-interval 30
 ```
 
-**Integration later (not now):** config flag e.g. `book_feed_mode: poll|ws|ws_with_http_fallback` in `trading_engine` after probe + operator opt-in. Doc **05** / **03** place WebSocket at **Tier 3** (post–Gate 2, higher capital).
+### Tier 3 next phase (do not start on VPS during Gate 2)
+
+1. Subscribe **bid + ask snapshots** on connect (not only deltas).
+2. `BookFeed` adapter + `book_feed_mode: poll|ws|ws_with_http_fallback` in `trading_engine`.
+3. Stale/drift guard: reuse `is_trustworthy_rlusd_mid`; fall back to HTTP if WS age &gt; N s or drift &gt; X bps.
+4. 30+ min soak + reconnect test before merge to `grok-tier-2-collab` or VPS.
+
+Doc **05** / **03**: WebSocket remains **Tier 3** (post–Gate 2, capital scale) — probe de-risks engineering only.
 
 ---
 
@@ -159,7 +185,7 @@ git checkout grok-ws-feed
 | VPS session kill **0.85/45** + spread kill **12** | Tier 2.5 when data justifies — **Cursor P0:** BookOffers ask fix + `market_edge_met` live block ([THREAD.md](collab/THREAD.md)) |
 | Clean restart + kill clear discipline (§6b) | |
 | Operator baseline ~**234 XRP** pre-bot → ~**254** XRP equiv. early pilot (2026-06-05) | |
-| **WS sandbox** on `grok-ws-feed` (local) | WS subscribe hardening, probe vs HTTP; merge only after Gate 2 judgment |
+| **WS probe validated** on `grok-ws-feed` ([PROBE_RESULTS.md](../experimental/ws_feed/PROBE_RESULTS.md)) | Tier 3: engine adapter + snapshots + soak test; **no VPS** until Gate 2 ends |
 
 ---
 
