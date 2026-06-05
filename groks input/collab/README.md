@@ -1,55 +1,33 @@
-# collab — Grok ↔ Cursor shared inbox
+# collab — Grok ↔ Cursor
 
-**Branch:** `grok-tier-2-collab` (from `tier-2-polish`)
+**Branch:** `grok-tier-2-collab`
 
-Use this folder to **pass messages between Grok and Cursor** (and future AI sessions) without cluttering `docs/` or `vps/`.
+One conversation file + your priorities. Long-term ops stay in [../FOR_AI_AND_FUTURE_SESSIONS.md](../FOR_AI_AND_FUTURE_SESSIONS.md).
 
-**Primary handoff stays:** [../FOR_AI_AND_FUTURE_SESSIONS.md](../FOR_AI_AND_FUTURE_SESSIONS.md) (VPS IP, milestones, ops).  
-**Collab is for:** “what we’re doing *right now*” and thread-specific notes.
+| File | Purpose |
+|------|---------|
+| **[THREAD.md](THREAD.md)** | **Grok ↔ Cursor** — newest post at top, sign each entry |
+| [OPERATOR_NOTES.md](OPERATOR_NOTES.md) | **You** — standing rules |
 
----
+## Rules
 
-## How to use it
-
-| File | Who writes | Purpose |
-|------|------------|---------|
-| [TO_CURSOR.md](TO_CURSOR.md) | **Grok** (or operator) | Requests, context, “please implement X”, VPS state Grok observed |
-| [FROM_CURSOR.md](FROM_CURSOR.md) | **Cursor** | Replies, what was merged, blockers, “done — verify on VPS” |
-| [OPERATOR_NOTES.md](OPERATOR_NOTES.md) | **You** | Preferences, priorities, “don’t touch profile this week” |
-| `YYYY-MM-DD-*.md` | Anyone | One-off session logs (optional) |
-
-**Rule:** Edit the **top section** of TO_CURSOR / FROM_CURSOR with a dated header; move old blocks to the bottom under `## Archive` instead of deleting history.
-
----
+1. Add a dated block at the **top** of THREAD (under **Pinned**).
+2. Sign: `— Grok` / `— Cursor` / `— Operator`.
+3. Update **Pinned** table when asks change.
+4. **No secrets.** Milestones → FOR_AI § Milestones when shipped.
 
 ## Prompt snippets
 
-**Starting Grok:**
+**Grok:**
 ```
-Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/TO_CURSOR.md (and FROM_CURSOR.md if present).
-```
-
-**Starting Cursor:**
-```
-Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/FROM_CURSOR.md (and TO_CURSOR.md if present).
+Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/THREAD.md
 ```
 
----
+**Cursor:**
+```
+Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/THREAD.md
+```
 
-## What does *not* go here
+## Not here
 
-| Put in | Not in collab |
-|--------|----------------|
-| [../docs/](../docs/) | Long-term audits & Gate 2 metrics |
-| [../vps/](../vps/) | Production install scripts, runbooks |
-| [../FOR_AI_AND_FUTURE_SESSIONS.md](../FOR_AI_AND_FUTURE_SESSIONS.md) | Milestones, IP, SSH, systemd names |
-
-When something is **shipped and stable**, summarize in **FOR_AI § Milestones** and trim collab threads.
-
----
-
-## Conventions
-
-- **No secrets** in collab files (tokens, keys, seeds).
-- **VPS changes:** Grok can run them; Cursor should note what was changed in FROM_CURSOR for the repo.
-- **Git:** Commit collab updates on `grok-tier-2-collab` so both tools see the same files.
+Audits → [../docs/](../docs/) · VPS install → [../vps/](../vps/)

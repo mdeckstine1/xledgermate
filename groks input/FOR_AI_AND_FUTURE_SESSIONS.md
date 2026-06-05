@@ -18,6 +18,7 @@
 | 2026-06-05 | **Gate 2 pilot started** — `tight_spread`, mainnet, 2-week discipline (don’t change profile mid-run) |
 | 2026-06-05 | **Branch `grok-tier-2-collab`** — handoff, VPS GUIs, operator docs pushed for Grok/Cursor collab |
 | 2026-06-05 | **Hourly Telegram report** — systemd timer on VPS (`xledgermate-hourly-report.timer`) |
+| 2026-06-05 | **Collab → `THREAD.md`** — single Grok ↔ Cursor file (replaced TO_/FROM_) |
 
 *Next expected updates: first week skim report, ≥60 fills judgment (doc 05), Tier 2.5 code deploy.*
 
@@ -57,7 +58,7 @@ groks input/
 ├── FOR_AI_AND_FUTURE_SESSIONS.md   ← THIS FILE
 ├── START_HERE.md
 ├── README.md
-├── collab/        Grok ↔ Cursor inbox (TO_CURSOR / FROM_CURSOR / OPERATOR_NOTES)
+├── collab/        Grok ↔ Cursor — THREAD.md + OPERATOR_NOTES.md
 ├── docs/          Audits + roadmaps (01–05)
 └── vps/
     ├── 07_VPS_BEGINNER_RUNBOOK.md
@@ -72,9 +73,9 @@ groks input/
 | [vps/07_VPS_BEGINNER_RUNBOOK.md](vps/07_VPS_BEGINNER_RUNBOOK.md) | First VPS setup |
 | [vps/dashboard/README.md](vps/dashboard/README.md) | Light monitoring GUI |
 | [vps/full_gui/README.md](vps/full_gui/README.md) | Full GUI + systemd ownership rules |
-| [collab/README.md](collab/README.md) | **Grok ↔ Cursor inbox** — [TO_CURSOR.md](collab/TO_CURSOR.md), [FROM_CURSOR.md](collab/FROM_CURSOR.md) |
+| [collab/THREAD.md](collab/THREAD.md) | **Grok ↔ Cursor** conversation |
+| [collab/OPERATOR_NOTES.md](collab/OPERATOR_NOTES.md) | Operator priorities for both AIs |
 | [docs/04_...](docs/04_ROADMAP_FASTER_DECISIONS_AND_CLEAN_DATA_RUNS.md) | Toxic/kill spiral |
-| [collab/README.md](collab/README.md) | **Grok ↔ Cursor** — `TO_CURSOR.md`, `FROM_CURSOR.md`, `OPERATOR_NOTES.md` |
 
 ---
 
@@ -244,7 +245,7 @@ Sync **risk capital** to live portfolio in Full GUI when editing config; for una
 Copy into a new chat:
 
 ```
-Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/TO_CURSOR.md (+ FROM_CURSOR.md) in C:\Users\micha\xledgermate first.
+Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/THREAD.md in C:\Users\micha\xledgermate first.
 Context: XLedgerMate XRPL MM bot, branch grok-tier-2-collab v1.4.4, Gate 2 pilot IN PROGRESS.
 VPS: Hetzner 188.245.50.229, SSH key C:\Users\micha\.ssh\hetzner_xledgermate, repo /root/xledgermate.
 Engine owner: systemd xledgermate ONLY — never GUI Start/Restart.
