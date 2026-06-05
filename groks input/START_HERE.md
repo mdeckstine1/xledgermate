@@ -40,10 +40,16 @@ Optional: **XLedgerMate Dashboard** on :8501 for a lighter view only.
 
 ---
 
+## New Grok session (get up to speed)
+
+Say:
+
+**"Read `groks input/FOR_AI_AND_FUTURE_SESSIONS.md` — that's the handoff."**
+
+Everything important is there: VPS, Telegram, kill/restart, Gate 2, milestones. Collab `THREAD.md` only if Cursor left you a task.
+
 ## If something looks wrong
 
-Ask a new Grok chat:
-
-*"Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and check the VPS."*
+**"Read FOR_AI and check the VPS."**
 
 For kill switch: clear in GUI or CLI, then **restart via systemd** (not GUI Restart) — see handoff §6b.

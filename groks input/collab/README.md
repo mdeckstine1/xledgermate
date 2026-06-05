@@ -18,7 +18,12 @@ One conversation file + your priorities. Long-term ops stay in [../FOR_AI_AND_FU
 
 ## Prompt snippets
 
-**Grok:**
+**Grok (default — start here):**
+```
+Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md
+```
+
+**Grok + Cursor task:**
 ```
 Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/THREAD.md
 ```
