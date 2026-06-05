@@ -24,6 +24,7 @@ from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig
 from experimental.ws_feed.http_poll_feed import HttpPollBookFeed
 from experimental.ws_feed.network_urls import rpc_url_to_websocket_url
 from experimental.ws_feed.pair_books import RlusdXrpPair
+from experimental.ws_feed.probe_verbose import WsProbeStats
 from experimental.ws_feed.ws_book_feed import WsBookFeed
 from utils.logging_setup import setup_logging
 
@@ -40,13 +41,21 @@ def _build_connector(config: BotConfig) -> XRPLConnector:
     )
 
 
-async def _http_loop(feed: HttpPollBookFeed, seconds: float, interval: float) -> None:
+async def _http_loop(
+    feed: HttpPollBookFeed,
+    seconds: float,
+    interval: float,
+    stats: WsProbeStats | None = None,
+) -> None:
     end = time.monotonic() + seconds
     n = 0
     while time.monotonic() < end:
         book = await feed.fetch_order_book()
         bid, ask, mid = feed.best_and_mid(book)
         n += 1
+        if stats is not None and mid is not None:
+            stats.last_http_mid = mid
+            stats.last_http_at = time.monotonic()
         logger.info(
             "[HTTP #%s] bid=%.6f ask=%.6f mid=%s latency_ms=%.0f",
             n,
@@ -63,6 +72,8 @@ async def _run_ws_probe(
     *,
     seconds: float,
     ws_seconds: float,
+    verbose: bool = False,
+    summary_interval: float = 60.0,
 ) -> None:
     connector = _build_connector(config)
     rpc = config.resolved_rpc_url()
@@ -73,10 +84,26 @@ async def _run_ws_probe(
         rlusd_currency=config.rlusd_currency,
         taker=taker,
     )
+    stats = WsProbeStats()
     http_feed = HttpPollBookFeed(connector)
-    ws_feed = WsBookFeed(connector=connector, ws_url=ws_url, pair=pair)
+    ws_feed = WsBookFeed(
+        connector=connector,
+        ws_url=ws_url,
+        pair=pair,
+        verbose=verbose,
+        stats=stats,
+    )
 
-    logger.info("RPC=%s WS=%s network=%s taker=%s", rpc, ws_url, config.network_name(), taker[:12] + "…")
+    mode = "verbose (every WS frame + 60s summary)" if verbose else "normal (HTTP lines + 60s WS summary)"
+    logger.info(
+        "Probe %s | RPC=%s WS=%s network=%s taker=%s duration=%.0fs",
+        mode,
+        rpc,
+        ws_url,
+        config.network_name(),
+        taker[:12] + "…",
+        seconds,
+    )
 
     t0 = time.monotonic()
     try:
@@ -92,13 +119,27 @@ async def _run_ws_probe(
     except Exception:
         logger.exception("WS one-shot BookOffers failed")
 
-    http_task = asyncio.create_task(_http_loop(http_feed, seconds=seconds, interval=15.0))
+    http_task = asyncio.create_task(
+        _http_loop(http_feed, seconds=seconds, interval=15.0, stats=stats)
+    )
     try:
-        state = await ws_feed.run(seconds=ws_seconds, http_refresh_seconds=45.0)
+        state = await ws_feed.run(
+            seconds=ws_seconds,
+            http_refresh_seconds=45.0,
+            summary_interval_seconds=summary_interval if stats else 0.0,
+        )
         bid, ask = state.best_prices()
         mid = state.mid()
+        stats.log_summary(
+            ws_bid=bid,
+            ws_ask=ask,
+            ws_mid=mid,
+            ws_age_s=state.age_seconds(),
+            ws_state_msgs=state.message_count,
+            prefix="[WS final]",
+        )
         logger.info(
-            "[WS subscribe end] bid=%.6f ask=%.6f mid=%s msgs=%s age_s=%.1f",
+            "[WS subscribe end] bid=%.6f ask=%.6f mid=%s state_msgs=%s age_s=%.1f",
             bid or 0,
             ask or 0,
             f"{mid:.6f}" if mid else "—",
@@ -130,6 +171,20 @@ def main() -> None:
         action="store_true",
         help="Only run HTTP poll loop (no WebSocket)",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help=(
+            "Log every WebSocket frame (type label + book apply count + WS mid/age). "
+            "Without this, only HTTP polls and periodic/final summaries are logged."
+        ),
+    )
+    parser.add_argument(
+        "--summary-interval",
+        type=float,
+        default=60.0,
+        help="Seconds between WS traffic summaries (default 60)",
+    )
     args = parser.parse_args()
     ws_seconds = args.ws_seconds or args.seconds
 
@@ -141,7 +196,13 @@ def main() -> None:
         return
 
     asyncio.run(
-        _run_ws_probe(config, seconds=args.seconds, ws_seconds=ws_seconds)
+        _run_ws_probe(
+            config,
+            seconds=args.seconds,
+            ws_seconds=ws_seconds,
+            verbose=args.verbose,
+            summary_interval=args.summary_interval,
+        )
     )
 
 

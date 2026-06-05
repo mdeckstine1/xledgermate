@@ -14,6 +14,7 @@ from experimental.ws_feed.book_messages import (
 from experimental.ws_feed.book_state import BookState
 from experimental.ws_feed.http_poll_feed import HttpPollBookFeed
 from experimental.ws_feed.pair_books import RlusdXrpPair
+from experimental.ws_feed.probe_verbose import WsProbeStats, log_verbose_frame
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ class WsBookFeed:
     state: BookState = field(init=False)
     _stop: asyncio.Event = field(default_factory=asyncio.Event, init=False)
     _listener_task: Optional[asyncio.Task] = None
+    verbose: bool = False
+    stats: Optional[WsProbeStats] = None
 
     def __post_init__(self) -> None:
         self.http_fallback = HttpPollBookFeed(self.connector)
@@ -91,14 +94,29 @@ class WsBookFeed:
     async def _handle_message(self, message: Any) -> None:
         if not isinstance(message, dict):
             return
+        applied = 0
         for side, raw_offers, deleted in extract_offers_from_message(
             message, rlusd_issuer=self.pair.rlusd_issuer
         ):
             levels = normalize_snapshot_offers(self.connector, side, raw_offers)
+            if not levels and not deleted:
+                continue
+            applied += len(levels) or (1 if deleted else 0)
             if message.get("type") == "response" and message.get("result", {}).get("offers"):
                 self.state.apply_snapshot(side, levels)
             else:
                 self.state.apply_levels(side, levels, deleted=deleted)
+
+        if self.stats is not None:
+            label = self.stats.record_frame(message, offers_applied=applied)
+            if self.verbose:
+                log_verbose_frame(
+                    self.stats,
+                    label=label,
+                    offers_applied=applied,
+                    ws_mid=self.state.mid(),
+                    ws_age_s=self.state.age_seconds(),
+                )
 
     async def _listen(self, client: AsyncWebsocketClient) -> None:
         async for message in client:
@@ -112,6 +130,7 @@ class WsBookFeed:
         seconds: float = 60.0,
         http_refresh_seconds: float = 45.0,
         seed_http: bool = True,
+        summary_interval_seconds: float = 60.0,
     ) -> BookState:
         if AsyncWebsocketClient is None or Subscribe is None:
             raise RuntimeError("xrpl-py WebSocket client unavailable")
@@ -129,6 +148,7 @@ class WsBookFeed:
 
             deadline = time.monotonic() + seconds
             last_http = 0.0
+            last_summary = time.monotonic()
             while time.monotonic() < deadline and not self._stop.is_set():
                 now = time.monotonic()
                 if now - last_http >= http_refresh_seconds:
@@ -138,6 +158,21 @@ class WsBookFeed:
                     except Exception:
                         logger.exception("HTTP book refresh failed during WS run")
                         last_http = now
+                if (
+                    self.stats is not None
+                    and summary_interval_seconds > 0
+                    and now - last_summary >= summary_interval_seconds
+                ):
+                    bid, ask = self.state.best_prices()
+                    _ = bid, ask
+                    self.stats.log_summary(
+                        ws_bid=bid,
+                        ws_ask=ask,
+                        ws_mid=self.state.mid(),
+                        ws_age_s=self.state.age_seconds(),
+                        ws_state_msgs=self.state.message_count,
+                    )
+                    last_summary = now
                 await asyncio.sleep(0.25)
 
             self._stop.set()

@@ -26,8 +26,11 @@ From repo root with venv and `config/config.yaml`:
 
 ```bash
 python -m experimental.ws_feed.run_probe --seconds 90
+python -m experimental.ws_feed.run_probe --seconds 600 --verbose
 python -m experimental.ws_feed.run_probe --http-only --seconds 30
 ```
+
+**`--verbose`:** one log line per WebSocket frame (message type, e.g. `transaction:OfferCreate`, whether book levels were applied, WS mid, staleness). Without it you only see HTTP polls plus a summary every `--summary-interval` seconds (default 60) and a final rollup.
 
 Requires network access to your configured rippled node. Does not place orders or touch `logs/kill_switch.json`.
 

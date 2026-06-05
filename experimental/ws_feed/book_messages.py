@@ -24,6 +24,20 @@ def _is_rlusd_leg(amount: Any, pair_issuer: str) -> bool:
     return cur.startswith("524C555344") or cur in ("RLUSD", "USD")
 
 
+def _transaction_body(message: Dict[str, Any]) -> Dict[str, Any]:
+    """rippled WS uses tx, tx_json, or transaction depending on server/version."""
+    for key in ("tx_json", "transaction", "tx"):
+        val = message.get(key)
+        if isinstance(val, dict):
+            return val
+    return {}
+
+
+def _transaction_meta(message: Dict[str, Any]) -> Dict[str, Any]:
+    meta = message.get("meta") or message.get("Meta")
+    return meta if isinstance(meta, dict) else {}
+
+
 def _side_from_subscribe_book(
     taker_gets: Any, taker_pays: Any, pair_issuer: str
 ) -> Optional[str]:
@@ -67,9 +81,9 @@ def extract_offers_from_message(
     if msg_type != "transaction":
         return out
 
-    tx = message.get("transaction") or {}
-    meta = message.get("meta") or {}
-    if not isinstance(tx, dict) or not isinstance(meta, dict):
+    tx = _transaction_body(message)
+    meta = _transaction_meta(message)
+    if not tx:
         return out
 
     tx_type = tx.get("TransactionType") or tx.get("transaction_type")
