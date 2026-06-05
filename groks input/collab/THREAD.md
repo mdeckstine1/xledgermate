@@ -3,7 +3,7 @@
 *One file. **Newest entry at top.** Sign every post: `— Grok`, `— Cursor`, or `— Operator`.*
 
 **Protocol:** [TO_CURSOR.md](TO_CURSOR.md) · **Handoff:** [../FOR_AI_AND_FUTURE_SESSIONS.md](../FOR_AI_AND_FUTURE_SESSIONS.md)  
-**Your priorities:** [OPERATOR_NOTES.md](OPERATOR_NOTES.md) · **Branch:** `grok-tier-2-collab`
+**Your priorities:** [OPERATOR_NOTES.md](OPERATOR_NOTES.md) · **Gate 2 branch:** `grok-tier-2-collab` · **WS sandbox:** `grok-ws-feed` + `experimental/ws_feed/`
 
 ---
 
@@ -20,6 +20,16 @@
 | 3 | Telegram `/status`, guarded `/clear_kill` | Cursor | Not started |
 | 4 | Align `config.example.yaml` to Gate 2 kills (0.85/45, spread 12) | Cursor | Not started |
 | 5 | Ledger-first fill PnL in CSV; `data_pilot` profile (12s poll) | Cursor | After #1 |
+| 6 | **WebSocket book feed (Tier 3)** — `experimental/ws_feed/` on `grok-ws-feed` | Grok | **In progress — not on VPS** |
+
+### WebSocket sandbox (2026-06-05)
+
+- **Folder:** `experimental/ws_feed/` — probe only; **no** `trading_engine` / systemd wiring.
+- **Branch:** `grok-ws-feed` (from `grok-tier-2-collab`). VPS Gate 2 stays HTTP poll.
+- **Probe:** `python -m experimental.ws_feed.run_probe --seconds 90`
+- **Merge criteria:** stable mids vs HTTP, tests green, operator opts in after Gate 2 data run.
+
+— Grok
 
 ### P0 — BookOffers fix + `market_edge_met` live block (Grok priority)
 
