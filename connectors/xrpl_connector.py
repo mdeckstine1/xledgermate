@@ -335,23 +335,31 @@ class XRPLConnector:
             issuer=self.rlusd_issuer,
         )
 
+        # Use validated ledger + taker perspective to reduce stale/ghost offers and
+        # get quality-adjusted prices for the bot account (helps ask inversion / bad ticks).
+        taker = self.account_address if (self.account_address or "").startswith("r") else None
+        common = {"limit": limit, "ledger_index": "validated"}
+        if taker:
+            common["taker"] = taker
+
         asks_req = BookOffers(
             taker_gets=taker_gets_xrp,
             taker_pays=taker_pays_rlusd,
-            limit=limit,
+            **common,
         )
         bids_req = BookOffers(
             taker_gets=taker_pays_rlusd,
             taker_pays=taker_gets_xrp,
-            limit=limit,
+            **common,
         )
 
         asks_raw = (await self._request(asks_req)).result.get("offers", [])
         bids_raw = (await self._request(bids_req)).result.get("offers", [])
-        return {
+        book = {
             "asks": self._normalize_offers(asks_raw, side="ask"),
             "bids": self._normalize_offers(bids_raw, side="bid"),
         }
+        return self._sanitize_book(book)
 
     @staticmethod
     def _offer_field(offer: Any, *keys: str) -> Any:
@@ -520,7 +528,11 @@ class XRPLConnector:
         return None, 0.0, 0.0
 
     def _normalize_offers(self, offers: List[dict], *, side: str) -> List[Dict[str, float]]:
-        """Convert BookOffers entries to RLUSD-per-XRP price and XRP size."""
+        """Convert BookOffers entries to RLUSD-per-XRP price and XRP size.
+
+        Applies stricter plausibility to drop ghost / inverted / dust offers that
+        can produce ask inversion or bad best prices for edge calculations.
+        """
         normalized: List[Dict[str, float]] = []
         for offer in offers:
             gets = offer.get("TakerGets") or offer.get("taker_gets")
@@ -530,6 +542,8 @@ class XRPLConnector:
 
             price, size_xrp = self._book_offer_price_and_size(gets, pays)
             if price is None or price <= 0 or size_xrp <= 0:
+                continue
+            if not is_plausible_rlusd_per_xrp(price):
                 continue
 
             normalized.append({"price": price, "size": size_xrp, "side": side})
@@ -588,6 +602,32 @@ class XRPLConnector:
             )
             return None
         return (best_bid + best_ask) / 2.0
+
+    def _sanitize_book(
+        self, book: Dict[str, List[Dict[str, float]]]
+    ) -> Dict[str, List[Dict[str, float]]]:
+        """Light post-filter to drop internally crossed or ghost-like levels.
+
+        Helps when raw BookOffers still surfaces an ask below the bid side after
+        normalization (inversion/ghost ask cases). Keeps the spirit of the 5%
+        crossed tolerance used for mids.
+        """
+        bids = list(book.get("bids", []))
+        asks = list(book.get("asks", []))
+        if not bids or not asks:
+            return {"bids": bids, "asks": asks}
+
+        max_bid = max(b["price"] for b in bids)
+        # Drop asks that are at or below the best bid (with tiny tolerance for fp).
+        # This removes ghost asks that would invert the book for edge calc.
+        asks = [a for a in asks if a["price"] > max_bid * 0.999]
+
+        # Also drop any bids above the new best ask (symmetric, rare).
+        if asks:
+            min_ask = min(a["price"] for a in asks)
+            bids = [b for b in bids if b["price"] < min_ask * 1.001]
+
+        return {"bids": bids, "asks": asks}
 
     def update_and_estimate_volatility_pct(self, mid_price: Optional[float]) -> float:
         if mid_price is None or mid_price <= 0:

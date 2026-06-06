@@ -25,8 +25,9 @@
 | 2026-06-05 | **Gate 2 early data** — portfolio ~254 XRP equiv., session spread capture positive; **18/60** fills toward judgment (snapshot) |
 | 2026-06-05 | **WebSocket sandbox** — branch `grok-ws-feed`, folder `experimental/ws_feed/` (probe only; **not** wired to engine or VPS systemd) |
 | 2026-06-05 | **WS probe validated** — 3 min run: 660 frames, 631 book applies, final mid **−0.9 bps** vs HTTP; fix = parse `tx_json`/`tx` ([PROBE_RESULTS.md](../experimental/ws_feed/PROBE_RESULTS.md)) |
+| 2026-06-06 | **Tier 2.5 P0 shipped on `grok-tier-2-collab`** — Hard `market_edge_met` gate in OrderManager.build_quotes (no live intents/place_quote when false) + BookOffers robustness (taker + validated ledger + plausible filter + _sanitize_book to drop ghost/inverted asks). Unit test added. All related tests green. Decision log will now surface the gate reason explicitly. Ready for operator review + pull to VPS after Gate 2 data window. (connectors/xrpl_connector.py, engine/order_manager.py, tests/test_defensive_mm.py) |
 
-*Next expected updates: first week skim report, ≥60 fills judgment (doc 05), Tier 2.5 deploy (BookOffers + `market_edge_met`), Tier 3 engine adapter when Gate 2 ends.*
+*Next expected updates: first week skim report + ≥60 fills judgment (doc 05 metrics), operator sign-off on Tier 2.5 gate (or iterate), Tier 3 WS engine adapter only after Gate 2 complete.*
 
 ---
 

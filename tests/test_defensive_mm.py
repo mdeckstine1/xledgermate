@@ -159,3 +159,54 @@ def test_profiles_diverge_under_hostile_market() -> None:
     )
     assert safe_adj.spread_multiplier > tight_adj.spread_multiplier
     assert safe_adj.size_multiplier < tight_adj.size_multiplier
+
+
+def test_order_manager_hard_gate_on_market_edge_not_met() -> None:
+    """Tier 2.5 hard gate: build_quotes must return zero intents when market_edge_met=False.
+
+    This prevents live placement (place_quote) on books that do not offer sufficient
+    edge after fees + profile min edge. See P0 in collab THREAD + doc 05.
+    """
+    from config.settings import BotConfig
+    from engine.order_manager import OrderManager
+    from strategy.quote_decision import QuoteAdjustments
+
+    # Minimal viable config for the manager (real defaults are fine; we override sizes)
+    cfg = BotConfig.load()
+    # Ensure we have some size configured
+    if not any(s > 0 for s in getattr(cfg, "order_sizes", [0])):
+        # fallback for test envs without full yaml
+        object.__setattr__(cfg, "order_sizes", [10.0, 8.0])  # type: ignore[attr-defined]
+        object.__setattr__(cfg, "order_levels", 2)  # type: ignore[attr-defined]
+        object.__setattr__(cfg, "min_order_size_xrp", 1.0)  # type: ignore[attr-defined]
+        object.__setattr__(cfg, "base_spread", 0.25)  # type: ignore[attr-defined]
+
+    om = OrderManager(cfg)
+
+    spreads = {1: 0.25, 2: 0.30}
+    adj_bad = QuoteAdjustments(market_edge_met=False, market_edge_pct=-0.05)
+    plan = om.build_quotes(
+        mid_price=0.52,
+        spreads_pct=spreads,
+        xrp_balance=300.0,
+        rlusd_balance=150.0,
+        adjustments=adj_bad,
+        best_bid=0.521,
+        best_ask=0.519,  # crossed-ish but we test the gate first
+    )
+    assert plan.intents == [], "hard gate must produce zero intents"
+    assert "market_edge_met=false" in plan.reason
+    assert "hard gate" in plan.reason.lower()
+
+    # Sanity: when edge is met, it can produce intents (assuming balances)
+    adj_ok = QuoteAdjustments(market_edge_met=True, market_edge_pct=0.03)
+    plan_ok = om.build_quotes(
+        mid_price=0.52,
+        spreads_pct=spreads,
+        xrp_balance=300.0,
+        rlusd_balance=150.0,
+        adjustments=adj_ok,
+    )
+    # May still be [] if other guards (pause, size, fund mode), but must not be the edge reason
+    if plan_ok.intents:
+        assert "market_edge_met=false" not in plan_ok.reason

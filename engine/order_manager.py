@@ -84,6 +84,11 @@ class OrderManager:
             return QuotePlan(intents=[], reason="No valid mid price; skipping quote generation.")
 
         adj = adjustments or QuoteAdjustments()
+        if not getattr(adj, "market_edge_met", True):
+            return QuotePlan(
+                intents=[],
+                reason="market_edge_met=false — insufficient edge vs book/fees (hard gate; no live quotes)",
+            )
         spendable_xrp = max(0.0, xrp_balance - self.config.xrp_reserve)
         min_size = max(0.0, self.config.min_order_size_xrp)
         risk_cap = max(min_size, self.config.effective_risk_capital_xrp(mid_price))
