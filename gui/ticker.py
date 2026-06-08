@@ -149,6 +149,34 @@ def build_ticker_items(
             priority=5,
         )
 
+    # WS + pure A-S (committed path) — elevate the new signals in the ticker
+    if runtime.get("as_mode") == "pure" or runtime.get("as_reservation") is not None:
+        res = runtime.get("as_reservation")
+        if res is not None:
+            _add(
+                items,
+                seen,
+                text=f"A-S reservation {float(res):.6f} (gamma={runtime.get('as_gamma', '?')}, kappa={runtime.get('as_kappa', '?')})",
+                kind="quote",
+                priority=2,
+            )
+        ws_age = runtime.get("ws_book_age_s")
+        if ws_age is not None:
+            _add(
+                items,
+                seen,
+                text=f"WS book age {float(ws_age):.1f}s (msgs={runtime.get('ws_message_count', 0)})",
+                kind="info",
+                priority=3,
+            )
+        _add(
+            items,
+            seen,
+            text="PURE A-S mode (built-in protections — no hard gate)",
+            kind="success",
+            priority=1,
+        )
+
     if not items and engine_running:
         _add(
             items,

@@ -7,6 +7,19 @@
 
 ---
 
+## 2026-06-07 — Operator + Cursor (dual-branch — no merge yet)
+
+**Rule:** **2-week Gate 2 on VPS** runs **`grok-tier-2-collab`** (HTTP poll). **`grok-ws-feed`** = parallel WS/A-S sandbox only — **do not merge** branches or deploy WS to VPS until Gate 2 window ends.
+
+| Branch | VPS? | Purpose |
+|--------|------|---------|
+| `grok-tier-2-collab` | **Yes** (current pilot) | Gate 2 data · P0 @ `6c1634a` on branch, **not pulled to VPS yet** |
+| `grok-ws-feed` | **No** | WS probe + pure A-S lab (`experimental/`) |
+
+— Operator / Cursor
+
+---
+
 ## Pinned — open asks & context
 
 **VPS:** `188.245.50.229` · engine = `systemd` `xledgermate` · do **not** use Full GUI Start/Restart  
@@ -15,12 +28,12 @@
 
 | # | Ask | Owner | Status |
 |---|-----|--------|--------|
-| **1** | **Tier 2.5 competitive core** — see below | **Cursor** | **P0 — not started** |
+| **1** | **Tier 2.5 competitive core** — see below | **Cursor** | **Done on `grok-tier-2-collab` @ `6c1634a`** — VPS pull **after** 2-week test |
 | 2 | VPS operator GUI (`XLEDGERMATE_VPS_OPERATOR=1`, hide Start/Restart) | Cursor | Not started |
 | 3 | Telegram `/status`, guarded `/clear_kill` | Cursor | Not started |
 | 4 | Align `config.example.yaml` to Gate 2 kills (0.85/45, spread 12) | Cursor | Not started |
 | 5 | Ledger-first fill PnL in CSV; `data_pilot` profile (12s poll) | Cursor | After #1 |
-| 6 | **WebSocket book feed (Tier 3)** — see [PROBE_RESULTS.md](../../experimental/ws_feed/PROBE_RESULTS.md) | Grok | **Probe done — engine adapter after Gate 2** |
+| 6 | **WebSocket + pure A-S (Tier 3)** — `grok-ws-feed` only | Cursor/Grok | **In progress** — grokster, live tester, HUD; not on VPS |
 
 ### WebSocket sandbox (2026-06-05, updated)
 

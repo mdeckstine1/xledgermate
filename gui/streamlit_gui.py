@@ -1603,6 +1603,8 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
             st.caption(runtime.get("quote_decision_summary"))
             c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("Market edge", "OK" if runtime.get("market_edge_met", True) else "THIN")
+            if runtime.get("as_mode") == "pure":
+                c1.metric("A-S Mode", "PURE", help="Committed WS + pure A-S path (built-in protections, no hard gate)")
             c2.metric("Fill quality", f"{float(runtime.get('fill_quality_score', 100)):.0f}")
             toxic_pct = float(runtime.get("toxic_fill_ratio", 0.0)) * 100.0
             toxic_30 = float(runtime.get("toxic_fill_ratio_30s", 0.0)) * 100.0
@@ -1614,6 +1616,31 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
                 f"Pause asks: {'YES' if runtime.get('pause_asks') else 'no'} · "
                 f"Mean 30s markout: {float(runtime.get('mean_markout_30s_pct', 0.0)):+.3f}%"
             )
+
+            # WS + pure A-S (new committed path) — show when present in runtime
+            if runtime.get("as_mode") == "pure" or runtime.get("as_reservation") is not None:
+                st.divider()
+                st.markdown("**Pure A-S + WS (committed future path)**")
+                ac1, ac2, ac3, ac4 = st.columns(4)
+                ac1.metric("A-S Reservation", f"{float(runtime.get('as_reservation') or 0):.6f}")
+                ac2.metric("A-S Optimal Spread", f"{float(runtime.get('as_optimal_spread_pct') or 0):.3f}%")
+                ac3.metric("Gamma / Kappa", f"{runtime.get('as_gamma', '?')} / {runtime.get('as_kappa', '?')}")
+                ws_age = runtime.get("ws_book_age_s")
+                ac4.metric("WS Book Age", f"{ws_age:.1f}s" if ws_age is not None else "—", help="Freshness from live WebSocket feed")
+                if runtime.get("ws_message_count"):
+                    st.caption(f"WS messages this run: {runtime.get('ws_message_count')}")
+
+                # Simple visual comparison
+                if runtime.get("book_spread_pct") is not None:
+                    book_sp = float(runtime.get("book_spread_pct"))
+                    as_sp = float(runtime.get("as_optimal_spread_pct") or 0)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Live Book Spread", f"{book_sp:.3f}%")
+                    with col2:
+                        st.metric("A-S Optimal Spread", f"{as_sp:.3f}%", delta=f"{as_sp - book_sp:.3f}% vs book")
+
+                st.caption("A-S built-in protections (reservation for inventory risk + optimal spread for adverse selection) replace the old hard gate.")
 
     with st.expander("Quote ladder (this cycle)", expanded=False):
         intents = runtime.get("quote_intents", [])

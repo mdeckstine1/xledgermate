@@ -25,8 +25,10 @@
 | 2026-06-05 | **Gate 2 early data** — portfolio ~254 XRP equiv., session spread capture positive; **18/60** fills toward judgment (snapshot) |
 | 2026-06-05 | **WebSocket sandbox** — branch `grok-ws-feed`, folder `experimental/ws_feed/` (probe only; **not** wired to engine or VPS systemd) |
 | 2026-06-05 | **WS probe validated** — 3 min run: 660 frames, 631 book applies, final mid **−0.9 bps** vs HTTP; fix = parse `tx_json`/`tx` ([PROBE_RESULTS.md](../experimental/ws_feed/PROBE_RESULTS.md)) |
+| 2026-06-06 | **Tier 2.5 P0 on `grok-tier-2-collab` only** — `6c1634a` BookOffers + hard `market_edge_met` gate — **not on VPS** during 2-week Gate 2 |
+| 2026-06-07 | **Dual-branch discipline** — no merge `grok-ws-feed` ↔ `grok-tier-2-collab` until Gate 2 window ends; WS + pure A-S lab continues on `grok-ws-feed` |
 
-*Next expected updates: first week skim report, ≥60 fills judgment (doc 05), Tier 2.5 deploy (BookOffers + `market_edge_met`), Tier 3 engine adapter when Gate 2 ends.*
+*Next expected updates: Gate 2 week-1 skim + ≥60 fills (doc 05); after 2-week test — operator pull `6c1634a` to VPS; Tier 3 WS engine adapter only after Gate 2 sign-off.*
 
 ---
 
@@ -35,7 +37,7 @@
 - **Repo:** [github.com/mdeckstine1/xledgermate](https://github.com/mdeckstine1/xledgermate) — XRPL **XRP/RLUSD** market-making bot  
 - **Local path (Windows):** `C:\Users\micha\xledgermate`  
 - **Gate 2 / VPS branch:** `grok-tier-2-collab` (from `tier-2-polish`) · version **~1.4.4** — **this is what runs on the server**  
-- **WebSocket lab branch:** `grok-ws-feed` (from `grok-tier-2-collab`) — `experimental/ws_feed/` only; **do not deploy to VPS** until Tier 3 sign-off  
+- **WebSocket lab branch:** `grok-ws-feed` (from `grok-tier-2-collab`) — `experimental/ws_feed/` only; **do not deploy to VPS** until Tier 3 sign-off · **do not merge into VPS branch** during Gate 2  
 - **GitHub `main` is stale (v1.0.0)** — real system is local / `tier-2-polish`
 - **Risk model:** Only **bot wallet** trades; main “Mangie” bag must never be configured on the VPS  
 - **All live trading data** lives on VPS: `/root/xledgermate/logs/` (not on the Windows PC)

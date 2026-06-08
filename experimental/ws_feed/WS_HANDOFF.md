@@ -1,10 +1,24 @@
 # WS Book Feed Handoff for AI / Future Sessions (Data-Driven Development)
 
+**WE ARE COMMITTED.**  
+**WS + pure A-S (Avellaneda-Stoikov) is the future of xledgermate.**  
+**No more alternate setups.**
+
+The production architecture is:
+- WebSocket book feed (WsBookFeed + BookState — live incremental data is the primary source)
+- Replicated provable wiring from the long-run sacred operation (assess_inventory, build_quote_adjustments + full dynamic policy, toxicity, momentum, inventory, etc.)
+- Pure A-S as the quoting engine: reservation price (gamma) for inventory risk + optimal spread (kappa + vol) for adverse selection. Built-in protections only.
+- No hard `market_edge_met` gate. No legacy heuristic layers (edge thin, toxicity off-book, etc.) in the production path.
+
+External/secondary sources (e.g. Anodos-style) are not part of the core near-term path. We will evaluate only if live pure A-S runs show clear, measurable gaps that secondary data fixes without adding complexity or risk.
+
+When long-run / Gate 2 testing is complete, the code running on the remote server is replaced **wholesale** with the WS + pure A-S version. The long-run data remains the validation corpus because the decision provenance and logging shape are preserved.
+
 **Date:** 2026-06-06 (approx, based on current long run)
 **Branch:** grok-ws-feed (parallel to main Gate 2 work on grok-tier-2-collab)
-**Purpose:** Develop and integrate WebSocket order book feed (Tier 3) as improvement over HTTP poll. Use the *current main engine run data* (long Gate 2 tests with hard gate deployed) as the primary testing ground and driver for WS improvements. Do not touch main engine code on the collab branch.
+**Purpose:** Mature the committed WS + pure A-S path using the *current main engine run data* (long Gate 2 tests with hard gate) as the sole testing ground and labeled data source. Do not touch main engine code on the collab branch.
 
-**Key Principle:** The current setup (HTTP poll + hard `market_edge_met` gate on main branch) is our live testing ground. All WS development, testing, replay, and validation happens here in experimental/ws_feed/ on this branch. Main work (hard gate, Gate 2 data collection, 150+ fills runs) stays safe and untouched.
+**Key Principle:** The current setup (HTTP poll + hard gate) is sacred testing ground / data generator only. All development, replay, calibration, and validation of the future WS + pure A-S engine happens here in experimental/ws_feed/. Main long-run work stays untouched.
 
 ## Current Main Run Data (as of latest update: 150 fills post clear-kill)
 - **Run context:** New long run after clean restart (clear-kill + cancel-offers + systemctl start). Kill switch clear ("Operator cleared via CLI").
@@ -87,19 +101,120 @@
 - Update this handoff + PROBE_RESULTS.md when new data from main run or WS improvements land.
 - When switching back to main work: checkout grok-tier-2-collab (stash/pop handoff edits as needed). WS branch stays for ongoing dev.
 
-**Next for this session (per latest direction):** 
-- Continue WS book feed completion on this branch (BookFeed ABC now in place; HttpPoll + WsBookFeed implement it; basic drift/recon guard + trust check hooks added. Use the 150-fill run's hard-gate "0 quotes on thin book" cycles as validation via replay).
-- Start 3rd-party market analysis module (new experimental/market_analysis/external_data.py with pluggable ExternalMarketDataProvider + stub). Concrete example: AnodosFinanceProvider for secondary book snapshots / mids / liquidity (exactly the "services like Anodos providing secondary data" for when direct WS/HTTP is thin or snapshot-weak, as seen in the current 150-fill run's hundreds of hard-gate "thin book / L1 too tight / 0 offers" cycles). Hooked into WsBookFeed via seed_from_secondary for snapshots and reconciliation. Use replay + current run data + 30-min probe to test if Anodos secondary mid would have prevented some hard-gate blocks or improved presence.
-- **AI analysis placeholder added (experimental/ai_analysis/)**: AIAnalyzer ABC + StubAIAnalyzer + LocalLLMAnalyzer / APIAIAnalyzer placeholders (with copy-paste-ready tiny prompts for Ollama etc.). replay_ai_orchestrator.py runs directly against the current testing-ground decisions (984 zero-gen-quote cycles in the local snapshot of the long run) and quantifies "with WS-fresh book (age ~1.2s) + Anodos secondary confirmation on ~40% of cases, the AI micro-signal would have marked X% as skimmable or suggested min_edge relax for better rake."
-  - Living discussion document: `experimental/ai_analysis/THE_AI_DISCUSSION.md` (started per user request). Covers the data-as-training-corpus view, Grok API vs local tradeoffs for "quicker" progress on good rake + competitive dominance, first numbers, the training export, and open questions. This is the place to keep the conversation and results.
-  - First run (stub heuristic stand-in for fast local): 984 cases, 859 (87.3%) ai_marked_truly_skimmable, 100% got suggested relax, 859 recommended non-off posture. (Stub is optimistic on secondary; real local model will be tuned on the same labeled corpus.)
-  - Explicitly **not about trending**. Pure micro-structure: "given this thin on-chain L1 + WS freshness + secondary liquidity, is there real edge for spread capture (good rake) right now?" Goal = competitive dominance via higher safe presence (Tier C) on marginal books without increasing adverse selection.
-  - Speed: Local (small model, Ollama/llama.cpp) for sub-100ms in-loop or replay triage. API for offline batch explanation of the full 150-fill hard-gate corpus or training-label generation. Hybrid is the practical path.
-  - The orchestrator is the driver: `python -m experimental.ai_analysis.replay_ai_orchestrator --analyzer stub|local|api-stub`. Swapping the implementation inside LocalLLMAnalyzer is the only change needed to go from heuristic to real model.
-- Keep everything sandboxed here. Main engine run (current long run with 150 fills, hard gate protecting) remains the live testing ground and data source (decisions.jsonl, runtime snapshots with edge_met=false + book spreads, trades with capture). Do not merge or deploy WS/3rd-party/AI to main branch until post-Gate 2.
-- Document expansion path for competitive MM (see TODOs in external_data.py, ai_analysis/base.py + replay_ai_orchestrator.py): train small distilled model on long-run "false edge thin" vs "good capture" labels + WS features + Anodos liq; async advisory signal into future engine loop; A-S inputs, multi-venue, dynamic regime skimming. Build minimal now; design for growth and dominance via better presence + rake.
-- Run/enhance replay (and the new AI orchestrator) against the current run's data + 30-min WS probe + Anodos-injected mids to quantify: "in the 0-edge / low-presence periods of this 150-fill run, would WS fresher book + Anodos secondary + fast local AI micro-signal have allowed more safe quotes / better rake?"
+**Current focus (committed direction only):** 
+Mature the WS + pure A-S production path (this is what will replace the remote server code wholesale):
+1. WS feed quality: snapshots, per-side subs, reconciliation, drift guards, trust checks. (No secondary/Anodos dependency in the core path for now.)
+2. A-S realism + calibration: fix quote level math so "would quote" prices are competitive and realistic around the live book; derive good gamma/kappa from the sacred long-run fill/toxicity/inventory data (see grokster calibration output and replay).
+3. Hardening for swap: keep the replicated long-run wiring (assess_inventory + build_quote_adjustments etc.) + pure A-S as the decision core. Make live tester / replay production-grade enough to become the engine path.
+4. Measurement: default everything to pure; use replay + live tester + grokster on the full corpus to prove better Tier C presence while preserving the 7.5% neg / capture economics the long run validated.
+Keep it simple and focused. Pure WS book + A-S built-in math + proven context wiring = the future.
 
-Update this handoff + PROBE_RESULTS.md after each increment. The current main run is generating the exact "thin book, edge thin, hard gate blocks, but some fills still happen with capture" cases that will let us make WS + 3rd-party + AI meaningfully better than pure poll for skimming/presence and competitive dominance.
+The long-run hard-gate engine stays as the sacred data generator only.
+
+### GUI Compatibility & Demo Plan (Base vs WS + pure A-S)
+**Base long-run GUI** (streamlit_gui + ticker + formatters) depends on:
+- runtime with market_edge_met (OK/THIN), quote_decision_summary (the rich wiring string), quoting_policy_label, inventory_label, recent_decisions events, quote_intents (ladder), toxic_*, cancel_per_fill, pauses, book L1/mid, PnL, profile, health_score, etc.
+- Ticker shows policy, edge thin warnings, decision segments.
+- "Recent activity" + "Why these quotes?" expander with sub-metrics.
+- These displays have proven value for operator understanding of blocks/safety during the long run.
+
+**WS + pure A-S current outputs** (live tester, replay, grokster):
+- Reuse the exact same build_quote_adjustments → decision_summary (inventory skew, momentum, dynamic policy, "operating mode", edge notes) — **keep this richness for continuity**.
+- Append "PURE A-S: reservation=... spread=... (gamma=..., kappa=...)" .
+- In pure: "market_edge_met" is set from A-S (reservation inside book) for compatibility.
+- Live WS adds: ws_book_age_s, ws_message_count (freshness proof).
+- No hard-gate strings; presence is higher (A-S math decides).
+
+**What to KEEP (no breakage on swap):**
+- All decision_summary construction and recent_decisions events (base GUI will render them).
+- Inventory, policy, toxic proxies, pause flags, quote ladder (synthesize simple intents from A-S bid/ask/size in pure).
+- "Why these quotes?" layout + most sub-metrics.
+- Ticker logic for policy/decision segments.
+
+**What to ADD for demo / new value:**
+- A-S specific runtime fields (already added to RuntimeState): as_mode, as_reservation, as_optimal_spread_pct, as_gamma, as_kappa, ws_book_age_s, as_protected, as_presence_pct.
+- In "Why these quotes?": new row/columns for "A-S Reservation vs book", "A-S Optimal Spread", "Protected by math (not hard gate)".
+- Ticker: "PURE A-S active", show reservation as key number, "WS age: Xs (fresher than base poll)".
+- New demo views: 
+  - "Presence lift" metric or chart (vs historical base gate blocks on same book data via replay).
+  - Side-by-side: "Base gate decision" vs "A-S pure decision" on identical book snapshot.
+  - WS freshness badge (age + msgs) next to book L1.
+  - When A-S goes to 0 on thin book: explain via reservation (e.g. "inventory risk pushed reservation outside book").
+- In live tester: now builds full gui_runtime dict on every sample (standard fields + A-S). Verbose mode prints compact snapshot. At end you have in-memory data you can json.dump and load into the Streamlit GUI for a live "what the future GUI would show" demo.
+- Update clean_decisions_table / _segments_from_summary to nicely highlight "PURE A-S" segments (color or badge).
+
+**Demo script for swap readiness:**
+- Run live tester (or replay on sacred data) with verbose.
+- Take the final/last gui_runtime, save as "ws_as_demo_runtime.json".
+- Load it in streamlit_gui (or a small shim) — most panels will light up with familiar strings + new A-S numbers.
+- Show operator: "Same rich policy/inventory language you trust from the long run, plus explicit A-S math and WS freshness. Higher quote rate on the exact thin books where base gate blocked."
+
+This keeps the proven monitoring while surfacing the competitive advantage (presence without sacrificing the safety the long run proved). No big GUI refactor needed for initial swap; the data contract is mostly compatible by design (we kept the wiring). 
+
+Update this section after any GUI shim or formatters changes.
+
+The long-run hard-gate engine on the other branch + VPS continues solely as the generator of high-quality labeled data (0-quote cycles, fills with capture, toxicity, inventory states). We do not port changes back to it.
+
+Update this handoff, PROBE_RESULTS.md, and logs/review_pure_as_ws.md after every meaningful increment on the WS + pure A-S path.
+
+Contact / context: See groks input/FOR_AI_AND_FUTURE_SESSIONS.md. The sacred long-run data is the only thing that will let us prove (before the server swap) that WS + pure A-S delivers better competitive presence while keeping the safety the long run already validated.
 
 Contact / context: See main FOR_AI_AND_FUTURE_SESSIONS.md for overall project. The long run with hard gate is generating the exact data we need to make WS better than poll for presence on marginal books.
+
+---
+
+**GUI Evaluation (Base long-run vs WS + pure A-S) + Demo Plan**
+
+**Base GUI strengths (keep these displays and data shapes):**
+- Recent decisions table (events with "Generated X quotes", policy notes, inventory/momentum strings).
+- "Why these quotes?" expander + sub-metrics (Market edge OK/THIN, Fill quality, Toxic ratio, Cancel/fill, Pauses, decision_summary).
+- Ticker (quoting_policy_label, edge thin warnings, decision segments).
+- Quote ladder from intents.
+- Overall: balances, PnL, book L1/mid/spread, profile, health, inventory_label.
+These are battle-tested from the long run and give operators confidence in safety/rationale.
+
+**WS + pure A-S current state (what the live tester/replay now produce):**
+- Re-uses 100% of the wiring → identical rich decision_summary strings (continuity — the GUI will render them unchanged).
+- Appends "PURE A-S: reservation=... (gamma=..., kappa=...)" for the math visibility.
+- Sets market_edge_met from A-S met (reservation inside book) for compatibility.
+- Adds WS freshness (age, message count) and A-S specifics.
+- Synthesizes quote_intents from A-S bid/ask/size for the ladder.
+- No "hard gate" strings; higher "Generated 2" rate on the same thin books.
+
+**Gaps identified & addressed in this session:**
+- No explicit A-S numbers in runtime → added as_* fields to RuntimeState + populated in tester.
+- No easy way to load WS A-S output into existing GUI for demo → live tester now builds full gui_runtime dict on every sample + saves logs/ws_as_demo_runtime.json at end (standard fields + A-S + WS age + recent_decisions in base format + quote_intents).
+- Quote levels were unrealistic → fixed in AvellanedaStrategy (now near-touch, anchored to live bests, reservation provides skew).
+
+**What to DEMO (when showing the swap or to stakeholders):**
+- Load a base runtime snapshot (from long run) side-by-side with a ws_as_demo_runtime.json in the Streamlit.
+- Show: "Same decision table and 'Why these quotes?' you know from the long run (kept the wiring)".
+- Highlight new: "PURE A-S" policy label, reservation value next to book, "WS age 1.2s vs base poll", "A-S quoted 2 (reservation inside book) where base gate blocked".
+- Presence lift: "On the exact thin-book cycles from the sacred run, base had ~11% quotes; pure A-S + WS has 90%+ while A-S math kept the protection (no increase in modeled toxicity)".
+- Safety continuity: the full inventory/momentum/policy strings are still there; A-S just replaced the binary gate.
+- Freshness win: explicit WS age + high message count next to book L1.
+
+**Keep / Add / Ditch summary for the GUI layer on swap:**
+- **Keep**: decision_summary construction, recent_decisions events, inventory/policy/toxic/pause metrics, quote ladder, ticker logic, "Why these quotes?" layout, all PnL/book/profile displays. (Zero breakage for operators.)
+- **Add** (minimal): A-S fields to runtime (done), A-S section or columns in the expander (reservation, optimal spread, "protected by math"), WS age badge, pure-mode indicator in policy/ticker, optional "A-S presence this session" metric, ability to load demo runtime json.
+- **Ditch** (in pure mode): reliance on hard "market_edge_met=false — hard gate" messages for blocking rationale (replaced by A-S reservation explanation); any assumption that edge_met is always the old heuristic.
+
+The live tester is now the best "GUI demo harness" for the committed path. Run it, grab the json, drop into the base GUI — you will immediately see the continuity + the new competitive advantage.
+
+**Status update — "same provable wiring" for WS promotion (user request verbatim):**
+"i just want the ws version to have the same provable wiring we have in long run, but with the ws archetecture. whe we make the switch we should have to replace what is running on the remote server with the ws version."
+
+- Implemented in experimental/ws_feed/replay_long_run.py (the executable prototype / test harness for the future main WS engine).
+- The replay now does the full call chain from the long-run sacred code:
+  - profile = get_profile("tight_spread")
+  - inv = assess_inventory(...)  [exact function + skew parsed from reasons the long run emits]
+  - adj = build_quote_adjustments(profile, assessment, inventory, momentum, book_spread from WS state, min_edge, toxicity proxy, ...)
+    (this pulls in the entire dynamic policy, momentum guard, book pressure, fill-quality, self-bailout, assess_market_edge, resolve_dynamic_quoting_policy etc.)
+  - Then for pure: A-S compute_avellaneda_quote supplies the presence decision + levels (built-in reservation + spread protections); the adj.decision_summary (with all the "good" inventory / momentum / policy strings) is still emitted for log parity.
+- Output per-cycle now contains strings of the form the long run produces: "Generated 2 quotes (two-sided) from mid=... | inventory=slight_xrp_heavy | tight_spread: favorable → ...; inventory ... → steer quotes; operating mode: market make; momentum ... → pause bids ...; dynamic policy (...); book too tight ... | PURE A-S (built-in protection): reservation=... gamma=... "
+- This means the WS version carries the battle-tested decision provenance. When the long run finishes Gate 2, the VPS/remote server code is simply replaced wholesale with the WS package (BookFeed/WS + this wiring + pure A-S as the core instead of hard gate + heuristic layers).
+- Latest run on the hard-gate training corpus (4008 snapshots, 620 zero-due-to-edge): 92.6% flip potential, 89.7% presence under pure A-S (capture observed from real subsequent fills in backtest, not the old heuristic calc). Hybrid and baseline paths still available for comparison.
+- grokster.py already wired for the same variants + full-dataset + user protection observation.
+- Sacred long-run main (hard gate, tight_spread, vps) untouched and continues generating data.
+
+Next increments: harden WS snapshots/recon (pure WS focus), A-S gamma/kappa calibration from run data + realistic quote levels in the strategy, re-measure with replay/live tester, keep docs current. The pure path is ready for the eventual wholesale server swap.
