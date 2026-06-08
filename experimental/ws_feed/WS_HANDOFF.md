@@ -98,6 +98,35 @@ When long-run / Gate 2 testing is complete, the code running on the remote serve
 - All WS changes, tests, replays, probes here only.
 - Current main run data (this 150-fill run + history) is sacred testing ground — use it to measure everything.
 - No deployment to VPS/engine until explicit post-Gate 2 sign-off.
+
+## Real-time HUD / New Operator Surface (experimental/ws_feed/hud/)
+**Purpose:** Provide a lightweight, high-frequency "new GUI" surface for watching the committed WS + pure A-S path live (book state, A-S reservation/optimal spread, would-quote decision, suggested levels, rich policy notes, recent decisions). This is additive to the main Streamlit (which can still load `logs/ws_as_demo_runtime.json` for the full analytical view + legacy strings).
+
+**Key recent work (Cursor-friendly iteration):**
+- Fully extracted from giant inline string in `real_time_as_hud.py` → standalone `hud/index.html` (single source of truth for the UI; easy for Cursor / web tooling).
+- Python side is now a minimal FastAPI loader (`_HUD_DIR / "index.html"`, reads at startup, serves with CSP header).
+- **Live tester integration** (`live_pure_as_tester.py --serve-hud`): feeds the same state dict (balances, inventory, as_*, ws_*, would_quote, quote_intents, recent_decisions, etc.) every cycle. Starts HUD on 8765 in background thread.
+- **Sidebar**: Compact always-visible view (Balances XRP/RLUSD from bot wallet, Inventory label, Profile selector, Status, Engine Controls demo buttons). Added real project logo (`Xledermate.jpg` base64-embedded for self-contained serving) above Balances; sized up for prominence.
+- **Nav tabs**:
+  - Live: Book + Pure A-S Decision (reservation with bid/ask margins, optimal spread, γ/κ, would_quote status, suggested levels). Cleaned out legacy "BASE HARD GATE" simulation noise.
+  - Config: Focused on operational + wallet-tied data — Bot Wallet (address + live XRP/RLUSD balances from tester state), L1–L3 inventory commitments (L1 pulls from live quote_intents when available; L2/L3 demo-scaled for now), Inventory Target + current label, basic quoting params (profile, min order size). "Apply" is demo-only; real changes via config.yaml or main Streamlit.
+  - Credentials: Dedicated tab for secrets (XRPL address/seed, Telegram token/chat, other keys). Removed credential duplicates that were previously cluttering the old Config tab.
+- **Sidebar cleanup**: Removed redundant "Credentials (demo)" section (address + secret inputs + note) — now lives only in the Credentials nav tab.
+- **Collapsible sections**: "Last Decision Note" and "Recent Decisions" are now minimizable (click header, chevron rotates, state persisted in localStorage). Helps keep the Live view from being overwhelmed by verbose output while still having the rich policy strings available.
+- **Other ergonomics**: Explicit CSP (script-src with unsafe-eval for inline + demo needs; connect-src), defensive JS (if(el) guards), live poll status, force-poll button, showPage state push on tab switch, etc.
+- **Important for Cursor / future edits**: After any change to `hud/index.html` you **must** restart the tester process (the HTML/JS is read once at server start). Use hard refresh (Ctrl+Shift+R) in browser. The tester can be run with `--profile`, `--gamma`, `--kappa`, `--xrp-bal`, `--rlusd-bal` etc. to simulate different wallet/inventory conditions.
+
+**Status**: The HUD is now a practical, low-friction surface for real-time observation of pure A-S decisions on live WS book data. It complements the sacred long-run / Gate 2 data generator (HTTP poll + hard gate remains untouched on the main branch for validation). Further HUD work (more live engine controls, deeper L1-L3 ladder from actual risk policy, better error states, etc.) can now be done efficiently in the external HTML file.
+
+**How to run**:
+```powershell
+cd xledgermate
+.\.venv\Scripts\Activate.ps1
+python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 600 --verbose --profile tight_spread
+```
+Open http://127.0.0.1:8765 (hard refresh after edits). F12 console for poll/debug.
+
+This surface is part of the "new GUI" story for the committed WS + pure A-S future. When we eventually wholesale-replace the remote server code, a polished version of this (or evolved from it) can become the primary operator view.
 - Update this handoff + PROBE_RESULTS.md when new data from main run or WS improvements land.
 - When switching back to main work: checkout grok-tier-2-collab (stash/pop handoff edits as needed). WS branch stays for ongoing dev.
 

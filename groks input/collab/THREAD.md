@@ -7,6 +7,80 @@
 
 ---
 
+## 2026-06-08 (update) — Grok (HUD UI polish + Cursor ergonomics + operator usability)
+
+**Follow-up to extraction:**
+
+- Removed redundant "Credentials (demo)" section from sidebar (address + secret inputs + note). Credentials now live only in the dedicated nav tab — no more duplication.
+- Added real project logo (`Xledermate.jpg`, base64-embedded for self-contained single-file HUD) at the top of the sidebar, directly above Balances. Size doubled (now ~116px height) for better visual weight in the 260px sidebar.
+- Restructured **Config** nav tab to be actually useful for the pure A-S path:
+  - Bot Wallet card: XRPL address + live XRP/RLUSD balances pulled from tester state (explicitly "tied to the wallets").
+  - L1–L3 Inventory Commitments: L1 pulls from live `quote_intents` when available; L2/L3 shown as scaled demo values (representing committed liquidity layers). Shows Inventory Target + current label.
+  - Quoting Parameters (profile, min order size) + note that real changes belong in config.yaml / main Streamlit.
+- Cleaned "BASE HARD GATE: BLOCKED" simulation out of the Pure A-S Decision card (legacy noise; pure A-S protection is via reservation math inside the book, not the old 0.10% spread gate).
+- Made "Last Decision Note" and "Recent Decisions" collapsible/minimizable:
+  - Click the header (chevron rotates).
+  - State persisted in localStorage (preference survives refreshes/restarts).
+  - Added subtle hover feedback on headers.
+  - Helps keep the Live view from being overwhelmed by verbose policy strings while still having them available.
+- Various small cleanups: CSP header/meta made more explicit (script-src + connect-src), demo button alerts improved, tighter spacing around larger logo, etc.
+- All of this keeps the HUD as a practical, high-frequency observation surface for the live WS + pure A-S tester without touching the sacred long-run Gate 2 HTTP-poll data generator.
+
+The standalone `hud/index.html` is now the clear place for Cursor to drive rapid UI iteration (collapsibles, wallet/inventory visibility, tab focus, etc.). Tester must be restarted after HTML edits; use hard refresh in browser.
+
+**Next suggested (if wanted):**
+- Deeper integration of actual L1/L2/L3 sizes from the risk/inventory policy into the state (instead of demo scaling).
+- Optional "full engine controls" in Config (beyond demo alerts).
+- Persist more HUD prefs or add a compact "min mode".
+
+## 2026-06-08 — Grok (HUD extraction + Cursor handoff + breakage fixed)
+
+**Context for Cursor (re: "this is an area where cursor can help"):**
+
+The real-time WS + pure A-S HUD (the "new GUI" surface for watching live book + A-S reservation/optimal spread/"would quote"/suggested levels + rich notes + marquee) was previously a 500+ line giant `html = """ ... """` string inside `experimental/ws_feed/real_time_as_hud.py`. Painful to edit (syntax errors like em-dashes, DOM warnings, defensive guards via search_replace, restart cycles, no real web tooling).
+
+**What was done:**
+- Fully extracted the complete frontend (sidebar, nav Live/Config/Credentials, all CSS, renderLive, poll 800ms, showPage, saveCredentialsDemo, attachDemoHandlers, bootHud, etc.) to a real standalone file:  
+  `experimental/ws_feed/hud/index.html` (now the single source of truth).
+- Python side reduced to a tiny loader under `if app:`:
+  ```python
+  _HUD_DIR = Path(__file__).parent / "hud"
+  _INDEX_HTML = _HUD_DIR / "index.html"
+  ...
+  html = _INDEX_HTML.read_text(encoding="utf-8")
+  resp = HTMLResponse(html)
+  resp.headers["Content-Security-Policy"] = ...
+  return resp
+  ```
+- `/state` GET/POST, `update_state`, `run_hud(background=True)`, and the tester integration are untouched.
+- The live tester (`live_pure_as_tester.py --serve-hud`) still feeds the exact same dict (as_* + ws_* + base fields) via `hud_update_state`.
+
+**The bug you reported ("the gui is no longer working at all"):**  
+During the multi-step mechanical removal of the old inline content, leftover bare JS (`function showPage`, `saveCredentialsDemo`, `attach...`, `bootHud`, DOMContentLoaded listener) + `</script></body></html>` remnants + the old `"""` + `resp = HTMLResponse... return resp` were left inside/after the `index()` function. This made the module invalid (SyntaxError on import / broken served page). The `hud/index.html` file itself was always correct.
+
+**Fix applied in this session:** Cleaned `index()` to the minimal correct loader + serve above. All subsequent routes and helpers are now properly at module scope. Syntax + import verified clean.
+
+**How to run / test the HUD (Cursor-friendly path):**
+```powershell
+cd xledgermate
+.\.venv\Scripts\Activate.ps1
+python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 600 --verbose --profile tight_spread
+```
+- Browser: http://127.0.0.1:8765 (hard refresh Ctrl+Shift+R / Ctrl+F5 after any change)
+- F12 Console for poll logs + errors.
+- **Critical:** After editing `hud/index.html` you **must restart the tester process** (HTML/JS is read at uvicorn/FastAPI startup).
+
+The `logs/ws_as_demo_runtime.json` write path (from the tester) still works for loading the "base" rich Streamlit experience + the new Pure A-S / WS sections for comparison.
+
+**Status on pinned WS + pure A-S (Tier 3) work:**
+- Live tester + real-time HUD surface is the active vehicle in the `grok-ws-feed` sandbox (parallel to Gate 2 on the other branch; not on VPS).
+- `hud/index.html` is now the place for Cursor to own the UI iteration (layout, real controls, profile integration, error states, etc.).
+- WS_HANDOFF.md + the tester docstring + WS_HANDOFF principles remain the commitment.
+
+— Grok
+
+---
+
 ## 2026-06-07 — Operator + Cursor (dual-branch — no merge yet)
 
 **Rule:** **2-week Gate 2 on VPS** runs **`grok-tier-2-collab`** (HTTP poll). **`grok-ws-feed`** = parallel WS/A-S sandbox only — **do not merge** branches or deploy WS to VPS until Gate 2 window ends.
