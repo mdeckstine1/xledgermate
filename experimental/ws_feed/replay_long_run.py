@@ -637,7 +637,14 @@ def main() -> None:
     for r in out.get("per_cycle", [])[:5]:
         print(r)
 
-    if args.as_mode != "pure":
+    if args.as_mode == "pure":
+        print("\n=== PURE A-S + WS SWAP READINESS (committed direction) ===")
+        print("  This run used only A-S built-in protections (reservation inside book + optimal spread).")
+        print("  Full long-run wiring (inventory, dynamic policy, toxicity, momentum, etc.) was exercised for decision strings.")
+        print("  No hard gate or legacy edge-thin / off-book heuristics were used for the presence decision.")
+        print("  The numbers above (flip_rate, as_presence_pct) are the key evidence for the wholesale server replacement after Gate 2.")
+        print("  Recommended next: average the calibration suggestions from grokster + live pure A-S runs for production gamma/kappa.")
+    else:
         print("\nNOTE: --as-mode is not 'pure'. We are committed to the WS + pure A-S direction as the future of xledgermate (A-S built-in protections + WS architecture + replicated long-run wiring). Other modes exist only to validate the lift/safety against the sacred long-run hard-gate data.")
 
     print("\nThis harness (replay_long_run.py) is the working prototype for the WS + pure A-S engine.")

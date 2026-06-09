@@ -33,11 +33,26 @@ from typing import Any, Dict, List, Optional
 
 try:
     from fastapi import FastAPI, Request
-    from fastapi.responses import HTMLResponse
+    from fastapi.responses import HTMLResponse, Response
     import uvicorn
 except ImportError:
     FastAPI = None
     uvicorn = None
+
+# Optional QR support (real scannable PNGs for the Inventory tab)
+# pillow is usually already present; we use it for nice fallback images too
+try:
+    from io import BytesIO
+    from PIL import Image, ImageDraw, ImageFont
+    HAS_PIL = True
+except Exception:
+    HAS_PIL = False
+
+try:
+    import qrcode
+    HAS_QRCODE = True
+except Exception:
+    HAS_QRCODE = False
 
 # Global current state (updated by the live tester or engine)
 _current_state: Dict[str, Any] = {
@@ -102,6 +117,126 @@ if app:
             _current_state["recent_notes"] = _current_state["recent_notes"][:_recent_limit]
         return {"ok": True}
 
+    @app.get("/qr")
+    async def qr_image(text: str = ""):
+        """Return a real scannable QR PNG for an XRPL address (used by Inventory tab).
+        Requires: pip install qrcode pillow (already done in this env).
+        If not active, returns a visible placeholder image telling you to restart the tester.
+        """
+        if not text:
+            text = "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh"  # safe default for demo
+
+        def _make_placeholder(msg: str, sub: str = "") -> bytes:
+            if not HAS_PIL:
+                # last resort tiny png
+                return b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+            try:
+                size = (220, 220)
+                img = Image.new("RGB", size, color="#1e2937")
+                draw = ImageDraw.Draw(img)
+                # Try a default font; fall back to default
+                try:
+                    font = ImageFont.truetype("arial.ttf", 14)
+                    small_font = ImageFont.truetype("arial.ttf", 11)
+                except Exception:
+                    font = ImageFont.load_default()
+                    small_font = font
+                # Center the message
+                bbox = draw.textbbox((0, 0), msg, font=font)
+                tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                x = (size[0] - tw) // 2
+                y = (size[1] - th) // 2 - 10
+                draw.text((x, y), msg, fill="#e2e8f0", font=font)
+                if sub:
+                    sbbox = draw.textbbox((0, 0), sub, font=small_font)
+                    sw = sbbox[2] - sbbox[0]
+                    draw.text(((size[0] - sw) // 2, y + th + 8), sub, fill="#94a3b8", font=small_font)
+                buf = BytesIO()
+                img.save(buf, format="PNG")
+                return buf.getvalue()
+            except Exception:
+                return b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+
+        if not HAS_QRCODE:
+            content = _make_placeholder("QR not available", "Restart the tester process")
+            return Response(content=content, media_type="image/png")
+
+        try:
+            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=8, border=2)
+            qr.add_data(text)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="#0f172a", back_color="#e2e8f0")
+            buf = BytesIO()
+            img.save(buf, format="PNG")
+            return Response(content=buf.getvalue(), media_type="image/png")
+        except Exception as e:
+            content = _make_placeholder("QR generation failed", str(e)[:30])
+            return Response(content=content, media_type="image/png")
+
+    @app.post("/set_intel_config")
+    async def set_intel_config(request: Request):
+        """Update the live Intelligence API config from the HUD Config tab (demo only).
+        Allows changing provider/key/model mid-run without restarting the tester.
+        The key is kept server-side for /analyze_competitor calls.
+        """
+        data = await request.json()
+        _current_state["intel_ai_provider"] = data.get("provider", _current_state.get("intel_ai_provider", "stub"))
+        _current_state["intel_ai_key"] = data.get("key", _current_state.get("intel_ai_key", ""))
+        _current_state["intel_ai_model"] = data.get("model", _current_state.get("intel_ai_model", "grok-beta"))
+        _current_state["intel_ai_enabled"] = bool(data.get("enabled", _current_state.get("intel_ai_enabled", True)))
+        return {"ok": True, "provider": _current_state.get("intel_ai_provider")}
+
+    @app.post("/analyze_competitor")
+    async def analyze_competitor(request: Request):
+        """Real AI analysis for a competitor ledger address using the configured Intelligence API (from Config tab).
+        Currently supports Grok (xAI) when provider=grok and key provided.
+        The prompt focuses on on-chain trending, strategy, and how to compete/skim against it.
+        Output is advisory only and does not affect A-S reservation or quoting.
+        """
+        data = await request.json()
+        address = data.get("address", "").strip()
+        if not address:
+            return {"result": "No address provided."}
+
+        provider = _current_state.get("intel_ai_provider", "stub")
+        key = _current_state.get("intel_ai_key", "")
+        model = _current_state.get("intel_ai_model", "grok-beta")
+        enabled = _current_state.get("intel_ai_enabled", True)
+
+        if not enabled or not key:
+            return {"result": f"AI not enabled or no key configured in Config tab (provider={provider}). Demo simulation for {address}: This address shows high activity in the RLUSD/XRP book, likely a competitor MM with tight spreads and frequent L1 adjustments. Counter by monitoring their cancels for adverse signals."}
+
+        if provider.lower() != "grok":
+            return {"result": f"Only Grok provider is supported for real API calls right now (configured: {provider}). Using simulation for {address}."}
+
+        try:
+            import requests
+            url = "https://api.x.ai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json"
+            }
+            prompt = (
+                f"You are an expert on XRPL market making and on-chain competitor analysis. "
+                f"Analyze the ledger address {address} for its likely market-making strategy on the RLUSD/XRP order book. "
+                f"Focus on: posted spreads and sizes from recent activity, aggressiveness vs defensiveness, inventory skew signals, "
+                f"reaction to fills or price moves (e.g. cancel patterns), and any 'trending' behavior (increasing/decreasing presence). "
+                f"Provide a concise, actionable summary of how our pure A-S bot can compete or skim harder against it without increasing toxic risk. "
+                f"Base your reasoning only on public on-chain patterns; do not speculate on off-chain identity."
+            )
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 600,
+                "temperature": 0.6,
+            }
+            resp = requests.post(url, headers=headers, json=payload, timeout=45)
+            resp.raise_for_status()
+            result = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "No content returned from Grok.")
+            return {"result": result}
+        except Exception as e:
+            return {"result": f"Error calling Grok API for {address}: {str(e)}. (Check key, model, network, or rate limits. Falling back to simulation: This address appears active in the book with competitive quoting.)"}
+
 
 def update_state(new_state: Dict[str, Any]):
     """Call this from the live tester / engine on every decision cycle."""
@@ -119,6 +254,10 @@ def run_hud(host: str = "127.0.0.1", port: int = 8765, background: bool = True):
     if FastAPI is None or uvicorn is None:
         print("FastAPI / uvicorn not installed. Run: pip install fastapi uvicorn")
         return None
+
+    qr_status = "ENABLED (real scannable codes)" if HAS_QRCODE else "DISABLED (run: pip install qrcode pillow, then fully restart this tester)"
+    print(f"[HUD] QR support: {qr_status}")
+    print(f"[HUD] Open http://{host}:{port} → Inventory tab → 'Show QR Code'. Direct test: http://{host}:{port}/qr?text=rYourBotAddressHere")
 
     config = uvicorn.Config(app, host=host, port=port, log_level="warning")
     server = uvicorn.Server(config)

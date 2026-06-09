@@ -139,12 +139,23 @@ class StubAIAnalyzer(AIAnalyzer):
                 edge_quality = min(1.0, edge_quality + 0.2)  # secondary sees value
                 skimmable = True
 
+        # Incorporate competitor intel for competitive edge (new)
+        comp_pressure = 0.5
+        if run_context:
+            comp_pressure = run_context.get("competitor_pressure", 0.5) or 0.5
+            top_comps = run_context.get("top_competitors", [])
+            if comp_pressure < 0.4 and top_comps:
+                # Competitors look defensive → boost skimmability
+                edge_quality = min(1.0, edge_quality + 0.25)
+                skimmable = True
+
         posture = "near" if skimmable and spread > 0.12 else ("spread_mid" if skimmable else "off")
 
         rationale = (
             f"Spread {spread:.3f}%, age {age:.1f}s. "
             f"Edge quality ~{edge_quality:.2f}. "
             f"{'Secondary data supports skimming.' if secondary_data else 'No secondary data.'}"
+            + (f" Competitor pressure {comp_pressure:.2f} — {'defensive, good to skim harder' if comp_pressure < 0.4 else 'aggressive'}." if run_context and run_context.get("competitor_pressure") is not None else "")
         )
 
         return AIAnalysis(

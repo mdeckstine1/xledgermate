@@ -109,7 +109,8 @@ When long-run / Gate 2 testing is complete, the code running on the remote serve
 - **Sidebar**: Compact always-visible view (Balances XRP/RLUSD from bot wallet, Inventory label, Profile selector, Status, Engine Controls demo buttons). Added real project logo (`Xledermate.jpg` base64-embedded for self-contained serving) above Balances; sized up for prominence.
 - **Nav tabs**:
   - Live: Book + Pure A-S Decision (reservation with bid/ask margins, optimal spread, γ/κ, would_quote status, suggested levels). Cleaned out legacy "BASE HARD GATE" simulation noise.
-  - Config: Focused on operational + wallet-tied data — Bot Wallet (address + live XRP/RLUSD balances from tester state), L1–L3 inventory commitments (L1 pulls from live quote_intents when available; L2/L3 demo-scaled for now), Inventory Target + current label, basic quoting params (profile, min order size). "Apply" is demo-only; real changes via config.yaml or main Streamlit.
+  - Config: Focused on operational + wallet-tied data — Bot Wallet (address + live XRP/RLUSD balances from tester state), L1–L3 inventory commitments, Inventory Target + current label, basic quoting params (profile selector + explanatory text moved here from old sidebar).
+  - Inventory (new): Primary funding surface. Bot address (copy + real QR via /qr endpoint), live balances, "Bring in XRP from wallet" (QR + copy + simulate deposit buttons that update HUD balances for testing), "Send from the bot" form (demo withdraw to external r-address, mutates displayed bals + tx log). All demo-only for UI/inventory skew experimentation in the HUD. Real moves use XRPL Payment txs from the engine.
   - Credentials: Dedicated tab for secrets (XRPL address/seed, Telegram token/chat, other keys). Removed credential duplicates that were previously cluttering the old Config tab.
 - **Sidebar cleanup**: Removed redundant "Credentials (demo)" section (address + secret inputs + note) — now lives only in the Credentials nav tab.
 - **Collapsible sections**: "Last Decision Note" and "Recent Decisions" are now minimizable (click header, chevron rotates, state persisted in localStorage). Helps keep the Live view from being overwhelmed by verbose output while still having the rich policy strings available.
@@ -136,6 +137,9 @@ Mature the WS + pure A-S production path (this is what will replace the remote s
 2. A-S realism + calibration: fix quote level math so "would quote" prices are competitive and realistic around the live book; derive good gamma/kappa from the sacred long-run fill/toxicity/inventory data (see grokster calibration output and replay).
 3. Hardening for swap: keep the replicated long-run wiring (assess_inventory + build_quote_adjustments etc.) + pure A-S as the decision core. Make live tester / replay production-grade enough to become the engine path.
 4. Measurement: default everything to pure; use replay + live tester + grokster on the full corpus to prove better Tier C presence while preserving the 7.5% neg / capture economics the long run validated.
+5. Competitor intelligence + advisory Grok/xAI (new): on-chain scraper for active makers (observed spreads, pressure, profiles + domain); Config tab drives real Grok tokens (provider=grok, xai-... key, grok-beta); `/analyze_competitor` endpoint + Intelligence tab "Analyze with AI" button for competitor ledger address trending/strategy (advisory only — never mutates A-S reservation math). Llama3 stub deprecated for intel path. More token details later. The layer improves A-S *inputs* (pressure as vol/liquidity proxy) so we can skim harder when competitors are defensive.
+
+See new `docs/WS_AS_MANUAL.md` (how to run tester + HUD, Intelligence tab, Grok config) and the updated `docs/STRATEGY_MANUAL.md` + `docs/IMPLEMENTATION_PLAN.md` (Tier 3 section + progress log).
 Keep it simple and focused. Pure WS book + A-S built-in math + proven context wiring = the future.
 
 The long-run hard-gate engine stays as the sacred data generator only.
@@ -242,8 +246,21 @@ The live tester is now the best "GUI demo harness" for the committed path. Run i
   - Then for pure: A-S compute_avellaneda_quote supplies the presence decision + levels (built-in reservation + spread protections); the adj.decision_summary (with all the "good" inventory / momentum / policy strings) is still emitted for log parity.
 - Output per-cycle now contains strings of the form the long run produces: "Generated 2 quotes (two-sided) from mid=... | inventory=slight_xrp_heavy | tight_spread: favorable → ...; inventory ... → steer quotes; operating mode: market make; momentum ... → pause bids ...; dynamic policy (...); book too tight ... | PURE A-S (built-in protection): reservation=... gamma=... "
 - This means the WS version carries the battle-tested decision provenance. When the long run finishes Gate 2, the VPS/remote server code is simply replaced wholesale with the WS package (BookFeed/WS + this wiring + pure A-S as the core instead of hard gate + heuristic layers).
-- Latest run on the hard-gate training corpus (4008 snapshots, 620 zero-due-to-edge): 92.6% flip potential, 89.7% presence under pure A-S (capture observed from real subsequent fills in backtest, not the old heuristic calc). Hybrid and baseline paths still available for comparison.
-- grokster.py already wired for the same variants + full-dataset + user protection observation.
+- Latest runs on the hard-gate training corpus (latest 4008 snapshots / 620 zero-due-to-edge from decisions.jsonl + vps data):
+  - grokster (recent 2000 window): 93.8% presence under pure A-S vs 10.7% baseline (+83.1pp lift), 0 high-tox risk.
+  - replay_long_run --as-mode pure: 90.7% presence, 93.5% flip rate on the thin/0-edge cases.
+- These numbers use the *exact* replicated long-run wiring + pure A-S (reservation inside book) with WS-freshness simulation from real probes.
+- grokster.py and replay_long_run.py are the calibration + proof harnesses.
 - Sacred long-run main (hard gate, tight_spread, vps) untouched and continues generating data.
 
-Next increments: harden WS snapshots/recon (pure WS focus), A-S gamma/kappa calibration from run data + realistic quote levels in the strategy, re-measure with replay/live tester, keep docs current. The pure path is ready for the eventual wholesale server swap.
+Next increments (pure A-S + WS only, experimental/ only — do not touch sacred long-run branch):
+- Production hardening of WsBookFeed (reconnect, is_fresh / trust_score guards, long-running run_forever mode) — started.
+- Deeper gamma/kappa calibration from full current sacred data + live pure A-S runs (grokster already prints rough suggestions).
+- Realistic near-touch quote levels in AvellanedaStrategy when book is very tight.
+- Full "swap readiness" report output from replay (added to replay_long_run.py).
+- Engine adapter prototype (new engine_adapter_example.py shows the clean surface the main engine will eventually use).
+- 30+ min production-style probes exercising the hardened WsBookFeed.
+- Update main docs (IMPLEMENTATION_PLAN.md Tier 3 section + OPERATOR_MANUAL) with current evidence (93%+ presence, 0 modeled tox increase, full wiring parity).
+- Optional: small HUD enhancements for swap monitoring (presence lift badge, etc.).
+
+The pure A-S + WS path (replicated wiring + A-S math + WS book) is the only thing that will replace the remote server. Hybrid and old logic are validation-only.

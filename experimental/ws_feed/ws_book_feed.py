@@ -272,4 +272,36 @@ class WsBookFeed(BookFeed):
     def current_order_book(self) -> Dict[str, List[Dict[str, float]]]:
         return self.state.to_order_book()
 
+    def data_freshness(self, max_age_s: float = 5.0) -> bool:
+        """Data quality helper for A-S inputs: whether the book state is reasonably current."""
+        age = self.age_seconds()
+        return age < max_age_s
+
+    def data_quality_score(self) -> float:
+        """Simple 0-1 score for A-S input quality (based on age and update volume from WS)."""
+        age = self.age_seconds()
+        msgs = max(1, self.state.message_count)
+        age_score = max(0.0, 1.0 - (age / 15.0))
+        volume_score = min(1.0, msgs / 200.0)
+        return round((age_score * 0.7 + volume_score * 0.3), 3)
+
+    async def run_forever(self, *, http_refresh_seconds: float = 45.0):
+        """
+        Long-running loop (with basic reconnect skeleton) for sustained WS + pure A-S operation.
+        The A-S strategy itself provides the quoting protections; this is just to keep feeding it fresh book data.
+        """
+        while not self._stop.is_set():
+            try:
+                await self.run(
+                    seconds=3600,
+                    http_refresh_seconds=http_refresh_seconds,
+                    seed_http=True,
+                    summary_interval_seconds=60.0,
+                )
+            except Exception:
+                logger.exception("[WS] run_forever error, will retry in 5s...")
+                await asyncio.sleep(5.0)
+            if not self._stop.is_set():
+                logger.info("[WS] Reconnecting for continued pure A-S feed...")
+
     # best_and_mid and is_trustworthy inherited from BookFeed (uses connector + state)

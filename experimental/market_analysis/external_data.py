@@ -148,6 +148,10 @@ class AnodosFinanceProvider(ExternalMarketDataProvider):
 
 
 # TODO (expansion for competitive MM):
+# - Competitor on-chain scraping (see competitor_intel.py): profile other makers'
+#   posted spreads, sizes, cancel rates, pressure. Use as "observed market spread"
+#   and adverse vol proxy so pure A-S can scrape harder (tighter reservation) when
+#   competitors are wide/defensive.
 # - Add CoinGecko / CoinMarketCap vol fetcher (24h change, volume).
 # - Cross-venue liquidity (other DEXes on XRPL or CEX XRP pairs) for true depth.
 # - On-chain analytics (e.g., from XRPL data providers or Dune) for holder
