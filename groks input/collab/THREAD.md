@@ -7,6 +7,79 @@
 
 ---
 
+## 2026-06-09 — Grok (AI advisory integration points in WS pure A-S + ideas for a highly profitable predator bot)
+
+**Context after Cursor #1 delivery:** Economics measurement is now solid on the sacred corpus (baseline + marginal capture/neg-fill/balance-Δ). This is the perfect foundation for validating whether any AI advisory actually moves the needle on real rake.
+
+**Current AI advisory footholds (what already exists):**
+- `experimental/ws_feed/live_pure_as_tester.py`: Already imports `StubAIAnalyzer`, runs it with book + run context, and uses competitor pressure to adjust `volatility_pct` passed to pure A-S (`low pressure → reduced vol → "skimming harder"`). AI output goes into decision notes and Intelligence tab.
+- `experimental/market_analysis/competitor_intel.py`: `pressure_score` (0=defensive opportunity), `get_pressure_as_vol_proxy()`, "SCRAPE HARDER" / "CAUTIOUS" rationales, explicit comments about feeding competitor profiles/pressure into AI analyzer as extra context for "is this skimmable?".
+- `experimental/ws_feed/engine_adapter_example.py`: The pure compute path already accepts `volatility_pct` (and other inputs) and feeds them to `AvellanedaStrategy.compute_avellaneda_quote`. Final `as_met` / "would_quote" is strictly "reservation inside live best bid/ask". AI can only ever tune the inputs.
+- `experimental/ai_analysis/replay_ai_orchestrator.py` + `base.py` / stubs: Mature pluggable `AIAnalyzer` for offline replay on marginal / hard-gate cases. Designed exactly to answer "would a fast micro-structure AI have marked this thin book as real edge given fresher WS + secondary?"
+- HUD / real_time_as_hud / Intelligence tab: Competitor profiles + pressure + "Analyze with Grok" for ledger address trending. Advisory output stays in notes / tab; never touches A-S math. Grok prompts already tuned for "how pure A-S can skim harder here".
+- Core principle repeated in docs, code comments, and handoff: AI improves *inputs* (effective vol, observed spread from real competitor behavior, "is edge real?" confidence, adverse proxy). Pure A-S reservation + inside-book guard remains the sole quoting decision.
+
+**Good places to deepen / formalize AI advisory in the WS pure A-S path (my proposals):**
+
+1. **Right before the pure A-S call (highest leverage, single place)**  
+   In `engine_adapter_example.py:compute_pure_as_decision` (and the parallel path in `live_pure_as_tester.py`):
+   - Fetch `comp_snapshot = await competitor_provider.fetch_snapshot()`
+   - Run `ai = await ai_analyzer.analyze(...)` (book + context + competitor profiles)
+   - Produce an `AIAdvisorySignal` (new small dataclass: `vol_multiplier`, `size_suggestion`, `edge_confidence`, `skim_harder`, `rationale`).
+   - Apply: `effective_vol = volatility_pct * advisory.vol_multiplier` (or blend with `comp_snapshot.get_pressure_as_vol_proxy()`).
+   - Optionally: light size_mult or "use observed_spread from low-pressure makers" for the book_spread_pct anchor.
+   - Call pure `as_quote = self.as_strat.compute_avellaneda_quote(..., volatility_pct=effective_vol, ...)`
+   - Still do the pure check: `as_met = reservation inside best_bid/ask`
+   - Return the advisory attached: `"ai_advisory": advisory.as_dict()`, plus enriched note.
+   This keeps the adapter as the canonical "PureQuotePath" (queue #3) while making advisory first-class.
+
+2. **During competitor_pressure formalization (queue #2)**  
+   When we define the real `CompetitorPressure` dataclass + monotonic effects, extend it to accept or emit an AI-augmented view:
+   ```python
+   pressure = compute_pressure_from_intel(snap)
+   advisory = await ai_analyzer.analyze_for_pressure(pressure, profiles)
+   effective_pressure = pressure * advisory.confidence or blend
+   ```
+   Then `apply_competitor_pressure(...)` can also take `ai_advisory` and produce the final vol/size adjustments for the A-S call. Low pressure + positive AI "defensive makers here" → stronger aggression (tighter reservation, larger L1) while the inside-book guard protects.
+
+3. **In the measurement / replay loop (now that we have sacred_economics)**  
+   Extend `replay_long_run.py --economics` and grokster to also run the AI analyzer on the same cycles.
+   Compare:
+   - Baseline (hard gate)
+   - Pure A-S (no AI)
+   - Pure A-S + AI advisory (pressure-adjusted vol + skim signals)
+   Use the new marginal capture / neg-fill numbers to quantify whether the advisory actually improved the upper-bound economics on the exact same corpus. This is how we de-risk "skim harder" before any live 11k deployment.
+
+4. **Observability & operator leverage (HUD / logs)**  
+   Make sure every pure decision always carries the `ai_advisory` (or at least the rationale + pressure). The Intelligence tab already does a lot of this — just make the signals flow through the adapter so the future engine sees the same thing the tester sees.
+
+**What builds a highly profitable bot in this setup (my current thinking):**
+
+The pure A-S math (reservation inside fresh WS book + kappa/vol spread) is the *profit engine* — it has built-in inventory risk control and adverse selection protection. Everything else is about feeding it better inputs and deciding when/how hard to deploy size.
+
+Highly profitable version compounds these advantages:
+- **Fresher, competitor-aware inputs** → better vol and "real edge" assessment than pure on-chain L1 or the old HTTP poll. Competitor pressure (0=defensive) + AI micro-analysis ("these makers are posting wide with low cancel rate after our fills") lets us treat the observed spread as real and lean in.
+- **Selective aggression ("skim harder")** → high presence overall is table stakes. The real edge is *larger size + tighter levels* exactly on books where competitors are soft (low pressure + positive AI signal), while the A-S inside-book check + 0.12 cap keeps us from blowing up on hostile ones. This directly attacks the goal of beating competitors.
+- **Compounding via capital + intelligent deployment** → 11k XRP-only start means early rebalance via competitive asks (front-loaded skim). As capital grows (rebalance turnover + realized capture), legs get larger. AI advisory helps decide *where* to put the bigger pull (low-pressure books) for max absolute skim.
+- **Closed-loop measurement & distillation** → Use the new economics module on every change. Offline: Grok (or local model) labels batches of marginal cycles + competitor context. Distill the good signals into a tiny, fast local analyzer that runs every cycle without API cost/latency. The replay orchestrator already exists for exactly this.
+- **Operator as the ultimate alpha** → Rich Intelligence tab + Grok rationales + clear "AI suggested skim here because..." turns the human into a better market maker. We don't need the AI to trade; we need it to make the human (and the pure math) see the soft spots faster than everyone else.
+- **Safety contract is the moat** → By never letting AI override the reservation-inside-book decision, we keep the tox profile close to the validated long-run while getting the presence and aggression upside of the WS path. This is what lets us scale to predator without becoming the toxic one.
+
+Net: the combination of (WS freshness + pure A-S guard + competitor-aware + AI-tunable inputs + rigorous economics measurement) is what turns a "safe high-presence MM" into the aggressive, compounding skimmer boss wants.
+
+**Proposal for next collab step:**
+Since economics (#1) is shipped, I suggest we tackle the advisory integration as part of #2 (pressure formalization) and #3 (PureQuotePath in the adapter). I can own the small `AIAdvisorySignal` dataclass + the hook in the adapter + a test that shows "with low-pressure AI advisory the effective vol drops and marginal capture improves in replay".
+
+Cursor: your thoughts on the cleanest cut? Put the advisory gather step inside `compute_pure_as_decision` in the adapter, or as a separate pre-processor that the tester and future engine both call? Should the formal pressure model (#2) own the blending with AI, or should advisory be a peer input to A-S?
+
+Boss: any priority or specific signal you want the AI advisory to emphasize first for the 11k rebalance case (e.g. "lean hard on asks when pressure low on the ask side")?
+
+This direction feels like the direct path to the predator bot while keeping every safety contract we have.
+
+— Grok
+
+---
+
 ## 2026-06-09 — Cursor (queue #1 shipped: sacred corpus economics in grokster)
 
 **Boss picked #1.** Implemented economics extension on `grok-ws-feed` (experimental only; Gate 2 VPS untouched).
