@@ -55,6 +55,7 @@ from experimental.ws_feed.pair_books import RlusdXrpPair
 from experimental.ws_feed.ws_book_feed import WsBookFeed
 from strategy.avellaneda_strategy import AvellanedaStrategy
 from strategy.quote_decision import assess_inventory, build_quote_adjustments
+from experimental.competitor_pressure import apply_competitor_pressure, from_intel_dict
 from utils.logging_setup import setup_logging
 
 # Competitor scraping for aggressive analysis (experimental, pure A-S inputs only)
@@ -230,15 +231,21 @@ async def _sample_and_decide(
     # Pure A-S using WS-fresh book.
     # The A-S strategy provides the protections (reservation inside the live book for quoting decision).
     # No additional hard gates or legacy heuristics on top.
-    # Use passed comp_snapshot (fetched in caller) to adjust inputs for harder skimming when competitors are defensive.
+    # Competitor pressure -> A-S inputs (formal model; reservation still decides quoting).
+    pressure_adj = None
+    effective_book_spread = spread
     if comp_snapshot:
-        p = comp_snapshot.get("competitor_pressure", 0.5) or 0.5
-        if p < 0.4:
-            volatility_pct = max(0.3, volatility_pct * 0.75)
-            logger.info("Low competitor pressure %.2f — skimming harder (reduced vol for A-S)", p)
-        elif p > 0.7:
-            volatility_pct = min(3.0, volatility_pct * 1.3)
-            logger.info("High competitor pressure %.2f — A-S protecting via higher vol", p)
+        pressure_model = from_intel_dict(comp_snapshot)
+        if pressure_model:
+            pressure_adj = apply_competitor_pressure(
+                pressure_model,
+                base_volatility_pct=volatility_pct,
+                base_book_spread_pct=spread,
+                inventory_skew=inv_skew,
+            )
+            volatility_pct = pressure_adj.volatility_pct
+            effective_book_spread = pressure_adj.book_spread_pct
+            logger.info("Competitor pressure: %s", pressure_adj.rationale)
 
     # AI analysis (if analyzer provided and enabled in Config tab): competitor-aware reasoning.
     # Strictly advisory — used for Intelligence tab, logs, and optional input hints.
@@ -263,15 +270,21 @@ async def _sample_and_decide(
         except Exception as e:
             logger.debug("AI analysis failed: %s", e)
 
-    as_quote = as_strat.compute_avellaneda_quote(
-        mid_price=mid,
-        inventory_skew=inv_skew,
-        volatility_pct=volatility_pct,
-        best_bid=bb,
-        best_ask=ba,
-        book_spread_pct=spread,
-        profile=profile,
-    )
+    base_gamma = as_strat.gamma
+    if pressure_adj:
+        as_strat.gamma = base_gamma * pressure_adj.gamma_scale
+    try:
+        as_quote = as_strat.compute_avellaneda_quote(
+            mid_price=mid,
+            inventory_skew=inv_skew,
+            volatility_pct=volatility_pct,
+            best_bid=bb,
+            best_ask=ba,
+            book_spread_pct=effective_book_spread,
+            profile=profile,
+        )
+    finally:
+        as_strat.gamma = base_gamma
 
     # Pure A-S decision: reservation inside the book = the math says it is safe to quote.
     as_met = (as_quote.reservation_price > bb and as_quote.reservation_price < ba)

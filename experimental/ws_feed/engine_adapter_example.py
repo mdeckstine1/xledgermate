@@ -26,6 +26,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from experimental.competitor_pressure import (
+    CompetitorPressure,
+    apply_competitor_pressure,
+    from_intel_dict,
+)
 from experimental.ws_feed.book_feed import BookFeed
 from experimental.ws_feed.ws_book_feed import WsBookFeed
 from strategy.avellaneda_strategy import AvellanedaStrategy
@@ -66,6 +71,8 @@ class WSBookFeedAdapter:
         target_ratio: float = 0.55,
         book_spread_pct: Optional[float] = None,
         volatility_pct: float = 0.5,
+        competitor_intel: Optional[Dict[str, Any]] = None,
+        inventory_skew_override: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         The core of the WS + pure A-S engine.
@@ -93,6 +100,27 @@ class WSBookFeedAdapter:
         elif "rlusd_heavy" in inv_state.label:
             inv_skew = -0.30 if "slight" not in inv_state.label else -0.08
 
+        if inventory_skew_override is not None:
+            inv_skew = inventory_skew_override
+
+        pressure_adj = None
+        pressure_note = ""
+        effective_book_spread = book_spread_pct
+        effective_vol = volatility_pct
+        size_mult = 1.0
+        pressure_model = from_intel_dict(competitor_intel)
+        if pressure_model:
+            pressure_adj = apply_competitor_pressure(
+                pressure_model,
+                base_volatility_pct=volatility_pct,
+                base_book_spread_pct=book_spread_pct,
+                inventory_skew=inv_skew,
+            )
+            effective_vol = pressure_adj.volatility_pct
+            effective_book_spread = pressure_adj.book_spread_pct
+            size_mult = pressure_adj.size_mult
+            pressure_note = pressure_adj.rationale
+
         # Full long-run wiring for rich context strings (inventory, momentum, policy, etc.)
         assessment = _make_minimal_assessment(book_spread_pct)  # minimal stub so dynamic policy runs
         adj = build_quote_adjustments(
@@ -115,16 +143,22 @@ class WSBookFeedAdapter:
             toxic_off_touch_latched=False,
         )
 
-        # Pure A-S
-        as_quote = self.as_strat.compute_avellaneda_quote(
-            mid_price=mid,
-            inventory_skew=inv_skew,
-            volatility_pct=volatility_pct,
-            best_bid=best_bid,
-            best_ask=best_ask,
-            book_spread_pct=book_spread_pct,
-            profile=profile,
-        )
+        # Pure A-S (pressure adjusts vol / spread anchor / gamma only — not reservation directly)
+        base_gamma = self.as_strat.gamma
+        if pressure_adj:
+            self.as_strat.gamma = base_gamma * pressure_adj.gamma_scale
+        try:
+            as_quote = self.as_strat.compute_avellaneda_quote(
+                mid_price=mid,
+                inventory_skew=inv_skew,
+                volatility_pct=effective_vol,
+                best_bid=best_bid,
+                best_ask=best_ask,
+                book_spread_pct=effective_book_spread,
+                profile=profile,
+            )
+        finally:
+            self.as_strat.gamma = base_gamma
 
         # The only presence decision in the committed path:
         as_met = (as_quote.reservation_price > best_bid and as_quote.reservation_price < best_ask)
@@ -134,6 +168,8 @@ class WSBookFeedAdapter:
             f"PURE A-S (built-in protection): reservation={as_quote.reservation_price:.6f} "
             f"spread={as_quote.optimal_spread_pct:.3f}% (gamma={self.as_strat.gamma}, kappa={self.as_strat.kappa})"
         )
+        if pressure_note:
+            note += f" | PRESSURE: {pressure_note}"
 
         return {
             "market_edge_met": as_met,          # compatibility for existing GUI
@@ -144,6 +180,10 @@ class WSBookFeedAdapter:
             "as_gamma": self.as_strat.gamma,
             "as_kappa": self.as_strat.kappa,
             "as_mode": "pure",
+            "competitor_pressure": pressure_adj.effective_pressure if pressure_adj else None,
+            "pressure_size_mult": size_mult,
+            "pressure_volatility_pct": effective_vol,
+            "pressure_book_spread_pct": effective_book_spread,
             "ws_book_age_s": getattr(self.book_feed, "age_seconds", lambda: None)(),
             "inventory_label": inv_state.label,
             "pause_bids": adj.pause_bids,
