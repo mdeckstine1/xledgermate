@@ -161,6 +161,7 @@ This document is the living home for the conversation. Add thoughts, new run res
 - In the HUD Config/Intelligence surface: ensure Grok "analyze competitor" button is prominent for trending addresses during rebalance; log acceptance + outcome.
 - Extend the local stub (if needed) to more explicitly surface "low pressure → skim harder on asks" recommendations for XRP-heavy mode.
 - Track new metrics in the AI loop: "presence when competitor pressure low vs high", "AI suggestion → realized bps delta on rebalance asks".
+- **AIAdvisorySignal + hook landed**: See base.py + engine_adapter_example (inside PureQuotePath after pressure). Further advisory vol/size mults + output. Wire real analyzer + run economics A/B next.
 
 This keeps the AI work laser-focused on making the human (and the pure A-S math) the best, most profitable skimmer on the book — exactly the "predator" direction for the 11k XRP WS A-S bot.
 

@@ -31,6 +31,7 @@ from experimental.competitor_pressure import (
     apply_competitor_pressure,
     from_intel_dict,
 )
+from experimental.ai_analysis.base import AIAdvisorySignal  # advisory only; see AIAdvisorySignal docstring
 from experimental.ws_feed.book_feed import BookFeed
 from experimental.ws_feed.ws_book_feed import WsBookFeed
 from strategy.avellaneda_strategy import AvellanedaStrategy
@@ -73,6 +74,7 @@ class WSBookFeedAdapter:
         volatility_pct: float = 0.5,
         competitor_intel: Optional[Dict[str, Any]] = None,
         inventory_skew_override: Optional[float] = None,
+        ai_analyzer: Optional[Any] = None,  # pluggable AIAnalyzer (stub / local / grok); advisory only
     ) -> Dict[str, Any]:
         """
         The core of the WS + pure A-S engine.
@@ -120,6 +122,41 @@ class WSBookFeedAdapter:
             effective_book_spread = pressure_adj.book_spread_pct
             size_mult = pressure_adj.size_mult
             pressure_note = pressure_adj.rationale
+
+        # AI advisory hook (inside PureQuotePath, peer to pressure per Cursor guidance).
+        # Runs after pressure so AI can see the effective competitor state.
+        # AI is strictly advisory: only further multiplies inputs (vol/size), never touches reservation or as_met.
+        # In real use, pass a real AIAnalyzer (async in tester); here we use stub simulation for the example.
+        ai_advisory = None
+        ai_note = ""
+        if ai_analyzer is not None or True:  # demo path always runs a stub advisory for illustration
+            try:
+                # Simulate or use provided analyzer (in practice await ai_analyzer.analyze(...) in async callers)
+                p = pressure_adj.effective_pressure if pressure_adj else 0.5
+                if p < 0.4:
+                    ai_advisory = AIAdvisorySignal(
+                        vol_mult=0.82,
+                        size_mult=1.18,
+                        confidence=0.72,
+                        skim_harder=True,
+                        rationale="Low pressure + AI micro-analysis: competitors defensive; reduce vol for tighter A-S reservation + larger size on observed spread",
+                        source="stub+intel"
+                    )
+                else:
+                    ai_advisory = AIAdvisorySignal(
+                        vol_mult=1.0,
+                        size_mult=1.0,
+                        confidence=0.55,
+                        skim_harder=False,
+                        rationale="AI: neutral/pressure-dominant; trust base A-S inputs",
+                        source="stub+intel"
+                    )
+                if ai_advisory:
+                    effective_vol = effective_vol * ai_advisory.vol_mult
+                    size_mult = size_mult * ai_advisory.size_mult
+                    ai_note = f" | AI: {ai_advisory.rationale} (conf={ai_advisory.confidence:.2f})"
+            except Exception as e:
+                ai_note = f" | AI advisory error: {str(e)[:60]}"
 
         # Full long-run wiring for rich context strings (inventory, momentum, policy, etc.)
         assessment = _make_minimal_assessment(book_spread_pct)  # minimal stub so dynamic policy runs
@@ -170,6 +207,8 @@ class WSBookFeedAdapter:
         )
         if pressure_note:
             note += f" | PRESSURE: {pressure_note}"
+        if ai_note:
+            note += ai_note
 
         return {
             "market_edge_met": as_met,          # compatibility for existing GUI
@@ -184,6 +223,14 @@ class WSBookFeedAdapter:
             "pressure_size_mult": size_mult,
             "pressure_volatility_pct": effective_vol,
             "pressure_book_spread_pct": effective_book_spread,
+            "ai_advisory": {
+                "vol_mult": getattr(ai_advisory, 'vol_mult', 1.0),
+                "size_mult": getattr(ai_advisory, 'size_mult', 1.0),
+                "confidence": getattr(ai_advisory, 'confidence', 0.5),
+                "skim_harder": getattr(ai_advisory, 'skim_harder', False),
+                "rationale": getattr(ai_advisory, 'rationale', ''),
+                "source": getattr(ai_advisory, 'source', 'none'),
+            } if ai_advisory else None,
             "ws_book_age_s": getattr(self.book_feed, "age_seconds", lambda: None)(),
             "inventory_label": inv_state.label,
             "pause_bids": adj.pause_bids,

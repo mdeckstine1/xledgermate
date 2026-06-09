@@ -50,6 +50,10 @@ The tester also writes `logs/ws_as_demo_runtime.json` (frequent + at end) so you
 
 On-chain scraping (via the live book + connector) builds per-maker profiles (posted spreads/sizes, activity, sides, cancel proxies, domain if set). Aggregates (observed market spread, pressure score, active makers, depth) are fed as better inputs to pure A-S (effective vol/liquidity/pressure) so the math can be smarter about when to be aggressive.
 
+**Formal pressure model (landed 2026-06-09)**: `experimental/competitor_pressure.py` — `CompetitorPressure` + `apply_competitor_pressure` (monotonic: low pressure → lower vol, higher size_mult, gamma_scale, observed-spread book anchor). Side-aware for XRP-heavy rebalance (ask_pressure when XRP heavy). Integrated in the PureQuotePath (`engine_adapter_example.compute_pure_as_decision`): accepts competitor_intel, applies before pure A-S call. Outputs `competitor_pressure`, `pressure_*` fields + rationale. Never touches reservation or the inside-book decision.
+
+**AI advisory (integrated in PureQuotePath)**: `AIAdvisorySignal` in `ai_analysis/base.py`. Hooked inside `compute_pure_as_decision` (after pressure, as peer per review). Further advisory mults on vol/size (e.g. low pressure + AI "skim harder" → extra boost). Attached to decision output + note. Strictly advisory; real AIAnalyzer (stub/local/grok) can be passed. See Intelligence tab + tester for live signals. Use with sacred_economics for A/B validation of "skim harder" lift.
+
 **Grok/xAI support (now live):**
 - Configured in the **Config tab** (provider=grok, real xai-... key, model=grok-beta, enabled).
 - "Apply" pushes live via `/set_intel_config` (no restart needed for the current session).

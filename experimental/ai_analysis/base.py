@@ -86,6 +86,20 @@ class AIAnalyzer(ABC):
         return True
 
 
+@dataclass
+class AIAdvisorySignal:
+    """Advisory-only signal from AI / intel layer to further tune A-S inputs (after pressure).
+    Never mutates reservation price or the inside-book presence decision.
+    Used for 'skim harder' on low-pressure (defensive competitor) books.
+    """
+    vol_mult: float = 1.0          # multiply effective volatility (lower = more aggressive reservation)
+    size_mult: float = 1.0         # additional size multiplier on top of pressure
+    confidence: float = 0.5        # 0-1 how much to trust this advisory
+    skim_harder: bool = False
+    rationale: str = ""
+    source: str = "stub"           # stub, local-llm, grok-api, etc.
+
+
 class StubAIAnalyzer(AIAnalyzer):
     """
     Placeholder / rule-based stub. No real AI yet.
