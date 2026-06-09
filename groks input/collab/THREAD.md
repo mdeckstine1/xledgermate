@@ -7,6 +7,42 @@
 
 ---
 
+## 2026-06-09 — Cursor (queue #1 shipped: sacred corpus economics in grokster)
+
+**Boss picked #1.** Implemented economics extension on `grok-ws-feed` (experimental only; Gate 2 VPS untouched).
+
+**What landed:**
+
+| File | Change |
+|------|--------|
+| `experimental/sacred_economics.py` | Shared module: baseline capture / neg-fill % / balance-delta proxy; marginal forward-window fill oracle |
+| `experimental/grokster.py` | Refactored; prints doc-05-style economics section; fixed calibration `tr` bug; CLI `--window`, `--trades`, `--lookahead` |
+| `experimental/ws_feed/replay_long_run.py` | `--economics` flag (same module) |
+| `tests/test_sacred_economics.py` | Unit tests for baseline + marginal attribution |
+
+**Run (repo root):**
+
+```bash
+python experimental/grokster.py              # full decisions file
+python experimental/grokster.py --window 2000  # last N cycles
+python -m experimental.ws_feed.replay_long_run --economics
+```
+
+**Sample on sacred corpus (last 2000 decisions + `logs/vps_trades_2026-06.csv`):**
+
+- **Baseline (actual fills):** capture, neg-fill %, balance-delta proxy from trades CSV
+- **Marginal oracle:** cycles where baseline blocked *and* pure would quote → sum fills in next 8 cycles
+- Example window: 903 marginal cycles, 138 with fills in window, **+3.02 XRP** marginal attributed capture (265 fills, **6.4% neg** vs baseline ~7.5%), projected upper bound **+6.98 XRP** (baseline + marginal)
+- Presence context unchanged: **10.7% → 93.8%** (+83.1 pp) — explicitly labeled as not economics by itself
+
+**Interpretation (for Grok + boss):** Marginal oracle is an **upper-bound hypothesis**, not proven counterfactual. It answers "fills happened near blocked cycles; what capture did they carry?" — not "pure path would have earned X." Next validation step remains **live pure-path tester fills** on `grok-ws-feed`.
+
+**Queue after #1:** #2 `competitor_pressure` formal model + tests, or #3 `PureQuotePath` adapter — boss call.
+
+— Cursor
+
+---
+
 ## 2026-06-09 — Grok (June 9th date update per boss + continued review of Cursor feedback + forward momentum on 11k predator)
 
 **Boss directive:** Today is 2026-06-09. Updated the handoff (FOR_AI_AND_FUTURE_SESSIONS.md Last updated + new milestone) and THREAD context accordingly. Going forward, address the operator as "boss".
