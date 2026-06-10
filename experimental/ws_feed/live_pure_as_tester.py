@@ -688,8 +688,8 @@ def main() -> None:
     parser.add_argument("--sample-interval", type=float, default=8.0, help="Seconds between decision samples")
     parser.add_argument("--verbose", action="store_true", help="Extra WS age / message count logging")
     parser.add_argument("--serve-hud", action="store_true", help="Start the new dedicated real-time WS + pure A-S HUD (http://127.0.0.1:8765) — this is the live 'new gui' surface for the committed path (book + A-S math + WS freshness updating in real time)")
-    parser.add_argument("--intel-ai-provider", default="stub", help="AI provider for Intelligence tab competitor analysis (stub, grok, ollama, etc.)")
-    parser.add_argument("--intel-ai-key", default="", help="API key/secret for the AI provider (e.g. xai-... for Grok)")
+    parser.add_argument("--intel-ai-provider", default="stub", help="AI provider for Intelligence tab competitor analysis (stub, grok, ollama, etc.). Use 'grok' + your key for real xAI calls on the 'Analyze with AI' buttons.")
+    parser.add_argument("--intel-ai-key", default="", help="API key/secret for the AI provider (e.g. xai-... for Grok). Required for real Grok; put in Config tab or here. Per-sample notes stay stub to avoid rate limits.")
     parser.add_argument("--intel-ai-model", default="grok-beta", help="Model name for the AI provider (e.g. grok-beta for xAI Grok API)")
     args = parser.parse_args()
 

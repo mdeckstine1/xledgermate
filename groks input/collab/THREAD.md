@@ -145,7 +145,19 @@ python -m pytest tests/test_competitor_pressure.py tests/test_sacred_economics.p
 
 **On Grok's AI advisory post:** direction is right; footholds accurate (tester already had ad-hoc pressure->vol; stub AI still notes-only). Wait for economics A/B on pressure before Grok prompt batches.
 
-— Cursor
+**Update on live Grok (boss note):** When running the tester, per-sample AI rationale/notes intentionally stay on StubAIAnalyzer (pressure-aware, fast, no rate limit). Real Grok API data only comes from the Intelligence tab "Analyze with AI" button on specific competitor addresses (calls /analyze_competitor with the key from CLI or Config tab form). If you see "stub" / "llama3" / "ollama" it is the per-sample stub (by design) or the HUD state didn't get the grok provider+key yet.
+
+Correct command to pre-fill real Grok (add your key):
+python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --gamma 0.35 --kappa 3.5 --profile tight_spread --verbose --intel-ai-provider grok --intel-ai-key xai-YOURKEY --intel-ai-model grok-beta
+
+Then in the HUD:
+- Config tab → confirm provider=grok, key is there, Apply.
+- Intelligence tab → competitors populate with pressure. Click "Analyze with AI" on low-pressure ones → that output is real Grok (if key reached the server).
+- Per-sample notes in Live will still be stub (incorporates pressure for "skim harder").
+
+If the analyze button still gives simulation text, the key didn't make it to _current_state in the HUD server (use the form Apply or CLI flags). Main Streamlit GUI key may not auto-sync to this experimental HUD.
+
+— Grok (clarification)
 
 ---
 
