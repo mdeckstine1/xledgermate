@@ -863,64 +863,73 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setText('config-inv-label', s.inventory_label || '—');
 
             // Intelligence API config (advisory AI for competitor analysis via ledger addresses)
-            const aiProv = document.getElementById('intel-ai-provider');
-            if (aiProv && s.intel_ai_provider) aiProv.value = s.intel_ai_provider;
-            const aiKey = document.getElementById('intel-ai-key');
-            const aiKeyWrap = document.getElementById('intel-ai-key-wrap') || aiKey ? aiKey.parentElement : null;
-            if (aiKey) {
-                if (s.intel_ai_key && s.intel_ai_key.length > 0) {
-                    // Hide the actual secret; show status so it "saves" visibly
-                    if (aiKeyWrap) {
-                        aiKey.style.display = 'none';
-                        let status = document.getElementById('intel-ai-key-status');
-                        if (!status) {
-                            status = document.createElement('span');
-                            status.id = 'intel-ai-key-status';
-                            status.style.fontSize = '0.75rem';
-                            status.style.color = '#22c55e';
-                            status.style.marginLeft = '6px';
-                            aiKeyWrap.appendChild(status);
-                        }
-                        status.textContent = 'Key set (hidden for security) — length: ' + s.intel_ai_key.length;
-                        // Add a small clear button
-                        let clearBtn = document.getElementById('intel-ai-key-clear');
-                        if (!clearBtn) {
-                            clearBtn = document.createElement('button');
-                            clearBtn.id = 'intel-ai-key-clear';
-                            clearBtn.textContent = 'Clear';
-                            clearBtn.style.fontSize = '0.6rem';
-                            clearBtn.style.marginLeft = '4px';
-                            clearBtn.onclick = () => {
-                                aiKey.value = '';
-                                if (status) status.remove();
-                                if (clearBtn) clearBtn.remove();
-                                aiKey.style.display = '';
-                                // also clear on server next Apply
-                            };
-                            aiKeyWrap.appendChild(clearBtn);
+            // Protect against frequent renderLive polls clobbering user edits in the Config form.
+            // User changes (dropdown, paste key, etc.) set a touched flag for a grace period.
+            if (!window._intelConfigUserTouched || Date.now() > window._intelConfigUserTouched) {
+                const aiProv = document.getElementById('intel-ai-provider');
+                if (aiProv && s.intel_ai_provider) aiProv.value = s.intel_ai_provider;
+                const aiKey = document.getElementById('intel-ai-key');
+                const aiKeyWrap = document.getElementById('intel-ai-key-wrap') || (aiKey ? aiKey.parentElement : null);
+                if (aiKey) {
+                    if (s.intel_ai_key && s.intel_ai_key.length > 0) {
+                        // Hide the actual secret; show status so it "saves" visibly
+                        if (aiKeyWrap) {
+                            aiKey.style.display = 'none';
+                            let status = document.getElementById('intel-ai-key-status');
+                            if (!status) {
+                                status = document.createElement('span');
+                                status.id = 'intel-ai-key-status';
+                                status.style.fontSize = '0.75rem';
+                                status.style.color = '#22c55e';
+                                status.style.marginLeft = '6px';
+                                aiKeyWrap.appendChild(status);
+                            }
+                            status.textContent = 'Key set (hidden for security) — length: ' + s.intel_ai_key.length;
+                            let clearBtn = document.getElementById('intel-ai-key-clear');
+                            if (!clearBtn) {
+                                clearBtn = document.createElement('button');
+                                clearBtn.id = 'intel-ai-key-clear';
+                                clearBtn.textContent = 'Clear';
+                                clearBtn.style.fontSize = '0.6rem';
+                                clearBtn.style.marginLeft = '4px';
+                                clearBtn.onclick = () => {
+                                    aiKey.value = '';
+                                    if (status) status.remove();
+                                    if (clearBtn) clearBtn.remove();
+                                    aiKey.style.display = '';
+                                    window._intelConfigUserTouched = 0;
+                                };
+                                aiKeyWrap.appendChild(clearBtn);
+                            }
+                        } else {
+                            aiKey.value = '•••••••• (set)';
                         }
                     } else {
-                        aiKey.value = '•••••••• (set)';
+                        aiKey.value = '';
+                        aiKey.style.display = '';
+                        const status = document.getElementById('intel-ai-key-status');
+                        if (status) status.remove();
+                        const clearBtn = document.getElementById('intel-ai-key-clear');
+                        if (clearBtn) clearBtn.remove();
                     }
-                } else {
-                    aiKey.value = '';
-                    aiKey.style.display = '';
-                    const status = document.getElementById('intel-ai-key-status');
-                    if (status) status.remove();
-                    const clearBtn = document.getElementById('intel-ai-key-clear');
-                    if (clearBtn) clearBtn.remove();
                 }
+                const aiModel = document.getElementById('intel-ai-model');
+                if (aiModel && s.intel_ai_model) aiModel.value = s.intel_ai_model;
+                const aiEnabled = document.getElementById('intel-ai-enabled');
+                if (aiEnabled) aiEnabled.checked = !!(s.intel_ai_enabled !== false);
             }
-            const aiModel = document.getElementById('intel-ai-model');
-            if (aiModel && s.intel_ai_model) aiModel.value = s.intel_ai_model;
-            const aiEnabled = document.getElementById('intel-ai-enabled');
-            if (aiEnabled) aiEnabled.checked = !!(s.intel_ai_enabled !== false);
 
             // Auto-suggest model when provider changes in Config
             const aiProvSel = document.getElementById('intel-ai-provider');
             const aiModelIn = document.getElementById('intel-ai-model');
+            const aiKeyIn = document.getElementById('intel-ai-key');
+            const aiEnabledIn = document.getElementById('intel-ai-enabled');
+            function markIntelUserTouched() {
+                window._intelConfigUserTouched = Date.now() + 8000; // grace period so polls don't clobber
+            }
             if (aiProvSel && aiModelIn) {
                 aiProvSel.addEventListener('change', () => {
+                    markIntelUserTouched();
                     if (aiProvSel.value === 'grok' && (!aiModelIn.value || aiModelIn.value === 'llama3')) {
                         aiModelIn.value = 'grok-beta';
                     } else if (aiProvSel.value === 'ollama' && (!aiModelIn.value || aiModelIn.value === 'grok-beta')) {
@@ -928,6 +937,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     }
                 });
             }
+            if (aiKeyIn) aiKeyIn.addEventListener('input', markIntelUserTouched);
+            if (aiModelIn) aiModelIn.addEventListener('input', markIntelUserTouched);
+            if (aiEnabledIn) aiEnabledIn.addEventListener('change', markIntelUserTouched);
 
             // L1-L3 commitments (L1 from live quote intents if available, L2/L3 demo for now)
 
