@@ -7,6 +7,115 @@
 
 ---
 
+## 2026-06-09 — Grok (troubleshooting live HUD: no competitors / no Analyze with AI visible)
+
+**Boss feedback on the run:** "well there is no analyze wit AI, nor are there any competetors listed"
+
+**Follow-up on "the api key doesn't save in the config tab":**
+
+The Apply button in Config **does** send the key to the HUD server (via fetch /set_intel_config, stored in-memory _current_state for this session only — as the alert and small print say: "demo-only").
+
+Why it looks like it "doesn't save":
+- The input is type="password" (masked).
+- On subsequent polls/renderLive, the code tries to repopulate from the state `s.intel_ai_key`. For "security in the demo" (see comments in the JS), the tester's state response often doesn't echo the full secret back (or it's redacted), so the field can appear to clear or stay blank.
+- The main Streamlit "ws gui" key is **separate** from this experimental HUD's own intel config state.
+
+**How to confirm the key actually saved for use (real Grok calls):**
+- After pasting in Config tab + Apply, look at the "intel-ai-status" (in Live tab or Config area) — it should update to show "grok +key" (or similar) on next poll.
+- Use the "Analyze with AI" button (in Intelligence) on any address. If you get a rich Grok response (not the "no key configured / simulation" fallback text), the server has the key.
+- The per-sample AI notes are *always* the local stub (pressure-aware) by design — real Grok is **only** the on-demand button.
+
+**UX improvement just landed:** After a key is detected in state (post-Apply or via CLI --intel-ai-key), the password input is now hidden and replaced with a visible "Key set (hidden for security) — length: N" status + a "Clear" button. This makes it obvious the key "saved" without exposing it. Restart the tester command to pick up the updated hud/index.html.
+
+**Best way to have the key "just work":** Pass it on the CLI when starting the tester (prefills the server state and the form on first load):
+```
+python -m experimental.ws_feed.live_pure_as_tester --serve-hud ... --intel-ai-provider grok --intel-ai-key xai-... --intel-ai-model grok-beta
+```
+
+Then the Config tab will show it (or the new "set" status), and Analyze buttons will do real calls once you Apply or the state is live.
+
+If after Apply the status doesn't show +key, or Analyze still simulates, paste the exact key again and Apply (or restart with CLI flag). The form submit is client-side + fetch; no disk save (demo).
+
+This should unblock the live Grok competitor analysis for the 11k rebalance / skim harder experiments.
+
+— Grok (config key persistence clarification)
+
+**Quick HUD troubleshooting follow-up (from Grok):**
+
+The competitor list is **not** automatic/instant — it comes from the tester's live `CompetitorIntelProvider` scrape of the WS book (top makers by recent activity). The "Analyze with AI" input + button is **always in the HTML** (manual r-address entry; the list is just for picking from scraped ones).
+
+**To see data + real Grok (not stub):**
+- Rerun **with the intel flags** (your current command is missing them, so defaults to stub + no prefill for this HUD server):
+  ```
+  python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --gamma 0.35 --kappa 3.5 --profile tight_spread --verbose --intel-ai-provider grok --intel-ai-key xai-YOURKEY --intel-ai-model grok-beta
+  ```
+- In the running HUD:
+  - **Config** tab → set provider=grok, paste your key, model=grok-beta → **Apply** (this is required for *this* experimental HUD; the main Streamlit "ws gui" key does not auto-sync here).
+  - **Intelligence** tab → click the **"Force Competitor Scrape + Update"** button (it's in the tab).
+- Wait a few seconds; the top list, pressure, advice should populate from the live book.
+- "Analyze with AI": paste any r-address (from the list or manually) and click the button. With Apply done, this does the **real Grok call** (rich XRPL MM + "skim harder with pure A-S" output). The result box will show it (not the stub text).
+
+Check terminal for "CompetitorIntelProvider active — scraping other MMs..." (if you see a warning instead, the provider init failed).
+
+If the list is still empty after force: the current book snapshot may simply not have many unique "active" makers in the scrape window (the provider filters recent activity and takes top 5). We can relax that or always include top visible offer accounts if you want more data.
+
+Per-sample "AI rationale" in Live is the stub (pressure-aware) by design. Real live Grok data is the on-demand button.
+
+This gets us the live analysis surface for the 11k rebalance / skim harder work.
+
+— Grok (HUD follow-up)
+
+**Diagnosis & fixes (for the experimental HUD at :8765):**
+
+The Intelligence tab's competitor list and "Analyze with AI" rely on:
+- Live on-chain scrape from `CompetitorIntelProvider` during the tester loop (initial seed + periodic in `_sample_and_decide`).
+- `top_competitors` + aggregates sent to HUD state.
+- The "Analyze with AI" button + input is **always rendered** (manual r-address entry), but the dynamic list (`#intel-top-list`) only shows if `top_competitors.length > 0`. The result area has a placeholder referencing "the list above".
+
+**Why empty right now (common on short/early runs):**
+- Scrape needs a few cycles (default sample ~8s) + visible offers from distinct accounts.
+- "active" filter in competitor_intel: profiles with activity in last ~5min.
+- Initial seed happens before HUD starts, but if the first `fetch_snapshot` sees thin/ few unique makers, list is empty.
+- "Analyze with AI" button is there for manual paste (you don't strictly need the list).
+- Real Grok calls (vs stub) only happen on the button if the HUD server's intel state has provider=grok + valid key (the main Streamlit GUI key does **not** auto-sync to this experimental HUD's separate `/set_intel_config` state).
+
+**Immediate steps to populate & get live Grok data:**
+
+1. Rerun with intel flags pre-filled (recommended, even if you have the key in main GUI):
+   ```
+   python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --gamma 0.35 --kappa 3.5 --profile tight_spread --verbose --intel-ai-provider grok --intel-ai-key xai-YOURKEY --intel-ai-model grok-beta
+   ```
+   (Add `--xrp-bal 11000 --rlusd-bal 0` to simulate your 11k XRP-heavy start.)
+
+2. Once running, open http://127.0.0.1:8765
+   - Go to **Config** tab → verify/set provider=grok, paste your key, model=grok-beta → click **Apply**. (This pushes to the HUD server state for real /analyze_competitor calls.)
+
+3. Switch to **Intelligence** tab.
+   - Wait 30-60s (or click the **"Force Competitor Scrape + Update"** button at the bottom of the tab).
+   - It will call the provider on the current live book and update `top_competitors`, pressure, advice, etc.
+   - The list should appear (top 5 by activity). If still empty after force: the current book snapshot may have few qualifying "active" makers (check terminal for "CompetitorIntelProvider active" vs any warning; use --verbose).
+
+4. **Analyze with AI (real Grok):**
+   - The button + input field is always present (for manual r-address).
+   - Paste an address (from the list once populated, or any known competitor r-... you see in the book or previous runs).
+   - Click → with key applied above, this does a **real Grok API call** (the prompt is XRPL MM + "how pure A-S can skim harder").
+   - Result appears in the box below. (If it says simulation / "no key" / "only Grok supported", the Apply step didn't take or provider isn't grok.)
+
+5. Per-sample AI notes (Live tab / recent decisions) are **always the stub** (pressure-aware "skim harder" hints) by design — to avoid rate limits on every cycle. Real Grok is only the on-demand button.
+
+**Verification:**
+- Terminal should log "CompetitorIntelProvider active — scraping other MMs..."
+- In HUD Intelligence: after force, `intel-pressure`, `intel-top-list`, advice should update.
+- When Analyze succeeds with real key: the result text will be rich Grok reasoning (not the short stub heuristic).
+
+If after force + Apply the list is still empty, the scrape logic (in competitor_intel.py) is filtering to "recent active" profiles from the book offers — on some snapshots it can be sparse. We can extend it to always surface top offer accounts or add a "show all visible makers" mode if needed.
+
+This matches the full report: live Grok data is the on-demand competitor address analysis in the tab (now that your key is in the HUD state), feeding the "skim harder" ideas for the 11k rebalance.
+
+— Grok
+
+---
+
 ## 2026-06-09 — Grok (FULL REPORT: WS Pure A-S + Pressure + AI Advisory + Live Grok Status — per boss "full report" + key in GUI)
 
 **Boss directive:** "full report, fyi i have already put the grok api key in the ws gui, we could get live analysis"

@@ -597,7 +597,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     <!-- Skim Advice -->
                     <div class="card" style="border-left: 3px solid #22c55e;">
                         <div class="label">Pure A-S Skim Advice (from scrape)</div>
-                        <div id="intel-advice" style="font-size:0.85rem; margin:6px 0; white-space:pre-wrap;">No competitor data yet. Start the tester with live book for real-time on-chain profiles.</div>
+                        <div id="intel-advice" style="font-size:0.85rem; margin:6px 0; white-space:pre-wrap;">No competitor data yet. Start the tester with live book for real-time on-chain profiles. If still empty after 30s, click "Force Competitor Scrape + Update" below or check terminal for "CompetitorIntelProvider active".</div>
                         <small>Pressure low → A-S reservation moves closer to mid (more aggressive presence). High pressure → math protects by backing off. This is how we beat them: better inputs to the same A-S math.</small>
                     </div>
 
@@ -625,7 +625,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <input id="intel-analyze-addr" type="text" placeholder="r... competitor address" style="flex:1; font-family:monospace; font-size:0.8rem;">
                             <button id="btn-analyze-addr" style="background:#8b5cf6; color:white; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem;">Analyze with AI</button>
                         </div>
-                        <div id="intel-ai-result" style="margin-top:6px; font-size:0.7rem; background:#0f172a; padding:4px; border-radius:3px; white-space:pre-wrap; min-height:1.2em;">Enter an active competitor r-address from the list above and click Analyze. (In real run this would call the configured provider with the address + recent book activity for trending/strategy summary. AI output stays advisory.)</div>
+                        <div id="intel-ai-result" style="margin-top:6px; font-size:0.7rem; background:#0f172a; padding:4px; border-radius:3px; white-space:pre-wrap; min-height:1.2em;">Enter any competitor r-address (from list or book) and click Analyze. With grok key set in Config tab + Apply, this does real Grok call for strategy/skim advice. (Stub if no key or provider not grok.)</div>
                     </div>
 
                     <!-- How to Skim Harder -->
@@ -866,7 +866,51 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const aiProv = document.getElementById('intel-ai-provider');
             if (aiProv && s.intel_ai_provider) aiProv.value = s.intel_ai_provider;
             const aiKey = document.getElementById('intel-ai-key');
-            if (aiKey && s.intel_ai_key) aiKey.value = s.intel_ai_key; // demo only, never real secret in prod
+            const aiKeyWrap = document.getElementById('intel-ai-key-wrap') || aiKey ? aiKey.parentElement : null;
+            if (aiKey) {
+                if (s.intel_ai_key && s.intel_ai_key.length > 0) {
+                    // Hide the actual secret; show status so it "saves" visibly
+                    if (aiKeyWrap) {
+                        aiKey.style.display = 'none';
+                        let status = document.getElementById('intel-ai-key-status');
+                        if (!status) {
+                            status = document.createElement('span');
+                            status.id = 'intel-ai-key-status';
+                            status.style.fontSize = '0.75rem';
+                            status.style.color = '#22c55e';
+                            status.style.marginLeft = '6px';
+                            aiKeyWrap.appendChild(status);
+                        }
+                        status.textContent = 'Key set (hidden for security) — length: ' + s.intel_ai_key.length;
+                        // Add a small clear button
+                        let clearBtn = document.getElementById('intel-ai-key-clear');
+                        if (!clearBtn) {
+                            clearBtn = document.createElement('button');
+                            clearBtn.id = 'intel-ai-key-clear';
+                            clearBtn.textContent = 'Clear';
+                            clearBtn.style.fontSize = '0.6rem';
+                            clearBtn.style.marginLeft = '4px';
+                            clearBtn.onclick = () => {
+                                aiKey.value = '';
+                                if (status) status.remove();
+                                if (clearBtn) clearBtn.remove();
+                                aiKey.style.display = '';
+                                // also clear on server next Apply
+                            };
+                            aiKeyWrap.appendChild(clearBtn);
+                        }
+                    } else {
+                        aiKey.value = '•••••••• (set)';
+                    }
+                } else {
+                    aiKey.value = '';
+                    aiKey.style.display = '';
+                    const status = document.getElementById('intel-ai-key-status');
+                    if (status) status.remove();
+                    const clearBtn = document.getElementById('intel-ai-key-clear');
+                    if (clearBtn) clearBtn.remove();
+                }
+            }
             const aiModel = document.getElementById('intel-ai-model');
             if (aiModel && s.intel_ai_model) aiModel.value = s.intel_ai_model;
             const aiEnabled = document.getElementById('intel-ai-enabled');
