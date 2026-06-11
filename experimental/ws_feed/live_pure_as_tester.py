@@ -25,7 +25,8 @@ all other deps properly scoped.
 
 Run:
   # Short demo run
-  python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --verbose --intel-ai-provider grok --intel-ai-key xai-... --intel-ai-model grok-3
+  python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --sample-interval 4 --verbose
+  (Grok key: set XLG_GROK_KEY in .env once — see .env.example)
   # Long run (e.g. to collect 11k+ cycles like the gated VPS run; use --seconds 0 for unlimited)
   python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 0 --verbose --intel-ai-provider grok --intel-ai-key xai-... --intel-ai-model grok-3
   (The --serve-hud flag starts the new real-time HUD at http://127.0.0.1:8765)
@@ -50,6 +51,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+
+def _runtime_for_disk(runtime: dict) -> dict:
+    """Redact secrets before writing ws_as_demo_runtime.json."""
+    out = dict(runtime)
+    out["intel_ai_key"] = ""
+    return out
+
 from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig
 from core.perception import get_profile
@@ -61,6 +69,7 @@ from strategy.avellaneda_strategy import AvellanedaStrategy
 from strategy.quote_decision import assess_inventory, build_quote_adjustments
 from experimental.competitor_pressure import apply_competitor_pressure, from_intel_dict
 from experimental.ws_runtime_analysis import append_runtime_sample, classify_zero_quote_reason
+from utils.env_secrets import resolve_intel_ai_config
 from utils.logging_setup import setup_logging
 
 # Competitor scraping for aggressive analysis (experimental, pure A-S inputs only)
@@ -548,7 +557,7 @@ async def run_live_test(
         out = Path("logs/ws_as_demo_runtime.json")
         out.parent.mkdir(parents=True, exist_ok=True)
         with out.open("w") as f:
-            json.dump(gui_runtime, f, default=str, indent=2)
+            json.dump(_runtime_for_disk(gui_runtime), f, default=str, indent=2)
         logger.info("Seeded initial data (including Live tab book/A-S fields, competitor intel, AI config) to HUD memory and logs/ws_as_demo_runtime.json")
     except Exception as e:
         logger.warning("Initial seed for HUD/json failed: %s", e)
@@ -558,6 +567,26 @@ async def run_live_test(
         run_hud(host="127.0.0.1", port=8765, background=True)
         print("   → NEW GUI: Open http://127.0.0.1:8765 in your browser for the dedicated real-time WS + pure A-S HUD")
         print("      (live book + A-S reservation, suggested levels, freshness, recent decisions — updates ~every 800ms)")
+
+    def _hud_intel_fields() -> dict[str, Any]:
+        key = intel_ai_key or ""
+        prov = intel_ai_provider
+        model = intel_ai_model
+        enabled = True
+        if _hud_current_state:
+            key = _hud_current_state.get("intel_ai_key") or key
+            prov = _hud_current_state.get("intel_ai_provider") or prov
+            model = _hud_current_state.get("intel_ai_model") or model
+            enabled = _hud_current_state.get("intel_ai_enabled", enabled)
+        return {
+            "intel_ai_provider": prov,
+            "intel_ai_key": key,
+            "intel_ai_model": model,
+            "intel_ai_enabled": enabled,
+        }
+
+    if intel_ai_key and hud_update_state:
+        hud_update_state(_hud_intel_fields())
 
     # Now send the rich initial state (built from the gui_runtime the seed just populated)
     # so the first browser poll gets full Live page data immediately.
@@ -586,10 +615,7 @@ async def run_live_test(
             "bot_address": config.bot_account_address or "r... (from config)",
             **{k: v for k, v in initial_comp.items() if k not in ("top_competitors",)},
             "top_competitors": initial_comp.get("top_competitors", []),
-            "intel_ai_provider": gui_runtime.get("intel_ai_provider", "stub"),
-            "intel_ai_key": gui_runtime.get("intel_ai_key", ""),
-            "intel_ai_model": gui_runtime.get("intel_ai_model", "llama3"),
-            "intel_ai_enabled": gui_runtime.get("intel_ai_enabled", True),
+            **_hud_intel_fields(),
             "ai_edge_quality": gui_runtime.get("ai_edge_quality", 0.0),
             "ai_is_skimmable": gui_runtime.get("ai_is_skimmable", False),
             "ai_rationale": gui_runtime.get("ai_rationale", ""),
@@ -680,11 +706,7 @@ async def run_live_test(
                         "ai_suggested_posture": gui_runtime.get("ai_suggested_posture", "off"),
                         # Intelligence API config (from Config tab) — for AI analysis of competitor ledger addresses / trending.
                         # AI is strictly advisory. It never mutates A-S reservation price or quoting decisions.
-                        "intel_ai_provider": gui_runtime.get("intel_ai_provider", "stub"),
-                        "intel_ai_key": gui_runtime.get("intel_ai_key", ""),
-                        "intel_ai_model": gui_runtime.get("intel_ai_model", "llama3"),
-                        "intel_ai_enabled": gui_runtime.get("intel_ai_enabled", True),
-                        # Note: secrets are never sent for security; enter in demo fields on Credentials page. Inventory tab has funding tools + real QR for the bot address.
+                        **_hud_intel_fields(),
                     }
                     hud_update_state(hud_state)
 
@@ -705,7 +727,7 @@ async def run_live_test(
                             out.rename(backup)
                             logger.info("Backed up previous demo runtime to %s (prevents data loss on restart)", backup)
                         with out.open("w") as f:
-                            json.dump(gui_runtime, f, default=str, indent=2)
+                            json.dump(_runtime_for_disk(gui_runtime), f, default=str, indent=2)
                         logger.info("Updated logs/ws_as_demo_runtime.json with current WS data — load this in main Streamlit to see full GUI (sidebar, tickers, A-S sections, Intelligence tab) with live tester data.")
                     except Exception as e:
                         logger.warning("Could not update demo runtime JSON: %s", e)
@@ -732,7 +754,7 @@ async def run_live_test(
             out.rename(backup)
             logger.info("Backed up previous demo runtime to %s", backup)
         with out.open("w") as f:
-            json.dump(gui_runtime, f, default=str, indent=2)
+            json.dump(_runtime_for_disk(gui_runtime), f, default=str, indent=2)
         logger.info("Saved GUI demo runtime to %s — load this into streamlit_gui or inspect to see the WS + pure A-S decisions (including Intelligence tab with live competitor profiles, pressure, and skim advice). Previous runs are timestamped backups in the same folder.", out)
     except Exception as e:
         logger.warning("Could not save demo runtime: %s", e)
@@ -751,10 +773,35 @@ def main() -> None:
     parser.add_argument("--sample-interval", type=float, default=8.0, help="Seconds between decision samples")
     parser.add_argument("--verbose", action="store_true", help="Extra WS age / message count logging")
     parser.add_argument("--serve-hud", action="store_true", help="Start the new dedicated real-time WS + pure A-S HUD (http://127.0.0.1:8765) — this is the live 'new gui' surface for the committed path (book + A-S math + WS freshness updating in real time)")
-    parser.add_argument("--intel-ai-provider", default="stub", help="AI provider for Intelligence tab competitor analysis (stub, grok, ollama, etc.). Use 'grok' + your key for real xAI calls on the 'Analyze with AI' buttons.")
-    parser.add_argument("--intel-ai-key", default="", help="API key/secret for the AI provider (e.g. xai-... for Grok). Required for real Grok; put in Config tab or here. Per-sample notes stay stub to avoid rate limits.")
-    parser.add_argument("--intel-ai-model", default="grok-3", help="Model name for the AI provider (e.g. grok-3 or grok-3-mini for xAI Grok API)")
+    parser.add_argument(
+        "--intel-ai-provider",
+        default="stub",
+        help="AI provider (stub, grok, ...). Defaults to grok when XLG_GROK_KEY is in .env",
+    )
+    parser.add_argument(
+        "--intel-ai-key",
+        default="",
+        help="API key override. Otherwise XLG_GROK_KEY from .env / environment",
+    )
+    parser.add_argument(
+        "--intel-ai-model",
+        default="grok-3",
+        help="Model name (or XLG_GROK_MODEL in .env)",
+    )
     args = parser.parse_args()
+
+    intel_provider, intel_key, intel_model = resolve_intel_ai_config(
+        provider=args.intel_ai_provider,
+        api_key=args.intel_ai_key,
+        model=args.intel_ai_model,
+    )
+    if intel_key:
+        logging.getLogger(__name__).info(
+            "Intel AI: provider=%s model=%s (key loaded from .env/env, length=%d)",
+            intel_provider,
+            intel_model,
+            len(intel_key),
+        )
 
     asyncio.run(
         run_live_test(
@@ -768,9 +815,9 @@ def main() -> None:
             sample_interval=args.sample_interval,
             verbose=args.verbose,
             serve_hud=args.serve_hud,
-            intel_ai_provider=args.intel_ai_provider,
-            intel_ai_key=args.intel_ai_key,
-            intel_ai_model=args.intel_ai_model,
+            intel_ai_provider=intel_provider,
+            intel_ai_key=intel_key,
+            intel_ai_model=intel_model,
         )
     )
 

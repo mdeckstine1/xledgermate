@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
+from utils.env_secrets import resolve_grok_key
 from experimental.ws_runtime_analysis import (
     analyze_samples,
     collect_samples,
@@ -428,7 +429,7 @@ def main() -> None:
     parser.add_argument("--json", action="store_true", dest="as_json", help="Print recommendation JSON")
     args = parser.parse_args()
 
-    api_key = args.key or os.environ.get("XLG_GROK_KEY", "")
+    api_key = resolve_grok_key(args.key)
     rec, brief = run_calibration_session(
         runtime_path=args.path,
         api_key=api_key,
