@@ -60,6 +60,7 @@ from experimental.ws_feed.ws_book_feed import WsBookFeed
 from strategy.avellaneda_strategy import AvellanedaStrategy
 from strategy.quote_decision import assess_inventory, build_quote_adjustments
 from experimental.competitor_pressure import apply_competitor_pressure, from_intel_dict
+from experimental.ws_runtime_analysis import append_runtime_sample, classify_zero_quote_reason
 from utils.logging_setup import setup_logging
 
 # Competitor scraping for aggressive analysis (experimental, pure A-S inputs only)
@@ -377,6 +378,36 @@ async def _sample_and_decide(
                 "message": note[:200],
             }][-20:],  # keep last 20
         })
+        ts_utc = datetime.now(tz=timezone.utc).isoformat()
+        append_runtime_sample(
+            runtime,
+            {
+                "ts_utc": ts_utc,
+                "mid": mid,
+                "best_bid": bb,
+                "best_ask": ba,
+                "book_spread_pct": spread,
+                "as_optimal_spread_pct": as_quote.optimal_spread_pct,
+                "spread_gap_pct": spread - as_quote.optimal_spread_pct,
+                "as_reservation": as_quote.reservation_price,
+                "would_quote": as_met,
+                "competitor_pressure": comp_snapshot.get("competitor_pressure") if comp_snapshot else None,
+                "competitor_observed_spread_pct": comp_snapshot.get("competitor_observed_spread_pct") if comp_snapshot else None,
+                "volatility_pct": volatility_pct,
+                "ws_book_age_s": state.age_seconds(),
+                "inventory_label": inv_state.label,
+                "zero_quote_reason": classify_zero_quote_reason(
+                    would_quote=as_met,
+                    best_bid=bb,
+                    best_ask=ba,
+                    reservation=as_quote.reservation_price,
+                    book_spread_pct=spread,
+                    optimal_spread_pct=as_quote.optimal_spread_pct,
+                    pause_bids=adj.pause_bids,
+                    pause_asks=adj.pause_asks,
+                ),
+            },
+        )
 
 
 async def run_live_test(

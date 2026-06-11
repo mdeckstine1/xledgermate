@@ -55,6 +55,8 @@ Open http://127.0.0.1:8765 · Artifacts: `logs/ws_as_demo_runtime.json`
 ```powershell
 python experimental/grokster.py
 python -m experimental.ws_feed.replay_long_run --as-mode pure --economics
+python -m experimental.ws_runtime_analysis
+python -m experimental.ws_runtime_analysis --include-backups
 ```
 
 ---
@@ -78,7 +80,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 ### Phase A — Measurement (do before predator / scale claims)
 
 - [x] **A1** Sacred economics A/B: baseline vs pure vs pure+pressure scenarios (`grokster --ab` default on; `replay_long_run --economics --ab`). **Grok/xAI excluded** from A/B — advisory + competition research only until post-swap.
-- [ ] **A2** Runtime analysis script over `logs/ws_as_demo_runtime.json` (pressure variance, spread vs optimal, would_quote flips, competitor correlation)
+- [x] **A2** Runtime analysis script over `logs/ws_as_demo_runtime.json` (`python -m experimental.ws_runtime_analysis`; `--include-backups` for prior sessions). Tester now appends `sample_history` for long-run stats.
 - [ ] **A3** Gamma/kappa calibration profile from grokster + live HUD samples → checked-in defaults or `experimental/ws_as_calibration.yaml`
 
 ### Phase B — Production-shaped pure path (experimental only)
@@ -129,6 +131,7 @@ experimental/ws_feed/engine_adapter_example.py # PureQuotePath
 experimental/competitor_pressure.py
 experimental/sacred_economics.py
 experimental/grokster.py
+experimental/ws_runtime_analysis.py
 experimental/ws_feed/replay_long_run.py
 experimental/ai_analysis/grok_analyzer.py
 strategy/avellaneda_strategy.py

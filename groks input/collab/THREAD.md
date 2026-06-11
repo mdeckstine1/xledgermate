@@ -7,6 +7,27 @@
 
 ---
 
+## 2026-06-10 — Cursor (Phase A2 shipped — WS runtime analysis)
+
+**Shipped on `grok-ws-feed`:**
+- `experimental/ws_runtime_analysis.py` — pressure variance, spread vs optimal, would_quote flips, competitor correlations
+- `live_pure_as_tester.py` — appends bounded `sample_history` + session `as_presence_pct` on each sample
+- `tests/test_ws_runtime_analysis.py`
+
+**Run after HUD/tester session:**
+```powershell
+python -m experimental.ws_runtime_analysis
+python -m experimental.ws_runtime_analysis --include-backups --json
+```
+
+Grok still advisory-only (not in analysis logic).
+
+**Next:** A3 gamma/kappa calibration, or B1 unify tester on adapter — boss call.
+
+— Cursor
+
+---
+
 ## 2026-06-10 — Cursor (Phase A1 shipped — sacred economics A/B, Grok excluded)
 
 **Boss constraint:** Grok/xAI stays **advisory + competition research only** until post-swap — not in quoting or economics A/B.

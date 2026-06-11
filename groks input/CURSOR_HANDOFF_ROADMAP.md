@@ -20,6 +20,13 @@ python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 0 --ver
 
 http://127.0.0.1:8765 · State: `logs/ws_as_demo_runtime.json`
 
+**Analyze runtime (Phase A2):**
+
+```powershell
+python -m experimental.ws_runtime_analysis
+python -m experimental.ws_runtime_analysis --include-backups
+```
+
 **Stop HUD:**
 
 ```powershell
@@ -36,9 +43,10 @@ Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue
 3. `experimental/ws_feed/engine_adapter_example.py`
 4. `experimental/competitor_pressure.py`
 5. `experimental/sacred_economics.py`
-6. `experimental/ai_analysis/grok_analyzer.py`
-7. `docs/WS_AS_MANUAL.md`
-8. `experimental/ws_feed/WS_HANDOFF.md`
+6. `experimental/ws_runtime_analysis.py`
+7. `experimental/ai_analysis/grok_analyzer.py`
+8. `docs/WS_AS_MANUAL.md`
+9. `experimental/ws_feed/WS_HANDOFF.md`
 
 ---
 
