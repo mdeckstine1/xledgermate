@@ -7,6 +7,28 @@
 
 ---
 
+## 2026-06-10 — Cursor (Phase A3 shipped — Grok advisory A-S calibration)
+
+**Boss vision:** Grok evaluates live market + competitors to **tune** A-S — not quote yet.
+
+**Shipped:** `experimental/as_calibration_grok.py`
+- Bundles `ws_as_demo_runtime.json` + A2 stats + sacred presence + competitor intel + implementation truth (kappa wiring, book anchor)
+- One Grok call → JSON: suggested gamma/kappa/vol, regime, blocker, hypothesis
+- Prints validation commands (300s tester + ws_runtime_analysis + grokster)
+- `--dry-run` / `--brief-json` / `XLG_GROK_KEY` env
+
+**Workflow:**
+```powershell
+python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --sample-interval 4 --verbose
+python -m experimental.ws_runtime_analysis
+python -m experimental.as_calibration_grok --key xai-... 
+# trial suggested params, re-run analysis, then sign off ws_as_calibration.yaml
+```
+
+— Cursor
+
+---
+
 ## 2026-06-10 — Cursor (Phase A2 shipped — WS runtime analysis)
 
 **Shipped on `grok-ws-feed`:**

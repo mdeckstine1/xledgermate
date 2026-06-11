@@ -57,6 +57,8 @@ python experimental/grokster.py
 python -m experimental.ws_feed.replay_long_run --as-mode pure --economics
 python -m experimental.ws_runtime_analysis
 python -m experimental.ws_runtime_analysis --include-backups
+python -m experimental.as_calibration_grok --dry-run
+python -m experimental.as_calibration_grok
 ```
 
 ---
@@ -81,7 +83,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 - [x] **A1** Sacred economics A/B: baseline vs pure vs pure+pressure scenarios (`grokster --ab` default on; `replay_long_run --economics --ab`). **Grok/xAI excluded** from A/B — advisory + competition research only until post-swap.
 - [x] **A2** Runtime analysis script over `logs/ws_as_demo_runtime.json` (`python -m experimental.ws_runtime_analysis`; `--include-backups` for prior sessions). Tester now appends `sample_history` for long-run stats.
-- [ ] **A3** Gamma/kappa calibration profile from grokster + live HUD samples → checked-in defaults or `experimental/ws_as_calibration.yaml`
+- [x] **A3** Grok advisory calibration session (`python -m experimental.as_calibration_grok`) — bundles A2 + sacred presence + competitor intel → suggested gamma/kappa/vol trials + validation commands. **Does not** set would_quote. Check in `experimental/ws_as_calibration.yaml` only after operator validates trials.
 
 ### Phase B — Production-shaped pure path (experimental only)
 
@@ -132,6 +134,7 @@ experimental/competitor_pressure.py
 experimental/sacred_economics.py
 experimental/grokster.py
 experimental/ws_runtime_analysis.py
+experimental/as_calibration_grok.py
 experimental/ws_feed/replay_long_run.py
 experimental/ai_analysis/grok_analyzer.py
 strategy/avellaneda_strategy.py

@@ -25,6 +25,7 @@ http://127.0.0.1:8765 · State: `logs/ws_as_demo_runtime.json`
 ```powershell
 python -m experimental.ws_runtime_analysis
 python -m experimental.ws_runtime_analysis --include-backups
+python -m experimental.as_calibration_grok
 ```
 
 **Stop HUD:**
@@ -44,9 +45,10 @@ Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue
 4. `experimental/competitor_pressure.py`
 5. `experimental/sacred_economics.py`
 6. `experimental/ws_runtime_analysis.py`
-7. `experimental/ai_analysis/grok_analyzer.py`
-8. `docs/WS_AS_MANUAL.md`
-9. `experimental/ws_feed/WS_HANDOFF.md`
+7. `experimental/as_calibration_grok.py`
+8. `experimental/ai_analysis/grok_analyzer.py`
+9. `docs/WS_AS_MANUAL.md`
+10. `experimental/ws_feed/WS_HANDOFF.md`
 
 ---
 
