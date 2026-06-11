@@ -77,7 +77,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 ### Phase A — Measurement (do before predator / scale claims)
 
-- [ ] **A1** Sacred economics A/B: baseline vs pure vs pure+pressure vs pure+pressure+AI (`grokster` / `replay_long_run --economics` flags)
+- [x] **A1** Sacred economics A/B: baseline vs pure vs pure+pressure scenarios (`grokster --ab` default on; `replay_long_run --economics --ab`). **Grok/xAI excluded** from A/B — advisory + competition research only until post-swap.
 - [ ] **A2** Runtime analysis script over `logs/ws_as_demo_runtime.json` (pressure variance, spread vs optimal, would_quote flips, competitor correlation)
 - [ ] **A3** Gamma/kappa calibration profile from grokster + live HUD samples → checked-in defaults or `experimental/ws_as_calibration.yaml`
 

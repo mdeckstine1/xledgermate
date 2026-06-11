@@ -5,6 +5,7 @@ from experimental.sacred_economics import (
     compute_baseline_economics,
     compute_marginal_economics,
     parse_decision_events,
+    run_economics_ab,
 )
 
 
@@ -79,3 +80,34 @@ def test_parse_decision_events_cycle() -> None:
     cycle, msg = parse_decision_events(line)
     assert cycle == 42
     assert "Book L1 spread" in msg
+
+
+def test_run_economics_ab_two_variants() -> None:
+    trades = [
+        {
+            "event_type": "BUY",
+            "taxable": "Y",
+            "side": "BUY",
+            "xrp_amount": "5",
+            "profit_xrp_equiv": "0.04",
+            "cycle": "11",
+            "timestamp_utc": "t1",
+        },
+    ]
+    decisions = [
+        '{"cycle": 10, "events": [{"message": "Generated 0 quotes market_edge_met=false"}]}',
+    ]
+
+    ab = run_economics_ab(
+        decisions,
+        trades,
+        [
+            ("never", lambda _ln: False),
+            ("always", lambda _ln: True),
+        ],
+        lookahead_cycles=3,
+    )
+    assert len(ab.rows) == 2
+    assert ab.rows[0].marginal.marginal_cycles == 0
+    assert ab.rows[1].marginal.marginal_cycles == 1
+    assert "Grok" in ab.grok_note

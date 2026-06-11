@@ -35,15 +35,17 @@ _REPO = Path(__file__).resolve().parents[1]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
+from experimental.pure_as_quote_path import make_would_quote_fn, would_quote_pure
 from experimental.sacred_economics import (
-    compute_baseline_economics,
-    compute_marginal_economics,
+    format_economics_ab_report,
     format_economics_report,
     load_decision_lines,
     load_trades_rows,
     parse_decision_events,
     resolve_trades_path,
-    run_sacred_economics,
+    run_economics_ab,
+    compute_baseline_economics,
+    compute_marginal_economics,
 )
 from strategy.avellaneda_strategy import AvellanedaStrategy
 
@@ -56,6 +58,25 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--lookahead", type=int, default=8, help="Cycles to look forward for marginal fill oracle")
     p.add_argument("--gamma", type=float, default=0.35)
     p.add_argument("--kappa", type=float, default=3.5)
+    p.add_argument(
+        "--ab",
+        action="store_true",
+        default=True,
+        help="Run economics A/B: pure vs pure+pressure scenarios (default on)",
+    )
+    p.add_argument("--no-ab", action="store_false", dest="ab", help="Skip A/B table")
+    p.add_argument(
+        "--pressure-low",
+        type=float,
+        default=0.25,
+        help="Pressure value for defensive/skim-harder A/B arm (0=defensive)",
+    )
+    p.add_argument(
+        "--pressure-high",
+        type=float,
+        default=0.85,
+        help="Pressure value for cautious A/B arm",
+    )
     return p.parse_args()
 
 
@@ -134,9 +155,7 @@ def main() -> None:
     as_strat = AvellanedaStrategy(None, gamma=args.gamma, kappa=args.kappa)
 
     def pure_would_quote(line: str) -> bool:
-        reasons = _reasons_from_line(line)
-        spread, inv, _ = _spread_inv_toxic(reasons)
-        return _reservation_inside_book(as_strat, spread, inv)
+        return would_quote_pure(as_strat, line)
 
     # --- Presence stats ---
     baseline_presence = 0
@@ -158,8 +177,8 @@ def main() -> None:
             if any(k in reasons.lower() for k in ("market_edge_met=false", "hard gate", "l1 too tight", "edge thin")):
                 hard_gate_blocks += 1
 
-        spread, inv, toxic = _spread_inv_toxic(reasons)
-        if _reservation_inside_book(as_strat, spread, inv):
+        _, _, toxic = _spread_inv_toxic(reasons)
+        if would_quote_pure(as_strat, ln):
             ws_pure_presence += 1
             if toxic > 0.25:
                 ws_pure_high_tox += 1
@@ -203,6 +222,21 @@ def main() -> None:
                 presence_pure_pct=ws_pure_presence / total * 100,
             )
         )
+        print()
+        if args.ab:
+            ab = run_economics_ab(
+                lines,
+                trades_rows,
+                [
+                    ("pure A-S", make_would_quote_fn(as_strat, "pure")),
+                    (f"pure + pressure {args.pressure_low:.2f} (skim)", make_would_quote_fn(as_strat, "pressure", args.pressure_low)),
+                    (f"pure + pressure 0.50 (neutral)", make_would_quote_fn(as_strat, "pressure", 0.50)),
+                    (f"pure + pressure {args.pressure_high:.2f} (cautious)", make_would_quote_fn(as_strat, "pressure", args.pressure_high)),
+                ],
+                lookahead_cycles=args.lookahead,
+                trades_path=str(tr),
+            )
+            print(format_economics_ab_report(ab))
     else:
         print("=== SACRED CORPUS ECONOMICS ===")
         print(f"SKIP: no trades CSV found (looked in {dec.parent})")

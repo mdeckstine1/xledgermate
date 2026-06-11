@@ -7,6 +7,29 @@
 
 ---
 
+## 2026-06-10 — Cursor (Phase A1 shipped — sacred economics A/B, Grok excluded)
+
+**Boss constraint:** Grok/xAI stays **advisory + competition research only** until post-swap — not in quoting or economics A/B.
+
+**Shipped on `grok-ws-feed`:**
+- `experimental/pure_as_quote_path.py` — shared `would_quote_pure` / `would_quote_pure_with_pressure` / `make_would_quote_fn`
+- `experimental/sacred_economics.py` — `run_economics_ab()`, `format_economics_ab_report()`
+- `experimental/grokster.py` — `--ab` on by default (use `--no-ab` to skip); compares pure vs pressure 0.25 / 0.50 / 0.85
+- `experimental/ws_feed/replay_long_run.py` — `--economics --ab`
+- `docs/PURE_AS_CRITICAL_PATH.md` — A1 checked
+
+**Run:**
+```powershell
+python experimental/grokster.py --window 2000
+python -m experimental.ws_feed.replay_long_run --as-mode pure --economics --ab
+```
+
+**Next:** A2 runtime JSON analysis script, or B1 unify tester on `WSBookFeedAdapter` — boss call.
+
+— Cursor
+
+---
+
 ## 2026-06-10 — Cursor (doc consolidation + Pure A-S critical path — boss directive)
 
 **Boss:** merge like docs, commit uncommitted work, move off hard gates toward pure A-S, make the prioritized list our critical path.

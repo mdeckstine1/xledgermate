@@ -620,6 +620,7 @@ def main() -> None:
     parser.add_argument("--no-simulate-freshness", action="store_true", help="Disable simulated WS freshness between poll updates")
     parser.add_argument("--as-mode", default="pure", choices=["pure", "hybrid", "off"], help="WS + A-S quoting mode. Default 'pure' (committed future of xledgermate: A-S built-in protections only using WS-fresh book + replicated long-run wiring, no hard gate or legacy heuristic guards). 'hybrid' and 'off' kept only for validation/comparison against the sacred long-run hard-gate data; they are not the production direction.")
     parser.add_argument("--economics", action="store_true", help="Print sacred corpus economics (capture, neg-fill %%, balance-delta proxy) via experimental.sacred_economics")
+    parser.add_argument("--ab", action="store_true", help="With --economics: A/B pure vs pressure variants (Grok excluded)")
     parser.add_argument("--trades", default=None, help="Trades CSV for --economics (default: auto-resolve in logs/)")
     args = parser.parse_args()
 
@@ -640,17 +641,18 @@ def main() -> None:
         print(r)
 
     if args.economics:
+        from experimental.pure_as_quote_path import make_would_quote_fn, would_quote_pure
         from experimental.sacred_economics import (
             compute_baseline_economics,
             compute_marginal_economics,
+            format_economics_ab_report,
             format_economics_report,
             load_decision_lines,
             load_trades_rows,
-            parse_decision_events,
             resolve_trades_path,
+            run_economics_ab,
         )
         from strategy.avellaneda_strategy import AvellanedaStrategy
-        import re as _re
 
         trades_file = Path(args.trades) if args.trades else resolve_trades_path(decisions_path.parent)
         if not trades_file or not trades_file.exists():
@@ -661,24 +663,27 @@ def main() -> None:
             as_strat = AvellanedaStrategy(None)
             dec_lines = load_decision_lines(decisions_path)
 
-            def _pure_would_quote(line: str) -> bool:
-                _, reasons = parse_decision_events(line)
-                sm = _re.search(r"Book L1 spread ([\d.]+)%", reasons)
-                spread = float(sm.group(1)) / 100.0 if sm else 0.001
-                inv = 0.3 if "xrp_heavy" in reasons else (-0.3 if "rlusd_heavy" in reasons else 0.0)
-                q = as_strat.compute_avellaneda_quote(
-                    mid_price=1.09, inventory_skew=inv, volatility_pct=0.0, book_spread_pct=spread
-                )
-                half = max(spread / 2.0, 0.0001)
-                return abs(q.reservation_price - 1.09) / half < 0.35
-
+            pure_fn = lambda line: would_quote_pure(as_strat, line)
             marginal_eco = compute_marginal_economics(
                 dec_lines,
                 trades_rows,
-                _pure_would_quote,
+                pure_fn,
                 baseline_capture_xrp=baseline_eco.capture_xrp,
             )
             print("\n" + format_economics_report(baseline_eco, marginal_eco))
+            if args.ab:
+                ab = run_economics_ab(
+                    dec_lines,
+                    trades_rows,
+                    [
+                        ("pure A-S", make_would_quote_fn(as_strat, "pure")),
+                        ("pure + pressure 0.25 (skim)", make_would_quote_fn(as_strat, "pressure", 0.25)),
+                        ("pure + pressure 0.50 (neutral)", make_would_quote_fn(as_strat, "pressure", 0.50)),
+                        ("pure + pressure 0.85 (cautious)", make_would_quote_fn(as_strat, "pressure", 0.85)),
+                    ],
+                    trades_path=str(trades_file),
+                )
+                print("\n" + format_economics_ab_report(ab))
 
     if args.as_mode == "pure":
         print("\n=== PURE A-S + WS SWAP READINESS (committed direction) ===")

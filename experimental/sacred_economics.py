@@ -323,6 +323,127 @@ def format_economics_report(
     return "\n".join(lines)
 
 
+@dataclass
+class EconomicsABRow:
+    label: str
+    marginal: MarginalEconomics
+    would_quote_cycles: int = 0
+    decision_cycles: int = 0
+
+    @property
+    def presence_pct(self) -> float:
+        if self.decision_cycles <= 0:
+            return 0.0
+        return 100.0 * self.would_quote_cycles / self.decision_cycles
+
+
+@dataclass
+class EconomicsABComparison:
+    baseline: BaselineEconomics
+    rows: List[EconomicsABRow]
+    lookahead_cycles: int = 8
+    grok_note: str = (
+        "Grok/xAI excluded from economics A/B — advisory and competition research only "
+        "until post-swap sign-off (PURE_AS_CRITICAL_PATH)."
+    )
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "baseline": self.baseline.as_dict(),
+            "lookahead_cycles": self.lookahead_cycles,
+            "grok_note": self.grok_note,
+            "variants": [
+                {
+                    "label": r.label,
+                    "presence_pct": round(r.presence_pct, 1),
+                    "would_quote_cycles": r.would_quote_cycles,
+                    "marginal": r.marginal.as_dict(),
+                }
+                for r in self.rows
+            ],
+        }
+
+
+def run_economics_ab(
+    decision_lines: Sequence[str],
+    trades_rows: Sequence[Dict[str, str]],
+    variants: Sequence[Tuple[str, Callable[[str], bool]]],
+    *,
+    lookahead_cycles: int = 8,
+    trades_path: str = "",
+) -> EconomicsABComparison:
+    baseline = compute_baseline_economics(trades_rows, trades_path=trades_path)
+    rows: List[EconomicsABRow] = []
+    for label, would_fn in variants:
+        marginal = compute_marginal_economics(
+            decision_lines,
+            trades_rows,
+            would_fn,
+            lookahead_cycles=lookahead_cycles,
+            baseline_capture_xrp=baseline.capture_xrp,
+        )
+        wq = sum(1 for ln in decision_lines if would_fn(ln))
+        dc = sum(1 for ln in decision_lines if parse_decision_events(ln)[0] > 0)
+        rows.append(
+            EconomicsABRow(
+                label=label,
+                marginal=marginal,
+                would_quote_cycles=wq,
+                decision_cycles=dc,
+            )
+        )
+    return EconomicsABComparison(
+        baseline=baseline,
+        rows=list(rows),
+        lookahead_cycles=lookahead_cycles,
+    )
+
+
+def format_economics_ab_report(comparison: EconomicsABComparison) -> str:
+    b = comparison.baseline
+    lines = [
+        "=== SACRED CORPUS ECONOMICS A/B (Phase A1) ===",
+        "",
+        f"Note: {comparison.grok_note}",
+        "",
+        "--- Baseline (actual fills in trades CSV) ---",
+        f"Fills: {b.fill_count} | Capture: {b.capture_xrp:+.6f} XRP | Neg: {b.neg_fill_pct:.1f}%",
+        f"Balance-delta proxy: {b.balance_delta_xrp_proxy:+.6f} XRP",
+        "",
+        f"{'Variant':<28} {'Presence':>9} {'Marginal':>9} {'Marg cap':>12} {'Neg%':>7} {'Upper bnd':>12}",
+        f"{'':28} {'':>9} {'cycles':>9} {'XRP':>12} {'fills':>7} {'XRP':>12}",
+        "-" * 82,
+    ]
+    for row in comparison.rows:
+        m = row.marginal
+        lines.append(
+            f"{row.label:<28} {row.presence_pct:>8.1f}% {m.marginal_cycles:>9} "
+            f"{m.marginal_capture_xrp:>+12.6f} {m.marginal_neg_fill_pct:>6.1f}% "
+            f"{m.projected_capture_upper_bound:>+12.6f}"
+        )
+    lines.extend(
+        [
+            "",
+            "Marginal = baseline-blocked cycles where variant would quote; capture from fills in next "
+            f"{comparison.lookahead_cycles} cycles (oracle upper bound, not counterfactual).",
+            "Compare pure vs +pressure: does defensive pressure change would-quote or attributed capture?",
+        ]
+    )
+    if len(comparison.rows) >= 2:
+        p0, p1 = comparison.rows[0], comparison.rows[1]
+        d_cap = p1.marginal.marginal_capture_xrp - p0.marginal.marginal_capture_xrp
+        d_pres = p1.presence_pct - p0.presence_pct
+        lines.append(
+            f"Delta ({p1.label} vs {p0.label}): presence {d_pres:+.1f} pp, "
+            f"marginal capture {d_cap:+.6f} XRP (oracle)."
+        )
+    lines.append("")
+    lines.append(
+        "Interpretation: presence lift alone is not profit. Validate on live pure-path fills before scale claims."
+    )
+    return "\n".join(lines)
+
+
 def run_sacred_economics(
     decisions_path: Path,
     *,
