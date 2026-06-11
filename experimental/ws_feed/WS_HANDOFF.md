@@ -95,9 +95,22 @@ When long-run / Gate 2 testing is complete, the code running on the remote serve
 - After Gate 2 judgment on main: Merge improvements, operator opt-in for WS on VPS.
 
 ## Rules for This Branch / AI Sessions
-- All WS changes, tests, replays, probes here only.
-- Current main run data (this 150-fill run + history) is sacred testing ground — use it to measure everything.
-- No deployment to VPS/engine until explicit post-Gate 2 sign-off.
+- All WS changes, tests, replays, probes, pure A-S experiments, competitor pressure, and Grok advisory / exploitation work here only (`experimental/ws_feed/` on `grok-ws-feed`).
+- Sacred gated long-run data (VPS HTTP + hard `market_edge_met` + full history/fills) is the testing ground / labeled corpus only. Use it for calibration and contrast; never mutate the sacred engine during Gate 2.
+- No deployment to VPS/engine until explicit post-Gate 2 sign-off + operator opt-in. Wholesale replace (data shape preserved) is the plan.
+- AI / Grok is advisory only (pressure inputs + AIAdvisorySignal for vol/size nudges; never changes reservation price, optimal spread, or the "inside book" decision).
+- Update `groks input/CURSOR_HANDOFF_ROADMAP.md`, `../FOR_AI_AND_FUTURE_SESSIONS.md` (milestones), and this file on real progress. Cursor is now the primary agent for exploitation work.
+
+## Latest (2026-06-10 — cash added, real Grok exploitation, HUD live, unlimited runs)
+- User added capital (portfolio ~252 XRP-equiv now visible).
+- Experimental pure A-S + WS + grok-3 HUD actively running locally (unlimited `--seconds 0`; HUD at :8765 with re-laid-out Intelligence tab: AI left + scraped competitors right).
+- Current behavior (tight book): A-S reservation/opt spread produces correct 0 quotes (built-in protection). 5 competitors + pressure ~0.41 tracked. Grok on-demand "Analyze with AI" uses rich exploitation prompt (holes, tactics, skim impact, positioning, value bag).
+- Full context + run command + file map + Cursor tips: see the dedicated `../../groks input/CURSOR_HANDOFF_ROADMAP.md`.
+- Per-sample + on-demand Grok paths live (see live_pure_as_tester.py, real_time_as_hud.py, grok_analyzer.py, base.py AIAnalysis for the extended exploitation fields).
+- Next: let long runs accumulate data for Grok to surface concrete exploitable patterns vs the specific makers (esp. the heavy one-sided bidder). Implement nicknames (future idea already noted), richer prompts (TODOs in place), advisory signal wiring, calibration from this funded data vs sacred corpus.
+- Cash impact on sacred gated side: more dry powder; still defensive on current market (edge not met in recent cycles) — as expected. Use for contrast only.
+
+All prior architecture (WS snapshots, pure A-S, pressure model, replicated wiring, advisory AI) remains the committed path. No changes to sacred gated during Gate 2.
 
 ## Real-time HUD / New Operator Surface (experimental/ws_feed/hud/)
 **Purpose:** Provide a lightweight, high-frequency "new GUI" surface for watching the committed WS + pure A-S path live (book state, A-S reservation/optimal spread, would-quote decision, suggested levels, rich policy notes, recent decisions). This is additive to the main Streamlit (which can still load `logs/ws_as_demo_runtime.json` for the full analytical view + legacy strings).
@@ -130,6 +143,8 @@ Open http://127.0.0.1:8765 (hard refresh after edits). F12 console for poll/debu
 This surface is part of the "new GUI" story for the committed WS + pure A-S future. When we eventually wholesale-replace the remote server code, a polished version of this (or evolved from it) can become the primary operator view.
 - Update this handoff + PROBE_RESULTS.md when new data from main run or WS improvements land.
 - When switching back to main work: checkout grok-tier-2-collab (stash/pop handoff edits as needed). WS branch stays for ongoing dev.
+
+**Critical path checklist:** [`../../docs/PURE_AS_CRITICAL_PATH.md`](../../docs/PURE_AS_CRITICAL_PATH.md) — all open tasks Phase A–E.
 
 **Current focus (committed direction only):** 
 Mature the WS + pure A-S production path (this is what will replace the remote server code wholesale):

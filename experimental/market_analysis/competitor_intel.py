@@ -309,7 +309,8 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
             "competitor_skim_advice": self.get_skim_recommendation(snap),
             "top_competitors": [
                 {
-                    "account": p.account[:12] + "...",
+                    "account": p.account[:12] + "...",  # display only (truncated)
+                    "account_full": p.account,          # usable full r-address for Analyze with AI etc.
                     "last_spread": round(p.last_spread_pct, 3),
                     "avg_spread": round(p.avg_spread_pct, 3),
                     "activity": p.total_offers_seen,

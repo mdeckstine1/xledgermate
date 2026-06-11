@@ -59,6 +59,13 @@ class AIAnalysis:
     rationale: str = ""                      # Human-readable (for logs/replay)
     source: str = "placeholder"              # local-llm, api-llm, stub
 
+    # === New exploitation / winning strategy fields (for Grok integration) ===
+    competitor_strategy_summary: str = ""    # High-level read on what the competitors (or this one) seem to be doing
+    exploitable_holes: str = ""              # Specific weaknesses or patterns we can exploit (e.g. "cancels one side aggressively after fill")
+    suggested_exploitative_tactics: str = "" # Concrete ways to take advantage (positioning, sizing, timing, queue jumping, etc.)
+    expected_skim_impact: str = ""           # Rough idea of how this could improve our spread capture or fill rate
+    positioning_advice: str = ""             # Best positions / levels / sides to fight for right now to "win the book"
+
 
 class AIAnalyzer(ABC):
     """Pluggable AI analyzer for WS book + secondary data.
@@ -154,22 +161,44 @@ class StubAIAnalyzer(AIAnalyzer):
                 skimmable = True
 
         # Incorporate competitor intel for competitive edge (new)
+        # Low pressure = competitors defensive / wide → prime "skim harder" opportunity.
+        # We bias the advisory posture toward "near" (more aggressive presence via A-S inputs)
+        # while the final quoting decision remains 100% pure A-S reservation inside the live WS book.
         comp_pressure = 0.5
+        top_comps = []
+        inv_skew = 0.0
         if run_context:
             comp_pressure = run_context.get("competitor_pressure", 0.5) or 0.5
             top_comps = run_context.get("top_competitors", [])
-            if comp_pressure < 0.4 and top_comps:
-                # Competitors look defensive → boost skimmability
-                edge_quality = min(1.0, edge_quality + 0.25)
+            inv_skew = run_context.get("inventory_skew", 0.0) or 0.0
+            if comp_pressure < 0.5:  # relaxed threshold so low-pressure defensive books trigger skim advice
+                # Competitors look defensive → boost skimmability + edge for "skim harder"
+                edge_quality = min(1.0, edge_quality + (0.35 if comp_pressure < 0.4 else 0.2))
                 skimmable = True
 
-        posture = "near" if skimmable and spread > 0.12 else ("spread_mid" if skimmable else "off")
+            # For 11k XRP-heavy rebalance (positive skew): low pressure especially valuable on ask side for skimming the rebalance legs
+            if inv_skew > 0.15 and comp_pressure < 0.5:
+                edge_quality = min(1.0, edge_quality + 0.1)
+                skimmable = True
+
+        # Posture recommendation (advisory only, for Intelligence tab + logs).
+        # Low pressure + any skimmable signal → recommend "near" to indicate we can/should
+        # deploy more aggressively (larger pull, tighter effective reservation via pressure+AI vol adjustments).
+        if skimmable:
+            if comp_pressure < 0.45 or spread > 0.11:
+                posture = "near"
+            else:
+                posture = "spread_mid"
+        else:
+            posture = "off"
 
         rationale = (
             f"Spread {spread:.3f}%, age {age:.1f}s. "
             f"Edge quality ~{edge_quality:.2f}. "
             f"{'Secondary data supports skimming.' if secondary_data else 'No secondary data.'}"
-            + (f" Competitor pressure {comp_pressure:.2f} — {'defensive, good to skim harder' if comp_pressure < 0.4 else 'aggressive'}." if run_context and run_context.get("competitor_pressure") is not None else "")
+            + (f" Competitor pressure {comp_pressure:.2f} — {'defensive, good to skim harder (suggest near)' if comp_pressure < 0.45 else 'aggressive/cautious'}." if run_context and run_context.get("competitor_pressure") is not None else "")
+            + (f" {len(top_comps)} active competitors profiled." if top_comps else "")
+            + (f" (XRP-heavy rebalance — low ask pressure good for aggressive asks)" if inv_skew > 0.15 and comp_pressure < 0.5 else "")
         )
 
         return AIAnalysis(

@@ -182,9 +182,45 @@ if app:
         data = await request.json()
         _current_state["intel_ai_provider"] = data.get("provider", _current_state.get("intel_ai_provider", "stub"))
         _current_state["intel_ai_key"] = data.get("key", _current_state.get("intel_ai_key", ""))
-        _current_state["intel_ai_model"] = data.get("model", _current_state.get("intel_ai_model", "grok-beta"))
+        _current_state["intel_ai_model"] = data.get("model", _current_state.get("intel_ai_model", "grok-3"))
         _current_state["intel_ai_enabled"] = bool(data.get("enabled", _current_state.get("intel_ai_enabled", True)))
         return {"ok": True, "provider": _current_state.get("intel_ai_provider")}
+
+    @app.get("/list_models")
+    async def list_models():
+        """Query xAI (or compatible) /v1/models using the key currently in Config.
+        Returns the list of model IDs the key can actually use. Very useful for figuring out
+        the exact string to put in the Model field (e.g. 'grok-3', 'grok-3-mini', etc.).
+        """
+        key = _current_state.get("intel_ai_key", "")
+        provider = _current_state.get("intel_ai_provider", "grok")
+        if not key:
+            return {"models": [], "error": "No API key set in the Config tab yet. Enter key + Apply first."}
+
+        # Only really useful for grok/openai-style providers for now
+        if provider.lower() not in ("grok", "openai"):
+            return {"models": [], "error": f"Model listing only supported for 'grok' or 'openai' provider (current: {provider})."}
+
+        try:
+            import requests
+            url = "https://api.x.ai/v1/models" if provider.lower() == "grok" else "https://api.openai.com/v1/models"
+            resp = requests.get(
+                url,
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=20
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            model_ids = sorted([m.get("id") for m in data.get("data", []) if m.get("id")])
+            return {"models": model_ids, "count": len(model_ids), "note": "Click a model name below (or copy it) and paste into the Model field, then Apply Changes."}
+        except Exception as e:
+            api_body = ""
+            if 'resp' in locals() and resp is not None:
+                try:
+                    api_body = " | " + str(resp.json())
+                except Exception:
+                    api_body = " | " + (resp.text[:300] if getattr(resp, 'text', None) else "")
+            return {"models": [], "error": f"{type(e).__name__}: {e}{api_body}"}
 
     @app.post("/analyze_competitor")
     async def analyze_competitor(request: Request):
@@ -192,6 +228,12 @@ if app:
         Currently supports Grok (xAI) when provider=grok and key provided.
         The prompt focuses on on-chain trending, strategy, and how to compete/skim against it.
         Output is advisory only and does not affect A-S reservation or quoting.
+
+        Endpoints on this HUD server (for reference):
+        - GET /state : current live book + A-S + intel (polled by UI ~800ms)
+        - POST /set_intel_config : from Config tab Apply (sets intel_ai_provider/key/model/enabled into _current_state)
+        - POST /analyze_competitor : the one that may hit the real x.ai API (body: {"address": "r..."} ; may also include optional context)
+        - Others: / (index), /qr, POST /state (for engine push).
         """
         data = await request.json()
         address = data.get("address", "").strip()
@@ -200,14 +242,33 @@ if app:
 
         provider = _current_state.get("intel_ai_provider", "stub")
         key = _current_state.get("intel_ai_key", "")
-        model = _current_state.get("intel_ai_model", "grok-beta")
+        model = _current_state.get("intel_ai_model", "grok-3")
         enabled = _current_state.get("intel_ai_enabled", True)
 
+        # Pull any live context the tester has been pushing (from WS book + competitor scrape)
+        # This makes the Grok "suggestion" current-aware for "skim harder right now".
+        # Prefer values sent in this POST body (from the UI's lastState) as they are the freshest the browser saw.
+        live_pressure = data.get("competitor_pressure") or _current_state.get("competitor_pressure")
+        live_obs_spread = data.get("observed_spread_pct") or _current_state.get("competitor_observed_spread_pct")
+        live_depth = _current_state.get("competitor_depth_xrp")
+        inv_label = data.get("inventory_label") or _current_state.get("inventory_label")
+        top_comps = _current_state.get("top_competitors", [])[:3] if _current_state.get("top_competitors") else []
+
+        debug_note = f"[HUD /analyze] provider={provider} had_key={bool(key)} (len={len(key) if key else 0}) enabled={enabled} model={model}"
+
         if not enabled or not key:
-            return {"result": f"AI not enabled or no key configured in Config tab (provider={provider}). Demo simulation for {address}: This address shows high activity in the RLUSD/XRP book, likely a competitor MM with tight spreads and frequent L1 adjustments. Counter by monitoring their cancels for adverse signals."}
+            sim = (f"{debug_note}\n"
+                   f"AI not enabled or no key configured in Config tab (provider={provider}). "
+                   f"Demo simulation for {address}: This address shows high activity in the RLUSD/XRP book, "
+                   f"likely a competitor MM with tight spreads and frequent L1 adjustments. "
+                   f"Counter by monitoring their cancels for adverse signals.")
+            return {"result": sim}
 
         if provider.lower() != "grok":
-            return {"result": f"Only Grok provider is supported for real API calls right now (configured: {provider}). Using simulation for {address}."}
+            sim = (f"{debug_note}\n"
+                   f"Only Grok provider is supported for real API calls right now (configured: {provider}). "
+                   f"Using simulation for {address}.")
+            return {"result": sim}
 
         try:
             import requests
@@ -216,26 +277,74 @@ if app:
                 "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json"
             }
-            prompt = (
-                f"You are an expert on XRPL market making and on-chain competitor analysis. "
-                f"Analyze the ledger address {address} for its likely market-making strategy on the RLUSD/XRP order book. "
-                f"Focus on: posted spreads and sizes from recent activity, aggressiveness vs defensiveness, inventory skew signals, "
-                f"reaction to fills or price moves (e.g. cancel patterns), and any 'trending' behavior (increasing/decreasing presence). "
-                f"Provide a concise, actionable summary of how our pure A-S bot can compete or skim harder against it without increasing toxic risk. "
-                f"Base your reasoning only on public on-chain patterns; do not speculate on off-chain identity."
+
+            # Build richer prompt that includes live context so the suggestion is actionable for current skim vs this address.
+            context_lines = []
+            if live_pressure is not None:
+                context_lines.append(f"current competitor pressure={live_pressure:.2f} (0=defensive/skim harder)")
+            if live_obs_spread is not None:
+                context_lines.append(f"observed L1 spread in book ~{live_obs_spread:.3f}%")
+            if live_depth is not None:
+                context_lines.append(f"recent competitor depth ~{live_depth:.1f} XRP")
+            if inv_label:
+                context_lines.append(f"our current inventory posture: {inv_label}")
+            if top_comps:
+                context_lines.append(f"other active makers visible: {', '.join([str(c.get('account','?'))[:8] for c in top_comps])}")
+
+            context_str = (" Current live WS book context: " + "; ".join(context_lines) + ".") if context_lines else ""
+
+            # Current on-demand prompt (for specific competitor address analysis)
+            current_prompt = (
+                f"You are an expert on XRPL market making and on-chain competitor analysis.\n"
+                f"Analyze the ledger address {address} for its likely market-making strategy on the RLUSD/XRP order book.\n\n"
+                f"**Primary goal:** Identify the holes and repeatable patterns in this competitor's behavior that we can exploit to win the best queue positions, "
+                f"increase our realized skim (spread capture), and compound our bag more effectively over time.\n\n"
+                f"Focus areas:\n"
+                f"- Posted spreads and sizes from recent activity\n"
+                f"- Aggressiveness vs defensiveness, inventory skew signals\n"
+                f"- Reaction to fills or price moves (e.g. cancel patterns)\n"
+                f"- Any 'trending' behavior (increasing/decreasing presence)\n"
+                f"- Specific exploitable weaknesses (e.g. they cancel one side too aggressively after a fill, they step away predictably on volatility, they are weak on one side during rebalances, etc.)\n\n"
+                f"Then give **concrete, actionable exploitative tactics** our pure A-S bot can use right now: better positioning ideas, when to step inside their levels, queue-jumping opportunities, sizing/timing suggestions, when to be patient vs aggressive, etc.\n\n"
+                f"Base your reasoning only on public on-chain patterns; do not speculate on off-chain identity.\n"
+                f"{context_str}"
             )
+
+            prompt = current_prompt
+
+            # TODO (future - once we start live MM with this bot):
+            # Make this prompt significantly richer by feeding:
+            #   - Full recent book history / our own recent fills + markouts on this book
+            #   - More complete top-of-book levels from the scraped competitors
+            #   - What our current pure A-S math is outputting (reservation price, optimal spread)
+            #   - Recent periods where low pressure + good fills occurred
+            # Goal: Turn the response into high-signal "how to beat this specific maker right now and win the best positions to maximize long-term skim" advice.
+
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 600,
                 "temperature": 0.6,
             }
+
+            print(debug_note + " | sending real Grok call with prompt len=" + str(len(prompt)))
+
             resp = requests.post(url, headers=headers, json=payload, timeout=45)
             resp.raise_for_status()
-            result = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "No content returned from Grok.")
+            content = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "No content returned from Grok.")
+            result = f"{debug_note} | REAL GROK RESPONSE:\n\n{content}"
             return {"result": result}
         except Exception as e:
-            return {"result": f"Error calling Grok API for {address}: {str(e)}. (Check key, model, network, or rate limits. Falling back to simulation: This address appears active in the book with competitive quoting.)"}
+            # Surface the actual API error body for 4xx/5xx so we can debug model names, auth, etc.
+            api_error = ""
+            if 'resp' in locals() and resp is not None:
+                try:
+                    api_error = " | API body: " + str(resp.json())
+                except Exception:
+                    api_error = " | API body: " + (resp.text[:500] if resp.text else str(e))
+            err = f"{debug_note}\nError calling Grok API for {address}: {str(e)}{api_error}. (Model '{model}' not accepted by this key. Current recommended model is 'grok-3'. In Config tab set Model to grok-3 (or grok-3-mini), click Apply Changes, then try Analyze again. The 'Fetch' button can help discover what your key supports.)"
+            print(err)  # also to terminal for easy copy
+            return {"result": err}
 
 
 def update_state(new_state: Dict[str, Any]):

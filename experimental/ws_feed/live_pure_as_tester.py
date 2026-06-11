@@ -18,12 +18,16 @@ assumed from recent run data for realism (you can override via args).
 
 **IMPORTANT: Use the project virtual environment**
 Activate first (PowerShell, from project root):
-  .\.venv\Scripts\Activate.ps1
+  .\\.venv\\Scripts\\Activate.ps1
+  (or simply: .venv\\Scripts\\Activate.ps1)
 Then run the tester. This keeps fastapi/uvicorn (for the real-time HUD) and
 all other deps properly scoped.
 
 Run:
-  python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 120 --verbose
+  # Short demo run
+  python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --verbose --intel-ai-provider grok --intel-ai-key xai-... --intel-ai-model grok-3
+  # Long run (e.g. to collect 11k+ cycles like the gated VPS run; use --seconds 0 for unlimited)
+  python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 0 --verbose --intel-ai-provider grok --intel-ai-key xai-... --intel-ai-model grok-3
   (The --serve-hud flag starts the new real-time HUD at http://127.0.0.1:8765)
 
 We are committed. This (WS architecture + pure A-S + replicated wiring) is the path.
@@ -68,6 +72,7 @@ except Exception:
 # AI analysis for competitive edge (revived from earlier discussion; augments A-S inputs with competitor-aware reasoning, no hard gates)
 try:
     from experimental.ai_analysis.base import StubAIAnalyzer
+    from experimental.ai_analysis.grok_analyzer import create_grok_analyzer_from_config
 except Exception:
     StubAIAnalyzer = None
 
@@ -260,13 +265,15 @@ async def _sample_and_decide(
             }
             run_ctx = {
                 "inventory_label": inv_state.label,
+                "inventory_skew": inv_skew,
                 "competitor_pressure": comp_snapshot.get("competitor_pressure") if comp_snapshot else None,
                 "top_competitors": comp_snapshot.get("top_competitors", []) if comp_snapshot else [],
                 "profile": profile_name,
             }
             ai = await ai_analyzer.analyze(book_for_ai, run_context=run_ctx)
-            # We intentionally do NOT adjust volatility or any A-S parameter here based on ai.
-            # The only effect is richer logging and data for the Intelligence tab.
+            # Real Grok (when configured) now drives the per-sample rationale in the WS pure A-S loop.
+            # Still advisory only — the A-S reservation + optimal spread math is never overridden.
+            # Result flows into the decision note and is pushed to the HUD Intelligence tab cards.
         except Exception as e:
             logger.debug("AI analysis failed: %s", e)
 
@@ -299,6 +306,9 @@ async def _sample_and_decide(
         f"(gamma={as_strat.gamma}, kappa={as_strat.kappa})"
         + (f" | COMPETITOR: {comp_snapshot.get('competitor_skim_advice','')}" if comp_snapshot and comp_snapshot.get('competitor_skim_advice') else "")
         + (f" | AI: {ai.rationale}" if ai and ai.rationale else "")
+        + (f" | EXPLOIT: {ai.exploitable_holes}" if ai and ai.exploitable_holes else "")
+        + (f" | TACTICS: {ai.suggested_exploitative_tactics}" if ai and ai.suggested_exploitative_tactics else "")
+        + (f" | POSITIONING: {ai.positioning_advice}" if ai and ai.positioning_advice else "")
     )
 
     if as_met:
@@ -383,7 +393,7 @@ async def run_live_test(
     serve_hud: bool = False,
     intel_ai_provider: str = "stub",
     intel_ai_key: str = "",
-    intel_ai_model: str = "grok-beta",
+    intel_ai_model: str = "grok-3",
 ) -> None:
     config = BotConfig.load()
     connector = _build_connector(config)
@@ -422,21 +432,30 @@ async def run_live_test(
         except Exception:
             logger.warning("Could not init CompetitorIntelProvider")
 
-    # AI analyzer (stub for now; real Grok calls are supported via the /analyze_competitor endpoint in the HUD server for the Intelligence tab "Analyze with AI" button, using the --intel-ai-* config or live form values.
-    # The per-sample "AI rationale" (in decision notes) still uses the stub (which incorporates competitor pressure) to avoid rate limits on frequent samples.
-    ai_analyzer = StubAIAnalyzer() if StubAIAnalyzer else None
-    if ai_analyzer:
-        logger.info("AI analysis enabled (stub for per-sample; real Grok via HUD Intelligence tab when --intel-ai-provider=grok and key set).")
+    # Grok-integrated AI for per-sample (when configured). This is the main extension point for "grok integrated" on the WS branch.
+    # Real Grok (via GrokAIAnalyzer) replaces the stub for per-sample edge/pressure analysis when a key is provided.
+    # Advisory only — results appear in decision notes and Intelligence tab cards. The A-S math itself is untouched.
+    ai_analyzer = None
+    if intel_ai_provider == "grok" and intel_ai_key:
+        ai_analyzer = create_grok_analyzer_from_config(intel_ai_key, intel_ai_model)
+        if ai_analyzer:
+            logger.info("REAL GROK integrated into per-sample loop (model=%s, via GrokAIAnalyzer). "
+                        "Uses micro-structure prompt with current pressure + book state. "
+                        "Note: real calls are expensive — the on-demand 'Analyze with AI' button in the HUD is still best for deep single-competitor dives.", intel_ai_model)
+    if ai_analyzer is None and StubAIAnalyzer:
+        ai_analyzer = StubAIAnalyzer()
+        logger.info("AI analysis using enhanced stub (real Grok available when --intel-ai-provider=grok + key configured).")
 
     as_strat = AvellanedaStrategy(None, gamma=gamma, kappa=kappa, T=1.0)
 
+    duration_str = f"{seconds:.0f}s" if seconds > 0 else "unlimited (until Ctrl+C)"
     logger.info(
-        "LIVE WS + PURE A-S TEST | committed future path | WS=%s | profile=%s | gamma=%.2f kappa=%.2f | duration=%.0fs",
+        "LIVE WS + PURE A-S TEST | committed future path | WS=%s | profile=%s | gamma=%.2f kappa=%.2f | duration=%s",
         ws_url,
         profile,
         gamma,
         kappa,
-        seconds,
+        duration_str,
     )
     if serve_hud:
         logger.info("New real-time HUD (new GUI surface) will be served alongside the decisions.")
@@ -460,7 +479,7 @@ async def run_live_test(
         "recent_decisions": [],
         # Intelligence API config (for AI competitor address trending — advisory only)
         "intel_ai_provider": intel_ai_provider,
-        "intel_ai_key": intel_ai_key,
+        "intel_ai_key": "",  # never persist the real key in the demo runtime json (security)
         "intel_ai_model": intel_ai_model,
         "intel_ai_enabled": True,
     }
@@ -547,7 +566,10 @@ async def run_live_test(
         }
         hud_update_state(initial_hud)
 
-    end = time.monotonic() + seconds
+    if seconds > 0:
+        end = time.monotonic() + seconds
+    else:
+        end = float("inf")  # unlimited run (until Ctrl+C); for long data collection like 11k+ cycles
     last_sample = 0.0
     last_json_save = 0.0
 
@@ -563,6 +585,16 @@ async def run_live_test(
                         comp_snapshot = comp_provider.to_hud_state(snap)
                     except Exception:
                         comp_snapshot = {}
+
+                # Re-merge any live intel config set via HUD form /set_intel_config (Config tab Apply).
+                # This ensures gui_runtime carries the key set mid-run, so the hud_state push below
+                # does not clobber the server _current_state with a stale gui_runtime value (the root cause
+                # of "key held on Apply then switched off on next poll").
+                if _hud_current_state and _hud_current_state.get("intel_ai_key"):
+                    gui_runtime["intel_ai_provider"] = _hud_current_state.get("intel_ai_provider", gui_runtime.get("intel_ai_provider", "stub"))
+                    gui_runtime["intel_ai_key"] = _hud_current_state.get("intel_ai_key", gui_runtime.get("intel_ai_key", ""))
+                    gui_runtime["intel_ai_model"] = _hud_current_state.get("intel_ai_model", gui_runtime.get("intel_ai_model", "grok-3"))
+                    gui_runtime["intel_ai_enabled"] = _hud_current_state.get("intel_ai_enabled", gui_runtime.get("intel_ai_enabled", True))
 
                 await _sample_and_decide(
                     ws_feed,
@@ -678,7 +710,7 @@ async def run_live_test(
 def main() -> None:
     setup_logging()
     parser = argparse.ArgumentParser(description="Live WS + pure A-S tester (committed future path)")
-    parser.add_argument("--seconds", type=float, default=120.0, help="How long to run the live test")
+    parser.add_argument("--seconds", type=float, default=0.0, help="How long to run the live test in seconds (0 or negative = run forever until Ctrl+C; useful for long data collection like 11k+ cycles). We removed the short default so you can let it cook.")
     parser.add_argument("--gamma", type=float, default=0.35, help="A-S gamma (inventory risk aversion) - lower for more presence")
     parser.add_argument("--kappa", type=float, default=3.5, help="A-S kappa (arrival intensity) - higher for tighter/more competitive spreads")
     parser.add_argument("--profile", default="tight_spread", help="Profile for wiring context")
@@ -690,7 +722,7 @@ def main() -> None:
     parser.add_argument("--serve-hud", action="store_true", help="Start the new dedicated real-time WS + pure A-S HUD (http://127.0.0.1:8765) — this is the live 'new gui' surface for the committed path (book + A-S math + WS freshness updating in real time)")
     parser.add_argument("--intel-ai-provider", default="stub", help="AI provider for Intelligence tab competitor analysis (stub, grok, ollama, etc.). Use 'grok' + your key for real xAI calls on the 'Analyze with AI' buttons.")
     parser.add_argument("--intel-ai-key", default="", help="API key/secret for the AI provider (e.g. xai-... for Grok). Required for real Grok; put in Config tab or here. Per-sample notes stay stub to avoid rate limits.")
-    parser.add_argument("--intel-ai-model", default="grok-beta", help="Model name for the AI provider (e.g. grok-beta for xAI Grok API)")
+    parser.add_argument("--intel-ai-model", default="grok-3", help="Model name for the AI provider (e.g. grok-3 or grok-3-mini for xAI Grok API)")
     args = parser.parse_args()
 
     asyncio.run(

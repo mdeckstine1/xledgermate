@@ -5,6 +5,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self';">
     <title>WS + Pure A-S Live HUD</title>
     <style>
+        html, body { height: 100%; }
         body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; }
         .sidebar { width: 260px; background: #1e2937; border-right: 1px solid #334155; padding: 16px; overflow-y: auto; flex-shrink: 0; }
         .sidebar .section { margin-bottom: 16px; }
@@ -86,8 +87,43 @@
         .nav a { color: #60a5fa; text-decoration: none; padding: 4px 10px; border-radius: 4px; font-size: 0.9rem; }
         .nav a:hover { background: #334155; }
         .nav a.active { background: #334155; font-weight: 500; }
-        .page { display: none; }
-        .page.active { display: block; }
+
+        /* Scrolling fix for tall tabs (Intelligence, Config, etc.).
+           The root layout uses height:100vh + flex on body/main with overflow:hidden.
+           Previously .page was plain display:block, so its .content (flex:1) had no
+           proper flex ancestor to stretch into the remaining space after header+nav.
+           Result: bottom buttons and long sections (skim advice, AI cards, controls)
+           were clipped; user had to resize browser window smaller to reveal them.
+           Now: active page becomes a flex column that takes remaining space,
+           its .content gets the scrollable flex area.
+        */
+        .page {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            min-height: 0; /* allows inner elements to shrink so overflow works */
+            overflow: hidden;
+        }
+        .page.active {
+            display: flex;
+        }
+
+        /* The actual scroll container for tab content */
+        .page .content {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            min-height: 0;
+            padding: 16px;
+            padding-bottom: 24px; /* breathing room for bottom buttons when scrolled to end */
+        }
+
+        /* Live tab has UI chrome (marquee + status + button) above the scrollable cards.
+           Prevent them from stretching; let only the .content area scroll. */
+        #live > .marquee-container,
+        #live > #hud-poll-status,
+        #live > #btn-force-poll {
+            flex-shrink: 0;
+        }
 
         /* Compact side-by-side cards for better layout */
         .decision-cards,
@@ -391,7 +427,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         </div>
                         <div style="margin-top:4px;">
                             <label style="font-size:0.7rem; color:#94a3b8;">Model / Endpoint</label>
-                            <input type="text" id="intel-ai-model" value="llama3" style="width:100%; font-family:monospace; font-size:0.8rem;">
+                            <input type="text" id="intel-ai-model" value="grok-3" style="width:100%; font-family:monospace; font-size:0.8rem;" placeholder="grok-3 (recommended) or grok-3-mini. Use the Fetch button or check console.x.ai">
+                            <button type="button" id="btn-fetch-models" style="margin-top:4px; font-size:0.65rem; padding:2px 8px;">Fetch available models for this key</button>
+                            <div id="model-list-result" style="font-size:0.65rem; margin-top:3px; color:#64748b; min-height:1.1em;"></div>
                         </div>
                         <div style="margin-top:6px;">
                             <label style="font-size:0.65rem;">
@@ -399,9 +437,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             </label>
                         </div>
                         <small style="font-size:0.6rem; opacity:0.7; display:block; margin-top:4px;">
-                            Keys are in-memory demo only. Use with Grok API (https://api.x.ai) for real analysis of competitor addresses (trending on ledger). 
-                            Set provider=grok, key=xai-..., model=grok-beta. 
-                            <strong>AI never overrides A-S reservation or quoting decisions</strong> — it only provides extra context in the Intelligence tab and logs.
+                            Keys are in-memory demo only (this HUD's separate state; main Streamlit GUI key does not auto-copy here). 
+                            <strong>Recommended:</strong> use --intel-ai-model grok-3 on launch. Click "Fetch available models for this key" to get a dropdown of models your key supports (grok-3 is pre-selected at top). 
+                            The dropdown auto-applies when you change selection. AI is advisory only.
                         </small>
                     </div>
 
@@ -608,24 +646,28 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="metric-row"><span class="label">Skimmable per AI</span> <span id="intel-ai-skimmable" class="value">—</span></div>
                         <div style="font-size:0.75rem; margin-top:4px;">Rationale: <span id="intel-ai-rationale" style="white-space:pre-wrap;">—</span></div>
                         <div class="metric-row" style="margin-top:4px;"><span class="label">AI Suggested Posture</span> <span id="intel-ai-posture" class="value">—</span></div>
-                        <small>AI reasons over current book + competitor profiles/pressure to suggest if we should skim harder (tweaks A-S vol input for more aggressive reservation when low pressure + good edge). Still 100% pure A-S for the final "reservation inside book" decision. Ready to swap stub for real local LLM (Ollama etc.) for sub-100ms competitive analysis.</small>
+                        <small>Per-sample stub reasons over current book + competitor profiles/pressure. Low pressure (defensive competitors) now strongly biases "AI Suggested Posture" to "near" (skim harder opportunity) + boosts edge/skimmable. The pressure model already tweaks A-S inputs (lower vol, higher size_mult, observed-spread anchor) for more aggressive reservation on soft books. AI is strictly advisory — final presence decision is always pure A-S "reservation inside the live WS book". Use the "Analyze with AI" button (with grok key) for deeper real Grok suggestions on specific competitors. Local LLM (Ollama etc.) stubs are in ai_analysis/ ready for sub-100ms swap-in.</small>
                     </div>
 
-                    <!-- Top Competitors -->
-                    <div class="card full-width">
-                        <div class="label">Top Scraped Competitors (by activity)</div>
-                        <div id="intel-top-list" style="font-size:0.75rem; background:#0f172a; padding:6px; border-radius:3px; max-height:140px; overflow:auto;">No profiles yet.</div>
-                        <small>Account prefix (domain if set on-ledger) | last/avg spread | activity | sides (b/a). XRPL has no native "full name" tokens or usernames. Best on-chain ID is the r-address + optional Domain field (set via AccountSet, verifiable via DNS). No standard ledger "identity tokens" for this. We can layer public known-accounts lists (bithomp etc.) later for better labels.</small>
-                    </div>
-
-                    <!-- Demo: Use configured Intelligence API to analyze a competitor ledger address (trending / strategy) -->
-                    <div class="card full-width">
-                        <div class="label">AI Competitor Address Analysis (demo — uses Config tab keys)</div>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <input id="intel-analyze-addr" type="text" placeholder="r... competitor address" style="flex:1; font-family:monospace; font-size:0.8rem;">
-                            <button id="btn-analyze-addr" style="background:#8b5cf6; color:white; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem;">Analyze with AI</button>
+                    <!-- Side-by-side: AI Address Analysis (left) + Top Scraped (right, filling the big empty space to the right of AI analysis) -->
+                    <div style="display:flex; gap:12px; align-items: flex-start;">
+                        <!-- AI Competitor Address Analysis (left) -->
+                        <div class="card" style="flex:1; min-width:0;">
+                            <div class="label">AI Competitor Address Analysis (demo — uses Config tab keys)</div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <input id="intel-analyze-addr" type="text" placeholder="Paste real r-address from the list on the right (or any from the book)" style="flex:1; font-family:monospace; font-size:0.8rem;">
+                                <button id="btn-analyze-addr" style="background:#8b5cf6; color:white; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem;">Analyze with AI</button>
+                            </div>
+                            <div id="intel-ai-result" style="margin-top:6px; font-size:0.7rem; background:#0f172a; padding:4px; border-radius:3px; white-space:pre-wrap; min-height:1.2em;">Paste a real r-address from the "Top Scraped Competitors" list on the right (or any from the book). Click Analyze. With grok key + provider=grok in Config (Apply or launch flags), this does a real call to api.x.ai. The box will show debug + the Grok suggestion (now includes live pressure/context). If you get 400 on model, change "Model" in Config tab (e.g. try grok-2-1212 or check your xAI account) then Apply again.</div>
                         </div>
-                        <div id="intel-ai-result" style="margin-top:6px; font-size:0.7rem; background:#0f172a; padding:4px; border-radius:3px; white-space:pre-wrap; min-height:1.2em;">Enter any competitor r-address (from list or book) and click Analyze. With grok key set in Config tab + Apply, this does real Grok call for strategy/skim advice. (Stub if no key or provider not grok.)</div>
+
+                        <!-- Top Scraped Competitors (right, half-page card filling the space) -->
+                        <div class="card" style="flex:1; min-width:0;">
+                            <div class="label">Top Scraped Competitors (by activity)</div>
+                            <div id="intel-top-list" style="font-size:0.75rem; background:#0f172a; padding:6px; border-radius:3px; max-height:220px; overflow:auto;">No profiles yet.</div>
+                            <small style="opacity:0.6;">Click any row on the right to instantly fill a real (or demo) r-address into the Analyze box on the left. Real profiles come from the live order book via the connector (accounts are now preserved in scraping).</small>
+                            <small>Account prefix (domain if set on-ledger) | last/avg spread | activity | sides (b/a). XRPL has no native "full name" tokens or usernames. Best on-chain ID is the r-address + optional Domain field (set via AccountSet, verifiable via DNS). No standard ledger "identity tokens" for this. <em>Future (optional): internal nicknames — a local-only map (e.g. JSON or in-memory) keyed by r-address so you can label e.g. "Bob the aggressive L1 sniper" purely for your own recall, without any on-chain or shared data changes.</em></small>
+                        </div>
                     </div>
 
                     <!-- How to Skim Harder -->
@@ -685,6 +727,125 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const el = document.getElementById(id);
             if (el) el.textContent = text;
         }
+
+        // === Model discovery helpers (for Grok /list_models) ===
+        // Defined early so they are available even if other code has timing issues.
+        async function fetchAvailableModels() {
+            const resDiv = document.getElementById('model-list-result');
+            if (!resDiv) return;
+
+            // Auto-apply current Config values so the key is in server state
+            const provEl = document.getElementById('intel-ai-provider');
+            const keyIn = document.getElementById('intel-ai-key');
+            const modelEl = document.getElementById('intel-ai-model');
+            const enEl = document.getElementById('intel-ai-enabled');
+
+            const provider = provEl ? provEl.value : 'grok';
+            const keyVal = keyIn ? keyIn.value : '';
+            const model = modelEl ? modelEl.value : 'grok-3';
+            const enabled = !!(enEl && enEl.checked);
+
+            if (keyVal) {
+                try {
+                    await fetch('/set_intel_config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ provider, key: keyVal, model, enabled })
+                    });
+                    const aiKeyWrap = keyIn ? keyIn.parentElement : null;
+                    if (keyIn && aiKeyWrap) {
+                        keyIn.style.display = 'none';
+                        let status = document.getElementById('intel-ai-key-status');
+                        if (!status) {
+                            status = document.createElement('span');
+                            status.id = 'intel-ai-key-status';
+                            status.style.fontSize = '0.75rem';
+                            status.style.color = '#22c55e';
+                            status.style.marginLeft = '6px';
+                            aiKeyWrap.appendChild(status);
+                        }
+                        status.textContent = 'Key set (hidden for security) — length: ' + keyVal.length + ' (applied for model fetch)';
+                    }
+                } catch (e) {
+                    console.warn('Auto-apply before model fetch failed', e);
+                }
+            }
+
+            resDiv.textContent = 'Querying xAI /v1/models with the applied key...';
+            try {
+                const r = await fetch('/list_models');
+                const data = await r.json();
+                if (data.error) {
+                    resDiv.innerHTML = '<span style="color:#f87171">Error: ' + data.error + '</span>';
+                } else if (data.models && data.models.length > 0) {
+                    // Always ensure grok-3 is available as a strong recommendation
+                    let models = [...data.models];
+                    if (!models.includes('grok-3')) {
+                        models.unshift('grok-3');
+                    }
+                    // Put grok-3 first if present
+                    models = models.filter(m => m !== 'grok-3');
+                    models.unshift('grok-3');
+
+                    let options = models.map(m => {
+                        const label = m === 'grok-3' ? 'grok-3 (recommended)' : m;
+                        return `<option value="${m}">${label}</option>`;
+                    }).join('');
+
+                    resDiv.innerHTML = (data.note ? data.note + '<br>' : '') + 
+                        'Select model (auto-applies on change):<br>' +
+                        `<select id="temp-model-select" style="width:100%; font-size:0.8rem; margin-top:4px;">${options}</select>`;
+
+                    // Attach change handler after DOM update
+                    setTimeout(() => {
+                        const sel = document.getElementById('temp-model-select');
+                        if (sel) {
+                            sel.addEventListener('change', () => {
+                                if (sel.value) {
+                                    useModel(sel.value);
+                                }
+                            });
+                            // Pre-select grok-3
+                            sel.value = 'grok-3';
+                        }
+                    }, 0);
+                } else {
+                    resDiv.innerHTML = 'No models from API. <button onclick="useModel(\'grok-3\')">Try grok-3 (recommended)</button>';
+                }
+            } catch (e) {
+                resDiv.innerHTML = '<span style="color:#f87171">Fetch failed: ' + e + '</span>';
+            }
+        }
+
+        function useModel(modelName) {
+            const modelInput = document.getElementById('intel-ai-model');
+            if (modelInput) {
+                modelInput.value = modelName;
+                modelInput.style.background = '#1e40af';
+                setTimeout(() => { if (modelInput) modelInput.style.background = ''; }, 600);
+            }
+            const applyBtn = document.getElementById('btn-apply-config');
+            if (applyBtn) {
+                applyBtn.click();
+            } else {
+                const provEl = document.getElementById('intel-ai-provider');
+                const keyIn = document.getElementById('intel-ai-key');
+                const enEl = document.getElementById('intel-ai-enabled');
+                fetch('/set_intel_config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        provider: provEl ? provEl.value : 'grok',
+                        key: keyIn ? keyIn.value : '',
+                        model: modelName,
+                        enabled: !!(enEl && enEl.checked)
+                    })
+                });
+            }
+        }
+
+        window.fetchAvailableModels = fetchAvailableModels;
+        window.useModel = useModel;
 
         function renderLive(s) {
             if (!s) return;
@@ -865,81 +1026,105 @@ The A-S strategy itself decides presence via reservation price being inside the 
             // Intelligence API config (advisory AI for competitor analysis via ledger addresses)
             // Protect against frequent renderLive polls clobbering user edits in the Config form.
             // User changes (dropdown, paste key, etc.) set a touched flag for a grace period.
-            if (!window._intelConfigUserTouched || Date.now() > window._intelConfigUserTouched) {
-                const aiProv = document.getElementById('intel-ai-provider');
+            // We also keep the key status sticky if server now echoes a key (after the tester merge fix).
+            const _intelTouched = window._intelConfigUserTouched || 0;
+            const _intelInGrace = (Date.now() <= _intelTouched);
+            const aiProv = document.getElementById('intel-ai-provider');
+            const aiKey = document.getElementById('intel-ai-key');
+            const aiKeyWrap = document.getElementById('intel-ai-key-wrap') || (aiKey ? aiKey.parentElement : null);
+            const aiModel = document.getElementById('intel-ai-model');
+            const aiEnabled = document.getElementById('intel-ai-enabled');
+
+            if (_intelInGrace) {
+                // During grace after edit/Apply: do not let poll clobber the form controls the user is touching
+                // (but we can still refresh the status pill if server now reports a key)
+            } else {
                 if (aiProv && s.intel_ai_provider) aiProv.value = s.intel_ai_provider;
-                const aiKey = document.getElementById('intel-ai-key');
-                const aiKeyWrap = document.getElementById('intel-ai-key-wrap') || (aiKey ? aiKey.parentElement : null);
-                if (aiKey) {
-                    if (s.intel_ai_key && s.intel_ai_key.length > 0) {
-                        // Hide the actual secret; show status so it "saves" visibly
-                        if (aiKeyWrap) {
-                            aiKey.style.display = 'none';
-                            let status = document.getElementById('intel-ai-key-status');
-                            if (!status) {
-                                status = document.createElement('span');
-                                status.id = 'intel-ai-key-status';
-                                status.style.fontSize = '0.75rem';
-                                status.style.color = '#22c55e';
-                                status.style.marginLeft = '6px';
-                                aiKeyWrap.appendChild(status);
-                            }
-                            status.textContent = 'Key set (hidden for security) — length: ' + s.intel_ai_key.length;
-                            let clearBtn = document.getElementById('intel-ai-key-clear');
-                            if (!clearBtn) {
-                                clearBtn = document.createElement('button');
-                                clearBtn.id = 'intel-ai-key-clear';
-                                clearBtn.textContent = 'Clear';
-                                clearBtn.style.fontSize = '0.6rem';
-                                clearBtn.style.marginLeft = '4px';
-                                clearBtn.onclick = () => {
-                                    aiKey.value = '';
-                                    if (status) status.remove();
-                                    if (clearBtn) clearBtn.remove();
-                                    aiKey.style.display = '';
-                                    window._intelConfigUserTouched = 0;
-                                };
-                                aiKeyWrap.appendChild(clearBtn);
-                            }
-                        } else {
-                            aiKey.value = '•••••••• (set)';
-                        }
-                    } else {
-                        aiKey.value = '';
-                        aiKey.style.display = '';
-                        const status = document.getElementById('intel-ai-key-status');
-                        if (status) status.remove();
-                        const clearBtn = document.getElementById('intel-ai-key-clear');
-                        if (clearBtn) clearBtn.remove();
-                    }
-                }
-                const aiModel = document.getElementById('intel-ai-model');
                 if (aiModel && s.intel_ai_model) aiModel.value = s.intel_ai_model;
-                const aiEnabled = document.getElementById('intel-ai-enabled');
                 if (aiEnabled) aiEnabled.checked = !!(s.intel_ai_enabled !== false);
             }
 
-            // Auto-suggest model when provider changes in Config
-            const aiProvSel = document.getElementById('intel-ai-provider');
-            const aiModelIn = document.getElementById('intel-ai-model');
-            const aiKeyIn = document.getElementById('intel-ai-key');
-            const aiEnabledIn = document.getElementById('intel-ai-enabled');
-            function markIntelUserTouched() {
-                window._intelConfigUserTouched = Date.now() + 8000; // grace period so polls don't clobber
-            }
-            if (aiProvSel && aiModelIn) {
-                aiProvSel.addEventListener('change', () => {
-                    markIntelUserTouched();
-                    if (aiProvSel.value === 'grok' && (!aiModelIn.value || aiModelIn.value === 'llama3')) {
-                        aiModelIn.value = 'grok-beta';
-                    } else if (aiProvSel.value === 'ollama' && (!aiModelIn.value || aiModelIn.value === 'grok-beta')) {
-                        aiModelIn.value = 'llama3';
+            // Key field / status is special: prefer server echo when present; during recent apply we force the "set" UI from client too.
+            if (aiKey) {
+                const serverHasKey = !!(s.intel_ai_key && s.intel_ai_key.length > 0);
+                const recentApply = (Date.now() <= (_intelTouched + 5000)); // a bit of extra stickiness right after Apply
+                if (serverHasKey || (recentApply && (window._lastAppliedAiKeyLen || 0) > 0)) {
+                    if (aiKeyWrap) {
+                        aiKey.style.display = 'none';
+                        let status = document.getElementById('intel-ai-key-status');
+                        if (!status) {
+                            status = document.createElement('span');
+                            status.id = 'intel-ai-key-status';
+                            status.style.fontSize = '0.75rem';
+                            status.style.color = '#22c55e';
+                            status.style.marginLeft = '6px';
+                            aiKeyWrap.appendChild(status);
+                        }
+                        const len = serverHasKey ? s.intel_ai_key.length : (window._lastAppliedAiKeyLen || 0);
+                        status.textContent = 'Key set (hidden for security) — length: ' + len + (recentApply ? ' (applied)' : '');
+                        let clearBtn = document.getElementById('intel-ai-key-clear');
+                        if (!clearBtn) {
+                            clearBtn = document.createElement('button');
+                            clearBtn.id = 'intel-ai-key-clear';
+                            clearBtn.textContent = 'Clear';
+                            clearBtn.style.fontSize = '0.6rem';
+                            clearBtn.style.marginLeft = '4px';
+                            clearBtn.onclick = () => {
+                                if (aiKey) aiKey.value = '';
+                                if (status) status.remove();
+                                if (clearBtn) clearBtn.remove();
+                                if (aiKey) aiKey.style.display = '';
+                                window._intelConfigUserTouched = 0;
+                                window._lastAppliedAiKeyLen = 0;
+                            };
+                            aiKeyWrap.appendChild(clearBtn);
+                        }
+                    } else {
+                        aiKey.value = '•••••••• (set)';
                     }
-                });
+                } else if (!_intelInGrace) {
+                    // Only clear the UI if outside grace AND server reports no key
+                    aiKey.value = '';
+                    aiKey.style.display = '';
+                    const status = document.getElementById('intel-ai-key-status');
+                    if (status) status.remove();
+                    const clearBtn = document.getElementById('intel-ai-key-clear');
+                    if (clearBtn) clearBtn.remove();
+                }
             }
-            if (aiKeyIn) aiKeyIn.addEventListener('input', markIntelUserTouched);
-            if (aiModelIn) aiModelIn.addEventListener('input', markIntelUserTouched);
-            if (aiEnabledIn) aiEnabledIn.addEventListener('change', markIntelUserTouched);
+
+            // Remember last applied length for sticky UI even across a poll that hasn't echoed yet
+            if (s.intel_ai_key && s.intel_ai_key.length > 0) {
+                window._lastAppliedAiKeyLen = s.intel_ai_key.length;
+            }
+
+            // Auto-suggest model when provider changes in Config (attach listeners only once)
+            if (!window._intelListenersAttached) {
+                const aiProvSel = document.getElementById('intel-ai-provider');
+                const aiModelIn = document.getElementById('intel-ai-model');
+                const aiKeyIn = document.getElementById('intel-ai-key');
+                const aiEnabledIn = document.getElementById('intel-ai-enabled');
+                function markIntelUserTouched() {
+                    window._intelConfigUserTouched = Date.now() + 12000; // grace so polls don't clobber while editing
+                }
+                if (aiProvSel && aiModelIn) {
+                    aiProvSel.addEventListener('change', () => {
+                        markIntelUserTouched();
+                        if (aiProvSel.value === 'grok' && (!aiModelIn.value || aiModelIn.value === 'llama3' || aiModelIn.value === 'grok-beta')) {
+                            aiModelIn.value = 'grok-3';
+                        } else if (aiProvSel.value === 'ollama' && (!aiModelIn.value || aiModelIn.value === 'grok-beta')) {
+                            aiModelIn.value = 'llama3';
+                        }
+                        if (aiProvSel.value === 'grok') {
+                            aiModelIn.value = 'grok-3';
+                        }
+                    });
+                }
+                if (aiKeyIn) aiKeyIn.addEventListener('input', markIntelUserTouched);
+                if (aiModelIn) aiModelIn.addEventListener('input', markIntelUserTouched);
+                if (aiEnabledIn) aiEnabledIn.addEventListener('change', markIntelUserTouched);
+                window._intelListenersAttached = true;
+            }
 
             // L1-L3 commitments (L1 from live quote intents if available, L2/L3 demo for now)
 
@@ -969,11 +1154,30 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const topList = document.getElementById('intel-top-list');
             if (topList && s.top_competitors && Array.isArray(s.top_competitors) && s.top_competitors.length) {
                 topList.innerHTML = s.top_competitors.map(c => {
-                    const id = c.domain && c.domain !== 'no-domain' ? `${c.account} (${c.domain})` : c.account;
-                    return `<div>${id} | ${c.last_spread}% / ${c.avg_spread}% | act:${c.activity} | ${c.sides}</div>`;
+                    const display = c.domain && c.domain !== 'no-domain' ? `${c.account} (${c.domain})` : c.account;
+                    const full = c.account_full || c.account;
+                    // Clickable rows: clicking fills the Analyze input with the real full r-address
+                    return `<div data-full="${full}" style="cursor:pointer; padding:2px 0;" title="Click to use this address for Analyze with AI">${display} | ${c.last_spread}% / ${c.avg_spread}% | act:${c.activity} | ${c.sides}</div>`;
                 }).join('');
+
+                // Attach click handlers to fill the analyze address input (do this after innerHTML)
+                topList.querySelectorAll('div[data-full]').forEach(row => {
+                    row.onclick = () => {
+                        const input = document.getElementById('intel-analyze-addr');
+                        if (input) {
+                            input.value = row.getAttribute('data-full');
+                            // optional: auto-trigger the analyze? user can still click the button
+                            const analyzeBtn = document.getElementById('btn-analyze-addr');
+                            if (analyzeBtn) {
+                                // flash the button to show it's ready
+                                analyzeBtn.style.boxShadow = '0 0 0 3px #8b5cf6';
+                                setTimeout(() => { if (analyzeBtn) analyzeBtn.style.boxShadow = ''; }, 800);
+                            }
+                        }
+                    };
+                });
             } else if (topList) {
-                topList.innerHTML = 'No competitor profiles yet — start live tester for on-chain scrape.';
+                topList.innerHTML = 'No competitor profiles yet — start live tester for on-chain scrape. (Real r-addresses will appear in the list on the right and be clickable to auto-fill the Analyze box on the left.)';
             }
 
             // AI fields in Intelligence tab
@@ -1328,33 +1532,220 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 });
             }
 
-            // Config apply button (demo)
-            const applyBtn = document.getElementById('btn-apply-config');
-            if (applyBtn) {
-                applyBtn.addEventListener('click', () => {
-                    const intelConfig = {
-                        provider: (document.getElementById('intel-ai-provider') || {}).value,
-                        key: (document.getElementById('intel-ai-key') || {}).value ? '********' : '',
-                        model: (document.getElementById('intel-ai-model') || {}).value,
-                        enabled: !!(document.getElementById('intel-ai-enabled') || {}).checked
-                    };
-                    if (window._current_state) {
-                        window._current_state.intel_ai_provider = (document.getElementById('intel-ai-provider') || {}).value;
-                        window._current_state.intel_ai_key = (document.getElementById('intel-ai-key') || {}).value;
-                        window._current_state.intel_ai_model = (document.getElementById('intel-ai-model') || {}).value;
-                        window._current_state.intel_ai_enabled = !!(document.getElementById('intel-ai-enabled') || {}).checked;
+            // Fetch available models for the current intel key (uses the /list_models backend)
+            async function fetchAvailableModels() {
+                const resDiv = document.getElementById('model-list-result');
+                if (!resDiv) return;
+
+                // First, push the current form values (provider + key + model + enabled) to the server
+                // so /list_models sees the key that the user just typed.
+                const provEl = document.getElementById('intel-ai-provider');
+                const keyIn = document.getElementById('intel-ai-key');
+                const modelEl = document.getElementById('intel-ai-model');
+                const enEl = document.getElementById('intel-ai-enabled');
+
+                const provider = provEl ? provEl.value : 'grok';
+                const keyVal = keyIn ? keyIn.value : '';
+                const model = modelEl ? modelEl.value : 'grok-3';
+                const enabled = !!(enEl && enEl.checked);
+
+                if (keyVal) {
+                    try {
+                        await fetch('/set_intel_config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ provider, key: keyVal, model, enabled })
+                        });
+                        // Update the green "Key set" status immediately (same logic as Apply button)
+                        const aiKeyWrap = keyIn ? keyIn.parentElement : null;
+                        if (keyIn && aiKeyWrap) {
+                            keyIn.style.display = 'none';
+                            let status = document.getElementById('intel-ai-key-status');
+                            if (!status) {
+                                status = document.createElement('span');
+                                status.id = 'intel-ai-key-status';
+                                status.style.fontSize = '0.75rem';
+                                status.style.color = '#22c55e';
+                                status.style.marginLeft = '6px';
+                                aiKeyWrap.appendChild(status);
+                            }
+                            status.textContent = 'Key set (hidden for security) — length: ' + keyVal.length + ' (applied for model fetch)';
+                        }
+                    } catch (e) {
+                        console.warn('Auto-apply before model fetch failed', e);
                     }
-                    // Push to server so /analyze_competitor and future polls use the live key (demo only, local)
+                }
+
+                resDiv.textContent = 'Querying xAI /v1/models with the applied key...';
+                try {
+                    const r = await fetch('/list_models');
+                    const data = await r.json();
+                    if (data.error) {
+                        resDiv.innerHTML = '<span style="color:#f87171">Error: ' + data.error + '</span>';
+                    } else if (data.models && data.models.length > 0) {
+                        // Always ensure grok-3 is available as a strong recommendation
+                        let models = [...data.models];
+                        if (!models.includes('grok-3')) {
+                            models.unshift('grok-3');
+                        }
+                        // Put grok-3 first
+                        models = models.filter(m => m !== 'grok-3');
+                        models.unshift('grok-3');
+
+                        let options = models.map(m => {
+                            const label = m === 'grok-3' ? 'grok-3 (recommended)' : m;
+                            return `<option value="${m}">${label}</option>`;
+                        }).join('');
+
+                        resDiv.innerHTML = (data.note ? data.note + '<br>' : '') + 
+                            'Select model (auto-applies on change):<br>' +
+                            `<select id="temp-model-select" style="width:100%; font-size:0.8rem; margin-top:4px;">${options}</select>`;
+
+                        setTimeout(() => {
+                            const sel = document.getElementById('temp-model-select');
+                            if (sel) {
+                                sel.addEventListener('change', () => {
+                                    if (sel.value) {
+                                        useModel(sel.value);
+                                    }
+                                });
+                                sel.value = 'grok-3';
+                            }
+                        }, 0);
+                    } else {
+                        resDiv.innerHTML = 'No models from API. <button onclick="useModel(\'grok-3\')">Try grok-3 (recommended)</button>';
+                    }
+                } catch (e) {
+                    resDiv.innerHTML = '<span style="color:#f87171">Fetch failed: ' + e + '</span>';
+                }
+            }
+
+            function useModel(modelName) {
+                const modelInput = document.getElementById('intel-ai-model');
+                if (modelInput) {
+                    modelInput.value = modelName;
+                    // flash to show it changed
+                    modelInput.style.background = '#1e40af';
+                    setTimeout(() => { if (modelInput) modelInput.style.background = ''; }, 600);
+                }
+                // Also auto-apply so the Analyze button immediately uses the chosen model
+                const applyBtn = document.getElementById('btn-apply-config');
+                if (applyBtn) {
+                    applyBtn.click();
+                } else {
+                    // Fallback: do the POST ourselves
+                    const provEl = document.getElementById('intel-ai-provider');
+                    const keyIn = document.getElementById('intel-ai-key');
+                    const enEl = document.getElementById('intel-ai-enabled');
                     fetch('/set_intel_config', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            provider: (document.getElementById('intel-ai-provider') || {}).value,
-                            key: (document.getElementById('intel-ai-key') || {}).value,
-                            model: (document.getElementById('intel-ai-model') || {}).value,
-                            enabled: !!(document.getElementById('intel-ai-enabled') || {}).checked
+                            provider: provEl ? provEl.value : 'grok',
+                            key: keyIn ? keyIn.value : '',
+                            model: modelName,
+                            enabled: !!(enEl && enEl.checked)
                         })
+                    });
+                }
+            }
+
+            // Make sure the helpers are available globally too (defensive for any inline or timing issues)
+            window.fetchAvailableModels = fetchAvailableModels;
+            window.useModel = useModel;
+
+            // Wire the fetch models button (using addEventListener for reliable scope)
+            const fetchModelsBtn = document.getElementById('btn-fetch-models');
+            if (fetchModelsBtn) {
+                fetchModelsBtn.addEventListener('click', () => {
+                    if (typeof window.fetchAvailableModels === 'function') {
+                        window.fetchAvailableModels();
+                    } else {
+                        console.error('fetchAvailableModels not available');
+                        const resDiv = document.getElementById('model-list-result');
+                        if (resDiv) resDiv.textContent = 'Error: function not loaded. Hard refresh the page (Ctrl+Shift+R) or restart the tester.';
+                    }
+                });
+            }
+
+            // Config apply button (demo)
+            const applyBtn = document.getElementById('btn-apply-config');
+            if (applyBtn) {
+                applyBtn.addEventListener('click', () => {
+                    const provEl = document.getElementById('intel-ai-provider');
+                    const keyIn = document.getElementById('intel-ai-key');
+                    const modelEl = document.getElementById('intel-ai-model');
+                    const enEl = document.getElementById('intel-ai-enabled');
+
+                    const provider = provEl ? provEl.value : 'stub';
+                    const keyVal = keyIn ? keyIn.value : '';
+                    const model = modelEl ? modelEl.value : 'grok-3';
+                    const enabled = !!(enEl && enEl.checked);
+
+                    const intelConfig = { provider: provider, key: keyVal ? '********' : '', model: model, enabled: enabled };
+
+                    if (window._current_state) {
+                        window._current_state.intel_ai_provider = provider;
+                        window._current_state.intel_ai_key = keyVal;
+                        window._current_state.intel_ai_model = model;
+                        window._current_state.intel_ai_enabled = enabled;
+                    }
+
+                    // Push to server (updates _current_state immediately; /analyze uses it right away)
+                    fetch('/set_intel_config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ provider: provider, key: keyVal, model: model, enabled: enabled })
+                    }).then(() => {
+                        // Immediate client feedback + force values so "grok" + key status hold visibly even before next poll
+                        if (provEl) provEl.value = provider;
+                        if (modelEl) {
+                            if (provider === 'grok' && (!modelEl.value || modelEl.value === 'llama3')) {
+                                modelEl.value = 'grok-3';
+                            } else {
+                                modelEl.value = model;
+                            }
+                        }
+                        const aiKey = document.getElementById('intel-ai-key');
+                        const aiKeyWrap = document.getElementById('intel-ai-key-wrap') || (aiKey ? aiKey.parentElement : null);
+                        if (keyVal.length > 0 && aiKey && aiKeyWrap) {
+                            aiKey.style.display = 'none';
+                            window._lastAppliedAiKeyLen = keyVal.length;
+                            let status = document.getElementById('intel-ai-key-status');
+                            if (!status) {
+                                status = document.createElement('span');
+                                status.id = 'intel-ai-key-status';
+                                status.style.fontSize = '0.75rem';
+                                status.style.color = '#22c55e';
+                                status.style.marginLeft = '6px';
+                                aiKeyWrap.appendChild(status);
+                            }
+                            status.textContent = 'Key set (hidden for security) — length: ' + keyVal.length + ' (applied)';
+                            let clearBtn = document.getElementById('intel-ai-key-clear');
+                            if (!clearBtn) {
+                                clearBtn = document.createElement('button');
+                                clearBtn.id = 'intel-ai-key-clear';
+                                clearBtn.textContent = 'Clear';
+                                clearBtn.style.fontSize = '0.6rem';
+                                clearBtn.style.marginLeft = '4px';
+                                clearBtn.onclick = () => {
+                                    if (aiKey) aiKey.value = '';
+                                    if (status) status.remove();
+                                    if (clearBtn) clearBtn.remove();
+                                    if (aiKey) aiKey.style.display = '';
+                                    window._intelConfigUserTouched = 0;
+                                    window._lastAppliedAiKeyLen = 0;
+                                };
+                                aiKeyWrap.appendChild(clearBtn);
+                            }
+                        }
+                        // Long grace so renderLive population cannot clobber the visual right after commit (tester push race)
+                        window._intelConfigUserTouched = Date.now() + 45000; // 45s
                     }).catch(() => {});
+
+                    // Also immediately extend grace on click (before promise resolves) so very next 800ms poll is less likely to race the .then
+                    window._intelConfigUserTouched = Date.now() + 45000;
+
                     alert('Config & inventory settings are demo-only in the HUD.\n\nIntelligence API config captured (demo):\n' + JSON.stringify(intelConfig, null, 2) + 
                           '\n\nReal changes (L1-L3 sizes, risk capital, profile params, inventory target, AI keys) are made in config/config.yaml or the main Streamlit GUI (which loads the live runtime JSON from the tester).\n\nAI is advisory only for competitor address trending — it does not touch A-S reservation math.');
                 });
@@ -1428,6 +1819,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         lastState.competitor_skim_advice = lastState.competitor_pressure < 0.3 ?
                             "SCRAPE HARDER: Low pressure. A-S will go more aggressive." :
                             "Monitor pressure. Let A-S math decide.";
+                        // Give demo data with full addresses so the Analyze box can get a usable (demo) r-address
+                        lastState.top_competitors = [
+                            {account: "rDemoM1...", account_full: "rDemoMaker1AddressForGrokAnalysisTest123456789", last_spread: 0.075, avg_spread: 0.085, activity: 650, sides: "b180/a95"},
+                            {account: "rDemoM2...", account_full: "rDemoMaker2AddressForGrokAnalysisTest987654321", last_spread: 0.12, avg_spread: 0.105, activity: 420, sides: "b55/a210"},
+                        ];
                         renderLive(lastState);
                     }
                     const log = document.getElementById('intel-scrape-log');
@@ -1443,9 +1839,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     if (log) log.textContent = 'Historical scrape simulated (1h ledger walk). In real: extend scrape_historical() with AccountTx / repeated BookOffers over time.';
                     // Populate some demo top competitors
                     if (lastState) {
+                        // Use plausible full-length fake r-addresses so "Analyze with AI" has something real-looking to send
                         lastState.top_competitors = [
-                            {account: "rComp1...", last_spread: 0.082, avg_spread: 0.091, activity: 1240, sides: "b312/a289"},
-                            {account: "rComp2...", last_spread: 0.067, avg_spread: 0.071, activity: 890, sides: "b201/a177"},
+                            {account: "rComp1...", account_full: "rComp1DemoAddressForTestingAIBotAnalysis123456", last_spread: 0.082, avg_spread: 0.091, activity: 1240, sides: "b312/a289"},
+                            {account: "rComp2...", account_full: "rComp2DemoAddressForTestingAIBotAnalysis654321", last_spread: 0.067, avg_spread: 0.071, activity: 890, sides: "b201/a177"},
                         ];
                         lastState.competitor_depth_xrp = 142.3;
                         renderLive(lastState);
@@ -1458,15 +1855,39 @@ The A-S strategy itself decides presence via reservation price being inside the 
             if (analyzeBtn) {
                 analyzeBtn.addEventListener('click', async () => {
                     triggerAnim(analyzeBtn, 'btn-press', 120);
-                    const addr = (document.getElementById('intel-analyze-addr') || {}).value || 'rDemoCompetitorAddress';
+                    let addrInput = (document.getElementById('intel-analyze-addr') || {}).value || '';
+                    // If empty or placeholder/demo, try to pull first real full r-address.
+                    // Prefer data-full attributes on the (now clickable) list items.
+                    if (!addrInput || addrInput.includes('Demo') || addrInput.includes('r...') || addrInput.length < 25) {
+                        const listEl = document.getElementById('intel-top-list');
+                        if (listEl) {
+                            const firstFull = listEl.querySelector('div[data-full]');
+                            if (firstFull && firstFull.getAttribute('data-full')) {
+                                addrInput = firstFull.getAttribute('data-full');
+                            } else if (listEl.textContent) {
+                                // fallback crude parse for full r-address (longer than truncated display)
+                                const match = listEl.textContent.match(/r[a-zA-Z0-9]{25,}/);
+                                if (match) addrInput = match[0];
+                            }
+                        }
+                    }
+                    const addr = addrInput || 'rDemoCompetitorAddress';
                     const resultEl = document.getElementById('intel-ai-result');
                     if (resultEl) {
                         resultEl.textContent = `Calling ${ (document.getElementById('intel-ai-provider') || {}).value || 'AI' } for ${addr}...`;
                         try {
+                            // Send address + any live intel we have from the last /state poll so the server
+                            // can build the richest possible prompt for the Grok suggestion (pressure, spreads, inventory).
+                            const payload = { address: addr };
+                            if (lastState) {
+                                if (lastState.competitor_pressure != null) payload.competitor_pressure = lastState.competitor_pressure;
+                                if (lastState.competitor_observed_spread_pct != null) payload.observed_spread_pct = lastState.competitor_observed_spread_pct;
+                                if (lastState.inventory_label) payload.inventory_label = lastState.inventory_label;
+                            }
                             const resp = await fetch('/analyze_competitor', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ address: addr })
+                                body: JSON.stringify(payload)
                             });
                             const data = await resp.json();
                             resultEl.textContent = data.result || 'No result from analysis.';

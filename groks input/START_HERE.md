@@ -18,6 +18,7 @@ Optional: **XLedgerMate Dashboard** on :8501 for a lighter view only.
 
 | File | Use |
 |------|-----|
+| **[../docs/PURE_AS_CRITICAL_PATH.md](../docs/PURE_AS_CRITICAL_PATH.md)** | **WS + pure A-S checklist** (moving off hard gates) |
 | **[FOR_AI_AND_FUTURE_SESSIONS.md](FOR_AI_AND_FUTURE_SESSIONS.md)** | VPS IP, SSH, milestones, clean restart |
 | **[collab/THREAD.md](collab/THREAD.md)** | **Grok ↔ Cursor** — one thread file |
 | **[collab/OPERATOR_NOTES.md](collab/OPERATOR_NOTES.md)** | Your priorities both AIs should respect |

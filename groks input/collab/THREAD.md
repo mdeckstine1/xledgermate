@@ -7,9 +7,311 @@
 
 ---
 
+## 2026-06-10 — Cursor (doc consolidation + Pure A-S critical path — boss directive)
+
+**Boss:** merge like docs, commit uncommitted work, move off hard gates toward pure A-S, make the prioritized list our critical path.
+
+**Done:**
+
+| Change | Detail |
+|--------|--------|
+| **`docs/PURE_AS_CRITICAL_PATH.md`** | **Single checklist** — Phase 0 (done) + Phase A–E (measurement → production path → exploitation → infra → deferred). Promotion ladder. Doc map. Run commands. |
+| **`groks input/CURSOR_HANDOFF_ROADMAP.md`** | Slimmed to session quick start (run commands + file pack + golden rules). Tasks live in critical path only. |
+| **`docs/IMPLEMENTATION_PLAN.md`** | Removed duplicate 11k block + duplicate "Competitive Dominance" section; Tier 3 points to critical path. |
+| **Cross-refs** | README, groks input/README, START_HERE, TO_CURSOR, OPERATOR_NOTES, collab/README, WS_AS_MANUAL, WS_HANDOFF, FOR_AI milestone. |
+| **Commit** | All pending experimental + doc changes in this sweep. |
+
+**Direction locked:** Hard `market_edge_met` = legacy / sacred data generator on VPS. **Production target** = WS + pure A-S + pressure + advisory Grok. **Next code:** Phase **A1** sacred economics A/B (pure vs +pressure vs +AI).
+
+**Phase A (start here):**
+- [ ] A1 Economics A/B in grokster/replay
+- [ ] A2 Runtime JSON analysis script
+- [ ] A3 Gamma/kappa calibration profile
+
+See `docs/PURE_AS_CRITICAL_PATH.md` for full list.
+
+— Cursor
+
+---
+
+## 2026-06-10 — Grok (Cash added + full docs/readme sweep + complete CURSOR_HANDOFF_ROADMAP created for switch to Cursor)
+
+**Summary of work executed:**
+- User: "ok, i added cash, please continue" → pulled latest local experimental runtime (HUD was already live from ~4:19pm run), confirmed pure A-S + Grok state (5 competitors, pressure 0.41, A-S reservation/opt spread correctly producing 0 quotes on 0.074% book, grok-3 configured, 145+ samples), VPS background fetches for sacred gated post-cash contrast (ssh quoting friction noted but data from prior snaps + runtime_state show ~252 portfolio).
+- Created brand new `groks input/CURSOR_HANDOFF_ROADMAP.md` — self-contained complete handoff document for the switch to Cursor. Includes: current status snapshot (cash, HUD live, exact 5 competitors with activity, A-S numbers), run command for unlimited experimental (`--seconds 0 --serve-hud ... grok-3`), file map (must-load sources), Grok integration details (Bearer xai- key, endpoint, current_prompt extraction, exploitation fields), architecture (sacred gated vs experimental pure), Cursor-specific loading tips + example first prompt, safety rules (advisory only, never mutate A-S core or deploy to VPS), open items (let it cook, review real Grok exploitation outputs on the heavy bidder, implement nicknames future, richer prompt TODOs), and links to all updated readmes.
+- Updated **all relevant readme / doc / handoff files** for consistency (root README.md, docs/WS_AS_MANUAL.md + STRATEGY + IMPLEMENTATION_PLAN, experimental/ws_feed/README + WS_HANDOFF + PROBE, groks input/FOR_AI_AND_FUTURE_SESSIONS.md (new milestone row), groks input/collab/THREAD/TO_CURSOR/START_HERE/README, THE_AI_DISCUSSION, vps readmes, CHANGELOG, etc.). Every one now points to the new CURSOR_HANDOFF_ROADMAP + has refreshed status on real Grok exploitation, pure A-S WS tester, cash, limit removal, HUD layout, and dual-branch discipline.
+- Minor code/docs hygiene while touching: confirmed unlimited default + docstring in live_pure_as_tester, current exploitation prompt in hud + analyzer, etc.
+- Result: Clean, complete handoff package so Cursor (or future agents) can pick up the exploitation thread immediately without re-deriving context. HUD was serving during the work (user can open :8765 right now to click "Analyze with AI" on the 5 makers).
+
+**Current experimental state (for Cursor to continue from):**
+- HUD live on 8765, pure A-S on real WS, grok-3 wired (on-demand rich exploitation prompt focused on holes/tactics/positioning/skim/value-bag; per-sample lighter).
+- 5 competitors with real activity (notably the one-sided rJw5... heavy bidder).
+- Cash in the account (~252 portfolio in state).
+- Let long runs cook (no 300s cap) to accumulate data for Grok to suggest concrete ways to exploit vs these makers.
+
+**Next for Cursor:** Load CURSOR_HANDOFF_ROADMAP.md + the 8 key source files listed in its §4. Run or continue the tester. Review/paste real Grok outputs from the HUD Intelligence tab. Propose + implement the next exploitation leverage (richer prompts per the TODOs, nickname map, analysis helper over the runtime json, advisory signal wiring, etc.). Update this THREAD (sign — Cursor), the roadmap, and FOR_AI milestones on progress. Respect operator notes and sacred/experimental split.
+
+See the new `groks input/CURSOR_HANDOFF_ROADMAP.md` for the full package.
+
+— Grok (handoff complete, all readmes updated)
+
+---
+
+## 2026-06-10 — Grok (Real Grok response via HUD "Analyze with AI" with grok-3 + model discovery dropdown now working)
+
+**Boss report (verbatim):**
+[HUD /analyze] provider=grok had_key=True (len=84) enabled=True model=grok-3 | REAL GROK RESPONSE:
+
+**Analysis of rDcMurczYSvcQznvtKr59nRbrWr6pmxrsZ (RLUSD/XRP):**
+
+[full analysis of defensive quote-refresh behavior, clip sizes, cancel hygiene, stable presence, actionable summary for pure A-S: quote 0.12–0.14% inside at 60-70% size, cancel on ≥0.10% mid move, stay inside pressure band...]
+
+**nice!!!**
+
+**What landed:**
+- Real end-to-end xAI Grok call succeeding from the Intelligence tab "Analyze with AI" button (after many 400s on grok-beta/grok-2-1212).
+- Model discovery: "Fetch available models for this key" button now fully functional. Calls real `/list_models` (proxies to xAI `/v1/models` using the key from `_current_state`). Renders as proper `<select>` dropdown (not flat `<code>` list). Always forces `grok-3` to top as "(recommended)" + pre-selects it. Change in dropdown auto-calls `useModel` + Apply.
+- All references, defaults, help text, launch examples, error messages, auto-suggest logic, and JS fallbacks updated from `grok-beta` → `grok-3` (and `grok-3-mini` as alt).
+- Updated error surfacing, auto-apply on fetch, hard-refresh reminders, and help text in Config card.
+- The per-sample stub AI still used for rate-limit protection; dedicated address analysis is the real Grok path.
+- Competitor scraping + "click row to fill address" was already working; now the AI layer on top delivers real value (on-chain patterns + pressure context → concrete skimming advice).
+
+**Key learning:**
+The `/v1/models` list for a given key can be narrow or include lots of preview/experimental names (grok-4.20-*, grok-imagine-*, etc.). Always surface a known-good chat model like grok-3 at the top regardless. The list is authoritative for what the key can see, but chat/completions may still 400 on some listed ones.
+
+**What to do now (boss):**
+See the updated list at the bottom of this entry (or in the next Grok reply). The integration is now "real" — we can iterate on prompt quality, wiring the signal into PureQuotePath, UI polish, filtering non-chat models, etc.
+
+All prior AI-advisory / pressure / pure A-S scaffolding remains. This was the final missing piece for live Grok on the experimental HUD.
+
+— Grok (real Grok competitor analysis + model dropdown live)
+
+## 2026-06-09 — Grok (Analyze with AI button 400 Bad Request from x.ai even with key "stuck" + had_key=True)
+
+**Boss error (verbatim):**
+[HUD /analyze] provider=grok had_key=True (len=80) enabled=True model=grok-beta
+Error calling Grok API for rDemoCompetitorAddress: 400 Client Error: Bad Request for url: https://api.x.ai/v1/chat/completions. ...
+
+**Diagnosis:**
+- The debug line proves the Config key is now correctly in the HUD server's _current_state and the button path is attempting a **real** call (not the stub simulation). Good — the previous "key doesn't save" issues are resolved.
+- The 400 is coming back from x.ai itself (our code did `resp.raise_for_status()` and caught the HTTPError).
+- Used address = "rDemoCompetitorAddress" (the JS default when the input box is left empty or contains placeholder text). The prompt itself is fine.
+- Most common cause of 400 on x.ai /v1/chat/completions with valid key: the `model` field ("grok-beta") is not accepted for that key / current API version. xAI model names can be exact strings like "grok-beta", "grok-2-1212", "grok-3" etc. — it varies by account access.
+
+Other less likely: payload formatting, max_tokens, or the specific key not having chat/completions access yet.
+
+**Fixes landed:**
+- Server (`real_time_as_hud.py`): On any Grok call exception, now attempts to extract and include the **raw API response body** (the actual JSON error from x.ai, e.g. `{"error": {"message": "model 'grok-beta' does not exist", ...}}`). Also prints it to the tester terminal. The fallback message now explicitly suggests trying a different model name in the Config tab.
+- Frontend (`hud/index.html`):
+  - Analyze button now auto-picks the first real r-address from the "Top Scraped Competitors" list if the input is empty / still has the demo placeholder.
+  - Updated placeholder + help text in the AI analysis card to tell the user to paste from the list above, and what to do on 400 (change Model field, Apply).
+  - Model input now defaults to "grok-beta" (was llama3) and has a hint about 400s.
+- The prompt we actually send (for reference) is the long one with live context (pressure, observed spread, inventory, etc.) appended when available.
+
+**What to do now (boss):**
+1. **Full restart** of the tester (new HTML + better error code must be reloaded):
+   `python -m experimental.ws_feed.live_pure_as_tester --serve-hud ... --intel-ai-provider grok --intel-ai-key xai-... --intel-ai-model grok-beta`
+2. Hard refresh the HUD page.
+3. In **Config** tab: the model field is now pre-set to grok-beta. If you still get 400 on the next Analyze, change it to another value (common ones people try: grok-2-1212, grok-3, or whatever your xAI dashboard / "Models" page lists for your key), then click **Apply Changes**.
+4. In **Intelligence** tab: make sure the top competitors list has real entries (use Force Scrape if needed). Then either:
+   - Paste one of the r... addresses into the "AI Competitor Address Analysis" input, **or**
+   - Leave the input blank — the button will now auto-grab the first real one from the list.
+5. Click "Analyze with AI". The result box (and terminal) will now show the *exact* error body from x.ai so we can pinpoint the model/auth issue.
+
+Once we see the raw API error message we'll know the precise model string or other fix needed. The key reaching the real endpoint is progress.
+
+All the prior AI-advisory / pressure / pure A-S work is still in place; this was just surfacing the live Grok call for competitor analysis.
+
+— Grok (better error visibility + UX for Analyze button + model troubleshooting)
+
+## 2026-06-09 — Grok (UI scroll fix: "page doesn't scroll down", buttons only visible by shrinking window)
+
+**Boss report:** The Intelligence (and Config) tab buttons (Force Scrape, Analyze with AI, Apply, etc.) were present in the DOM but unreachable — had to shrink the browser window to see them. "the page doesn't scroll down."
+
+**Root cause:** Classic full-bleed flex app layout problem.
+- `body { height:100vh; display:flex; overflow:hidden }`
+- `.main { flex:1; flex-direction:column; overflow:hidden }`
+- `.page { display:none } .page.active { display:block }`
+- `.content { flex:1; overflow-y:auto }`
+
+The `.page` (the tab root) was never a flex child in the column, so the `flex:1` on its `.content` had no effect. Tall tabs (Intelligence has many cards + long "How we skim harder" text + bottom button row + AI result + marquee) simply overflowed the hidden main container and got clipped. No scrollbar ever appeared on the tab body.
+
+**Fix applied to hud/index.html:**
+- `.page` (when active) is now `flex:1; flex-direction:column; min-height:0; overflow:hidden; display:flex`
+- `.page .content` gets the proper `flex:1 1 auto; overflow-y:auto; min-height:0`
+- Live tab's top chrome (marquee + poll status + force button) marked `flex-shrink:0` so they stay pinned while the card grid scrolls.
+- Added `padding-bottom` for breathing room at the end of long tabs.
+- `html, body { height:100% }` for good measure.
+
+Now each tab's main content area will grow to fill the space below header+nav and show a vertical scrollbar when the cards/text/buttons exceed the available height — works at any window size. Sidebar keeps its own independent scroll.
+
+**Reminder:** After any `hud/index.html` edit you **must** fully restart the tester process (`python -m experimental.ws_feed.live_pure_as_tester --serve-hud ...`) so the new HTML is read and served.
+
+This was blocking easy access to the very Intelligence tab features (AI posture, Analyze with AI, Force Scrape) we were just discussing.
+
+— Grok (scrolling / layout bug fixed)
+
+## 2026-06-09 — Grok (key stuck now, but "AI suggestion is not receiving" — checked endpoints + what we actually send to x.ai)
+
+**Boss:** "ok it stuck, what are we sending via the api? because AI suggestion is not receiving. check endpoints"
+
+**Summary after code read + endpoint audit:**
+There are **two completely separate "AI suggestion" surfaces** (this explains the confusion):
+
+1. The cards in Intelligence tab: "Edge Quality", "Skimmable per AI", **Rationale**, "AI Suggested Posture".
+   - These are fed by the per-sample path in the tester (`_sample_and_decide`).
+   - Always uses `StubAIAnalyzer()` (from `experimental/ai_analysis/base.py`) — even when you have a real key set.
+   - The stub *does* receive `run_context` with `competitor_pressure` + `top_competitors` and produces text like "Competitor pressure 0.XX — defensive, good to skim harder".
+   - Its outputs are pushed in every `hud_state` → `ai_rationale` / `ai_suggested_posture` etc. → rendered into the cards.
+   - Deliberate: "per-sample always stub to avoid rate limits on every cycle; real Grok only on-demand".
+
+2. The **"Analyze with AI" button** (and the box below it, `#intel-ai-result`).
+   - This is the only path that ever talks to the real x.ai API.
+   - Calls our `POST /analyze_competitor` with the address (plus now also live intel the browser has).
+
+**Exact endpoints on the HUD (real_time_as_hud.py):**
+- `GET /state` — what the UI polls for everything (book, A-S reservation, would_quote, competitor_*, intel_ai_*, ai_rationale etc.).
+- `POST /set_intel_config` — what "Apply Changes" in Config does (writes intel_ai_provider/key/model/enabled straight into the server's `_current_state`).
+- `POST /analyze_competitor` — the one that can do real work. Body from browser: `{ "address": "r..." [, "competitor_pressure": ..., "observed_spread_pct": ..., "inventory_label": ...] }` (the optionals are new for richer suggestions).
+- Minor: `POST /state`, `GET /qr`, `/`.
+
+**What the browser actually sends for the "Analyze" action (hud/index.html):**
+```js
+fetch('/analyze_competitor', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({ address: addr, /* + live pressure/observed/inv from lastState if present */ })
+});
+```
+
+**What *we* then send to the real x.ai API (only if the guards pass):**
+- URL: `https://api.x.ai/v1/chat/completions`
+- Headers: `Authorization: Bearer {the key from _current_state}`, `Content-Type: application/json`
+- Payload:
+  ```json
+  {
+    "model": "grok-beta" (or whatever is in state / --intel-ai-model),
+    "messages": [{"role": "user", "content": "<the prompt>"}],
+    "max_tokens": 600,
+    "temperature": 0.6
+  }
+  ```
+- The prompt (verbatim, now enriched):
+  "You are an expert on XRPL market making and on-chain competitor analysis. Analyze the ledger address {address} for its likely market-making strategy on the RLUSD/XRP order book. Focus on: posted spreads and sizes..., aggressiveness vs defensiveness..., how our pure A-S bot can compete or skim harder against it... Base your reasoning only on public on-chain patterns..."
+  + (new) " Current live WS book context: current competitor pressure=0.XX (0=defensive/skim harder); observed L1 spread in book ~0.0XX%; our current inventory posture: XRP-heavy... " etc. (pulled from the latest pushed state or the values the UI sent in the same POST).
+
+**Guards inside the endpoint (the reason you may still get simulation text even when the key "stuck" in the Config UI):**
+- Read provider/key/model/enabled **from the HUD server's `_current_state`** at the exact moment of the call (not from the browser form).
+- If `not enabled or not key`: return sim text that includes `(provider=...)`.
+- If `provider.lower() != "grok"`: sim.
+- Then try the real requests.post; any exception → "Error calling Grok API for {addr}: {e}..." + fallback.
+- The UI "Key set length N (applied)" or prefilled status comes from `s.intel_ai_key` in the *polled /state*. The secret for the actual call lives only in server memory (set either by a successful prior `/set_intel_config` POST that carried the real string in its body, or by the tester's `hud_update_state` push when you launched with `--intel-ai-key xai-...`).
+
+**Improvements just landed for exactly this ("what are we sending" + "not receiving"):**
+- The `/analyze_competitor` handler now always prefixes the returned `result` with a debug line: `[HUD /analyze] provider=... had_key=True/False (len=N) enabled=... model=...`
+- On real success: `... | REAL GROK RESPONSE:\n\n<the content>`
+- On any sim/err path: the debug + the reason.
+- Also prints the decision to the terminal where the tester is running.
+- The prompt sent to Grok now includes the live numbers (pressure, observed spread, our inv label) so the suggestion you get back is contextualized to "skim *this* competitor *right now*" instead of generic history.
+- JS for the button now forwards the freshest intel it has from the last poll in the same POST body.
+- Updated the help text under the button and the result placeholder.
+
+**Next step for you, boss:** Full restart of the tester **with the three --intel-ai-* flags** (this guarantees the real secret string is in gui_runtime → pushed into _current_state from the very first hud_update_state, so the button sees had_key=True immediately). Hard refresh the 8765 page. Populate the competitor list (Force Scrape or wait), put a real r-address in the Analyze input (or one from the top list), click the purple button.
+
+The result box will now tell you *exactly* what the endpoint saw for the key/provider at call time, and (if it was real) will contain the Grok text that used the current pressure etc. in its prompt. If it still says "no key configured..." or "Error calling...", the box + the terminal print will tell us the precise guard or exception.
+
+(The per-sample Rationale/Posture cards will continue to be the stub version that also sees pressure — that's by design for frequency.)
+
+This gives full visibility into the API surface and should let us see real live Grok "skim harder" suggestions for the 11k XRP rebalance cases.
+
+All experimental only. Sacred untouched.
+
+— Grok (endpoint audit + made the on-demand path observable + context-rich)
+
+## 2026-06-09 — Grok (Config tab key "still isn't working": held on Apply then switched off on poll)
+
+**Boss report (verbatim):** "still isn't working, i put the key in, it held when i clicked apply changes, then switched off" / "the api key doesn't save in the config tab"
+
+**Root cause (found by reading the exact flow):**
+- /set_intel_config correctly stores the key into the HUD server's `_current_state` immediately (real key for /analyze_competitor).
+- The browser Apply handler does immediate client-side "Key set length N (applied)" + extends the `_intelConfigUserTouched` grace (previously 8-30s, now 45s + extra sticky).
+- renderLive protects the form during grace and prefers server echo for the status pill.
+- **But** the live tester (every `sample_interval`, default ~8s) builds `hud_state` from its *local* `gui_runtime` (seeded from CLI args at start, which default to provider="stub", key="") and calls `hud_update_state(hud_state)`.
+- `hud_update_state` does `_current_state.update(...)` — this **clobbers** the intel_ai_key that the form Apply had just set in the server.
+- The one-time startup merge `if _hud_current_state and key: gui_runtime[...] = ...` only ran before the first seed; there was no re-merge on subsequent sample cycles. So the next push after Apply overwrote the server key with "".
+- Result exactly as boss saw: held (client .then + short grace + maybe one poll that saw the key), then on next tester push + render poll: s.intel_ai_key falsy → population cleared the status / switched the UI "off".
+- Secondary: the Apply click handler had accumulated stray/duplicated code after the .catch (from prior protection attempts) referencing `keyVal` out of scope — this threw on every Apply (ReferenceError), so some of the extension/status logic could be unreliable.
+- Dropdown "doesn't switch" was similar grace + population race + listeners re-attached every render (harmless but noisy).
+- Note: main Streamlit ws gui key is a completely separate state; this HUD (8765) only sees what is passed via --intel-ai-* or set via its own Config form.
+
+**Fixes landed (experimental/ws_feed only):**
+1. In `live_pure_as_tester.py` (inside the main sample loop, right after comp_snapshot fetch): added the 4-line re-merge from `_hud_current_state` into `gui_runtime` on *every* decision cycle. Now any mid-run Apply in Config will be picked up before the next `hud_state` push, so the server _current_state key survives the tester's update. (The initial merge at startup remains.)
+2. Cleaned the entire `btn-apply-config` click handler in `hud/index.html`: removed the duplicate/stray post-.catch code blocks, deduped the status creation, made the immediate force + touched extension more robust (sync set + .then set, 45s grace), added `window._lastAppliedAiKeyLen` tracking.
+3. Hardened renderLive's intel population block:
+   - Grace now only skips clobber of the controls during edit; key status logic is separate and sticky.
+   - When server reports a key (or we have a recent client applied len), force the "Key set ... length" status (with "(applied)" tag right after commit).
+   - Only blank the input/status if outside grace *and* server has no key.
+   - Added `_lastAppliedAiKeyLen` fallback for the window between Apply POST and the next tester push that will now carry the key.
+   - Wrapped the change/input listeners so they attach only once (not re-added on every 800ms renderLive).
+4. Updated the small help text under the AI key fields + Apply button to clearly document the two paths (CLI --intel-ai-* prefill is recommended for a whole run; Apply is for live tweak without restart) and that this HUD state is separate from the main GUI.
+5. The protection grace on edit/Apply + immediate client status were already directionally correct; the missing piece was the tester push clobber.
+
+**For boss to test right now:**
+- **Full restart of the tester process is required** (JS changes + python loop changes; the HUD HTML is served at startup).
+- Use the prefill flags (this seeds gui_runtime correctly from the start so pushes never start empty, form shows the provider/key or status on first load, and real Grok is available for the Analyze button without relying on Apply):
+  ```
+  python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --gamma 0.35 --kappa 3.5 --profile tight_spread --verbose --intel-ai-provider grok --intel-ai-key xai-YOUR_ACTUAL_KEY_HERE --intel-ai-model grok-beta
+  ```
+- Browser: hard refresh (Ctrl+Shift+R or Cmd+Shift+R) the http://127.0.0.1:8765 page (or close/reopen tab) after the tester prints the HUD ready line.
+- Config tab: the dropdown should come up as "grok" (or switch it), key field should reflect (or show the green "Key set length..." status because of prefill). If you want to test the Apply path anyway: paste again, click Apply — it should hold the status permanently now (no more "switched off").
+- Intelligence tab: click "Force Competitor Scrape + Update". Wait for the list / pressure / advice to populate from the live WS book.
+- Pick or paste an r-address from the list into the Analyze box and hit the button. With the key in (via flags or Apply), this should now do a real POST to api.x.ai and return Grok's analysis ("how pure A-S can skim harder against this competitor").
+- Per-sample notes in Live tab remain stub (by design, rate limit protection). Real Grok = the on-demand Intelligence "Analyze with AI".
+
+With the merge fix the form Apply will now be durable for the rest of the run, and the CLI path is bulletproof for getting live Grok data flowing for the 11k XRP-only rebalance / "skim harder" predator work.
+
+All still strictly experimental on grok-ws-feed; sacred long-run + hard gate untouched.
+
+— Grok (Config key persistence race root-caused + fixed)
+
 ## 2026-06-09 — Grok (troubleshooting live HUD: no competitors / no Analyze with AI visible)
 
 **Boss feedback on the run:** "well there is no analyze wit AI, nor are there any competetors listed"
+
+**Follow-up on Config tab ("select grok doesnt switch", "paste key doesnt save still"):**
+
+The form is "live" and the tester polls/re-renders the fields from its current server state ~every 800ms (renderLive). Local edits in the form can be overwritten by the next render if the protection grace period isn't active.
+
+**The protection (in the running code):**
+- Any interaction with the intel fields (click the provider dropdown, paste/type in the key, change model, toggle enabled) sets a touched flag for ~8s.
+- During that window, renderLive skips the population block for the intel fields (provider, key, model, enabled). This gives you a short window to make your changes and click the big "Apply Changes (demo only)" button before a poll can revert the visible values in the form.
+- The provider 'change' listener immediately sets the model input to "grok-beta" (and marks touched). The protection keeps your "grok" selection in the dropdown visible during the grace period (no poll sets aiProv.value back to the old server value).
+- For the key: after you paste and click Apply, the Apply handler's .then immediately replaces the password input with the "Key set (hidden for security) — length: N (applied)" status (client-side, no wait for poll). The protection keeps the form stable during the window. On subsequent polls, when the tester state has the key (from the merge of the form POST), the status logic keeps the "set" indicator (the input is intentionally hidden for security in the demo; the "save" is the visible status + the server now has the key for /analyze_competitor).
+
+**Why it may still look like it "doesnt switch" or "doesnt save":**
+- You must restart the tester after any index.html/JS changes (the HTML/JS is read at HUD server startup). The protection and immediate status in Apply are in the latest code — restart to load it.
+- The protection only activates on actual 'change'/'input' events (clicking the dropdown or pasting/typing in the key field). Just looking doesn't trigger it.
+- You must click the "Apply Changes (demo only)" button (within the ~8s grace after your last edit) to commit the values to the server state via the POST. Just changing the form is local until Apply.
+- After Apply, the key field turns into the status (that's the "saved" indicator). The actual secret is not shown in the UI.
+- The dropdown "switch" for the model is immediate from the listener. The protection keeps the provider select on "grok".
+- Race with the tester's state send: the very next poll after Apply may still have the old values in `s` (the merge from the form POST into gui_runtime happens at the tester's sample time). Wait 1-2s or restart with the CLI flags for reliable prefill.
+- The key you have in the main Streamlit "ws gui" is for that app. This experimental tester HUD has its own separate Config for the tester's intel state (the form or the --intel-ai-* CLI flags on the tester command).
+
+**Recommended (reliable, bypasses form timing):**
+Restart the tester with the flags pre-filled:
+```
+python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --gamma 0.35 --kappa 3.5 --profile tight_spread --verbose --intel-ai-provider grok --intel-ai-key xai-YOURKEY --intel-ai-model grok-beta
+```
+
+This sets the server state on startup, so the form on load will show "grok" and the key (or the "set" status). The "Analyze with AI" button will use real Grok for the on-demand calls (once you have the competitor list and click after Force Scrape).
+
+The per-sample "AI rationale" in Live is always the stub (pressure-aware "skim harder" text) by design — to avoid rate limits on every cycle. Real live Grok data is the on-demand button in Intelligence.
+
+If after restart + flags (or form + Apply within the grace) the dropdown still "doesn't switch" the model visibly or the status doesn't appear, the protection may not be catching the interaction — make sure you trigger 'change'/'input' (click or type), and check browser console for errors. The CLI flags are the robust path for now.
+
+This should get the live Grok competitor analysis working for the 11k rebalance / skim harder experiments.
+
+— Grok (config tab persistence + protection clarification)
 
 **Follow-up on "the api key doesn't save in the config tab":**
 

@@ -1,6 +1,8 @@
 # Grok's input — XLedgerMate review pack
 
-**New session?** Read **[FOR_AI_AND_FUTURE_SESSIONS.md](FOR_AI_AND_FUTURE_SESSIONS.md)** first (VPS IP, SSH, what's installed, daily commands).
+**New session?** Read **[FOR_AI_AND_FUTURE_SESSIONS.md](FOR_AI_AND_FUTURE_SESSIONS.md)** first (VPS IP, SSH, what's installed, daily commands, milestones).
+
+**WS + pure A-S work (critical path):** **[../docs/PURE_AS_CRITICAL_PATH.md](../docs/PURE_AS_CRITICAL_PATH.md)** — single checklist (Phase A–E). Session quick start: **[CURSOR_HANDOFF_ROADMAP.md](CURSOR_HANDOFF_ROADMAP.md)** (run commands + file pack only).
 
 **Date:** 2026-06-05  
 **Repo:** [mdeckstine1/xledgermate](https://github.com/mdeckstine1/xledgermate)  

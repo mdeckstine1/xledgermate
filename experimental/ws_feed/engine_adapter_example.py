@@ -123,33 +123,45 @@ class WSBookFeedAdapter:
             size_mult = pressure_adj.size_mult
             pressure_note = pressure_adj.rationale
 
-        # AI advisory hook (inside PureQuotePath, peer to pressure per Cursor guidance).
-        # Runs after pressure so AI can see the effective competitor state.
-        # AI is strictly advisory: only further multiplies inputs (vol/size), never touches reservation or as_met.
-        # In real use, pass a real AIAnalyzer (async in tester); here we use stub simulation for the example.
+        # AI advisory hook (inside PureQuotePath, peer to pressure).
+        # When a real ai_analyzer (GrokAIAnalyzer, etc.) is passed, we call it and map the AIAnalysis result
+        # into an AIAdvisorySignal (vol_mult / size_mult / skim_harder). Still strictly advisory.
+        # In the live tester this is where real Grok gets integrated into the per-sample decision flow.
         ai_advisory = None
         ai_note = ""
-        if ai_analyzer is not None or True:  # demo path always runs a stub advisory for illustration
+        if ai_analyzer is not None:
             try:
-                # Simulate or use provided analyzer (in practice await ai_analyzer.analyze(...) in async callers)
-                p = pressure_adj.effective_pressure if pressure_adj else 0.5
-                if p < 0.4:
+                # Build minimal book_state + run_context for the analyzer
+                book_state = {"bids": [], "asks": [], "age_s": 5.0}  # placeholder; real caller passes fresh WS book
+                run_ctx = {
+                    "competitor_pressure": pressure_adj.effective_pressure if pressure_adj else 0.5,
+                    "inventory_label": "balanced",
+                }
+                # In real async context this would be awaited
+                ai_result = ai_analyzer.analyze(book_state, run_context=run_ctx) if hasattr(ai_analyzer, "analyze") else None
+                if ai_result:
+                    # Map AIAnalysis → AIAdvisorySignal (advisory only)
+                    vol_mult = 0.85 if ai_result.is_truly_skimmable else 1.0
+                    size_mult = 1.15 if ai_result.is_truly_skimmable else 1.0
+
+                    # Build a rich rationale that includes exploitation advice when Grok provides it
+                    rich_rationale = ai_result.rationale or ""
+                    if ai_result.exploitable_holes:
+                        rich_rationale += f" | Holes: {ai_result.exploitable_holes}"
+                    if ai_result.suggested_exploitative_tactics:
+                        rich_rationale += f" | Tactics: {ai_result.suggested_exploitative_tactics}"
+                    if ai_result.positioning_advice:
+                        rich_rationale += f" | Positioning: {ai_result.positioning_advice}"
+                    if ai_result.expected_skim_impact:
+                        rich_rationale += f" | Expected impact: {ai_result.expected_skim_impact}"
+
                     ai_advisory = AIAdvisorySignal(
-                        vol_mult=0.82,
-                        size_mult=1.18,
-                        confidence=0.72,
-                        skim_harder=True,
-                        rationale="Low pressure + AI micro-analysis: competitors defensive; reduce vol for tighter A-S reservation + larger size on observed spread",
-                        source="stub+intel"
-                    )
-                else:
-                    ai_advisory = AIAdvisorySignal(
-                        vol_mult=1.0,
-                        size_mult=1.0,
-                        confidence=0.55,
-                        skim_harder=False,
-                        rationale="AI: neutral/pressure-dominant; trust base A-S inputs",
-                        source="stub+intel"
+                        vol_mult=vol_mult,
+                        size_mult=size_mult,
+                        confidence=ai_result.confidence,
+                        skim_harder=ai_result.is_truly_skimmable,
+                        rationale=rich_rationale or "AI analysis",
+                        source=getattr(ai_result, "source", "ai"),
                     )
                 if ai_advisory:
                     effective_vol = effective_vol * ai_advisory.vol_mult
@@ -157,6 +169,22 @@ class WSBookFeedAdapter:
                     ai_note = f" | AI: {ai_advisory.rationale} (conf={ai_advisory.confidence:.2f})"
             except Exception as e:
                 ai_note = f" | AI advisory error: {str(e)[:60]}"
+        else:
+            # Fallback demo stub (only when no analyzer provided)
+            p = pressure_adj.effective_pressure if pressure_adj else 0.5
+            if p < 0.4:
+                ai_advisory = AIAdvisorySignal(
+                    vol_mult=0.82,
+                    size_mult=1.18,
+                    confidence=0.72,
+                    skim_harder=True,
+                    rationale="Low pressure — competitors defensive (demo stub)",
+                    source="demo-stub"
+                )
+            if ai_advisory:
+                effective_vol = effective_vol * ai_advisory.vol_mult
+                size_mult = size_mult * ai_advisory.size_mult
+                ai_note = f" | AI: {ai_advisory.rationale} (conf={ai_advisory.confidence:.2f})"
 
         # Full long-run wiring for rich context strings (inventory, momentum, policy, etc.)
         assessment = _make_minimal_assessment(book_spread_pct)  # minimal stub so dynamic policy runs

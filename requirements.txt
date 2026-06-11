@@ -8,3 +8,4 @@ pytest
 # and live testing of the committed path. Install with: pip install -r requirements.txt
 fastapi
 uvicorn[standard]
+requests  # used for real Grok/xAI calls from the HUD Intelligence tab and model discovery

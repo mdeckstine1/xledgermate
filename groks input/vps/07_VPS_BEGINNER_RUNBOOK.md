@@ -502,3 +502,6 @@ Weekly: skim report + wallet balance on explorer
 ---
 
 *You are not supposed to babysit charts. You are supposed to keep the process alive, record kills, and judge at 60 fills with the metrics in doc 05.*
+
+**Handoff note (2026-06-10):** Full experimental pure A-S + WS + real Grok exploitation context (post cash addition, live HUD at :8765, 5 competitors, exploitation prompts) + complete Cursor switch package is in groks input/CURSOR_HANDOFF_ROADMAP.md. See also docs/WS_AS_MANUAL.md. All experimental work advisory-only on grok-ws-feed; sacred Gate 2 (VPS) untouched.
+

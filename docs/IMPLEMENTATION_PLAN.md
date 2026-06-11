@@ -1,6 +1,10 @@
 # XLedgerMate — Implementation Plan: Good → Great MM
 
-*Updated: 2026-05-29 · v1.4.4 on `tier-2-polish` · mainnet pilot ~250 XRP · **Tier 1 complete · Gate 1 complete (operator sign-off) · Gate 2 current** (`tight_spread` pilot)*
+*Updated: 2026-06-10 · v1.4.4 lineage · Transitioning from hard gates to **WS + pure A-S** (experimental on `grok-ws-feed`; VPS Gate 2 sacred until swap sign-off).*
+
+**Active work checklist:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) — single source for Phase A–E tasks.  
+**Run commands / file pack:** [`groks input/CURSOR_HANDOFF_ROADMAP.md`](../groks%20input/CURSOR_HANDOFF_ROADMAP.md).  
+Sacred gated long-run data remains the validation corpus only.
 
 ## North star
 
@@ -229,11 +233,9 @@ Priority order:
 
 ---
 
-## Tier 3 — Later (institutional-grade)
+## Tier 3 — WS + pure A-S (committed production path)
 
-**WS + pure A-S (committed future path — experimental only until after Gate 2)**
-
-All WS + pure A-S work happens in `experimental/ws_feed/` (and safe GUI stubs). The sacred long-run (HTTP poll + hard gate) is never modified.
+**We are moving away from hard `market_edge_met` gates toward pure Avellaneda-Stoikov + WS book feed.** All implementation tasks live in [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md). Work stays in `experimental/ws_feed/` until post–Gate 2 wholesale swap. The sacred long-run (HTTP poll + hard gate on VPS) is **data generator only** — not modified during Gate 2.
 
 Current evidence (as of latest replay/grokster on sacred data):
 - Pure A-S (reservation inside book, no hard gate): 90.7–93.8% presence vs ~10.7% baseline hard-gate ( +80+ pp lift).
@@ -300,40 +302,7 @@ This section captures the June 2026 observations (11k XRP-only funding, no outer
 - Run live tester/HUD against the funded instance; measure presence / fills vs long-run baseline.
 - Monitor ws_book_age + large existing orders (36k+ XRP); use pressure to decide when to be the predator.
 
-**11k XRP-Only Funding + WS A-S Scaling to Predator (observations from live deployment planning + ledger queries, June 2026)**
-
-- **Funding & rebalance model**: 11k XRP only (no initial RLUSD) → 100% XRP heavy at start. Bot uses L1/L2/L3 asks (heavily skewed per inventory logic, with "XRP-only mode → competitive asks until RLUSD balance builds") to sell ~4.5–5.5k XRP and build RLUSD toward 55% target ratio. This front-loads positive skim (spread capture on sells) during the rebalance window (estimated 60–120 days depending on fill flow hitting the ladder). Once balanced, two-sided quoting sustains the skim. WS live book + competitor_pressure make the timing and sizing of these competitive asks smarter than polled + gated long-run behavior.
-
-- **No outer hard gate in WS pure path**: Unlike the sacred long-run (high "0 quotes" / low presence from "L1 too tight (e.g. 0.047% < need 0.070%)", "market_edge_met=false — hard gate; no live quotes", "book too tight → defensive only", toxicity no-touch, edge guard size reduction, momentum pauses), the WS A-S relies on pure A-S built-in math only (reservation price inside live WS best bid/ask via gamma for inventory risk; optimal spread via kappa + vol for adverse selection). WS feed provides fresher mid/L1/depth/age/message_count (vs HTTP polls). Expected presence lift: 90%+ quoting time vs ~11% baseline on the same thin-book corpus (validated in grokster replays; 93%+ flip rate on historical "Generated 0 quotes / edge thin" cases, 0% modeled high-tox among extra quotes). "Too tight" / edge checks remain useful operator signals but are not blockers in the pure path.
-
-- **Scaling, inventory, skim & compounding**: More inventory (post-rebalance + realized skim) directly enables larger absolute order_sizes / leg depth under the 0.12 max_leg cap (L1 dominant for skim capture on best prices; L2/L3 for book presence, queue position, and depth). As capital grows (e.g. 11k → 30–60k+ XRP equivalent by year-end via rebalance turnover + skim), pull scales proportionally (L1 to low thousands XRP possible while staying reasonable vs live depth). This yields higher *absolute* skim (more XRP/RLUSD volume turned over per hit rate) and compounding (larger sizes → more hits/fills → more skim → even larger capital base for next cycle's pull). Does *not* automatically produce wider spreads (A-S optimal spread is driven by observed book spread + volatility + kappa; more inventory mainly affects reservation shade and volume, not width). On tight books (common in long-run data), pure A-S + live WS still only quotes when math supports — but far more often than the gated regime.
-
-- **Live ledger reality (book_offers queries on mainnet)**: Individual offers up to 36k+ XRP exist on both sides; sampled total depth ~208k XRP asks / ~282k XRP bids. Inside market remains tight (0.04–0.13% L1 spreads consistent with long-run observations). This is *supportive* of scaling: the bot can grow L1/L2/L3 depth significantly (hundreds → thousands XRP) without being the sole liquidity or moving the book excessively. Large existing offers (deeper) provide "cover"/absorption for rebalance sells. Top-of-book is still competitive (small-to-medium offers often set the tight inside), so WS freshness + competitor_pressure ("use observed spread as real for A-S calibration" when pressure low) are critical for detecting real edges vs. noise and for "skim harder" decisions.
-
-- **P&L / presence targets & predator implications** (extrapolated from long-run +3.957 XRP net skim / 429 fills on small cap + WS uplift + no-gate higher presence + user's live observation of ~500 XRP equivalent / 24h potential in favorable conditions):
-  - Conservative blended daily (rebalance high + steady growing with compounding, tempered for tight markets / flow limits): 150–300 XRP skim (vs long-run scaled baseline ~70–80 XRP/day).
-  - Rebalance (first 60–120 days): +8k–15k XRP P&L (front-loaded from ask turnover on L1/L2/L3 while heavy).
-  - Steady + compounding: additional +15–30k+ XRP (larger L1/L2/L3 as capital grows → more absolute volume).
-  - Year-end total net P&L (skim): +25k to +45k XRP equivalent (conservative; higher end if 400+ daily sustained in good periods).
-  - Year-end bot value: 36k–56k XRP equivalent (11k start + P&L; now includes RLUSD component at target ratio after rebalance).
-  - Predator ("skim harder / beat competitors"): Low competitor pressure (defensive observed spreads / weak makers) → use as signal to be more aggressive (tighter effective reservation via observed spread, larger L1 size, more presence on those books). High pressure → A-S math naturally more defensive. Live WS + pressure lets the bot react to real competitor behavior (not just internal math) for timing and sizing. Large existing orders on ledger are opportunities (cover for our ladder) rather than pure threats.
-
-- **Current code position & gaps for achieving the target**:
-  - Architecture good: experimental/ws_feed/ (ws_book_feed, real_time_as_hud, engine_adapter_example, live_pure_as_tester) + grokster validation + avellaneda_strategy (pure A-S) + competitor_intel in market_analysis/ + Intelligence tab in HUD. Explicit commitment: "WS + pure A-S (built-in protections ONLY) ... No hard gate. No legacy heuristic guards." Higher presence validated. XRP-only rebalance handling exists ("competitive asks").
-  - Gaps (main engine still carries legacy; need to close for full pure/predator scaling): market_edge_met, "thin book → near-touch / edge guard size reduction", "market edge thin → widen", "hostile + weak edge → pause", "defensive only" still active in dynamic_quoting_policy.py, quote_decision.py, market_microstructure.py, trading_engine, etc. (even if experimental path aims to bypass). Competitor_pressure mostly advisory/display (HUD/ticker/skim_advice) — not yet first-class input to A-S (gamma/kappa, min_edge, size_multiplier, reservation). No automatic dynamic order_size ramp tied to current capital + pressure. WS age used for monitoring but not yet aggression modulator.
-  - To hit P&L / be the predator (skim harder, higher presence, beat competitors): ensure the WS pure path *actually* bypasses legacy outer gates for this deployment (force market_edge_met=True + skip size/edge reductions when as_mode=="pure"). Wire competitor_pressure deeply (low pressure → lower effective gamma / use observed spread / boost L1 size / more presence exactly where competitors are weak). Add dynamic sizing (L1 = min(configured, 0.06–0.08 * current XRP bal); boost asks during XRP-heavy rebalance). Use live WS (fresh age + depth) + pressure to decide "predator mode" (quote more / size up). Leverage AI/Grok (already in Config + /analyze_competitor) for competitor address trending to inform "go harder on this maker/level" (advisory). These turn the bot from "safe high-presence MM" into the aggressive skimmer that capitalizes on defensive books/competitors while the A-S math protects.
-
-This section captures the June 2026 observations (11k XRP-only funding, no outer hard gate, scaling/compounding math, live ledger depth vs bot sizes, P&L extrapolations, predator wiring needs) for implementation. All WS pure A-S work remains in experimental/ (sacred long-run untouched). Update cross-refs in WS_AS_MANUAL.md / STRATEGY_MANUAL.md as the pure path hardens.
-
-**Immediate next actions for this 11k XRP WS A-S instance (post this plan update)**:
-- Config tweaks (aggressive L1/L2/L3 sizes, dynamic_min_edge low/false for pure path, XRP-heavy rebalance boost).
-- Patch in experimental/ws_feed/ (engine_adapter / live tester / real_time_as_hud) to enforce pure A-S decision (bypass legacy market_edge / edge guard reductions).
-- Extend AvellanedaStrategy / policy to accept + use competitor_pressure as aggression input (e.g. adjust reservation or size_mult).
-- Add simple dynamic size helper tied to current XRP bal + pressure.
-- Run live tester/HUD against the funded instance; measure presence / fills vs long-run baseline.
-- Monitor ws_book_age + large existing orders (36k+ XRP); use pressure to decide when to be the predator.
-
-This work is now in the plan for implementation. Commit/push the update, then we can discuss the exact next code/config steps or measurements.
+*Further 11k / predator extrapolations and open tasks: see [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) Phase A–E (P&L targets are hypothesis until economics A/B + live fills validate).*
 
 ## How the Implementation Plan Looks Now (Post-Recent Work)
 
@@ -406,7 +375,7 @@ Medium-term: 2 (external fusion), 4 (predictive risk), 7 (backtesting rigor), 8 
 
 Keep everything experimental + advisory until operator sign-off. Pure A-S math (reservation inside the WS book) + replicated wiring remains the core. The intel layer is the moat that lets A-S quote more profitably and safely than peers.
 
-Add the above as a new "Competitive Dominance" subsection in Tier 3 (right after the current WS + pure A-S bullets and remaining list). Prioritize 1-5 for the next phase. Update the metrics checklist and operating rules as appropriate to reflect the new elements. See also the new `docs/WS_AS_MANUAL.md` for how the current Intelligence + Grok surface already implements the first steps of this vision.
+**Actionable tasks:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) Phase A–E. Vision detail: [`experimental/ai_analysis/THE_AI_DISCUSSION.md`](../experimental/ai_analysis/THE_AI_DISCUSSION.md).
 
 ## Related docs (already referenced)
 
@@ -431,83 +400,6 @@ Reports:   scripts/weekly_skim_report.py, scripts/portfolio_bleed_analysis.py
 Config:    config/settings.py, config/config.yaml (local, gitignored)
 Kill GUI:  gui/streamlit_gui.py (Advanced → Kill settings)
 ```
-
-## To Become the Best, Most Profitable, Competitive Market Making Bot
-
-The current Tier 3 focus (WS + pure A-S + basic competitor scraping + advisory Grok) gets us from "safe but low presence" to "high safe presence with data advantage." To truly dominate (highest realized spread bps net of fees/toxic, best capital efficiency, consistent outperformance vs other MMs on the book), we need to push the data + intelligence edge much further while keeping the deterministic pure A-S core + replicated wiring for safety and operator trust.
-
-**Core philosophy for dominance:**
-- **Data moat first**: See what competitors are actually doing (on-chain + their "trending" behavior) better and faster than they see us.
-- **Intelligence layer (advisory)**: Use Grok + (later) distilled models + external signals only to inform A-S inputs (vol, pressure, "is this edge real?") and operator decisions. Never hard rules or overrides on the reservation math.
-- **Measurement obsession**: Every change measured by realized spread bps, toxic ratio, balance PnL, and "our capture vs what a naive competitor would have got."
-- **Reliability + cost control**: The intel layer (especially Grok tokens) must be production-grade (rate limits, fallbacks, budgets) or it becomes a liability.
-
-**Suggested elements to add (proposed for Tier 3 / new "Competitive Dominance" pillar — stay experimental until post-Gate 2):**
-
-1. **Advanced Competitor Counter-Intelligence**
-   - Full historical profiling of top makers (spreads over time, size ladders, cancel-after-fill patterns, reaction to our fills/price moves).
-   - "Competitor heat map" in Intelligence tab (who is providing the real liquidity right now, who is fading).
-   - Predictive signals: "This maker usually widens 15-30s before adverse tape" → feed as extra adverse-selection input to A-S or dynamic policy.
-   - Grok prompts specifically for "how would this competitor's observed behavior change our optimal reservation/spread right now?"
-
-2. **External + Cross-Venue Signal Fusion (beyond Anodos)**
-   - CEX XRP/RLUSD (or BTC) vol, order book imbalance, funding rates, large trade flow as leading indicators for XRPL moves.
-   - Other XRPL DEXes / AMM state (liquidity migration signals).
-   - On-chain flow: large holder transfers, AMM arbitrage activity as toxicity or opportunity signals.
-   - Fuse into A-S vol input and the "is edge real?" assessment (Grok can help synthesize noisy external data).
-
-3. **Realized Spread & Profitability Optimization Loop**
-   - Not just "presence" metric — track per-fill realized bps (vs mid at quote time) net of fees, vs what competitors posted.
-   - Weekly "what would a dumb competitor have captured on the same fills?" comparison.
-   - Use Grok to analyze batches of our fills + competitor behavior to suggest gamma/kappa tweaks or quote size rules (still advisory; operator or replay validates before any change).
-   - Goal: push average realized spread bps higher while keeping toxic <15-20%.
-
-4. **Predictive / Proactive Risk (beyond current drawdown & session balance)**
-   - Early warning for "this book looks like the setup for a toxic wave" using competitor + momentum + external signals.
-   - Inventory "pre-skew" suggestions when Grok sees building pressure on one side.
-   - Auto-suggested (but operator-approved) profile switches or size caps based on 30-60m competitor heat.
-   - Better mark-to-market and kill logic that incorporates "what competitors are doing right now."
-
-5. **Grok / Intelligence Layer Productionization**
-   - Token budget + rotation + cost tracking (per day/week, with alerts).
-   - Fallbacks: local distilled model (trained on Grok labels) when API is down/slow/expensive.
-   - Prompt library + versioning (system prompts for "competitor strategy", "skim opportunity", "toxicity risk", "daily brief").
-   - Batch offline labeling of new run data (Grok labels 100-200 cycles overnight → use to improve stub or train tiny model).
-   - "Daily Competitor Brief" generated by Grok from last 24h scrape + our fills (pushed to Telegram or HUD).
-
-6. **Superior Observability & Operator Leverage (make the human the best MM)**
-   - In Intelligence tab: what-if simulator ("if we had quoted 2bp tighter with current competitor pressure, what would our expected capture have been?").
-   - "Beat the book" leaderboard: our fills vs the best competitor posted price at the time.
-   - One-click "load this cycle into Grok for deep analysis" from the decision log.
-   - Competitor "known accounts" mapping (seed with public data, let Grok help label new high-activity addresses).
-   - Full audit trail of every AI suggestion + whether operator followed it + outcome.
-
-7. **Backtesting & Simulation Rigor with Real Competitor Injection**
-   - Replay harness must be able to inject historical competitor profiles + their actual posted ladders (not just simulated WS freshness).
-   - Monte-Carlo or historical "what if we had run with this Grok-derived vol adjustment" on the full corpus.
-   - Measure not just presence, but net P&L after realistic adverse selection (using actual competitor behavior as the "taker" model).
-
-8. **Capital Efficiency & Semi-Automated Rebalancing (advisory first)**
-   - Grok-generated rebalance recommendations with "why now" rationale based on competitor pressure + our skew + expected edge.
-   - Hard safety rails around any auto-rebalance (never move more than X% without operator ack).
-   - Target: minimize manual swaps while still hitting ~55% XRP target faster than pure A-S skew alone.
-
-9. **Reliability, Cost & Multi-Instance Considerations for the Intel Layer**
-   - Grok token budgets with graceful degradation to local model.
-   - Rate-limit aware calls, retry with backoff, circuit breaker.
-   - Ability to run "shadow" Grok analysis (log what it would have suggested without using it) for measurement.
-   - Later: multi-bot coordination if we scale capital (different instances see slightly different competitors?).
-
-10. **Measurement Upgrades for Dominance**
-    - New metrics: "Competitor beat rate" (% of our aggressive quotes that were better than the best competitor at the time), "adverse selection vs observed competitor flow", "Grok suggestion acceptance rate + outcome delta".
-    - Weekly "vs other MMs" report (inferred from on-chain data — how much spread did we capture vs what was available from competitor offers).
-    - Explicit "presence when competitors are defensive" vs "presence when they are aggressive" buckets.
-
-These turn the Intelligence layer from "nice to have visibility" into a true data moat that lets pure A-S quote more profitably and safely than any peer on the same book. The sacred long-run data + our replays + live tester give us the perfect closed-loop measurement environment to validate each addition before it ever touches production.
-
-Add these under a new "Competitive Dominance" subsection in Tier 3 (after the current WS + pure A-S bullets). Prioritize 1-5 for the next phase after basic swap readiness. Keep everything experimental + advisory until operator sign-off.
-
-See also the new `docs/WS_AS_MANUAL.md` for how the current Intelligence + Grok surface already implements the first steps of this vision.
 
 ---
 
@@ -585,32 +477,5 @@ Use with Gate 1/2 pass criteria. Copy to spreadsheet or `logs/review_YYYY-MM-DD.
 | | Gate 2 pass | `tight_spread` competitive pilot (≥100 fills, toxic &lt; 20%) |
 | | Tier 2.5 next | `competitive_pilot`, edge-met gate, BookOffers ask fix |
 | (current) | Grok/xAI + Intelligence tab + pure A-S HUD | Config-driven Grok API tokens for competitor address trending (advisory AI); on-chain scraper + Intelligence nav tab live in HUD; real /analyze_competitor Grok endpoint; llama3 stub deprecated for intel path. Commit push: WS + pure A-S observation surface + competitor intel + real Grok support now functional in experimental (no sacred long-run impact). More token details / rotation / prompts to come later. |
-| 2026-06 (this session) | 11k XRP-only WS A-S deployment observations captured in plan | Only-XRP funding (100% heavy rebalance via competitive L1/L2/L3 asks); WS pure A-S (no outer hard gate / "L1 too tight" blocker — higher presence via live WS book + competitor_pressure calibration); scaling math (more inventory → higher absolute skim via larger pull + compounding as capital grows from rebalance + skim; not auto-wider spreads); live ledger (36k+ XRP single offers, 200k+/280k+ total depth — supportive of scaling to predator L1 in low thousands XRP); P&L targets (conservative year-end +25–45k XRP skim / 36–56k value from 11k start, with ~150–500 XRP/day blended potential per user live view); predator enablers (wire pressure as aggression dial, dynamic sizing, bypass legacy gates in pure path, XRP-heavy competitive asks, AI for competitor trending). Gaps: legacy market_edge_met/edge guards still in main engine; pressure mostly advisory not A-S input. Immediate changes listed in plan for implementation. |
+| 2026-06-10 | **Pure A-S critical path** | Consolidated docs; [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the single WS + pure A-S task checklist; moving from hard gates to pure A-S on `grok-ws-feed`. |
 
----
-
-## Related docs
-
-- [`STRATEGY_MANUAL.md`](STRATEGY_MANUAL.md) — strategy, profiles, defense (plain language)
-- [`OPERATOR_MANUAL.md`](OPERATOR_MANUAL.md) — GUI, kill switch, go-live
-- [`AUDIT_REPORT.md`](AUDIT_REPORT.md) — policy / posture conflicts (v1.4.1)
-- [`CHANGELOG.md`](../CHANGELOG.md) — release history
-
----
-
-## Quick reference — key code paths
-
-```
-Cycle:     engine/trading_engine.py::_run_cycle
-Policy:    core/dynamic_quoting_policy.py::resolve_dynamic_quoting_policy
-Quotes:    strategy/quote_decision.py::build_quote_adjustments
-Edge:      strategy/market_microstructure.py::resolve_effective_min_edge_pct
-Fills:     monitoring/ledger_fills.py + monitoring/fill_detection.py
-Orders:    engine/trading_engine.py::_refresh_orders + engine/order_sync.py
-Drawdown:  risk/drawdown.py (invalid mid → skip mark + no kill)
-Book mid:  connectors/xrpl_connector.py (is_trustworthy_rlusd_mid, is_book_crossed)
-Insights:  utils/session_insights.py + scripts/analyze_session.py
-Reports:   scripts/weekly_skim_report.py, scripts/portfolio_bleed_analysis.py
-Config:    config/settings.py, config/config.yaml (local, gitignored)
-Kill GUI:  gui/streamlit_gui.py (Advanced → Kill settings)
-```

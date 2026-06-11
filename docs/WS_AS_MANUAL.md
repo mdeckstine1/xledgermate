@@ -2,7 +2,9 @@
 
 *Experimental / committed future path (grok-ws-feed branch). Pure A-S + WS book feed + on-chain competitor intelligence + advisory Grok/xAI analysis.*
 
-**Status (as of this writing):** Functional in `experimental/ws_feed/`. Sacred long-run (HTTP poll + hard gate on VPS) is untouched and remains the data generator. All work here is for post-Gate 2 wholesale server replace. AI / Grok is **strictly advisory** — never touches A-S reservation price or quoting decisions.
+**Status (as of 2026-06-10, post cash addition):** Functional + actively running in `experimental/ws_feed/`. Real Grok/xAI competitor analysis via the HUD "Analyze with AI" button is live (grok-3, model fetch dropdown working). Pure A-S + WS BookFeed + competitor pressure (0.41 NEUTRAL in recent run) + 5 on-ledger competitors tracked (including heavy one-sided bidder). HUD (http://127.0.0.1:8765) serving with Intelligence tab re-laid out (AI analysis left, top scraped right). Unlimited runs supported (`--seconds 0`). Cash added to the bot account (portfolio ~252 XRP-equiv reflected in runtime_state). Sacred long-run (HTTP poll + hard gate on VPS) untouched and remains the data generator / validation corpus. All work here is for post-Gate 2 wholesale server replace. AI / Grok is **strictly advisory** — never touches A-S reservation price or quoting decisions.
+
+**Critical path:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) — task checklist. **Run commands:** `groks input/CURSOR_HANDOFF_ROADMAP.md`. Update checkboxes + FOR_AI milestones on progress.
 
 ---
 
@@ -54,15 +56,19 @@ On-chain scraping (via the live book + connector) builds per-maker profiles (pos
 
 **AI advisory (integrated in PureQuotePath)**: `AIAdvisorySignal` in `ai_analysis/base.py`. Hooked inside `compute_pure_as_decision` (after pressure, as peer per review). Further advisory mults on vol/size (e.g. low pressure + AI "skim harder" → extra boost). Attached to decision output + note. Strictly advisory; real AIAnalyzer (stub/local/grok) can be passed. See Intelligence tab + tester for live signals. Use with sacred_economics for A/B validation of "skim harder" lift.
 
-**Grok/xAI support (now live):**
-- Configured in the **Config tab** (provider=grok, real xai-... key, model=grok-beta, enabled).
-- "Apply" pushes live via `/set_intel_config` (no restart needed for the current session).
-- Real calls happen in the HUD server's `/analyze_competitor` endpoint (POST with a competitor `r...` address).
-- Prompt is focused on XRPL MM patterns + how pure A-S can compete/skim harder.
-- Output: rich rationale for the Intelligence tab + decision notes. **Never mutates A-S**.
-- CLI equivalent: `--intel-ai-provider grok --intel-ai-key xai-... --intel-ai-model grok-beta` (pre-fills state + form).
-- The per-sample "AI rationale" (in notes) still uses the enhanced local stub (which already folds in competitor pressure) to avoid rate limits. The dedicated address button is the place for real Grok on specific trending ledger addresses.
-- Llama3/stub is deprecated for the competitor intel use-case.
+**Grok/xAI support (now live with real responses):**
+- Configured in the **Config tab** (provider=grok, real xai-... key, model field + "Fetch available models for this key" button).
+- The fetch button calls real `/list_models` (xAI `/v1/models` using current key) and renders a proper `<select>` dropdown. `grok-3` is always forced to the top as "(recommended)" and pre-selected. Changing the dropdown auto-applies.
+- "Apply Changes" pushes live via `/set_intel_config` (no restart needed).
+- Real calls happen in the HUD server's `/analyze_competitor` endpoint (POST with competitor `r...` address + optional live pressure/observed-spread/inventory context from the tab).
+- Prompt is focused on XRPL MM patterns (spreads, sizes, refresh/cancel behavior, inventory signals) + how pure A-S can compete/skim harder given current competitor_pressure.
+- Output: rich rationale surfaced in the Intelligence tab result box + can feed decision notes. **Never mutates A-S**.
+- CLI equivalent: `--intel-ai-provider grok --intel-ai-key xai-... --intel-ai-model grok-3`
+- The per-sample "AI rationale" / posture cards (in Live tab) still use the enhanced local stub (folds in competitor_pressure) to avoid rate limits. The dedicated "Analyze with AI" button + address input is for full real Grok on specific scraped makers.
+- Many keys return a mix of chat + preview/experimental models (grok-4.20-*, grok-imagine-*, etc.). The UI now surfaces a clean recommended list with grok-3 at top; non-chat models should be avoided for text analysis.
+
+**Optional future ideas:**
+- Internal nicknames for competitors: a purely local (never on-chain or shared) map (e.g. small JSON file or in-memory) keyed by r-address, so the operator can assign memorable labels like "Bob the aggressive L1 sniper" or "Carol the rebalancer" for easier recall when looking at Top Scraped / analyses. The HUD could show "nickname (r...)" and support editing the map from the Config or Intelligence tab. No impact on A-S math or shared data.
 
 **How it helps skim harder (without touching A-S core):**
 - Low competitor pressure (wide/defensive observed spreads) → lower effective vol into A-S → reservation closer to mid → more presence / tighter quotes exactly where competitors are weak.
@@ -90,8 +96,9 @@ The sacred long-run (hard gate) stays untouched and continues generating the exa
 - Engine adapter + BookFeed protocol (still experimental only).
 - 30+ min probes exercising the hardened feed.
 - Post-Gate 2: swap procedure, operator opt-in, wholesale replace.
-- Grok tokens: rotation, budgets, prompt library, batch labeling for distillation (more details later).
+- Grok tokens: rotation, budgets, prompt library, richer live context in prompts, wiring real AIAdvisorySignal more deeply (more details later). Real responses now proven with grok-3.
 - Full end-to-end replay + live tester measurement against the latest 150-fill+ corpus.
+- Polish on real Grok path (model filtering in dropdown, richer prompts with full A-S state, persistent analysis history, wiring AIAdvisorySignal output more visibly into Live tab cards).
 
 See `IMPLEMENTATION_PLAN.md` (Tier 3 / WS + pure A-S section) and `experimental/ws_feed/WS_HANDOFF.md` for the detailed committed direction.
 
