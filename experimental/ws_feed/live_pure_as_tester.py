@@ -60,15 +60,11 @@ def _runtime_for_disk(runtime: dict) -> dict:
 
 from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig
-from core.perception import get_profile
-from core.profile_edge import profile_min_edge_pct
+from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter, WS_AS_VERSION
 from experimental.ws_feed.network_urls import rpc_url_to_websocket_url
 from experimental.ws_feed.pair_books import RlusdXrpPair
 from experimental.ws_feed.ws_book_feed import WsBookFeed
-from strategy.avellaneda_strategy import AvellanedaStrategy
-from strategy.quote_decision import assess_inventory, build_quote_adjustments
-from experimental.competitor_pressure import apply_competitor_pressure, from_intel_dict
-from experimental.ws_runtime_analysis import append_runtime_sample, classify_zero_quote_reason
+from experimental.ws_runtime_analysis import append_runtime_sample
 from utils.env_secrets import resolve_intel_ai_config
 from utils.logging_setup import setup_logging
 
@@ -107,55 +103,10 @@ def _build_connector(config: BotConfig) -> XRPLConnector:
     )
 
 
-def _make_minimal_assessment(book_spread_pct: float):
-    """Minimal MarketAssessment so build_quote_adjustments / dynamic policy run cleanly for logging."""
-    from core.market_conditions import (
-        CONDITION_FAVORABLE,
-        CONDITION_NEUTRAL,
-        CONDITION_DEFENSIVE,
-        CONDITION_HOSTILE,
-        MarketAssessment,
-    )
-
-    if book_spread_pct < 0.10:
-        cond = CONDITION_FAVORABLE
-        health = 75
-        label = "favorable"
-    elif book_spread_pct > 0.25:
-        cond = CONDITION_HOSTILE
-        health = 25
-        label = "hostile"
-    elif book_spread_pct > 0.18:
-        cond = CONDITION_DEFENSIVE
-        health = 42
-        label = "defensive"
-    else:
-        cond = CONDITION_NEUTRAL
-        health = 60
-        label = "neutral"
-
-    spread_status = "tight" if book_spread_pct <= 0.12 else ("normal" if book_spread_pct < 0.22 else "wide")
-
-    return MarketAssessment(
-        condition=cond,
-        condition_label=label,
-        volatility_pct=0.0,
-        volatility_level="low",
-        liquidity_score=0.78,
-        liquidity_level="high" if book_spread_pct < 0.15 else "moderate",
-        book_spread_pct=book_spread_pct,
-        book_spread_status=spread_status,
-        health_score=health,
-        recommended_profile="tight_spread",
-        recommendation_reason=f"{label} live book",
-        summary=f"{label} (health {health}) spread {book_spread_pct:.3f}%",
-    )
-
 
 async def _sample_and_decide(
     ws_feed: WsBookFeed,
-    as_strat: AvellanedaStrategy,
-    profile_name: str,
+    adapter: WSBookFeedAdapter,
     xrp_bal: float,
     rlusd_bal: float,
     target_ratio: float,
@@ -164,20 +115,12 @@ async def _sample_and_decide(
     comp_snapshot: dict | None = None,
     ai_analyzer=None,
 ) -> None:
-    """Sample current WS state and run the pure A-S + replicated wiring decision.
-
-    Also populates a runtime dict (base fields + A-S specific) so the output
-    is directly usable to feed the existing Streamlit GUI or ticker for demo
-    (load as runtime_state.json or pass to _render_* functions).
-    """
+    """Sample WS state and run PureQuotePath (no profiles / no sacred gates)."""
     state = ws_feed.state
     bb, ba = state.best_prices()
     mid = (bb + ba) / 2.0 if bb and ba else None
     spread = (ba - bb) / mid * 100.0 if mid else None
 
-    # Always update the basic live book / WS freshness fields for the HUD Live tab,
-    # even if we early-return (no valid prices yet). This prevents "no data" on the
-    # Live page right after tester restart / hard refresh.
     if runtime is not None:
         runtime.update({
             "mid_price": mid,
@@ -188,233 +131,105 @@ async def _sample_and_decide(
             "ws_message_count": state.message_count,
         })
 
-    ai = None  # ensure name is always defined in this scope for later references in note and update
-
-    if not bb or not ba or bb <= 0 or ba <= 0:
+    if not bb or not ba or bb <= 0 or ba <= 0 or not mid:
         return
 
-    mid = (bb + ba) / 2.0
-    spread = (ba - bb) / mid * 100.0
-
-    # Simple proxy for volatility from current book spread.
-    # In a full system this would come from perception / rolling returns / external vol.
-    # We use it both for the A-S model and to display in the HUD.
-    volatility_pct = max(0.5, spread * 1.5)  # at least 0.5% for demo visibility
-
-    profile = get_profile(profile_name)
-    min_edge = profile_min_edge_pct(profile)
-
-    # Inventory assessment (exact same function as long-run)
-    inv_state = assess_inventory(
-        xrp_balance=xrp_bal,
-        rlusd_balance=rlusd_bal,
-        mid_price=mid,
-        target_xrp_ratio=target_ratio,
-        skew_strength=getattr(profile, "inventory_skew_strength", 1.0),
+    intel_enabled = runtime.get("intel_ai_enabled", True) if runtime else True
+    book_for_ai = {
+        "bids": state.to_order_book().get("bids", []) if hasattr(state, "to_order_book") else [],
+        "asks": state.to_order_book().get("asks", []) if hasattr(state, "to_order_book") else [],
+        "age_s": state.age_seconds(),
+    }
+    engine_dec = await adapter.compute_pure_as_decision(
+        mid=mid,
+        best_bid=bb,
+        best_ask=ba,
+        xrp_bal=xrp_bal,
+        rlusd_bal=rlusd_bal,
+        target_ratio=target_ratio,
+        competitor_intel=comp_snapshot,
+        ai_analyzer=ai_analyzer,
+        intel_ai_enabled=intel_enabled,
+        book_state_for_ai=book_for_ai,
     )
-
-    inv_skew = 0.0
-    if "xrp_heavy" in inv_state.label:
-        inv_skew = 0.30 if "slight" not in inv_state.label else 0.08
-    elif "rlusd_heavy" in inv_state.label:
-        inv_skew = -0.30 if "slight" not in inv_state.label else -0.08
-
-    # Run the full build_quote_adjustments for the rich context strings
-    # (inventory, momentum stub=0 for live simple test, book pressure, policy, etc.)
-    # Use a minimal assessment so the dynamic policy path runs (we care about the strings).
-    assessment = _make_minimal_assessment(spread)
-    adj = build_quote_adjustments(
-        profile=profile,
-        assessment=assessment,
-        inventory=inv_state,
-        mid_momentum_pct=0.0,
-        effective_spread_l1_pct=spread / 2.0,
-        book_spread_pct=spread,
-        depth_imbalance=0.0,
-        min_edge_pct=min_edge,
-        fill_quality=None,
-        xrpl_fee_bps=2.0,
-        fund_with_xrp_only=False,
-        rlusd_balance=rlusd_bal,
-        min_order_xrp=0.1,
-        target_xrp_ratio=target_ratio,
-        inventory_max_deviation=0.12,
-        inventory_mode="market_make",
-        toxic_off_touch_latched=False,
-    )
-
-    # Pure A-S using WS-fresh book.
-    # The A-S strategy provides the protections (reservation inside the live book for quoting decision).
-    # No additional hard gates or legacy heuristics on top.
-    # Competitor pressure -> A-S inputs (formal model; reservation still decides quoting).
-    pressure_adj = None
-    effective_book_spread = spread
-    if comp_snapshot:
-        pressure_model = from_intel_dict(comp_snapshot)
-        if pressure_model:
-            pressure_adj = apply_competitor_pressure(
-                pressure_model,
-                base_volatility_pct=volatility_pct,
-                base_book_spread_pct=spread,
-                inventory_skew=inv_skew,
-            )
-            volatility_pct = pressure_adj.volatility_pct
-            effective_book_spread = pressure_adj.book_spread_pct
-            logger.info("Competitor pressure: %s", pressure_adj.rationale)
-
-    # AI analysis (if analyzer provided and enabled in Config tab): competitor-aware reasoning.
-    # Strictly advisory — used for Intelligence tab, logs, and optional input hints.
-    # AI is NEVER allowed to change A-S reservation price, optimal spread, or the core "would quote" decision.
-    intelEnabled = runtime.get("intel_ai_enabled", True) if runtime else True
-    if ai_analyzer and intelEnabled:
-        try:
-            book_for_ai = {
-                "bids": state.to_order_book().get("bids", []) if hasattr(state, "to_order_book") else [],
-                "asks": state.to_order_book().get("asks", []) if hasattr(state, "to_order_book") else [],
-                "age_s": state.age_seconds(),
-            }
-            run_ctx = {
-                "inventory_label": inv_state.label,
-                "inventory_skew": inv_skew,
-                "competitor_pressure": comp_snapshot.get("competitor_pressure") if comp_snapshot else None,
-                "top_competitors": comp_snapshot.get("top_competitors", []) if comp_snapshot else [],
-                "profile": profile_name,
-            }
-            ai = await ai_analyzer.analyze(book_for_ai, run_context=run_ctx)
-            # Real Grok (when configured) now drives the per-sample rationale in the WS pure A-S loop.
-            # Still advisory only — the A-S reservation + optimal spread math is never overridden.
-            # Result flows into the decision note and is pushed to the HUD Intelligence tab cards.
-        except Exception as e:
-            logger.debug("AI analysis failed: %s", e)
-
-    base_gamma = as_strat.gamma
-    if pressure_adj:
-        as_strat.gamma = base_gamma * pressure_adj.gamma_scale
-    try:
-        as_quote = as_strat.compute_avellaneda_quote(
-            mid_price=mid,
-            inventory_skew=inv_skew,
-            volatility_pct=volatility_pct,
-            best_bid=bb,
-            best_ask=ba,
-            book_spread_pct=effective_book_spread,
-            profile=profile,
-        )
-    finally:
-        as_strat.gamma = base_gamma
-
-    # Pure A-S decision: reservation inside the book = the math says it is safe to quote.
-    as_met = (as_quote.reservation_price > bb and as_quote.reservation_price < ba)
-
-    gen_n = 2 if as_met else 0
-    note = (
-        f"Generated {gen_n} quotes (two-sided) from mid={mid:.6f} RLUSD/XRP "
-        f"| inventory={inv_state.label} "
-        f"| {adj.decision_summary} "
-        f"| PURE A-S (built-in protection): reservation={as_quote.reservation_price:.6f} "
-        f"spread={as_quote.optimal_spread_pct:.3f}% "
-        f"(gamma={as_strat.gamma}, kappa={as_strat.kappa})"
-        + (f" | COMPETITOR: {comp_snapshot.get('competitor_skim_advice','')}" if comp_snapshot and comp_snapshot.get('competitor_skim_advice') else "")
-        + (f" | AI: {ai.rationale}" if ai and ai.rationale else "")
-        + (f" | EXPLOIT: {ai.exploitable_holes}" if ai and ai.exploitable_holes else "")
-        + (f" | TACTICS: {ai.suggested_exploitative_tactics}" if ai and ai.suggested_exploitative_tactics else "")
-        + (f" | POSITIONING: {ai.positioning_advice}" if ai and ai.positioning_advice else "")
-    )
-
-    if as_met:
-        note += f" | would quote bid~{as_quote.bid_price:.6f} ask~{as_quote.ask_price:.6f}"
-
+    note = engine_dec["quote_decision_summary"]
     logger.info(note)
 
     if verbose:
         logger.info(
-            "[LIVE WS] age=%.1fs msgs=%s book_spread=%.3f%% bb=%.6f ba=%.6f",
+            "[LIVE WS] age=%.1fs msgs=%s book_spread=%.3f%% bb=%.6f ba=%.6f | %s",
             state.age_seconds(),
             state.message_count,
             spread,
             bb,
             ba,
+            engine_dec.get("zero_quote_detail", ""),
         )
 
-    # --- Build runtime for GUI demo / compatibility ---
     if runtime is not None:
         runtime.update({
             "mid_price": mid,
             "best_bid_rlusd_per_xrp": bb,
             "best_ask_rlusd_per_xrp": ba,
-            "book_spread_pct": spread,
-            "volatility_pct": volatility_pct,
-            "inventory_label": inv_state.label,
+            "book_spread_pct": engine_dec.get("book_spread_pct", spread),
+            "volatility_pct": engine_dec.get("volatility_pct"),
+            "inventory_label": engine_dec.get("inventory_label"),
             "quote_decision_summary": note,
-            "quoting_policy_label": "PURE A-S (built-in protection)" if as_met else "PURE A-S (protected by math)",
-            "market_edge_met": as_met,  # pure A-S: reservation inside the live book (A-S math is the only protection)
-            "market_edge_pct": as_quote.optimal_spread_pct / 2.0,
-            "active_profile": profile_name,
+            "quoting_policy_label": engine_dec.get("quoting_policy_label"),
+            "market_edge_met": engine_dec.get("would_quote"),
+            "market_edge_pct": (engine_dec.get("as_optimal_spread_pct") or 0) / 2.0,
+            "ws_as_version": engine_dec.get("ws_as_version", WS_AS_VERSION),
+            "zero_quote_reason": engine_dec.get("zero_quote_reason"),
+            "zero_quote_detail": engine_dec.get("zero_quote_detail"),
             "balance_xrp": xrp_bal,
             "balance_rlusd": rlusd_bal,
             "ws_book_age_s": state.age_seconds(),
             "ws_message_count": state.message_count,
             "as_mode": "pure",
-            "as_reservation": as_quote.reservation_price,
-            "as_optimal_spread_pct": as_quote.optimal_spread_pct,
-            "as_gamma": as_strat.gamma,
-            "as_kappa": as_strat.kappa,
+            "as_reservation": engine_dec.get("as_reservation"),
+            "as_optimal_spread_pct": engine_dec.get("as_optimal_spread_pct"),
+            "as_gamma": engine_dec.get("as_gamma"),
+            "as_kappa": engine_dec.get("as_kappa"),
             "as_protected": True,
-            "as_presence_pct": None,  # caller can track session-wide
-            "pause_bids": adj.pause_bids,
-            "pause_asks": adj.pause_asks,
-            "fill_quality_score": adj.fill_quality_score,
-            # Rich competitor intelligence for Intelligence tab and A-S signal blending
-            **(comp_snapshot or {}),  # includes observed_spread, pressure, top_makers, skim_advice, etc.
-            "ai_edge_quality": ai.edge_quality_score if ai else 0.0,
-            "ai_is_skimmable": ai.is_truly_skimmable if ai else False,
-            "ai_rationale": ai.rationale if ai else "",
-            "ai_suggested_posture": ai.quote_posture if ai else "off",
-            # Intelligence API config (carried so HUD Apply in Config tab can influence saved demo json)
-            "intel_ai_provider": runtime.get("intel_ai_provider", "stub") if runtime else "stub",
-            "intel_ai_key": runtime.get("intel_ai_key", "") if runtime else "",
-            "intel_ai_model": runtime.get("intel_ai_model", "llama3") if runtime else "llama3",
-            "intel_ai_enabled": runtime.get("intel_ai_enabled", True) if runtime else True,
-            # Synthesize a simple quote intent for the ladder (demo)
+            "pause_bids": False,
+            "pause_asks": False,
+            **(comp_snapshot or {}),
+            "ai_edge_quality": engine_dec.get("ai_edge_quality", 0.0),
+            "ai_is_skimmable": engine_dec.get("ai_is_skimmable", False),
+            "ai_rationale": engine_dec.get("ai_rationale", ""),
+            "ai_suggested_posture": engine_dec.get("ai_suggested_posture", "off"),
+            "intel_ai_provider": runtime.get("intel_ai_provider", "stub"),
+            "intel_ai_key": runtime.get("intel_ai_key", ""),
+            "intel_ai_model": runtime.get("intel_ai_model", "grok-3"),
+            "intel_ai_enabled": intel_enabled,
             "quote_intents": [
-                {"level": 1, "side": "bid", "price": as_quote.bid_price, "size_xrp": as_quote.bid_size},
-                {"level": 1, "side": "ask", "price": as_quote.ask_price, "size_xrp": as_quote.ask_size},
-            ] if gen_n > 0 else [],
-            # Add a recent decision event in base format for the table
+                {"level": 1, "side": "bid", "price": engine_dec.get("suggested_bid"), "size_xrp": 1.0},
+                {"level": 1, "side": "ask", "price": engine_dec.get("suggested_ask"), "size_xrp": 1.0},
+            ] if engine_dec.get("would_quote") else [],
             "recent_decisions": runtime.get("recent_decisions", []) + [{
                 "ts_utc": datetime.now(tz=timezone.utc).isoformat(),
                 "category": "as_pure",
                 "message": note[:200],
-            }][-20:],  # keep last 20
+            }][-20:],
         })
-        ts_utc = datetime.now(tz=timezone.utc).isoformat()
         append_runtime_sample(
             runtime,
             {
-                "ts_utc": ts_utc,
+                "ts_utc": datetime.now(tz=timezone.utc).isoformat(),
                 "mid": mid,
                 "best_bid": bb,
                 "best_ask": ba,
                 "book_spread_pct": spread,
-                "as_optimal_spread_pct": as_quote.optimal_spread_pct,
-                "spread_gap_pct": spread - as_quote.optimal_spread_pct,
-                "as_reservation": as_quote.reservation_price,
-                "would_quote": as_met,
+                "as_optimal_spread_pct": engine_dec.get("as_optimal_spread_pct"),
+                "spread_gap_pct": spread - (engine_dec.get("as_optimal_spread_pct") or 0),
+                "as_reservation": engine_dec.get("as_reservation"),
+                "would_quote": engine_dec.get("would_quote"),
                 "competitor_pressure": comp_snapshot.get("competitor_pressure") if comp_snapshot else None,
                 "competitor_observed_spread_pct": comp_snapshot.get("competitor_observed_spread_pct") if comp_snapshot else None,
-                "volatility_pct": volatility_pct,
+                "volatility_pct": engine_dec.get("volatility_pct"),
                 "ws_book_age_s": state.age_seconds(),
-                "inventory_label": inv_state.label,
-                "zero_quote_reason": classify_zero_quote_reason(
-                    would_quote=as_met,
-                    best_bid=bb,
-                    best_ask=ba,
-                    reservation=as_quote.reservation_price,
-                    book_spread_pct=spread,
-                    optimal_spread_pct=as_quote.optimal_spread_pct,
-                    pause_bids=adj.pause_bids,
-                    pause_asks=adj.pause_asks,
-                ),
+                "inventory_label": engine_dec.get("inventory_label"),
+                "zero_quote_reason": engine_dec.get("zero_quote_reason"),
             },
         )
 
@@ -424,7 +239,6 @@ async def run_live_test(
     seconds: float,
     gamma: float,
     kappa: float,
-    profile: str,
     xrp_bal: float,
     rlusd_bal: float,
     target_ratio: float,
@@ -486,13 +300,13 @@ async def run_live_test(
         ai_analyzer = StubAIAnalyzer()
         logger.info("AI analysis using enhanced stub (real Grok available when --intel-ai-provider=grok + key configured).")
 
-    as_strat = AvellanedaStrategy(None, gamma=gamma, kappa=kappa, T=1.0)
+    adapter = WSBookFeedAdapter(ws_feed, gamma=gamma, kappa=kappa)
 
     duration_str = f"{seconds:.0f}s" if seconds > 0 else "unlimited (until Ctrl+C)"
     logger.info(
-        "LIVE WS + PURE A-S TEST | committed future path | WS=%s | profile=%s | gamma=%.2f kappa=%.2f | duration=%s",
+        "LIVE WS + PURE A-S v%s | WS=%s | gamma=%.2f kappa=%.2f | duration=%s | PureQuotePath (no profiles)",
+        WS_AS_VERSION,
         ws_url,
-        profile,
         gamma,
         kappa,
         duration_str,
@@ -514,7 +328,7 @@ async def run_live_test(
     # Runtime dict for GUI demo / compatibility (populated on each sample)
     gui_runtime: dict = {
         "as_mode": "pure",
-        "active_profile": profile,
+        "ws_as_version": WS_AS_VERSION,
         "dry_run": True,
         "recent_decisions": [],
         # Intelligence API config (for AI competitor address trending — advisory only)
@@ -543,8 +357,7 @@ async def run_live_test(
                 initial_comp = {}
         await _sample_and_decide(
             ws_feed,
-            as_strat,
-            profile,
+            adapter,
             xrp_bal,
             rlusd_bal,
             target_ratio,
@@ -611,7 +424,8 @@ async def run_live_test(
             "balance_xrp": gui_runtime.get("balance_xrp"),
             "balance_rlusd": gui_runtime.get("balance_rlusd"),
             "inventory_label": gui_runtime.get("inventory_label"),
-            "active_profile": gui_runtime.get("active_profile"),
+            "ws_as_version": gui_runtime.get("ws_as_version", WS_AS_VERSION),
+            "zero_quote_reason": gui_runtime.get("zero_quote_reason"),
             "bot_address": config.bot_account_address or "r... (from config)",
             **{k: v for k, v in initial_comp.items() if k not in ("top_competitors",)},
             "top_competitors": initial_comp.get("top_competitors", []),
@@ -655,8 +469,7 @@ async def run_live_test(
 
                 await _sample_and_decide(
                     ws_feed,
-                    as_strat,
-                    profile,
+                    adapter,
                     xrp_bal,
                     rlusd_bal,
                     target_ratio,
@@ -694,7 +507,8 @@ async def run_live_test(
                         "balance_xrp": gui_runtime.get("balance_xrp"),
                         "balance_rlusd": gui_runtime.get("balance_rlusd"),
                         "inventory_label": gui_runtime.get("inventory_label"),
-                        "active_profile": gui_runtime.get("active_profile"),
+                        "ws_as_version": gui_runtime.get("ws_as_version", WS_AS_VERSION),
+                        "zero_quote_reason": gui_runtime.get("zero_quote_reason"),
                         "bot_address": config.bot_account_address or "r... (set bot_account_address in config or use --xrp-bal etc for demo)",
                         # Full competitor intelligence (from persistent scraper)
                         # Feeds Intelligence tab + A-S (pressure adjusts effective vol for reservation math).
@@ -766,7 +580,6 @@ def main() -> None:
     parser.add_argument("--seconds", type=float, default=0.0, help="How long to run the live test in seconds (0 or negative = run forever until Ctrl+C; useful for long data collection like 11k+ cycles). We removed the short default so you can let it cook.")
     parser.add_argument("--gamma", type=float, default=0.35, help="A-S gamma (inventory risk aversion) - lower for more presence")
     parser.add_argument("--kappa", type=float, default=3.5, help="A-S kappa (arrival intensity) - higher for tighter/more competitive spreads")
-    parser.add_argument("--profile", default="tight_spread", help="Profile for wiring context")
     parser.add_argument("--xrp-bal", type=float, default=138.0, help="Assumed XRP balance for inventory calc")
     parser.add_argument("--rlusd-bal", type=float, default=124.0, help="Assumed RLUSD balance for inventory calc")
     parser.add_argument("--target-ratio", type=float, default=0.55, help="Target XRP ratio")
@@ -808,7 +621,6 @@ def main() -> None:
             seconds=args.seconds,
             gamma=args.gamma,
             kappa=args.kappa,
-            profile=args.profile,
             xrp_bal=args.xrp_bal,
             rlusd_bal=args.rlusd_bal,
             target_ratio=args.target_ratio,

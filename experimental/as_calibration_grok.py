@@ -303,7 +303,7 @@ def validation_commands(rec: CalibrationRecommendation, *, seconds: int = 300) -
     return [
         (
             f"python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds {seconds} "
-            f"--sample-interval 4 --gamma {g:.2f} --kappa {k:.2f} --profile tight_spread --verbose"
+            f"--sample-interval 4 --gamma {g:.2f} --kappa {k:.2f} --verbose"
         ),
         "python -m experimental.ws_runtime_analysis",
         f"python experimental/grokster.py --gamma {g:.2f} --kappa {k:.2f} --window 2000 --no-ab",

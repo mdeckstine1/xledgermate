@@ -7,6 +7,26 @@
 
 ---
 
+## 2026-06-11 — Cursor (B1 + branch `xledger-ws-as` — PureQuotePath, profiles removed)
+
+**Boss:** clean pure A-S direction; no sacred profile habit on WS path; new branch for xledger WS A-S.
+
+**Shipped:**
+- Branch: **`xledger-ws-as`** (from `grok-ws-feed`)
+- `experimental/ws_feed/pure_quote_path.py` — `PureQuotePath` v**0.1.0** (no profiles, no `build_quote_adjustments`)
+- `live_pure_as_tester.py` — unified on `WSBookFeedAdapter`; `--profile` removed
+- `engine_adapter_example.py` — thin wrapper only
+- Decision notes: `0 quotes: <reason> (<detail>)` — no more `tight_spread` / min-edge strings
+
+**Run:**
+```powershell
+python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --sample-interval 4 --verbose
+```
+
+— Cursor
+
+---
+
 ## 2026-06-10 — Cursor (Phase A3 shipped — Grok advisory A-S calibration)
 
 **Boss vision:** Grok evaluates live market + competitors to **tune** A-S — not quote yet.

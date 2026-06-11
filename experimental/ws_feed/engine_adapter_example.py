@@ -1,68 +1,31 @@
 #!/usr/bin/env python3
 """
-Minimal adapter example showing how the main engine would consume the WS + pure A-S path.
+WS book feed adapter — thin wrapper over PureQuotePath.
 
-This file lives in experimental/ only. It is documentation + a working sketch.
-It demonstrates the clean surface the future trading_engine would use.
-
-Key principle (user requirement):
-"The WS version must have the same provable wiring we have in long run, but with the ws architecture.
-When we make the switch we should have to replace what is running on the remote server with the ws version."
-
-Pure A-S only: The Avellaneda-Stoikov strategy (reservation inside the book + optimal spread)
-provides the protections. No additional hard gates or legacy heuristics.
-
-We do NOT modify engine/trading_engine.py, core/, or any sacred long-run code.
-All work here supports the eventual wholesale swap after Gate 2.
-
-Usage sketch (for future):
-    from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter
-    adapter = WSBookFeedAdapter(config)
-    book = adapter.get_current_book()
-    decision = adapter.compute_pure_as_decision(book, inventory_state, ...)
+Future trading_engine integration point. No profiles, no sacred hard gates.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from experimental.competitor_pressure import (
-    CompetitorPressure,
-    apply_competitor_pressure,
-    from_intel_dict,
-)
-from experimental.ai_analysis.base import AIAdvisorySignal  # advisory only; see AIAdvisorySignal docstring
 from experimental.ws_feed.book_feed import BookFeed
-from experimental.ws_feed.ws_book_feed import WsBookFeed
-from strategy.avellaneda_strategy import AvellanedaStrategy
-from strategy.quote_decision import assess_inventory, build_quote_adjustments
-from core.perception import get_profile
-from core.profile_edge import profile_min_edge_pct
+from experimental.ws_feed.pure_quote_path import PureQuotePath, PureQuoteDecision, WS_AS_VERSION
 
 
 class WSBookFeedAdapter:
-    """
-    Thin adapter that the main engine could use.
-
-    Responsibilities in the committed pure A-S world:
-    - Provide a fresh Book (via WS or fallback)
-    - Run the *exact same* long-run wiring (assess_inventory + build_quote_adjustments)
-    - Use pure A-S (reservation inside book) as the final presence/quoting decision
-    - Return rich decision strings for logging/GUI parity + the A-S specific numbers
-    """
+    """Engine-facing adapter: WS book + pure A-S decision."""
 
     def __init__(self, book_feed: BookFeed, gamma: float = 0.35, kappa: float = 3.5):
         self.book_feed = book_feed
-        self.as_strat = AvellanedaStrategy(None, gamma=gamma, kappa=kappa, T=1.0)
-        self.profile_name = "tight_spread"  # or loaded from config
+        self.path = PureQuotePath(gamma=gamma, kappa=kappa)
 
     def get_current_book(self) -> Dict[str, Any]:
-        """Return normalized book. Engine calls this instead of direct BookOffers."""
         if hasattr(self.book_feed, "current_order_book"):
             return self.book_feed.current_order_book()
         return {"bids": [], "asks": []}
 
-    def compute_pure_as_decision(
+    async def compute_pure_as_decision(
         self,
         mid: float,
         best_bid: float,
@@ -74,241 +37,59 @@ class WSBookFeedAdapter:
         volatility_pct: float = 0.5,
         competitor_intel: Optional[Dict[str, Any]] = None,
         inventory_skew_override: Optional[float] = None,
-        ai_analyzer: Optional[Any] = None,  # pluggable AIAnalyzer (stub / local / grok); advisory only
+        ai_analyzer: Optional[Any] = None,
+        intel_ai_enabled: bool = True,
+        book_state_for_ai: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """
-        The core of the WS + pure A-S engine.
-
-        Returns a dict that is compatible with what the current GUI/runtime expects
-        plus the new pure A-S fields.
-        """
-        if book_spread_pct is None:
-            book_spread_pct = ((best_ask - best_bid) / mid * 100.0) if mid else 0.1
-
-        profile = get_profile(self.profile_name)
-        min_edge = profile_min_edge_pct(profile)
-
-        inv_state = assess_inventory(
-            xrp_balance=xrp_bal,
-            rlusd_balance=rlusd_bal,
-            mid_price=mid,
-            target_xrp_ratio=target_ratio,
-            skew_strength=getattr(profile, "inventory_skew_strength", 1.0),
+        decision = await self.path.compute_decision(
+            mid=mid,
+            best_bid=best_bid,
+            best_ask=best_ask,
+            xrp_bal=xrp_bal,
+            rlusd_bal=rlusd_bal,
+            target_ratio=target_ratio,
+            competitor_intel=competitor_intel,
+            ai_analyzer=ai_analyzer,
+            intel_ai_enabled=intel_ai_enabled,
+            book_state_for_ai=book_state_for_ai,
+            base_volatility_pct=volatility_pct,
         )
-
-        inv_skew = 0.0
-        if "xrp_heavy" in inv_state.label:
-            inv_skew = 0.30 if "slight" not in inv_state.label else 0.08
-        elif "rlusd_heavy" in inv_state.label:
-            inv_skew = -0.30 if "slight" not in inv_state.label else -0.08
-
         if inventory_skew_override is not None:
-            inv_skew = inventory_skew_override
-
-        pressure_adj = None
-        pressure_note = ""
-        effective_book_spread = book_spread_pct
-        effective_vol = volatility_pct
-        size_mult = 1.0
-        pressure_model = from_intel_dict(competitor_intel)
-        if pressure_model:
-            pressure_adj = apply_competitor_pressure(
-                pressure_model,
-                base_volatility_pct=volatility_pct,
-                base_book_spread_pct=book_spread_pct,
-                inventory_skew=inv_skew,
-            )
-            effective_vol = pressure_adj.volatility_pct
-            effective_book_spread = pressure_adj.book_spread_pct
-            size_mult = pressure_adj.size_mult
-            pressure_note = pressure_adj.rationale
-
-        # AI advisory hook (inside PureQuotePath, peer to pressure).
-        # When a real ai_analyzer (GrokAIAnalyzer, etc.) is passed, we call it and map the AIAnalysis result
-        # into an AIAdvisorySignal (vol_mult / size_mult / skim_harder). Still strictly advisory.
-        # In the live tester this is where real Grok gets integrated into the per-sample decision flow.
-        ai_advisory = None
-        ai_note = ""
-        if ai_analyzer is not None:
-            try:
-                # Build minimal book_state + run_context for the analyzer
-                book_state = {"bids": [], "asks": [], "age_s": 5.0}  # placeholder; real caller passes fresh WS book
-                run_ctx = {
-                    "competitor_pressure": pressure_adj.effective_pressure if pressure_adj else 0.5,
-                    "inventory_label": "balanced",
-                }
-                # In real async context this would be awaited
-                ai_result = ai_analyzer.analyze(book_state, run_context=run_ctx) if hasattr(ai_analyzer, "analyze") else None
-                if ai_result:
-                    # Map AIAnalysis → AIAdvisorySignal (advisory only)
-                    vol_mult = 0.85 if ai_result.is_truly_skimmable else 1.0
-                    size_mult = 1.15 if ai_result.is_truly_skimmable else 1.0
-
-                    # Build a rich rationale that includes exploitation advice when Grok provides it
-                    rich_rationale = ai_result.rationale or ""
-                    if ai_result.exploitable_holes:
-                        rich_rationale += f" | Holes: {ai_result.exploitable_holes}"
-                    if ai_result.suggested_exploitative_tactics:
-                        rich_rationale += f" | Tactics: {ai_result.suggested_exploitative_tactics}"
-                    if ai_result.positioning_advice:
-                        rich_rationale += f" | Positioning: {ai_result.positioning_advice}"
-                    if ai_result.expected_skim_impact:
-                        rich_rationale += f" | Expected impact: {ai_result.expected_skim_impact}"
-
-                    ai_advisory = AIAdvisorySignal(
-                        vol_mult=vol_mult,
-                        size_mult=size_mult,
-                        confidence=ai_result.confidence,
-                        skim_harder=ai_result.is_truly_skimmable,
-                        rationale=rich_rationale or "AI analysis",
-                        source=getattr(ai_result, "source", "ai"),
-                    )
-                if ai_advisory:
-                    effective_vol = effective_vol * ai_advisory.vol_mult
-                    size_mult = size_mult * ai_advisory.size_mult
-                    ai_note = f" | AI: {ai_advisory.rationale} (conf={ai_advisory.confidence:.2f})"
-            except Exception as e:
-                ai_note = f" | AI advisory error: {str(e)[:60]}"
-        else:
-            # Fallback demo stub (only when no analyzer provided)
-            p = pressure_adj.effective_pressure if pressure_adj else 0.5
-            if p < 0.4:
-                ai_advisory = AIAdvisorySignal(
-                    vol_mult=0.82,
-                    size_mult=1.18,
-                    confidence=0.72,
-                    skim_harder=True,
-                    rationale="Low pressure — competitors defensive (demo stub)",
-                    source="demo-stub"
-                )
-            if ai_advisory:
-                effective_vol = effective_vol * ai_advisory.vol_mult
-                size_mult = size_mult * ai_advisory.size_mult
-                ai_note = f" | AI: {ai_advisory.rationale} (conf={ai_advisory.confidence:.2f})"
-
-        # Full long-run wiring for rich context strings (inventory, momentum, policy, etc.)
-        assessment = _make_minimal_assessment(book_spread_pct)  # minimal stub so dynamic policy runs
-        adj = build_quote_adjustments(
-            profile=profile,
-            assessment=assessment,
-            inventory=inv_state,
-            mid_momentum_pct=0.0,
-            effective_spread_l1_pct=book_spread_pct / 2.0,
-            book_spread_pct=book_spread_pct,
-            depth_imbalance=0.0,
-            min_edge_pct=min_edge,
-            fill_quality=None,
-            xrpl_fee_bps=2.0,
-            fund_with_xrp_only=False,
-            rlusd_balance=rlusd_bal,
-            min_order_xrp=0.1,
-            target_xrp_ratio=target_ratio,
-            inventory_max_deviation=0.12,
-            inventory_mode="market_make",
-            toxic_off_touch_latched=False,
-        )
-
-        # Pure A-S (pressure adjusts vol / spread anchor / gamma only — not reservation directly)
-        base_gamma = self.as_strat.gamma
-        if pressure_adj:
-            self.as_strat.gamma = base_gamma * pressure_adj.gamma_scale
-        try:
-            as_quote = self.as_strat.compute_avellaneda_quote(
-                mid_price=mid,
-                inventory_skew=inv_skew,
-                volatility_pct=effective_vol,
-                best_bid=best_bid,
-                best_ask=best_ask,
-                book_spread_pct=effective_book_spread,
-                profile=profile,
-            )
-        finally:
-            self.as_strat.gamma = base_gamma
-
-        # The only presence decision in the committed path:
-        as_met = (as_quote.reservation_price > best_bid and as_quote.reservation_price < best_ask)
-
-        note = (
-            f"{adj.decision_summary} | "
-            f"PURE A-S (built-in protection): reservation={as_quote.reservation_price:.6f} "
-            f"spread={as_quote.optimal_spread_pct:.3f}% (gamma={self.as_strat.gamma}, kappa={self.as_strat.kappa})"
-        )
-        if pressure_note:
-            note += f" | PRESSURE: {pressure_note}"
-        if ai_note:
-            note += ai_note
-
-        return {
-            "market_edge_met": as_met,          # compatibility for existing GUI
-            "would_quote": as_met,
-            "quote_decision_summary": note,
-            "as_reservation": as_quote.reservation_price,
-            "as_optimal_spread_pct": as_quote.optimal_spread_pct,
-            "as_gamma": self.as_strat.gamma,
-            "as_kappa": self.as_strat.kappa,
-            "as_mode": "pure",
-            "competitor_pressure": pressure_adj.effective_pressure if pressure_adj else None,
-            "pressure_size_mult": size_mult,
-            "pressure_volatility_pct": effective_vol,
-            "pressure_book_spread_pct": effective_book_spread,
-            "ai_advisory": {
-                "vol_mult": getattr(ai_advisory, 'vol_mult', 1.0),
-                "size_mult": getattr(ai_advisory, 'size_mult', 1.0),
-                "confidence": getattr(ai_advisory, 'confidence', 0.5),
-                "skim_harder": getattr(ai_advisory, 'skim_harder', False),
-                "rationale": getattr(ai_advisory, 'rationale', ''),
-                "source": getattr(ai_advisory, 'source', 'none'),
-            } if ai_advisory else None,
-            "ws_book_age_s": getattr(self.book_feed, "age_seconds", lambda: None)(),
-            "inventory_label": inv_state.label,
-            "pause_bids": adj.pause_bids,
-            "pause_asks": adj.pause_asks,
-            # The engine would then call order_manager with A-S prices instead of the old ladder
-            "suggested_bid": as_quote.bid_price if as_met else None,
-            "suggested_ask": as_quote.ask_price if as_met else None,
-        }
+            pass  # reserved for future override hook
+        return _decision_to_engine_dict(decision, book_feed=self.book_feed)
 
 
-def _make_minimal_assessment(book_spread_pct: float):
-    """Stub so the rich dynamic policy / inventory / momentum strings still run."""
-    from core.market_conditions import (
-        CONDITION_FAVORABLE, CONDITION_NEUTRAL, CONDITION_DEFENSIVE, CONDITION_HOSTILE, MarketAssessment,
-    )
-    if book_spread_pct < 0.10:
-        cond, health, label = CONDITION_FAVORABLE, 75, "favorable"
-    elif book_spread_pct > 0.25:
-        cond, health, label = CONDITION_HOSTILE, 25, "hostile"
-    elif book_spread_pct > 0.18:
-        cond, health, label = CONDITION_DEFENSIVE, 42, "defensive"
-    else:
-        cond, health, label = CONDITION_NEUTRAL, 60, "neutral"
+def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional[BookFeed] = None) -> Dict[str, Any]:
+    ws_age = None
+    if book_feed is not None and hasattr(book_feed, "age_seconds"):
+        ws_age = book_feed.age_seconds()
+    return {
+        "market_edge_met": decision.would_quote,
+        "would_quote": decision.would_quote,
+        "quote_decision_summary": decision.quote_decision_summary,
+        "quoting_policy_label": decision.quoting_policy_label,
+        "zero_quote_reason": decision.zero_quote_reason,
+        "zero_quote_detail": decision.zero_quote_detail,
+        "as_reservation": decision.as_reservation,
+        "as_optimal_spread_pct": decision.as_optimal_spread_pct,
+        "as_gamma": decision.as_gamma,
+        "as_kappa": decision.as_kappa,
+        "as_mode": decision.as_mode,
+        "ws_as_version": decision.path_version,
+        "competitor_pressure": decision.competitor_pressure,
+        "inventory_label": decision.inventory_label,
+        "pause_bids": False,
+        "pause_asks": False,
+        "suggested_bid": decision.suggested_bid,
+        "suggested_ask": decision.suggested_ask,
+        "ws_book_age_s": ws_age,
+        "book_spread_pct": decision.book_spread_pct,
+        "volatility_pct": decision.volatility_pct,
+        "ai_edge_quality": decision.ai_edge_quality,
+        "ai_is_skimmable": decision.ai_is_skimmable,
+        "ai_rationale": decision.ai_rationale,
+        "ai_suggested_posture": decision.ai_suggested_posture,
+    }
 
-    return MarketAssessment(
-        condition=cond,
-        condition_label=label,
-        volatility_pct=0.0,
-        volatility_level="low",
-        liquidity_score=0.78,
-        liquidity_level="high" if book_spread_pct < 0.15 else "moderate",
-        book_spread_pct=book_spread_pct,
-        book_spread_status="tight" if book_spread_pct <= 0.12 else "normal",
-        health_score=health,
-        recommended_profile="tight_spread",
-        recommendation_reason=f"{label} live book",
-        summary=f"{label} (health {health}) spread {book_spread_pct:.3f}%",
-    )
 
-
-# Example of what a future engine integration might look like (pseudo):
-#
-# if config.book_feed_mode == "ws":
-#     ws_feed = WsBookFeed(...)
-#     adapter = WSBookFeedAdapter(ws_feed, gamma=0.32, kappa=3.8)  # from calibration
-# else:
-#     adapter = HttpAdapter(...)
-#
-# book = adapter.get_current_book()
-# decision = adapter.compute_pure_as_decision(...)
-# if decision["would_quote"]:
-#     # place orders using decision["suggested_bid"] etc.
-#     # log decision["quote_decision_summary"]  (contains full wiring + PURE A-S line)
+__all__ = ["WSBookFeedAdapter", "WS_AS_VERSION"]

@@ -1,7 +1,7 @@
 # Pure A-S Critical Path
 
 **Status:** Active — we are moving from **hard `market_edge_met` gates** to **WS + pure Avellaneda-Stoikov** as the production quoting model.  
-**Branch:** `grok-ws-feed` (experimental) · **Sacred data / VPS Gate 2:** `grok-tier-2-collab` (labeled corpus only until swap sign-off)  
+**Branch:** `xledger-ws-as` (WS + pure A-S product line) · **Sacred data / VPS Gate 2:** `grok-tier-2-collab` (labeled corpus only until swap sign-off)  
 **Last updated:** 2026-06-10
 
 This is the **single checklist** for WS + pure A-S work. Other docs point here; do not duplicate task lists elsewhere.
@@ -44,8 +44,12 @@ This is the **single checklist** for WS + pure A-S work. Other docs point here; 
 ```powershell
 cd C:\Users\micha\xledgermate
 .\.venv\Scripts\Activate.ps1
-python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 0 --verbose `
-  --intel-ai-provider grok --intel-ai-key xai-YOURKEY --intel-ai-model grok-3
+python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --sample-interval 4 --verbose
+```
+(Grok key: `.env` → `XLG_GROK_KEY`. No `--profile` — PureQuotePath v0.1.0 only.)
+
+```powershell
+python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 0 --verbose
 ```
 
 Open http://127.0.0.1:8765 · Artifacts: `logs/ws_as_demo_runtime.json`
@@ -87,7 +91,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 ### Phase B — Production-shaped pure path (experimental only)
 
-- [ ] **B1** Unify `live_pure_as_tester` on `WSBookFeedAdapter.compute_pure_as_decision` (single PureQuotePath)
+- [x] **B1** Unify `live_pure_as_tester` on `WSBookFeedAdapter` / `pure_quote_path.PureQuotePath` — **no trading profiles**, no `build_quote_adjustments`. Version `experimental/ws_feed/WS_AS_VERSION` = 0.1.0.
 - [ ] **B2** Dynamic sizing helper (`L1 = min(config, k × XRP bal)`; ask boost when XRP-heavy + low ask-pressure)
 - [ ] **B3** WS book age modulator (stale → higher effective vol; fresh + low pressure → allow aggression)
 - [ ] **B4** Tight-book decision notes (explain 0 quotes: spread floor vs reservation outside book — operator clarity)
@@ -135,6 +139,7 @@ experimental/sacred_economics.py
 experimental/grokster.py
 experimental/ws_runtime_analysis.py
 experimental/as_calibration_grok.py
+experimental/ws_feed/pure_quote_path.py
 experimental/ws_feed/replay_long_run.py
 experimental/ai_analysis/grok_analyzer.py
 strategy/avellaneda_strategy.py
