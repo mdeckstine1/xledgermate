@@ -17,9 +17,20 @@ from experimental.ws_runtime_analysis import classify_zero_quote_reason
 from strategy.avellaneda_strategy import AvellanedaStrategy, AvellanedaQuote
 from strategy.quote_decision import assess_inventory
 
-WS_AS_VERSION = "0.1.0"
+WS_AS_VERSION = "0.1.1"
 DEFAULT_INVENTORY_SKEW_STRENGTH = 1.0
 DEFAULT_MIN_SPREAD_FLOOR_PCT = 0.04
+
+
+def book_scaled_volatility_pct(book_spread_pct: float) -> float:
+    """Vol input scaled to live L1 — never floor at 0.5% on ~0.10% XRPL books.
+
+    Old ``max(0.5, spread*1.5)`` pushed adverse_term so reservation sat below bid
+    on every tight-book sample (0% would_quote). Vol tracks book width instead.
+    """
+    if book_spread_pct <= 0:
+        return 0.05
+    return max(book_spread_pct * 0.85, 0.02)
 
 
 @dataclass
@@ -195,7 +206,11 @@ class PureQuotePath:
         base_volatility_pct: Optional[float] = None,
     ) -> PureQuoteDecision:
         book_spread_pct = (best_ask - best_bid) / mid * 100.0 if mid else 0.0
-        volatility_pct = base_volatility_pct if base_volatility_pct is not None else max(0.5, book_spread_pct * 1.5)
+        volatility_pct = (
+            base_volatility_pct
+            if base_volatility_pct is not None
+            else book_scaled_volatility_pct(book_spread_pct)
+        )
 
         inv_state = assess_inventory(
             xrp_balance=xrp_bal,

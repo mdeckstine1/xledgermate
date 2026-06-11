@@ -7,6 +7,18 @@
 
 ---
 
+## 2026-06-11 — Cursor (v0.1.1 fix — vol floor caused 0% live would_quote)
+
+**Root cause:** `max(0.5, book_spread*1.5)` vol input on ~0.125% books pushed `adverse_term` so reservation sat **below bid** every sample. Not gamma/profile — bad vol units.
+
+**Fix:** `book_scaled_volatility_pct()` — vol tracks L1 width (~0.10% book -> ~0.09% vol). Regression test on live session book params now `would_quote=True`.
+
+**Version:** `WS_AS_VERSION` 0.1.1 — re-run 300s tester.
+
+— Cursor
+
+---
+
 ## 2026-06-11 — Cursor (B1 + branch `xledger-ws-as` — PureQuotePath, profiles removed)
 
 **Boss:** clean pure A-S direction; no sacred profile habit on WS path; new branch for xledger WS A-S.
