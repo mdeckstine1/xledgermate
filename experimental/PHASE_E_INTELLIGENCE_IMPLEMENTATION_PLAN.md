@@ -9,39 +9,38 @@
 
 Phase E evolves the competitor intelligence layer from static/top-10 analysis to a **dynamic, relative, inventory-scaled peer system**. 
 
-The goal is to make intelligence actionable and proportional to the user's current bag size, automatically scaling as successful skim grows inventory. This supports the Balanced Mix approach for sizing while keeping pure A-S protections intact.
+The goal is to make intelligence actionable and proportional to the user's current bag size, automatically scaling as successful skim grows inventory. This supports the Balanced Mix approach for market making while keeping pure A-S protections intact.
 
 ### Primary Objectives
 - Replace or augment fixed "top 10 ledger addresses" with **similar-sized / relevant peers** (dynamic band around current inventory).
-- Enable **automatic scaling** of peer group and quote sizes as inventory grows from skim success.
+- Enable **automatic scaling** of peer group and quote sizes as inventory grows from successful market making.
 - Move from manual button-triggered pulls to **steady/automated analysis + Grok-suggested relevant data sets**.
-- Feed relative competitor signals directly into sizing mechanisms (size_mult, depth_factor, performance scaler, skim_harder).
+- Feed relative competitor signals directly into market making mechanisms (size_mult, depth_factor, performance scaler, skim_harder).
 - Maintain full auditability, advisory-only nature, and integration with existing wiring (assess_inventory, build_quote_adjustments, AIAdvisorySignal, etc.).
 
 ### Success Criteria
 - More relevant and less noisy competitor signals for smaller-to-medium accounts.
-- Automatic, no-manual-intervention sizing that grows with proven skim performance.
+- Automatic, no-manual-intervention sizing that grows with proven market making performance.
 - Clear visibility in Intelligence tab/HUD of current peer set and Grok recommendations.
-- Measurable improvement in presence/capture on replay and live runs without increased toxicity or inventory risk.
+- Measurable improvement in presence and spread capture on replay and live market making runs without increased toxicity or inventory risk.
 
 ## 2. Core Design Philosophy
 
-This system is built as a **market maker collecting the rake**, not a momentum trader.
+This system is built as a **market maker collecting the spread (the rake)**, not a momentum trader.
 
 Key principles:
-
 - **Read what is right in front of it**: The bot should focus on objective, current data — competitor behavior patterns, book structure, spread velocity, and depth dynamics — rather than recent P&L or emotional reactions.
-- **No tilt**: Recent good or bad performance streaks are mostly short-term variance. They should have limited influence on real-time aggression or sizing decisions.
+- **No tilt**: Recent good or bad performance streaks are mostly short-term variance. They should have limited influence on real-time quoting or sizing decisions.
 - **Competitor pattern focus**: Primary value comes from understanding how similar-sized makers are currently defending, canceling, and positioning — not from chasing or fading short-term results.
 - **Structural edge over momentum**: Exploitation signals should be based on observable market structure and competitor behavior, not on recent fill outcomes.
-- **Protect the A-S core**: The Avellaneda-Stoikov reservation price and inventory logic remain the foundation. Intelligence layers modulate *how* A-S is applied, but do not override it.
+- **Protect the A-S core**: The Avellaneda-Stoikov reservation price and inventory logic remain the foundation. Intelligence layers modulate *how* A-S is applied for market making, but do not override it.
 - **Appropriate sizing with growth path**: The system must behave responsibly at current inventory levels while being architected to naturally improve and scale as the bag grows (no major rewrites required).
 
 ## 3. Proposed Architecture
 
 ### 3.1 Dynamic Relative Peer Band
 - Configurable band relative to current inventory (e.g., 0.3x – 5x user's XRP/RLUSD equivalent inventory, or percentile band).
-- As inventory grows from successful fills, the band automatically shifts upward.
+- As inventory grows from successful market making, the band automatically shifts upward.
 - Query/filter ledger data for accounts with recent offers whose size/activity falls in the band.
 - Cache results with metadata (timestamp, observed sizes, spreads, activity).
 
@@ -52,10 +51,10 @@ Key principles:
 
 ### 3.3 Grok-Enhanced Relative Suggestions
 - Package context focused on current structure: peer behavior patterns, book velocity, spread dynamics, and inventory position.
-- Send to Grok with structured prompt asking for objective observations on competitor strategy quality and potential structural opportunities.
-- Parse into structured output usable by sizing logic and HUD.
+- Send to Grok with structured prompt asking for objective observations on competitor strategy quality and potential structural opportunities for market making.
+- Parse into structured output usable by quoting logic and HUD.
 
-### 3.4 Integration with Sizing (Balanced Mix)
+### 3.4 Integration with Quoting (Balanced Mix)
 Final effective size = base_config_size × A-S inventory_factor × performance_mult (conservative) × depth_factor (from relevant peers) × AI_size_mult (from Grok/pressure, gated).
 
 ## 4. Key Mechanisms
@@ -73,7 +72,7 @@ Final effective size = base_config_size × A-S inventory_factor × performance_m
 
 ### 4.3 Grok Exploitation Signals
 - Focused on observable competitor patterns and book structure (cancellation behavior, defense strength, velocity relative to spread).
-- Maps to size_mult, side bias, skim_harder only when structural conditions support it.
+- Maps to size_mult, side bias, skim_harder only when structural conditions support better market making.
 - Keep advisory-only and gated by confidence + toxicity risk.
 
 ### 4.4 Inventory-Aware Scaling
@@ -111,13 +110,13 @@ The system is explicitly designed to be **appropriate at current bag size while 
 **Phase E.2** — Conservative performance scaler + depth_factor from peers.
 **Phase E.3** — Grok relative suggestion prompt focused on structural patterns.
 **Phase E.4** — Automation (background pulls) + HUD integration.
-**Phase E.5** — Full wiring into engine_adapter / sizing + replay validation.
-**Phase E.6** — Live testing on VPS (advisory mode first) + metrics tracking.
+**Phase E.5** — Full wiring into engine_adapter / quoting logic + replay validation.
+**Phase E.6** — Live market making testing on VPS (advisory mode first) + metrics tracking.
 
 ## 10. Risks & Mitigations
 
 ### 10.1 Data Staleness and Quality
-- **Risk**: Stale peer or book data leading to poor decisions.
+- **Risk**: Stale peer or book data leading to poor quoting decisions.
 - **Mitigation**: Smart refresh triggers, staleness scoring in HUD, incremental updates, and fallback to broader rules when relevant peer data is sparse.
 
 ### 10.2 Grok API Latency and Over-Interpretation
@@ -132,7 +131,7 @@ The system is explicitly designed to be **appropriate at current bag size while 
 
 - Core A-S decision path remains fully synchronous and lightweight.
 - Intelligence components run asynchronously in background.
-- Main trading loop reads latest cached advisory signals.
+- Main market making loop reads latest cached advisory signals.
 - Grok used primarily for deeper structural analysis on promising situations.
 
 ## 12. Toxicity Management with Fresh WebSocket Data
@@ -172,7 +171,7 @@ Inputs include WS book freshness, fill quality, inventory skew, and structural s
 - Grok prompt focused on current structural patterns.
 - Storage and preprocessing details.
 
-**Immediate Next Action:** Continue refining structural signals for competitor behavior and book velocity while keeping scaling behavior in mind.
+**Immediate Next Action:** Continue refining structural signals for competitor behavior and book velocity while keeping scaling behavior and market making focus in mind.
 
 ---
 
