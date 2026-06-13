@@ -24,17 +24,7 @@ The goal is to make intelligence actionable and proportional to the user's curre
 - Clear visibility in Intelligence tab/HUD of current peer set and Grok recommendations.
 - Measurable improvement in presence/capture on replay and live runs without increased toxicity or inventory risk.
 
-## 2. Current State
-
-- Competitor pressure model exists (`experimental/competitor_pressure.py`).
-- AI analysis scaffolding with exploitation fields (`experimental/ai_analysis/base.py` — AIAnalysis, AIAdvisorySignal).
-- Partial integration in `engine_adapter_example.py`.
-- Intelligence tab / HUD supports on-demand pulls and Grok analysis (button-triggered).
-- Currently pulls fixed top-N ledger addresses.
-- Sizing is mostly static/config-driven + pressure + basic A-S reservation.
-- Performance-based dynamic sizing and relative peer awareness are missing or manual.
-
-## 3. Core Design Philosophy
+## 2. Core Design Philosophy
 
 This system is built as a **market maker collecting the rake**, not a momentum trader.
 
@@ -45,50 +35,60 @@ Key principles:
 - **Competitor pattern focus**: Primary value comes from understanding how similar-sized makers are currently defending, canceling, and positioning — not from chasing or fading short-term results.
 - **Structural edge over momentum**: Exploitation signals should be based on observable market structure and competitor behavior, not on recent fill outcomes.
 - **Protect the A-S core**: The Avellaneda-Stoikov reservation price and inventory logic remain the foundation. Intelligence layers modulate *how* A-S is applied, but do not override it.
+- **Appropriate sizing with growth path**: The system must behave responsibly at current inventory levels while being architected to naturally improve and scale as the bag grows (no major rewrites required).
 
-## 4. Proposed Architecture
+## 3. Proposed Architecture
 
-### 4.1 Dynamic Relative Peer Band
+### 3.1 Dynamic Relative Peer Band
 - Configurable band relative to current inventory (e.g., 0.3x – 5x user's XRP/RLUSD equivalent inventory, or percentile band).
 - As inventory grows from successful fills, the band automatically shifts upward.
 - Query/filter ledger data for accounts with recent offers whose size/activity falls in the band.
 - Cache results with metadata (timestamp, observed sizes, spreads, activity).
 
-### 4.2 Steady + Smart Pulls
+### 3.2 Steady + Smart Pulls
 - Background/periodic refresh (timer or inventory-change triggered).
 - Keep manual button for deep dives.
 - Incremental updates to reduce load.
 
-### 4.3 Grok-Enhanced Relative Suggestions
+### 3.3 Grok-Enhanced Relative Suggestions
 - Package context focused on current structure: peer behavior patterns, book velocity, spread dynamics, and inventory position.
 - Send to Grok with structured prompt asking for objective observations on competitor strategy quality and potential structural opportunities.
 - Parse into structured output usable by sizing logic and HUD.
 
-### 4.4 Integration with Sizing (Balanced Mix)
+### 3.4 Integration with Sizing (Balanced Mix)
 Final effective size = base_config_size × A-S inventory_factor × performance_mult (conservative) × depth_factor (from relevant peers) × AI_size_mult (from Grok/pressure, gated).
 
-## 5. Key Mechanisms
+## 4. Key Mechanisms
 
-### 5.1 Performance Scaler (Conservative Role)
+### 4.1 Performance Scaler (Conservative Role)
 - Recent performance has **limited influence**.
 - It acts primarily as a **soft veto** when recent results have been poor (to avoid compounding risk).
 - It does **not** act as a strong accelerator when recent results have been good.
 - Main purpose: Prevent over-aggression during unfavorable short-term variance while keeping the system focused on structural signals.
 
-### 5.2 Competitor Depth / Size Factor
+### 4.2 Competitor Depth / Size Factor
 - From WS BookState or relevant peers cache, compute median/average offer size or visible depth in relevant band.
 - `depth_factor` = f(user_size, peer_typical_size, book_depth).
 - Focuses on structural competitiveness rather than momentum.
 
-### 5.3 Grok Exploitation Signals
+### 4.3 Grok Exploitation Signals
 - Focused on observable competitor patterns and book structure (cancellation behavior, defense strength, velocity relative to spread).
 - Maps to size_mult, side bias, skim_harder only when structural conditions support it.
 - Keep advisory-only and gated by confidence + toxicity risk.
 
-### 5.4 Inventory-Aware Scaling
+### 4.4 Inventory-Aware Scaling
 - Leverage existing `assess_inventory` and A-S reservation price for mean-reversion.
 - Layer conservative performance and peer-based multipliers on top.
 - Hard caps on deviation, risk capital, daily limits.
+
+## 5. Scaling with Inventory Growth
+
+The system is explicitly designed to be **appropriate at current bag size while improving as inventory grows**.
+
+- **At smaller sizes** (~10k–20k XRP): More conservative gating, focus on relevant peer behavior, and strong protection of the A-S core.
+- **As bag grows**: Peer band automatically widens, structural signals become more meaningful, and more advanced bias logic can be enabled with minimal code changes.
+- The more advanced "sell water in the desert / buy water cheaper to hold" contrarian logic is treated as a **future add-on module** to be activated when the bag has significant weight.
+- All major components (peer band, signals, gating, performance scaler) use relative/inventory-aware logic to support natural scaling.
 
 ## 6. Data Capture & Storage
 - Lightweight persistent store (e.g., `relevant_peers.jsonl`).
@@ -172,7 +172,7 @@ Inputs include WS book freshness, fill quality, inventory skew, and structural s
 - Grok prompt focused on current structural patterns.
 - Storage and preprocessing details.
 
-**Immediate Next Action:** Continue refining structural signals for competitor behavior and book velocity.
+**Immediate Next Action:** Continue refining structural signals for competitor behavior and book velocity while keeping scaling behavior in mind.
 
 ---
 
