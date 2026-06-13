@@ -135,21 +135,42 @@ To evaluate how the bot is performing in live market making and guide tweaks, we
 - Review regularly during live market making.
 - Use results to guide tweaks (e.g., gating strictness, signal strength, performance scaler permissiveness).
 
-## 8. Phased Rollout
+## 8. Logging Requirements
+
+All performance and intelligence-related data must be logged for future analysis and refinement.
+
+### 8.1 What to Log
+- Per-fill: capture result (positive/negative), bps, inventory after fill, deviation %
+- Per-cycle: active structural signals, gating decisions, advisory signal values (size_mult, bias, etc.)
+- Periodic aggregates: rolling positive capture %, net bag growth, toxicity events, max drawdown
+- Peer band state: current band range, number of peers, data quality
+- Intelligence decisions: when signals were applied or rejected and why
+
+### 8.2 Logging Format
+- Structured logging (JSON Lines preferred) for easy parsing and analysis.
+- Include timestamps, cycle/fill IDs, and relevant context for correlation.
+- Maintain both detailed per-event logs and aggregated periodic summaries.
+
+### 8.3 Purpose
+- Enable post-analysis and performance reviews.
+- Support data-driven tweaks to signals, gating, and parameters.
+- Provide historical data for future improvements and when adding more advanced structural logic.
+
+## 9. Phased Rollout
 
 **Phase E.1** — Peer band + basic structural signals.
 **Phase E.2** — Balanced performance scaler + gating.
-**Phase E.3** — Async wiring and HUD visibility (including new Performance Metrics tab).
+**Phase E.3** — Async wiring, HUD visibility (including Performance Metrics tab), and logging.
 **Phase E.4** — Integration into quoting logic.
 **Phase E.5** — Replay validation and initial live testing.
 **Phase E.6** — Gradual activation and refinement using performance grading criteria.
 
-## 9. Open Questions & Next Steps
+## 10. Open Questions & Next Steps
 - Refining the exact structural signals and their strength.
 - How aggressively to allow modest edges at current bag size.
-- Exact metrics and display for the new Performance Metrics tab.
+- Exact implementation of the Performance Metrics tab and logging format.
 
-**Immediate Next Action:** Define implementation tasks for Cursor, including the new Performance Metrics tab in the HUD.
+**Immediate Next Action:** Define implementation tasks for Cursor, including logging and the advisory Performance Metrics tab.
 
 ---
 
