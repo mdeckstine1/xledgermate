@@ -168,7 +168,69 @@ With WebSocket:
 
 **Net Effect**: The bot should become less *falsely* defensive while remaining appropriately cautious when real toxicity risk is present.
 
-## 13. Open Questions & Next Steps
+## 13. Peer Band Configuration & Filtering Logic (Detailed)
+
+### Config Parameters (proposed)
+```yaml
+peer_band:
+  min_mult: 0.3          # Minimum multiplier of user's current inventory
+  max_mult: 5.0          # Maximum multiplier of user's current inventory
+  min_peer_count: 5      # Minimum number of peers required before using band
+  fallback_band_mult: 10.0  # Wider band if not enough peers found
+  refresh_on_inventory_pct: 5   # Refresh when inventory changes by this %
+  max_age_seconds: 1800  # Hard max age for peer data (30 min)
+```
+
+### Filtering Logic
+1. Get current user inventory value (XRP + RLUSD equivalent at mid).
+2. Calculate band: [inventory * min_mult, inventory * max_mult].
+3. Query recent offer creators on the pair whose offer sizes or account balances fall inside the band.
+4. If fewer than `min_peer_count` peers found, temporarily widen to `fallback_band_mult`.
+5. Score and rank peers by relevance (size proximity + recent activity + observed behavior similarity).
+6. Cache the filtered set with timestamp and relevance scores.
+
+This logic lives in a new module (e.g. `experimental/ai_analysis/peer_band.py`).
+
+## 14. Performance Scaler Implementation
+
+### Metrics to Track
+- Rolling positive capture rate (last 30–50 fills)
+- Session / recent balance PnL delta
+- Inventory growth rate from fills (not deposits)
+
+### Smoothing & Output
+- Use Exponential Moving Average (EMA) for stability.
+- Base `performance_mult` starts at 1.0.
+- Increase gradually when metrics are strong (example ramp: +0.05 per 5% above target positive capture).
+- Apply cooldown period after large increases.
+- Output is added to `AIAdvisorySignal.size_mult` (or a dedicated field).
+
+### Safety
+- Hard cap on `performance_mult` (e.g. max 1.5–2.0 initially).
+- Reset or reduce on any toxicity event or inventory deviation breach.
+- Only allow scaling when overall toxicity risk is low.
+
+## 15. Enhanced Toxicity Detection Logic (WS-aware)
+
+### Inputs
+- WS book age / freshness score
+- Recent fill quality (capture bps, negative capture %)
+- Current inventory skew (from `assess_inventory`)
+- Rolling toxicity proxy (markout or off-book rate)
+- Intelligence layer confidence (lower confidence = treat as higher risk)
+
+### Decision Rules (example)
+- If book age > threshold and intelligence confidence low → increase conservatism (reduce size_mult, favor off-book more).
+- If recent fills show rising negative capture → temporarily pause performance scaler increases.
+- Combine with existing `toxic_off_touch_latched` and session kill logic.
+
+### Integration with Intelligence
+- Aggressive suggestions from Grok/pressure are only applied when toxicity risk score is low.
+- When toxicity risk is elevated, the system defaults to more conservative sizing even if intelligence suggests otherwise.
+
+This keeps the bot appropriately defensive when needed while taking advantage of fresh WS data to avoid unnecessary defensiveness.
+
+## 16. Open Questions & Next Steps
 - Exact peer band parameters and how aggressively to scale with inventory.
 - Preferred data source for ledger account sizes/offers (current indexer vs direct queries).
 - Grok prompt template (we should draft and iterate).
