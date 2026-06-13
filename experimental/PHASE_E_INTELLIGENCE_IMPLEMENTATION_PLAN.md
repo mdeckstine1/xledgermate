@@ -61,7 +61,7 @@ Final effective size = base_config_size × A-S inventory_factor × performance_m
 
 ## 4. Key Mechanisms
 
-### 4.1 Performance Scaler (Skim Success 	o Size Growth)
+### 4.1 Performance Scaler (Skim Success → Size Growth)
 - Track rolling metrics (e.g., % positive capture last N fills or session balance delta).
 - Increase `performance_mult` when above thresholds (smoothed, e.g., EMA).
 - Tie to inventory growth: stronger scaling when net inventory is rising from skim.
@@ -115,12 +115,60 @@ Final effective size = base_config_size × A-S inventory_factor × performance_m
 - Safety regression: ensure A-S protections and existing gates remain effective.
 
 ## 10. Risks & Mitigations
-- Noisy or sparse similar-sized data → Fallback to broader band or rule-based defaults.
-- Over-scaling on short-term hot streaks → Strong smoothing + hard caps + cooldown periods.
-- Grok API cost/latency → Caching, async where possible, replay-first usage.
-- Privacy / data freshness → Only public ledger data; clear staleness indicators in HUD.
 
-## 11. Open Questions & Next Steps
+### 10.1 Data Staleness and Quality
+- **Risk**: Stale peer or book data leading to poor sizing decisions or false signals.
+- **Mitigation**: Smart refresh triggers (inventory change + time-based max age), staleness scoring shown in HUD, incremental updates, and graceful fallback to broader rule-based pressure when relevant peer data is sparse or old.
+
+### 10.2 Grok API Latency and "Decision Constipation"
+- **Risk**: Grok calls adding latency or producing overly complex/conflicting advice that slows the core quoting loop.
+- **Mitigation**: Run Grok analysis asynchronously or on a slower background cadence (timer or event-triggered). Cache responses. Force structured JSON output with confidence scores. Only apply suggestions when confidence is high. Always maintain a fast synchronous fallback path using pure A-S + pressure model.
+
+### 10.3 False Toxic States from Data Quality
+- **Risk**: Bot incorrectly entering defensive/off-book mode due to bad data.
+- **Mitigation**: With WebSocket, book age drops dramatically (often < 5s, frequently sub-second). This significantly reduces false toxic triggers compared to polling. Combine with confidence-weighted intelligence and hard caps so imperfect data makes the bot more conservative rather than more aggressive.
+
+## 11. Async Intelligence Architecture (Keeping Core A-S Fast)
+
+To prevent the intelligence layer from slowing down the Avellaneda-Stoikov quoting engine:
+
+- Core A-S decision path (`compute_avellaneda_quote`, reservation price, optimal spread) remains fully synchronous and lightweight.
+- Intelligence components (Grok calls, peer set refresh, performance scaler updates) run **asynchronously** in background threads or on a separate timer/event loop.
+- The main trading loop reads the latest *cached* values from `AIAdvisorySignal` and peer data without waiting.
+- Grok is primarily used for:
+  - Background analysis and suggestion generation
+  - Replay / offline calibration
+  - On-demand deep dives via the Intelligence tab button
+- During live quoting, the bot uses the most recent cached advisory signal (or falls back to pressure model + pure A-S if cache is stale or low-confidence).
+
+This design ensures the A-S strategy stays fast even if Grok is slow, rate-limited, or temporarily unavailable.
+
+## 12. Toxicity Management with Fresh WebSocket Data
+
+**Key Improvement over Polling Version**
+
+In the original HTTP polling setup, stale book data (often 12–30+ seconds old) frequently caused the bot to incorrectly classify the environment as toxic. This led to unnecessary defensive behavior (pulling quotes, widening spreads, or going off-book).
+
+With WebSocket:
+- Book age is typically under 5 seconds and often 0.1–2 seconds during active periods.
+- Edge detection (`assess_market_edge`), toxicity proxies, and dynamic policy operate on significantly fresher data.
+- False "toxic environment" signals caused purely by staleness should decrease substantially.
+
+**Remaining Toxicity Sources (Still Need Management)**
+- Genuine adverse selection on fills
+- Rapid inventory skew from unbalanced flow
+- Truly thin or fast-moving books (even with fresh data)
+- Overly aggressive sizing from the intelligence layer
+
+**Recommended Approach**
+- Keep existing toxicity guards (`toxic_off_touch_latched`, off-book defense, session kill thresholds).
+- Weight toxicity signals by data freshness/confidence.
+- When intelligence layer suggests more aggressive sizing, require higher confidence thresholds during periods of elevated toxicity risk.
+- Use WS book age as an explicit input to the dynamic policy and performance scaler.
+
+**Net Effect**: The bot should become less *falsely* defensive while remaining appropriately cautious when real toxicity risk is present.
+
+## 13. Open Questions & Next Steps
 - Exact peer band parameters and how aggressively to scale with inventory.
 - Preferred data source for ledger account sizes/offers (current indexer vs direct queries).
 - Grok prompt template (we should draft and iterate).
