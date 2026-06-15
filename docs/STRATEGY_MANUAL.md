@@ -129,6 +129,35 @@ Every time he drifts past **70% or 40% XRP**, he swaps in Xaman, then runs **saf
 
 ---
 
+## The committed competitive path (WS + pure A-S)
+
+The long-run hard-gate + HTTP poll setup has proved excellent safety (low negative-capture fills, good per-fill capture on what does get through). But it has also proved very low presence (~10–11% quoting in replay windows, 89%+ "Generated 0 quotes" cycles on thin books). That low time-on-touch is why overall realized session P&L can be negative even when the fills that happened looked decent — you simply aren't participating enough on marginal but real edge.
+
+**WS + pure A-S** is the production path that directly attacks the presence gap while keeping the safety the long run already validated:
+
+- **WS BookFeed** (fresher incremental updates, reliable per-side snapshots, low age, reconciliation) instead of slow poll.
+- **Exact same long-run wiring** (assess_inventory + build_quote_adjustments + full dynamic policy, toxicity, momentum, inventory steering, etc.) so the operator still sees the familiar rich decision strings and the GUI/ticker continue to make sense.
+- **Pure Avellaneda-Stoikov** as the quoting engine:
+  - Reservation price (gamma × inventory risk) must sit **inside** the live best bid/ask.
+  - Optimal spread (kappa + vol) sets the competitive levels.
+  - Built-in math protections only. No extra binary "hard gate", "L1 too tight", "edge thin", "toxicity off-book", etc. veto layers.
+
+Replays on the *exact* sacred hard-gate corpus show ~90–94% presence (vs ~11% baseline), 93%+ flip rate on the historical blocked cases, and 0% modeled high-tox among the extra quotes. The wiring strings are kept for continuity.
+
+**The Intelligence layer (on-chain + Grok/xAI)** is the operator's extra set of eyes for deciding *when* to be hungrier — without ever adding hard rules on top of the A-S math:
+- Live scraper builds per-maker profiles (what spreads/sizes competitors actually post and defend, activity, cancel patterns, domain if set on-ledger).
+- Aggregates (observed market spread, pressure score 0=defensive/opportunity → scrape harder, active makers, depth) improve the *inputs* to pure A-S (effective vol/liquidity/pressure) so the reservation can be more aggressive exactly when competitors are weak.
+- Config tab (in the real-time HUD) drives Grok/xAI tokens (provider=grok, real xai-... key, model via "Fetch available models" dropdown — grok-3 recommended). "Apply" pushes live; the dedicated `/analyze_competitor` endpoint (and the Intelligence tab "Analyze with AI" button) does real calls on specific competitor ledger addresses for trending/strategy summaries. Model list now rendered as proper dropdown.
+- All AI/Grok output is **strictly advisory** (Intelligence tab + richer decision notes/logs). It never mutates A-S reservation price, optimal spread, or the "reservation inside the book = would quote" decision. Llama3/stub is deprecated for the competitor intel use-case.
+
+You still see the familiar "inventory slight_xrp_heavy → steer quotes; operating mode: market make; momentum mild → pause bids..." context, now with an extra " | COMPETITOR: low pressure, scrape harder | AI: ..." suffix when the layer has something useful to say.
+
+The sacred long-run (hard gate) stays untouched and continues generating the exact labeled thin-book 0-quote cases we need for calibration and measurement. When Gate 2 signs off, the remote server code is replaced wholesale with the WS + pure A-S package (still on this experimental branch until then).
+
+See `docs/WS_AS_MANUAL.md` (how to run the live tester + HUD, Intelligence tab, Grok config, etc.) and `experimental/ws_feed/WS_HANDOFF.md` for the detailed committed direction.
+
+---
+
 ## Profiles: what they are
 
 A **profile** is a **risk mode**, not a magic profitability switch. Think of it as answering: *“How hungry should we be for fills right now?”*

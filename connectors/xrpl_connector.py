@@ -361,6 +361,12 @@ class XRPLConnector:
         }
         return self._sanitize_book(book)
 
+    async def fetch_order_book(self, limit: int = 40) -> Dict[str, List[Dict[str, Any]]]:
+        """Alias used by CompetitorIntelProvider for on-chain maker scraping.
+        Returns the same shape as fetch_xrp_rlusd_order_book but with 'account' preserved in each offer.
+        """
+        return await self.fetch_xrp_rlusd_order_book(limit=limit)
+
     @staticmethod
     def _offer_field(offer: Any, *keys: str) -> Any:
         if isinstance(offer, dict):
@@ -527,13 +533,13 @@ class XRPLConnector:
             return "bid", float(gets.get("value", 0.0)) / max(xrp_size, 1e-9), xrp_size
         return None, 0.0, 0.0
 
-    def _normalize_offers(self, offers: List[dict], *, side: str) -> List[Dict[str, float]]:
+    def _normalize_offers(self, offers: List[dict], *, side: str) -> List[Dict[str, Any]]:
         """Convert BookOffers entries to RLUSD-per-XRP price and XRP size.
 
-        Applies stricter plausibility to drop ghost / inverted / dust offers that
-        can produce ask inversion or bad best prices for edge calculations.
+        Applies plausibility filter for ghost/inverted offers. Preserves account
+        for CompetitorIntelProvider / peer-lane scraping on the WS path.
         """
-        normalized: List[Dict[str, float]] = []
+        normalized: List[Dict[str, Any]] = []
         for offer in offers:
             gets = offer.get("TakerGets") or offer.get("taker_gets")
             pays = offer.get("TakerPays") or offer.get("taker_pays")
@@ -546,7 +552,14 @@ class XRPLConnector:
             if not is_plausible_rlusd_per_xrp(price):
                 continue
 
-            normalized.append({"price": price, "size": size_xrp, "side": side})
+            # Preserve account for competitor scraping / intelligence
+            acct = self._offer_field(offer, "Account", "account", "Owner") or "unknown"
+            normalized.append({
+                "price": price,
+                "size": size_xrp,
+                "side": side,
+                "account": acct
+            })
         return normalized
 
     def _book_offer_price_and_size(self, gets, pays) -> tuple[Optional[float], float]:

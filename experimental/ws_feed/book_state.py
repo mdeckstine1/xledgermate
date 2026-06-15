@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from connectors.xrpl_connector import XRPLConnector
 
@@ -15,6 +16,8 @@ class BookState:
     bids: Dict[float, Dict[str, float]] = field(default_factory=dict)
     asks: Dict[float, Dict[str, float]] = field(default_factory=dict)
     last_update_monotonic: float = 0.0
+    last_update_unix: float = 0.0
+    last_update_utc: str = ""
     message_count: int = 0
 
     def apply_snapshot(self, side: str, levels: List[Dict[str, float]]) -> None:
@@ -41,7 +44,18 @@ class BookState:
 
     def _touch(self) -> None:
         self.last_update_monotonic = time.monotonic()
+        self.last_update_unix = time.time()
+        self.last_update_utc = datetime.now(tz=timezone.utc).isoformat()
         self.message_count += 1
+
+    def freshness_snapshot(self) -> Dict[str, Any]:
+        """Live freshness fields for HUD / runtime export."""
+        return {
+            "ws_book_age_s": self.age_seconds(),
+            "ws_message_count": self.message_count,
+            "ws_book_last_update_unix": self.last_update_unix if self.last_update_unix > 0 else None,
+            "ws_book_last_update_utc": self.last_update_utc or None,
+        }
 
     def to_order_book(self) -> Dict[str, List[Dict[str, float]]]:
         return {

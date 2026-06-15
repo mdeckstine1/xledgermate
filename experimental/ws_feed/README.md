@@ -1,12 +1,26 @@
-# WebSocket book feed (Tier 3 sandbox)
+# WebSocket book feed + Pure A-S + Real Grok (experimental / committed future path)
 
-**Not wired to production.** The live Gate 2 stack on the VPS keeps using HTTP `BookOffers` polling via `engine/trading_engine.py` → `XRPLConnector.fetch_xrp_rlusd_order_book()`.
+**Not wired to production (sacred gated long-run on VPS still uses HTTP poll + hard gates).** This is the isolated lab + live observation surface for the future architecture: WS BookFeed + replicated long-run wiring + **pure Avellaneda-Stoikov** (built-in protections only) + competitor pressure + **advisory real xAI Grok** for exploitation analysis (holes, tactics, positioning to increase skim / fill the value bag).
 
-This folder is an isolated lab to prototype a WebSocket book feed that reuses the same normalization and mid/spread logic as `connectors/xrpl_connector.py`, without changing `main.py --mode engine`.
+**Task checklist:** [`../../docs/PURE_AS_CRITICAL_PATH.md`](../../docs/PURE_AS_CRITICAL_PATH.md). **Run commands:** [`../../groks input/CURSOR_HANDOFF_ROADMAP.md`](../../groks%20input/CURSOR_HANDOFF_ROADMAP.md).
 
-## Probe results (2026-06-05)
+## Live Tester + HUD (primary artifact now)
 
-**[PROBE_RESULTS.md](PROBE_RESULTS.md)** — captured 10 min / 3 min runs, metrics, Tier 3 checklist. Sandbox **validated** (−0.9 bps vs HTTP at 3 min); **not** on VPS.
+The dedicated real-time surface is `live_pure_as_tester.py --serve-hud` (writes `logs/ws_as_demo_runtime.json` for analysis / old GUI loading).
+
+Run (from repo root, in venv):
+```powershell
+python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 0 --verbose --intel-ai-provider grok --intel-ai-key xai-... --intel-ai-model grok-3
+```
+- Open http://127.0.0.1:8765
+- Intelligence tab: live competitor scrape + pressure + "Analyze with AI" (real grok-3 exploitation prompts).
+- Per-sample Grok (lighter) + on-demand rich analysis (holes/tactics/skim/positioning) are wired. Strictly advisory.
+
+**Status (2026-06-10, cash added, HUD live):** Pure A-S correctly 0-quotes on tight books (reservation/opt spread math), 5 competitors tracked with real activity, pressure ~0.4, Grok-3 working, unlimited runs (limit removed). See WS_AS_MANUAL.md and the CURSOR_HANDOFF_ROADMAP for details + latest runtime snapshots.
+
+## Probe results (historical, 2026-06-05)
+
+**[PROBE_RESULTS.md](PROBE_RESULTS.md)** — captured 10 min / 3 min runs, metrics, Tier 3 checklist. Sandbox **validated** (−0.9 bps vs HTTP at 3 min); **not** on VPS. (The focus has since moved to the full live pure A-S + HUD + Grok exploitation surface above.)
 
 ## Layout
 

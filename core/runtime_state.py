@@ -98,6 +98,17 @@ class RuntimeState:
     toxic_fill_ratio: float = 0.0
     toxic_fill_ratio_30s: float = 0.0
     mean_markout_30s_pct: float = 0.0
+
+    # WS + pure A-S (committed future path) — optional, for compatibility + new views
+    as_mode: str = "off"  # "pure" | "hybrid" | "off"
+    as_reservation: Optional[float] = None
+    as_optimal_spread_pct: Optional[float] = None
+    as_gamma: Optional[float] = None
+    as_kappa: Optional[float] = None
+    ws_book_age_s: Optional[float] = None
+    ws_message_count: int = 0
+    as_presence_pct: Optional[float] = None  # session or window presence under A-S
+    as_protected: bool = False  # true when A-S math (reservation inside book) is the decider
     offers_cancelled_session: int = 0
     offers_kept_session: int = 0
     fills_session: int = 0

@@ -34,3 +34,7 @@ python scripts/portfolio_bleed_analysis.py
 
 1. **Mainnet go-live gate** — [`OPERATOR_MANUAL.md`](OPERATOR_MANUAL.md)  
 2. **Field gates (Gate 1 → 2 → 3)** — [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)
+
+
+**Handoff note (2026-06-10):** Full experimental pure A-S + WS + real Grok exploitation context (post cash addition, live HUD at :8765, 5 competitors, exploitation prompts) + complete Cursor switch package is in groks input/CURSOR_HANDOFF_ROADMAP.md. See also docs/WS_AS_MANUAL.md. All experimental work advisory-only on grok-ws-feed; sacred Gate 2 (VPS) untouched.
+

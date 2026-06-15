@@ -338,3 +338,6 @@ That is achievable on XRPL RLUSD with what you have **after Gate 2 config + Tier
 ---
 
 *Suggested next code change: update `scripts/weekly_skim_report.py` Gate lines to match §3 Gate 2 table (60 fills, toxic 32%, balance week).*
+
+**Handoff note (2026-06-10):** Full experimental pure A-S + WS + real Grok exploitation context (post cash addition, live HUD at :8765, 5 competitors, exploitation prompts) + complete Cursor switch package is in groks input/CURSOR_HANDOFF_ROADMAP.md. See also docs/WS_AS_MANUAL.md. All experimental work advisory-only on grok-ws-feed; sacred Gate 2 (VPS) untouched.
+

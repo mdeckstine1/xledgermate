@@ -3,3 +3,9 @@ PyYAML
 xrpl-py
 pandas
 pytest
+
+# For the real-time WS + pure A-S HUD (experimental/ws_feed/real_time_as_hud.py)
+# and live testing of the committed path. Install with: pip install -r requirements.txt
+fastapi
+uvicorn[standard]
+requests  # used for real Grok/xAI calls from the HUD Intelligence tab and model discovery

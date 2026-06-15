@@ -7,6 +7,31 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.0.0] — 2026-05-29 (`Ashigaru`)
+
+**Theme:** WS + pure A-S lab reaches **v2** — soak gates, dry-run offers, peer-lane intel, swap-readiness on the path to live MM.
+
+### Added
+
+- **G1 peer-lane intel** — posted-touch band (0.4×–2.5× our L1), fled-touch proxy, peer-only pressure (`peer_lane.py`, `competitor_intel.py`).
+- **Pure dry-run executor** — virtual offers on WS path without sacred engine edits (`pure_dry_run_executor.py`).
+- **Swap readiness report** — wiring parity + economics gate (`swap_readiness_report.py`).
+- **WS feed hardening** — reconnect backoff, `is_fresh`, book-age modulator, zero-quote operator notes.
+- **Dynamic L1 sizing** — `min(config, k × balance)` with inventory/pressure skew.
+- **Streamlit WS compare** tab + expanded runtime analysis / C2 soak gate.
+
+### Changed
+
+- **`WS_AS_VERSION` → 2.0.0** — single source in `experimental/ws_feed/WS_AS_VERSION`; `PureQuotePath` reads it at import.
+- **Project `VERSION` → 2.0.0** — Ashigaru product line (sacred VPS Gate 2 engine unchanged until Phase E swap).
+
+### Docs
+
+- [`docs/PURE_AS_CRITICAL_PATH.md`](docs/PURE_AS_CRITICAL_PATH.md) — Phases A–D complete; Phase G G1 shipped.
+- [`experimental/PHASE_E_INTELLIGENCE_IMPLEMENTATION_PLAN.md`](experimental/PHASE_E_INTELLIGENCE_IMPLEMENTATION_PLAN.md) — operator doctrine for peer lane.
+
+---
+
 ## [1.4.4] — 2026-05-29 (`tier-2-polish`)
 
 **Theme:** Gate 1 runs survive bad book ticks without spread-fail kill; **Tier 1 + Gate 1 signed off** — Gate 2 current.

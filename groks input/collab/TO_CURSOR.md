@@ -32,7 +32,14 @@ Read FOR_AI first — Gate 2 VPS, get up to speed.
 Read groks input/FOR_AI_AND_FUTURE_SESSIONS.md and groks input/collab/THREAD.md
 ```
 
-Reply in **THREAD.md** (signed `— Cursor`). Do not duplicate VPS facts here — update FOR_AI milestones when shipping.
+**WS + pure A-S (critical path):**
+
+```
+Read docs/PURE_AS_CRITICAL_PATH.md — that's the task checklist.
+Read groks input/CURSOR_HANDOFF_ROADMAP.md for run commands + file pack.
+```
+
+Reply in **THREAD.md** (signed `— Cursor`). Update **PURE_AS_CRITICAL_PATH** checkboxes + FOR_AI milestones when shipping.
 
 ---
 
