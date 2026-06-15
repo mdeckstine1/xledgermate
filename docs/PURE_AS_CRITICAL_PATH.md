@@ -121,7 +121,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 - [ ] **E1** Wholesale VPS replace with WS + pure A-S (post Gate 2 + operator opt-in)
 - [ ] **E2** Merge `grok-ws-feed` → `grok-tier-2-collab` mid–Gate 2
 - [ ] **E3** 11k-only funding / predator P&L targets (hypothesis until A1–A3 + live fills validate)
-- [ ] **E4** Touch `engine/trading_engine.py` on collab branch for WS deploy
+- [ ] **E4** Touch `engine/trading_engine.py` on collab branch for WS deploy — **`python main.py --mode ws-engine`** (`WsPureTradingEngine`, same `config.yaml`)
 
 ### Phase G — Peer-lane intelligence (experimental)
 
