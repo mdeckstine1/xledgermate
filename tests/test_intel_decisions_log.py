@@ -77,6 +77,7 @@ def test_build_performance_metrics_from_trades(tmp_path: Path) -> None:
     assert pm["capture"]["positive_capture_pct"] == 100.0
     assert len(pm["grades"]) == 5
     assert pm["peer_coverage_pct"] == 50.0
+    assert pm["activation"]["tier"] in ("pilot", "pilot_watch", "warming_up", "active")
 
 
 def test_build_peer_scrape_intel_record() -> None:

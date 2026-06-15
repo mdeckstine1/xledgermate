@@ -602,8 +602,16 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
         <div id="metrics" class="page">
             <div class="content">
-                <h3 style="margin-top:0; color:#60a5fa;">Performance Metrics (G3)</h3>
-                <p style="font-size:0.8rem; color:#94a3b8; margin-top:0;">Grades from Phase E §7 — spread capture is primary; inventory is steering. Log: <code style="font-size:0.7rem;">logs/intel_decisions.jsonl</code></p>
+                <h3 style="margin-top:0; color:#60a5fa;">Performance Metrics (G3 / G6)</h3>
+                <p style="font-size:0.8rem; color:#94a3b8; margin-top:0;">Grades from Phase E §7 — spread capture is primary; inventory is steering. G6 activation tier grades live posture. Log: <code style="font-size:0.7rem;">logs/intel_decisions.jsonl</code></p>
+
+                <div class="card full-width" style="margin-top:8px; margin-bottom:12px;">
+                    <div class="metric-row" style="align-items:center;">
+                        <span class="label">G6 activation</span>
+                        <span id="metrics-g6-tier" class="grade-pill grade-unknown">—</span>
+                    </div>
+                    <div id="metrics-g6-summary" style="font-size:0.75rem; color:#94a3b8; margin-top:6px;">Waiting for activation grade…</div>
+                </div>
 
                 <div class="grid" style="margin-top:12px;">
                     <div class="card">
@@ -1800,6 +1808,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 }
             }
             const cap = pm.capture || {};
+            const act = pm.activation || {};
+            const tierEl = document.getElementById('metrics-g6-tier');
+            const tier = act.tier || 'unknown';
+            if (tierEl) {
+                tierEl.textContent = tier.replace(/_/g, ' ');
+                tierEl.className = 'grade-pill grade-' + (tier === 'active' || tier === 'scale_ready' ? 'good' : (tier === 'hold' || tier === 'halted' ? 'attention' : 'neutral'));
+            }
+            const sumEl = document.getElementById('metrics-g6-summary');
+            if (sumEl) {
+                sumEl.textContent = act.summary || '—';
+            }
             setText('metrics-ws-fills', cap.ws_fills != null ? String(cap.ws_fills) : '—');
             setText('metrics-total-cap', cap.total_capture_xrp != null ? (cap.total_capture_xrp >= 0 ? '+' : '') + cap.total_capture_xrp + ' XRP' : '—');
             setText('metrics-pos-pct', cap.positive_capture_pct != null ? cap.positive_capture_pct + '%' : '—');

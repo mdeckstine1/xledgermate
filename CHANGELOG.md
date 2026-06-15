@@ -7,6 +7,24 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+---
+
+## [2.1.8] — 2026-06-15 (`Ashigaru`)
+
+**Theme:** G6 live activation grading — §7 portfolio + capture + structural signals on Metrics tab.
+
+### Added
+
+- **G6 live activation grading** — `experimental/ws_feed/live_activation_grading.py`; tiers (`warming_up` → `pilot` → `active` → `scale_ready`); CLI `--gate`; report `logs/g6_activation_report.json`.
+- **HUD G6 pill** — Metrics tab shows activation tier + summary from `performance_metrics.activation`.
+- **`--g6-activation`** on `replay_long_run.py`.
+
+### Changed
+
+- **`VERSION` / `WS_AS_VERSION` → 2.1.8** — G6 checked off in `PURE_AS_CRITICAL_PATH.md`.
+
+---
+
 ## [2.1.0] — 2026-06-15 (`Ashigaru`)
 
 **Theme:** Phase E complete (live ws-engine E1.5 PASS) + **G2 spread-quality scaler** on production path.

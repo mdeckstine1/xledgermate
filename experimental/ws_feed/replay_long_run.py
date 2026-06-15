@@ -632,8 +632,36 @@ def main() -> None:
         action="store_true",
         help="G5: peer-lane coverage + neutral-fallback validation (writes logs/peer_lane_g5_report.json)",
     )
-    parser.add_argument("--gate", action="store_true", help="With --swap-readiness or --peer-lane-g5: exit 1 if gate fails")
+    parser.add_argument(
+        "--g6-activation",
+        action="store_true",
+        help="G6: live activation grading from §7 (writes logs/g6_activation_report.json)",
+    )
+    parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="With --swap-readiness, --peer-lane-g5, or --g6-activation: exit 1 if gate fails",
+    )
     args = parser.parse_args()
+
+    if args.g6_activation:
+        from experimental.ws_feed.live_activation_grading import (
+            DEFAULT_REPORT_PATH as G6_REPORT_PATH,
+            build_g6_report,
+            format_g6_report,
+        )
+
+        report = build_g6_report()
+        G6_REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        G6_REPORT_PATH.write_text(
+            __import__("json").dumps(report.as_dict(), indent=2),
+            encoding="utf-8",
+        )
+        print(format_g6_report(report))
+        print(f"\nWrote {G6_REPORT_PATH}")
+        if args.gate and not report.passed:
+            sys.exit(1)
+        return
 
     if args.peer_lane_g5:
         from experimental.ws_feed.peer_lane_replay_validation import (

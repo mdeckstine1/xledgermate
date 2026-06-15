@@ -210,6 +210,16 @@ def build_performance_metrics(
     ]
 
     recent_intel = intel_tail[-12:]
+    from experimental.ws_feed.live_activation_grading import summarize_activation
+
+    activation = summarize_activation(
+        runtime=rt,
+        performance_metrics={
+            "grades": [g.as_dict() for g in grades],
+            "capture": cap,
+        },
+        intel_rows=intel_tail,
+    )
     return {
         "grades": [g.as_dict() for g in grades],
         "capture": cap,
@@ -218,4 +228,5 @@ def build_performance_metrics(
         "recent_intel": recent_intel,
         "e15_fills_gate": 50,
         "e15_fills_met": n_fills >= 50,
+        "activation": activation,
     }

@@ -142,7 +142,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 - [x] **G3 (E.3)** Intel JSONL + Performance Metrics tab (HUD and/or Streamlit)
 - [x] **G4 (E.4)** Wire peer-lane signals into `PureQuotePath` size_mult / side bias — `peer_lane_quoting.py` v2.1.4; production `ws-engine` scrapes peer lane ~15s
 - [x] **G5 (E.5)** Replay validation — `peer_lane_replay_validation.py`; peer coverage % + neutral-fallback rate on `intel_decisions.jsonl` + WS samples; sacred eligibility baseline
-- [ ] **G6 (E.6)** Live activation graded by §7 (portfolio XRP-equiv from fills, capture, toxicity)
+- [x] **G6 (E.6)** Live activation graded by §7 — `live_activation_grading.py` (portfolio XRP-equiv, capture, toxicity, G2/G4 rates); HUD Metrics tab; `python -m experimental.ws_feed.live_activation_grading --gate`
 
 ### Phase F — Grok exploitation & operator UX (after path solid)
 
@@ -262,6 +262,7 @@ experimental/ws_feed/pure_dry_run_executor.py
 experimental/swap_readiness_report.py
 experimental/PHASE_E_INTELLIGENCE_IMPLEMENTATION_PLAN.md
 experimental/ws_feed/peer_lane_replay_validation.py   # G5 peer coverage + neutral-fallback gate
+experimental/ws_feed/live_activation_grading.py       # G6 §7 live activation tier + gate
 experimental/ws_feed/peer_lane_quoting.py
 experimental/ws_feed/replay_long_run.py
 scripts/vps_deploy_ashigaru.sh              # VPS pull + restart (version + HUD)
