@@ -1,6 +1,6 @@
 # XLedgerMate
 
-XRPL XRP/RLUSD market-making bot (v1) focused on:
+XRPL XRP/RLUSD market-making bot (**v2** WS + pure A-S line on `Ashigaru`; sacred Gate 2 VPS remains v1.4.4 until swap) focused on:
 
 - strict risk-capital isolation (Bot Account only)
 - transparent perception (volatility, liquidity, effective spreads)
@@ -11,7 +11,7 @@ XRPL XRP/RLUSD market-making bot (v1) focused on:
 ```text
 xledgermate/
 ├── main.py                 # App entrypoint
-├── VERSION                 # Release version (1.4.4)
+├── VERSION                 # Release version (2.0.0)
 ├── CHANGELOG.md            # Version history
 ├── docs/OPERATOR_MANUAL.md # Non-technical operator guide
 ├── requirements.txt
@@ -123,7 +123,7 @@ Before **live** testnet (`dry_run: false`): run `setup-trust`, fund RLUSD, set n
 
 ## Versioning
 
-- Current version: see [`VERSION`](VERSION) (e.g. **1.4.4**)
+- Current version: see [`VERSION`](VERSION) (**2.0.0** Ashigaru · WS path `experimental/ws_feed/WS_AS_VERSION`)
 - Release notes: [`CHANGELOG.md`](CHANGELOG.md)
 - Operator guide: [`docs/OPERATOR_MANUAL.md`](docs/OPERATOR_MANUAL.md)
 - Strategy + gates: [`docs/STRATEGY_MANUAL.md`](docs/STRATEGY_MANUAL.md), [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)

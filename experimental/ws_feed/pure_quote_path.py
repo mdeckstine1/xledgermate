@@ -10,6 +10,7 @@ Pressure + Grok are inputs only (vol, spread anchor, gamma scale, advisory notes
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from experimental.competitor_pressure import apply_competitor_pressure, from_intel_dict
@@ -19,7 +20,16 @@ from experimental.ws_feed.zero_quote_notes import classify_and_explain_pure_zero
 from strategy.avellaneda_strategy import AvellanedaStrategy, AvellanedaQuote
 from strategy.quote_decision import assess_inventory
 
-WS_AS_VERSION = "0.1.4"
+_WS_AS_VERSION_FILE = Path(__file__).resolve().parent / "WS_AS_VERSION"
+
+
+def _read_ws_as_version() -> str:
+    if _WS_AS_VERSION_FILE.exists():
+        return _WS_AS_VERSION_FILE.read_text(encoding="utf-8").strip()
+    return "2.0.0"
+
+
+WS_AS_VERSION = _read_ws_as_version()
 DEFAULT_INVENTORY_SKEW_STRENGTH = 1.0
 DEFAULT_MIN_SPREAD_FLOOR_PCT = 0.04
 

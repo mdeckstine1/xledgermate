@@ -1,8 +1,9 @@
 # Pure A-S Critical Path
 
 **Status:** Active — we are moving from **hard `market_edge_met` gates** to **WS + pure Avellaneda-Stoikov** as the production quoting model.  
-**Branch:** `xledger-ws-as` (WS + pure A-S product line) · **Sacred data / VPS Gate 2:** `grok-tier-2-collab` (labeled corpus only until swap sign-off)  
-**Last updated:** 2026-06-11
+**Version:** **v2.0.0** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru`  
+**Sacred data / VPS Gate 2:** `grok-tier-2-collab` (labeled corpus only until swap sign-off)  
+**Last updated:** 2026-05-29
 
 This is the **single checklist** for WS + pure A-S work. Other docs point here; do not duplicate task lists elsewhere.
 
@@ -47,7 +48,7 @@ cd C:\Users\micha\xledgermate
 .\.venv\Scripts\Activate.ps1
 python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --sample-interval 4 --verbose
 ```
-(Grok key: `.env` → `XLG_GROK_KEY`. No `--profile` — PureQuotePath v0.1.0 only.)
+(Grok key: `.env` → `XLG_GROK_KEY`. No `--profile` — PureQuotePath **v2.0.0**.)
 
 ```powershell
 python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 0 --verbose
