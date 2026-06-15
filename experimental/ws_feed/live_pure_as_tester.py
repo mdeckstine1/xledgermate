@@ -66,7 +66,6 @@ def _session_fields(runtime: dict) -> dict[str, Any]:
     if count is None:
         count = len(history)
     return {
-        "ws_as_version": runtime.get("ws_as_version", WS_AS_VERSION),
         "sample_count": count,
         "as_presence_pct": runtime.get("as_presence_pct"),
         "presence_by_pressure": runtime.get("presence_by_pressure"),
@@ -142,7 +141,7 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         "would_quote": runtime.get("market_edge_met"),
         "last_note": runtime.get("quote_decision_summary"),
         "as_mode": "pure",
-        "ws_as_version": runtime.get("ws_as_version"),
+        "ws_as_version": extra.pop("ws_as_version", None) or current_ws_as_version(),
         "balance_xrp": runtime.get("balance_xrp"),
         "balance_rlusd": runtime.get("balance_rlusd"),
         "portfolio_value_xrp": port,
@@ -184,6 +183,7 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
 from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig
 from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter, WS_AS_VERSION
+from experimental.ws_feed.pure_quote_path import current_ws_as_version
 from experimental.ws_feed.network_urls import rpc_url_to_websocket_url
 from experimental.ws_feed.pair_books import RlusdXrpPair
 from experimental.ws_feed.pure_dry_run_executor import PureDryRunExecutor

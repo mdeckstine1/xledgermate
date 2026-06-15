@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self';">
-    <title>WS + Pure A-S Live HUD</title>
+    <title>XLedgerMate — Live WS Market Maker HUD</title>
     <style>
         html, body { height: 100%; }
         body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; }
@@ -392,7 +392,7 @@
         <div class="section">
             <div class="label">Session</div>
             <div class="sidebar-value" id="sidebar-version" style="font-size:0.7rem;">v —</div>
-            <div class="sidebar-value" id="sidebar-samples" style="font-size:0.7rem;">Cycles: —</div>
+            <div class="sidebar-value" id="sidebar-samples" style="font-size:0.7rem;">Quote cycles: —</div>
             <div class="sidebar-value" id="sidebar-fills" style="font-size:0.7rem;">Fills: —</div>
             <div class="sidebar-value" id="sidebar-pnl" style="font-size:0.7rem;">Bal Δ: —</div>
             <div class="sidebar-value" id="sidebar-markout" style="font-size:0.7rem;">Markout@30s: —</div>
@@ -415,7 +415,7 @@
     </div>
 
     <div class="main">
-        <div class="header">WS + Pure A-S — Live Strategy HUD <span id="mode" style="font-size:0.9rem; color:#64748b;"></span> <span id="header-session" style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">v — · cycles — · fills — · presence —</span></div>
+        <div class="header">XLedgerMate — Live Market Maker HUD <span id="mode" style="font-size:0.9rem; color:#64748b;"></span> <span id="header-session" style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">v — · cycles — · fills — · presence —</span></div>
 
         <div class="nav">
             <a href="#" data-page="live" class="active">Live</a>
@@ -428,7 +428,7 @@
 
         <div id="live" class="page active">
             <div class="marquee-container">
-                <div class="marquee" id="marquee">PURE A-S active • WS book feed • loading decisions...</div>
+                <div class="marquee" id="marquee">Live engine · WS book feed · loading quote decisions…</div>
             </div>
             <div id="hud-poll-status" style="font-size:0.65rem; color:#64748b; padding:2px 16px 6px; font-family: ui-monospace, monospace; background:#0f172a; display:inline-block;">polling /state every 800ms...</div>
             <button id="btn-force-poll" style="font-size:0.55rem; padding:1px 5px; margin-left:4px; vertical-align:middle; cursor:pointer;">↻</button>
@@ -439,13 +439,13 @@
                         <div class="label">Live Book (WS)</div>
                         <div id="book" class="value">—</div>
                         <div class="metric-row"><span class="label">Spread</span> <span id="spread" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">WS Age <span class="info" title="Seconds since the last book change (WS message or reconciliation refresh). Should tick UP between updates, then drop when a new book update arrives. Green &lt;5s, yellow &lt;12s, red ≥12s.">?</span></span> <span id="age" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">WS Messages <span class="info" title="How many fresh price updates the bot has received from the live market. Higher numbers mean we're getting lots of up-to-date information, so the prices shown are more current and trustworthy.">?</span></span> <span id="msgs" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">Volatility <span class="info" title="Current volatility estimate used by the A-S model (simple proxy from live book spread in this tester). Higher vol generally leads to wider optimal spreads.">?</span></span> <span id="volatility" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Book freshness <span class="info" title="Seconds since the last WS book update. Should tick up between messages, then drop when a new tick arrives. Green &lt;5s, yellow &lt;12s, red ≥12s.">?</span></span> <span id="age" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">WS Messages <span class="info" title="Count of book updates received this session. Higher is better — stale counts mean reconnect or RPC issues.">?</span></span> <span id="msgs" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Volatility <span class="info" title="Effective vol input to A-S (scaled from live book spread + freshness). Higher vol → wider optimal spread.">?</span></span> <span id="volatility" class="value">—</span></div>
                     </div>
 
                     <div class="card">
-                        <div class="label">Pure A-S Decision <span style="font-size:0.6rem; color:#4ade80;">(A-S math only)</span></div>
+                        <div class="label">Quote decision <span style="font-size:0.6rem; color:#4ade80;">(pure A-S · live engine)</span></div>
                         <div class="metric-row"><span class="label">Reservation (inside book = protected)</span> <span id="reservation" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Optimal Spread</span> <span id="as_spread" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Gamma / Kappa <span class="info" title="Pure A-S parameters (no hard gate on top).
@@ -460,8 +460,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     </div>
 
                     <div class="card">
-                        <div class="label">Session Fills <span class="info" title="Fills since engine start (runtime). E1.5 gate: 50 WS-path fills with markout tracking.">?</span></div>
-                        <div class="metric-row"><span class="label">Fills (E1.5 gate)</span> <span id="fills-session" class="value">—</span></div>
+                        <div class="label">Session fills <span class="info" title="Fills since engine start. E1.5 checkpoint: 50 WS-path fills with markout tracking.">?</span></div>
+                        <div class="metric-row"><span class="label">Fills (E1.5 checkpoint)</span> <span id="fills-session" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Bal Δ (session)</span> <span id="session-pnl" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Spread capture</span> <span id="session-capture" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Markout @30s</span> <span id="session-markout" class="value">—</span></div>
@@ -471,9 +471,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     </div>
 
                     <div class="card">
-                        <div class="label">Suggested Levels (near book)</div>
+                        <div class="label">Quote ladder (L1–L3)</div>
                         <div id="suggested-ladder"></div>
-                        <small id="ladder-hint" style="display:block; margin-top:6px; font-size:0.65rem; opacity:0.7;">Waiting for ladder...</small>
+                        <small id="ladder-hint" style="display:block; margin-top:6px; font-size:0.65rem; opacity:0.7;">Waiting for engine quote cycle…</small>
                     </div>
                 </div>
 
@@ -482,7 +482,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="label collapsible-header" data-target="last_note">
                             Last Decision Note <span class="chevron">▼</span>
                         </div>
-                        <div id="last_note" class="note collapsible-content">Waiting for first update...</div>
+                        <div id="last_note" class="note collapsible-content">Waiting for first engine update…</div>
                     </div>
 
                     <div class="card">
@@ -566,7 +566,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             </select>
                         </div>
                         <div style="margin-top:6px;">
-                            <label style="font-size:0.7rem; color:#94a3b8;">API Key / Secret (demo only)</label>
+                            <label style="font-size:0.7rem; color:#94a3b8;">Grok / xAI API key</label>
                             <input type="password" id="intel-ai-key" placeholder="xai-... for Grok or ollama key" style="width:100%; font-family:monospace; font-size:0.8rem; margin:2px 0;">
                         </div>
                         <div style="margin-top:4px;">
@@ -581,13 +581,13 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             </label>
                         </div>
                         <small style="font-size:0.6rem; opacity:0.7; display:block; margin-top:4px;">
-                            Keys are in-memory demo only (this HUD's separate state; main Streamlit GUI key does not auto-copy here). 
-                            <strong>Recommended:</strong> use --intel-ai-model grok-3 on launch. Click "Fetch available models for this key" to get a dropdown of models your key supports (grok-3 is pre-selected at top). 
+                            Saved to <code>logs/hud_intel_config.json</code> on Apply (VPS). Streamlit GUI uses <code>.env</code> separately.
+                            <strong>Recommended:</strong> grok-3 — use Fetch models to verify your key.
                             The dropdown auto-applies when you change selection. AI is advisory only.
                         </small>
                     </div>
 
-                    <button id="btn-apply-config" class="full-width" style="margin-top:12px;">Apply Changes (demo only)</button>
+                    <button id="btn-apply-config" class="full-width" style="margin-top:12px;">Apply intelligence settings</button>
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
@@ -612,7 +612,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="metric-row"><span class="label">Total capture</span> <span id="metrics-total-cap" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Positive %</span> <span id="metrics-pos-pct" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Avg bps/fill</span> <span id="metrics-avg-bps" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">E1.5 gate (50 fills)</span> <span id="metrics-e15" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">E1.5 checkpoint (50 fills)</span> <span id="metrics-e15" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Intel log lines</span> <span id="metrics-intel-lines" class="value">—</span></div>
                     </div>
                 </div>
@@ -631,7 +631,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
         <div id="credentials" class="page">
             <div class="content">
                 <h3 style="margin-top:0; color:#60a5fa;">Credentials &amp; Keys</h3>
-                <p style="font-size:0.85rem; color:#94a3b8;">Enter or update credentials here (demo only — changes are in-memory for this HUD session). For persistent storage and the full tabbed form, use the main Streamlit GUI and load the runtime JSON from the tester.</p>
+                <p style="font-size:0.85rem; color:#94a3b8;">Bot credentials live in <code>config/credentials.local.yaml</code> (gitignored). Use Streamlit GUI for full account setup; this tab is a quick view only.</p>
 
                 <div class="credentials-cards">
                     <div class="card">
@@ -663,7 +663,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <small>Any extra keys/tokens used by the WS path or external providers.</small>
                     </div>
 
-                    <button id="btn-save-creds" class="full-width" style="margin-top:12px; padding:6px 12px;">Save Credentials (demo)</button>
+                    <button id="btn-save-creds" class="full-width" style="margin-top:12px; padding:6px 12px;">Save to HUD session (not persistent)</button>
                     <small class="full-width" style="display:block; margin-top:4px; font-size:0.7rem; opacity:0.7;">This updates the HUD display only. For real/persistent use: edit config/credentials.local.yaml (never commit secrets!) and restart. Full secure form + validation is in the main Streamlit GUI.</small>
                 </div>
 
@@ -680,7 +680,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 <p style="font-size:0.8rem; color:#94a3b8; margin-bottom:8px;">
                     Balances below are <strong>on-ledger for the bot r-address only</strong> (queried each engine cycle).
                     Your Xaman / custody wallet is separate — nothing appears here until you send XRP or RLUSD <em>to the bot address</em>.
-                    Planned MM capital (<span id="inv-risk-capital-label">11,254 XRP</span>) stays in Xaman until development is finished — nothing to move yet.
+                    Reserve capital in Xaman stays separate until E3 funding. Numbers below are <strong>on-ledger bot account</strong> (what the engine trades).
                 </p>
 
                 <div class="inventory-cards">
@@ -711,7 +711,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     <!-- Bot address + QR (receive) -->
                     <div class="card">
                         <div class="label">Bot XRPL Address (deposit target)</div>
-                        <div id="inv-bot-address" class="address-box" style="margin:6px 0; font-size:0.82rem;">r... (from config / tester state)</div>
+                        <div id="inv-bot-address" class="address-box" style="margin:6px 0; font-size:0.82rem;">r... (from bot config)</div>
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
                             <button id="btn-copy-address" style="flex:1; padding:4px 8px; font-size:0.75rem; background:#334155; color:#e2e8f0; border:none; border-radius:3px; cursor:pointer;">📋 Copy Address</button>
                             <button id="btn-show-qr" style="flex:1; padding:4px 8px; font-size:0.75rem; background:#14b8a6; color:white; border:none; border-radius:3px; cursor:pointer;">◻ Show QR Code</button>
@@ -733,7 +733,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div style="margin-top:6px; font-size:0.8rem;">
                             Inventory: <span id="inv-label">—</span>
                         </div>
-                        <small>These update from the live WS + tester state. Use demo buttons below to simulate movements for testing inventory skew / A-S behavior in the HUD.</small>
+                        <small>Balances refresh from the live engine each poll. Sandbox buttons below do <strong>not</strong> move on-ledger funds.</small>
                     </div>
 
                     <!-- Bring in / Receive section -->
@@ -745,15 +745,15 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                             <button id="btn-sim-deposit" style="background:#22c55e; color:#0f172a; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem; cursor:pointer;">+ Simulate incoming +10 XRP</button>
                             <button id="btn-sim-deposit-rlusd" style="background:#22c55e; color:#0f172a; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem; cursor:pointer;">+ Simulate incoming +50 RLUSD</button>
-                            <small style="opacity:0.7;">(demo only — updates HUD balances instantly for testing)</small>
+                            <small style="opacity:0.7;">(HUD sandbox — does not submit transactions)</small>
                         </div>
-                        <div id="inv-receive-note" style="margin-top:6px; font-size:0.7rem; color:#64748b;">Tip: On mainnet use a real wallet app (Xaman etc). After <code>pip install qrcode pillow</code> you <strong>must fully restart the tester process</strong> (the python command) for the QR images to appear. Address copy always works. Watch the console when starting the tester for "[HUD] QR support: ..."</div>
+                        <div id="inv-receive-note" style="margin-top:6px; font-size:0.7rem; color:#64748b;">Fund the bot from Xaman or any XRPL wallet — send to the address above. QR appears when <code>qrcode</code> is installed and ws-hud was restarted.</div>
                     </div>
 
                     <!-- Send / Withdraw from bot -->
                     <div class="card full-width" style="border-left: 3px solid #ef4444;">
                         <div class="label">Send / Withdraw from the bot → your wallet</div>
-                        <div style="font-size:0.8rem; margin:2px 0 8px;">Demo only. In a real run this would submit a signed Payment transaction from the bot account.</div>
+                        <div style="font-size:0.8rem; margin:2px 0 8px;">HUD sandbox — does not submit signed payments. Use Streamlit GUI or CLI for real withdrawals.</div>
 
                         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:0.85rem;">
                             <div>
@@ -770,32 +770,32 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <div style="grid-column: 1 / -1;">
                                 <label class="label" style="display:block; margin-bottom:2px;">Destination (your wallet r-address)</label>
                                 <input id="send-dest" type="text" value="rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh" style="width:100%; padding:3px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:3px; font-family:monospace;">
-                                <small style="opacity:0.65;">(demo default is the well-known test account — change to your own)</small>
+                                <small style="opacity:0.65;">(sandbox default — use your own r-address for real sends via Streamlit GUI)</small>
                             </div>
                         </div>
 
-                        <button id="btn-demo-send" style="margin-top:8px; width:100%; background:#ef4444; color:white; border:none; border-radius:3px; padding:6px 10px; font-size:0.85rem; cursor:pointer;">Send from Bot (demo)</button>
+                        <button id="btn-demo-send" style="margin-top:8px; width:100%; background:#ef4444; color:white; border:none; border-radius:3px; padding:6px 10px; font-size:0.85rem; cursor:pointer;">Simulate withdraw (HUD only)</button>
 
                         <div id="send-result" style="margin-top:6px; font-size:0.75rem; min-height:1.1em; color:#facc15;"></div>
                     </div>
 
                     <!-- Demo tx log for this session -->
                     <div class="card full-width">
-                        <div class="label">Demo Transaction Log (this HUD session)</div>
-                        <div id="inv-tx-log" class="recent" style="max-height:120px; font-size:0.7rem; background:#0f172a; padding:4px; border-radius:3px; white-space:pre-wrap;">No demo movements yet. Use the buttons above.</div>
-                        <small style="opacity:0.6;">These are client-side only. Restarting the tester clears them. Real history lives in the engine logs / trades csv.</small>
+                        <div class="label">HUD sandbox log (not on ledger)</div>
+                        <div id="inv-tx-log" class="recent" style="max-height:120px; font-size:0.7rem; background:#0f172a; padding:4px; border-radius:3px; white-space:pre-wrap;">No sandbox movements yet.</div>
+                        <small style="opacity:0.6;">Client-side only. Real fills and transfers: <code>logs/trades_*.csv</code> and on-chain history.</small>
                     </div>
 
                     <!-- Pure A-S + WS evidence (from replay/grokster on sacred long-run data) -->
                     <div class="card full-width" style="border-left: 3px solid #60a5fa;">
-                        <div class="label">Pure A-S + WS Evidence (replay on sacred hard-gate data)</div>
+                        <div class="label">Replay benchmark (path validation)</div>
                         <div style="font-size:0.8rem; margin-top:4px;">
-                            <strong>Presence lift:</strong> 90.7–93.8% (pure A-S) vs ~10.7% (hard gate baseline)<br>
+                            <strong>Presence lift:</strong> 90.7–93.8% (pure A-S) vs ~10.7% (legacy hard-gate baseline)<br>
                             <strong>Flip rate on 0-edge cases:</strong> 93.5%<br>
                             <strong>High-tox risk in sim:</strong> 0%<br>
-                            <strong>Key:</strong> Uses exact long-run wiring + A-S reservation inside book (no hard gate).
+                            <strong>Key:</strong> Same wiring as live engine — A-S reservation inside book, no hard gate.
                         </div>
-                        <small style="opacity:0.65;">Numbers from latest grokster + replay_long_run --as-mode pure on current vps decisions/trades. This is the proof for the post-Gate-2 wholesale server swap. Run the tools yourself for fresh numbers.</small>
+                        <small style="opacity:0.65;">From replay on sacred long-run data. Re-run <code>replay_long_run --as-mode pure</code> for fresh numbers.</small>
                         <div style="margin-top:8px; font-size:0.7rem;">
                             AI Config (from Config tab): <span id="intel-ai-status">stub (no key)</span>
                         </div>
@@ -842,18 +842,18 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     <!-- Skim Advice -->
                     <div class="card" style="border-left: 3px solid #22c55e;">
                         <div class="label">Pure A-S Skim Advice (from scrape)</div>
-                        <div id="intel-advice" style="font-size:0.85rem; margin:6px 0; white-space:pre-wrap;">No competitor data yet. Start the tester with live book for real-time on-chain profiles. If still empty after 30s, click "Force Competitor Scrape + Update" below or check terminal for "CompetitorIntelProvider active".</div>
-                        <small>Pressure low → A-S reservation moves closer to mid (more aggressive presence). High pressure → math protects by backing off. This is how we beat them: better inputs to the same A-S math.</small>
+                        <div id="intel-advice" style="font-size:0.85rem; margin:6px 0; white-space:pre-wrap;">Waiting for peer-lane scrape (~15s). Use Force scrape if still empty after 30s.</div>
+                        <small>Peer-lane pressure feeds G4 sizing (advisory). Low pressure → tighter presence when reservation allows. AI never overrides the inside-book guard.</small>
                     </div>
 
                     <!-- AI Analysis (competitor-aware for competitive edge) -->
                     <div class="card" style="border-left: 3px solid #8b5cf6;">
-                        <div class="label">AI Analysis (stub — augments A-S with competitor reasoning)</div>
+                        <div class="label">AI advisory (Grok)</div>
                         <div class="metric-row"><span class="label">Edge Quality</span> <span id="intel-ai-quality" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Skimmable per AI</span> <span id="intel-ai-skimmable" class="value">—</span></div>
                         <div style="font-size:0.75rem; margin-top:4px;">Rationale: <span id="intel-ai-rationale" style="white-space:pre-wrap;">—</span></div>
-                        <div class="metric-row" style="margin-top:4px;"><span class="label">AI Suggested Posture</span> <span id="intel-ai-posture" class="value">—</span></div>
-                        <small>Per-sample stub reasons over current book + competitor profiles/pressure. Low pressure (defensive competitors) now strongly biases "AI Suggested Posture" to "near" (skim harder opportunity) + boosts edge/skimmable. The pressure model already tweaks A-S inputs (lower vol, higher size_mult, observed-spread anchor) for more aggressive reservation on soft books. AI is strictly advisory — final presence decision is always pure A-S "reservation inside the live WS book". Use the "Analyze with AI" button (with grok key) for deeper real Grok suggestions on specific competitors. Local LLM (Ollama etc.) stubs are in ai_analysis/ ready for sub-100ms swap-in.</small>
+                        <div class="metric-row" style="margin-top:4px;"><span class="label">Suggested posture</span> <span id="intel-ai-posture" class="value">—</span></div>
+                        <small>Advisory only — quoting guard remains reservation inside the live book.</small>
                     </div>
 
                     <!-- AI address analysis + top competitors (left grid column — original width/placement) -->
@@ -898,10 +898,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
                     <!-- Controls -->
                     <div class="card full-width">
-                        <div class="label">Scrape Controls (demo)</div>
-                        <button id="btn-force-comp-scrape" style="background:#f59e0b; color:#0f172a; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem;">Force Competitor Scrape + Update</button>
-                        <button id="btn-sim-historical" style="margin-left:8px; background:#14b8a6; color:white; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem;">Simulate Historical Scrape (last 1h)</button>
-                        <div id="intel-scrape-log" style="margin-top:6px; font-size:0.7rem; color:#64748b;">Historical scrape populates profiles from ledger history / tx stream (extend in competitor_intel.py for real node walking).</div>
+                        <div class="label">Competitor scrape</div>
+                        <button id="btn-force-comp-scrape" style="background:#f59e0b; color:#0f172a; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem;">Force peer-lane scrape</button>
+                        <button id="btn-sim-historical" style="margin-left:8px; background:#14b8a6; color:white; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem;">Refresh historical context</button>
+                        <div id="intel-scrape-log" style="margin-top:6px; font-size:0.7rem; color:#64748b;">Production engine scrapes on-chain offers every ~15s for peer-lane intel.</div>
                     </div>
                 </div>
 
@@ -1176,11 +1176,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
             if (hint) {
                 if (!intents.length) {
-                    hint.textContent = 'Waiting for first A-S sample...';
+                    hint.textContent = 'Waiting for first quote cycle…';
                 } else if (active) {
-                    hint.textContent = 'L1 inside book (live). L2/L3 are planned depth (not placed on WS path yet).';
+                    hint.textContent = 'L1 live on ledger. L2/L3 are planned depth (config sizes; WS path places L1 today).';
                 } else {
-                    hint.textContent = 'Planned ladder — reservation not inside book, so L1 is not live.';
+                    hint.textContent = 'No live quotes — reservation outside book or inventory pause.';
                 }
             }
         }
@@ -1191,7 +1191,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             // Apply any demo inventory movements (deposits/withdraws) so balances stay consistent across polls
             applyDemoBalancePatchToState(s);
 
-            // Normalize data keys — the tester sends mid_price / best_bid_rlusd_per_xrp etc.
+            // Normalize data keys — engine sends mid_price / best_bid_rlusd_per_xrp etc.
             // for compatibility with the main Streamlit GUI. Support both.
             if (s.mid == null && s.mid_price != null) s.mid = s.mid_price;
             if (s.best_bid == null && s.best_bid_rlusd_per_xrp != null) s.best_bid = s.best_bid_rlusd_per_xrp;
@@ -1201,7 +1201,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const modeEl = document.getElementById('mode');
             if (modeEl) {
                 if (isProductionHud(s)) {
-                    modeEl.textContent = '(PRODUCTION · ws-engine)';
+                    modeEl.textContent = '(MAINNET · ws-engine)';
                 } else if (s.as_mode) {
                     modeEl.textContent = `(LAB · ${String(s.as_mode).toUpperCase()})`;
                 } else {
@@ -1228,7 +1228,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const sessionLine = `v ${ver} · cycles ${sampleCount != null ? sampleCount : '—'} · fills ${fillsE15}/50 · presence ${presence}`;
             setText('header-session', sessionLine);
             setText('sidebar-version', `v ${ver}`);
-            setText('sidebar-samples', `Cycles: ${sampleCount != null ? sampleCount : '—'}`);
+            setText('sidebar-samples', `Quote cycles: ${sampleCount != null ? sampleCount : '—'}`);
             setText('sidebar-fills', `Fills: ${fillsE15} / 50${fillsProcNote}`);
             if (balPnl != null && !Number.isNaN(balPnl)) {
                 const sign = balPnl >= 0 ? '+' : '';
@@ -1277,7 +1277,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const bookEl = document.getElementById('book');
             if (bookEl) {
                 if (!s.best_bid && !s.best_ask && !s.mid) {
-                    bookEl.innerHTML = '<span style="color:#64748b;">(waiting for first WS book sample...)</span>';
+                    bookEl.innerHTML = '<span style="color:#64748b;">Connecting to live book feed…</span>';
                 } else {
                     const newBook = (s.best_bid && s.best_ask)
                         ? `${parseFloat(s.best_bid).toFixed(6)} / ${parseFloat(s.best_ask).toFixed(6)} <span style="font-size:0.7rem;color:#64748b;">mid ${parseFloat(s.mid || 0).toFixed(6)}</span>`
@@ -1440,7 +1440,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             // === Config page: Wallet + L1-L3 Inventory Commitments (tied to bot wallet) ===
             const botAddr = document.getElementById('config-bot-address');
             if (botAddr) {
-                botAddr.textContent = s.bot_address || 'r... (bot wallet from config/tester)';
+                botAddr.textContent = s.bot_address || 'r… (from bot config)';
             }
 
             setText('config-xrp-balance', s.balance_xrp !== undefined ? `${parseFloat(s.balance_xrp).toFixed(2)} XRP` : '—');
@@ -1613,8 +1613,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setText('intel-active', s.num_active_mms != null ? s.num_active_mms : '—');
             setText('intel-depth', s.competitor_depth_xrp != null ? `${parseFloat(s.competitor_depth_xrp).toFixed(1)} XRP` : '—');
             setText('intel-advice', s.competitor_skim_advice || (isProductionHud(s)
-                ? 'Waiting for competitor scrape (production HUD polls book every ~15s).'
-                : 'No scrape data. Run live_pure_as_tester --serve-hud with live WS book.'));
+                ? 'Waiting for peer-lane scrape (~15s). Use Force scrape if still empty.'
+                : 'No scrape data — run live_pure_as_tester --serve-hud with a live WS book.'));
 
             function _renderIntelMakerList(listEl, rows, emptyMsg) {
                 if (!listEl) return;
@@ -1813,8 +1813,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     const ts = new Date().toLocaleTimeString();
                     const age = formatWsAge(s);
                     const msgs = (s.ws_message_count != null) ? s.ws_message_count : '?';
-                    const live = (s.ws_book_last_update_unix != null) ? 'live age' : 'sample age';
-                    statusEl.textContent = `last poll: ${ts} - WS msgs: ${msgs} - book age: ${age} (${live}) - server OK`;
+                    const src = (s.ws_book_last_update_unix != null) ? 'WS tick' : 'last cycle';
+                    statusEl.textContent = `last poll: ${ts} · WS msgs: ${msgs} · book age: ${age} (${src}) · OK`;
                     statusEl.style.color = '#4ade80';
                 }
 
@@ -1868,14 +1868,14 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 window._current_state.creds_other_api = otherApi;
             }
 
-            alert('Credentials & keys saved in this demo HUD session (in-memory only for this run).\n\n' +
+            alert('Credentials saved in this HUD session only (not written to disk).\n\n' +
                   'XRPL Bot Account Address: ' + (xrplAddr || '(empty)') + '\n' +
-                  'XRPL Secret: ' + (xrplSecret ? '******** (hidden for security)' : '(empty)') + '\n' +
+                  'XRPL Secret: ' + (xrplSecret ? '******** (hidden)' : '(empty)') + '\n' +
                   'Telegram Bot Token: ' + (tgToken || '(empty)') + '\n' +
                   'Telegram Chat ID: ' + (tgChat || '(empty)') + '\n' +
                   'Other API Key: ' + (otherApi || '(empty)') + '\n\n' +
-                  'For real/persistent use: edit config/credentials.local.yaml (never commit secrets!) and restart the tester.\n' +
-                  'The main Streamlit GUI (load the ws_as_demo_runtime.json) has the full interactive tabbed forms for entering and managing all credentials and keys securely.');
+                  'For persistent credentials: edit config/credentials.local.yaml (never commit secrets) and restart xledgermate.\n' +
+                  'Full account setup: Streamlit GUI (python main.py --mode gui).');
         }
 
         // --- Inventory tab helpers (funding / QR / demo send) ---
@@ -1931,7 +1931,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     if (img.naturalWidth <= 2 || img.naturalHeight <= 2) {
                         img.style.display = 'none';
                         if (statusEl) {
-                            statusEl.textContent = 'QR image is not active. Fully restart the tester (the python process) after pip install qrcode pillow.';
+                            statusEl.textContent = 'QR unavailable — restart xledgermate-ws-hud after: pip install qrcode pillow';
                             statusEl.style.color = '#f87171';
                         }
                     } else if (statusEl) {
@@ -1962,7 +1962,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             if (!log) return;
             const ts = new Date().toLocaleTimeString();
             const line = `[${ts}] ${message}\n`;
-            if (log.textContent.indexOf('No demo movements') === 0) log.textContent = '';
+            if (log.textContent.indexOf('No sandbox movements') === 0) log.textContent = '';
             log.textContent = line + log.textContent;
             // keep last ~12 lines
             const lines = log.textContent.trim().split('\n');
@@ -1982,7 +1982,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const curR = getEffectiveBalance(lastState, 'rlusd') || 0;
             demoBalancePatch.xrp = Math.max(0, curX + (deltaXrp || 0));
             demoBalancePatch.rlusd = Math.max(0, curR + (deltaRlusd || 0));
-            appendTxLog(`DEPOSIT demo +${deltaXrp||0} XRP +${deltaRlusd||0} RLUSD (new bal XRP ${demoBalancePatch.xrp.toFixed(2)})`);
+            appendTxLog(`SANDBOX deposit +${deltaXrp||0} XRP +${deltaRlusd||0} RLUSD (HUD bal XRP ${demoBalancePatch.xrp.toFixed(2)})`);
             updateSidebarAndInvFromPatch();
         }
 
@@ -2011,7 +2011,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
             const resEl = document.getElementById('send-result');
             if (ok) {
-                const note = `SENT demo ${amt} ${asset} → ${dest || 'external'} (new bal XRP ${(demoBalancePatch.xrp||curX).toFixed(2)})`;
+                const note = `SANDBOX sent ${amt} ${asset} → ${dest || 'external'} (HUD bal XRP ${(demoBalancePatch.xrp||curX).toFixed(2)})`;
                 if (resEl) { resEl.style.color = '#4ade80'; resEl.textContent = note; }
                 appendTxLog(note);
                 updateSidebarAndInvFromPatch();
@@ -2043,11 +2043,14 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const label = document.getElementById('engine-controls-label');
             if (!hint) return;
             if (isProductionHud(s)) {
-                if (label) label.textContent = 'Engine Controls (production)';
-                hint.textContent = 'Controls systemd xledgermate (ws-engine). Dry-run until you flip config.';
+                if (label) label.textContent = 'Engine Controls';
+                const live = s.dry_run === false;
+                hint.textContent = live
+                    ? 'Mainnet live — offers on ledger. Controls systemd xledgermate.'
+                    : 'Paper mode (dry_run=true) — no live offers. Set dry_run=false in config to go live.';
             } else {
-                if (label) label.textContent = 'Engine Controls (lab demo)';
-                hint.textContent = 'Lab only — run live_pure_as_tester --serve-hud locally.';
+                if (label) label.textContent = 'Engine Controls (local lab)';
+                hint.textContent = 'Local lab — run live_pure_as_tester --serve-hud.';
             }
         }
 
@@ -2092,7 +2095,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 profileSel.addEventListener('change', () => {
                     const prof = document.getElementById('config-profile');
                     if (prof) {
-                        prof.textContent = profileSel.value + ' (demo - restart tester with different --profile to use)';
+                        prof.textContent = profileSel.value + (isProductionHud(lastState || {})
+                            ? ' — change active_profile in config.yaml and restart engine'
+                            : ' — restart lab tester with --profile to apply');
                     }
                 });
             }
@@ -2228,7 +2233,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     } else {
                         console.error('fetchAvailableModels not available');
                         const resDiv = document.getElementById('model-list-result');
-                        if (resDiv) resDiv.textContent = 'Error: function not loaded. Hard refresh the page (Ctrl+Shift+R) or restart the tester.';
+                        if (resDiv) resDiv.textContent = 'Error: function not loaded. Hard refresh the page (Ctrl+Shift+R) or restart ws-hud.';
                     }
                 });
             }
@@ -2311,8 +2316,12 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     // Also immediately extend grace on click (before promise resolves) so very next 800ms poll is less likely to race the .then
                     window._intelConfigUserTouched = Date.now() + 45000;
 
-                    alert('Config & inventory settings are demo-only in the HUD.\n\nIntelligence API config captured (demo):\n' + JSON.stringify(intelConfig, null, 2) + 
-                          '\n\nReal changes (L1-L3 sizes, risk capital, profile params, inventory target, AI keys) are made in config/config.yaml or the main Streamlit GUI (which loads the live runtime JSON from the tester).\n\nAI is advisory only for competitor address trending — it does not touch A-S reservation math.');
+                    const prod = lastState && isProductionHud(lastState);
+                    alert((prod
+                        ? 'Intelligence settings saved to logs/hud_intel_config.json.\n\n'
+                        : 'Intelligence settings captured (lab session).\n\n') +
+                          JSON.stringify(intelConfig, null, 2) +
+                          '\n\nTrading params (L1–L3 sizes, risk capital, inventory target): config/config.yaml or Streamlit GUI.\n\nAI is advisory only — it does not override A-S reservation or the inside-book guard.');
                 });
             }
 
@@ -2376,23 +2385,32 @@ The A-S strategy itself decides presence via reservation price being inside the 
             // Intelligence tab demo controls (simulate harder scraping since real is in Python provider)
             const forceBtn = document.getElementById('btn-force-comp-scrape');
             if (forceBtn) {
-                forceBtn.addEventListener('click', () => {
+                forceBtn.addEventListener('click', async () => {
                     triggerAnim(forceBtn, 'btn-press', 120);
-                    // In real run this would call the provider; here we just force a poll + demo update
+                    const log = document.getElementById('intel-scrape-log');
+                    if (lastState && isProductionHud(lastState)) {
+                        if (log) log.textContent = 'Refreshing HUD state — production engine scrapes peer lane every ~15s.';
+                        try {
+                            const res = await fetch('/state');
+                            if (res.ok) {
+                                lastState = await res.json();
+                                renderLive(lastState);
+                            }
+                        } catch (e) { /* next poll will recover */ }
+                        return;
+                    }
                     if (lastState) {
                         lastState.competitor_pressure = Math.random() * 0.6;
-                        lastState.competitor_skim_advice = lastState.competitor_pressure < 0.3 ?
-                            "SCRAPE HARDER: Low pressure. A-S will go more aggressive." :
-                            "Monitor pressure. Let A-S math decide.";
-                        // Give demo data with full addresses so the Analyze box can get a usable (demo) r-address
+                        lastState.competitor_skim_advice = lastState.competitor_pressure < 0.3
+                            ? 'SCRAPE HARDER: Low pressure — A-S can lean more aggressive.'
+                            : 'Monitor pressure — A-S math decides presence.';
                         lastState.top_competitors = [
-                            {account: "rDemoM1...", account_full: "rDemoMaker1AddressForGrokAnalysisTest123456789", last_spread: 0.075, avg_spread: 0.085, activity: 650, sides: "b180/a95"},
-                            {account: "rDemoM2...", account_full: "rDemoMaker2AddressForGrokAnalysisTest987654321", last_spread: 0.12, avg_spread: 0.105, activity: 420, sides: "b55/a210"},
+                            {account: 'rDemoM1…', account_full: 'rDemoMaker1AddressForGrokAnalysisTest123456789', last_spread: 0.075, avg_spread: 0.085, activity: 650, sides: 'b180/a95'},
+                            {account: 'rDemoM2…', account_full: 'rDemoMaker2AddressForGrokAnalysisTest987654321', last_spread: 0.12, avg_spread: 0.105, activity: 420, sides: 'b55/a210'},
                         ];
                         renderLive(lastState);
                     }
-                    const log = document.getElementById('intel-scrape-log');
-                    if (log) log.textContent = 'Forced scrape — pressure updated from live book data.';
+                    if (log) log.textContent = 'Lab scrape simulated — use production HUD for real on-chain peer lane.';
                 });
             }
 
@@ -2401,7 +2419,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 histBtn.addEventListener('click', () => {
                     triggerAnim(histBtn, 'btn-press', 120);
                     const log = document.getElementById('intel-scrape-log');
-                    if (log) log.textContent = 'Historical scrape simulated (1h ledger walk). In real: extend scrape_historical() with AccountTx / repeated BookOffers over time.';
+                    if (lastState && isProductionHud(lastState)) {
+                        if (log) log.textContent = 'Historical walk is lab-only — production uses live peer-lane scrape.';
+                        return;
+                    }
+                    if (log) log.textContent = 'Lab: simulated 1h historical context (extend scrape_historical() for real ledger walk).';
                     // Populate some demo top competitors
                     if (lastState) {
                         // Use plausible full-length fake r-addresses so "Analyze with AI" has something real-looking to send

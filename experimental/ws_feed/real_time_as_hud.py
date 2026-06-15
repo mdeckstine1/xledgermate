@@ -93,6 +93,8 @@ if app:
         html = _INDEX_HTML.read_text(encoding="utf-8")
         resp = HTMLResponse(html)
         resp.headers["Content-Security-Policy"] = "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';"
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
         return resp
 
 
@@ -106,6 +108,9 @@ if app:
 
     @app.get("/state")
     async def get_state():
+        from experimental.ws_feed.pure_quote_path import current_ws_as_version
+
+        _current_state["ws_as_version"] = current_ws_as_version()
         return _current_state
 
     @app.post("/state")

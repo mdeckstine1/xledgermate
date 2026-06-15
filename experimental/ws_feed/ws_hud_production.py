@@ -1,14 +1,11 @@
 """
 
-Production WS + pure A-S HUD (:8765).
+Production WS + pure A-S operator HUD (:8765).
 
 
 
-Mirrors the live tester HUD UI (`experimental/ws_feed/hud/index.html`) but reads
-
-`logs/runtime_state.json` from `WsPureTradingEngine` and runs competitor intel +
-
-Grok config for the Intelligence tab.
+Reads `logs/runtime_state.json` from `WsPureTradingEngine`, competitor intel,
+and Grok config for the Intelligence tab. Shared UI: `hud/index.html`.
 
 
 
