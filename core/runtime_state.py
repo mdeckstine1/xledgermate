@@ -105,6 +105,7 @@ class RuntimeState:
     g2_summary: str = ""
 
     # WS + pure A-S (committed future path) — optional, for compatibility + new views
+    ws_as_version: str = ""
     as_mode: str = "off"  # "pure" | "hybrid" | "off"
     as_reservation: Optional[float] = None
     as_optimal_spread_pct: Optional[float] = None
@@ -251,6 +252,7 @@ class RuntimeStateStore:
             g2_grade=str(data.get("g2_grade", "neutral")),
             g2_active=bool(data.get("g2_active", False)),
             g2_summary=str(data.get("g2_summary", "")),
+            ws_as_version=str(data.get("ws_as_version", "")),
             offers_cancelled_session=int(data.get("offers_cancelled_session", 0)),
             offers_kept_session=int(data.get("offers_kept_session", 0)),
             fills_session=int(data.get("fills_session", 0)),

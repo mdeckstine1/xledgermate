@@ -602,6 +602,7 @@ class WsPureTradingEngine:
             price_source="ws_book_feed",
             price_history=list(self._price_history),
             as_mode="pure",
+            ws_as_version=WS_AS_VERSION,
             as_protected=True,
             ws_book_age_s=self._ws_feed.age_seconds() if self._ws_feed else None,
             ws_message_count=(

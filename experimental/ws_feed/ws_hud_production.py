@@ -85,7 +85,8 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
 
     rt = dict(runtime)
 
-    rt.setdefault("ws_as_version", rt.get("version") or WS_AS_VERSION)
+  # Project VERSION (2.1.0) ≠ WS path WS_AS_VERSION (2.1.1); never conflate them.
+    rt["ws_as_version"] = (str(rt.get("ws_as_version") or "").strip() or WS_AS_VERSION)
 
     rt.setdefault("sample_count", rt.get("cycle_count", 0))
 
