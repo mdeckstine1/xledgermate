@@ -21,8 +21,9 @@ from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig, is_trust
 from core import DecisionLog, VERSION
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_sync import plan_order_sync
-from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter, WS_AS_VERSION
+from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter
 from experimental.ws_feed.intel_decisions_log import append_intel_record, build_cycle_intel_record
+from experimental.ws_feed.pure_quote_path import current_ws_as_version
 from experimental.ws_feed.pair_books import RlusdXrpPair
 from experimental.ws_feed.network_urls import rpc_url_to_websocket_url
 from experimental.ws_feed.ws_book_feed import WsBookFeed
@@ -156,7 +157,7 @@ class WsPureTradingEngine:
         self._sample_interval_s = float(sample_interval_s)
         logger.info(
             "WsPureTradingEngine v%s | WS + pure A-S | dry_run=%s",
-            WS_AS_VERSION,
+            current_ws_as_version(),
             self.config.dry_run,
         )
         while self._running:
@@ -517,7 +518,7 @@ class WsPureTradingEngine:
             "mid_rlusd_per_xrp": mid,
             "execution": execution,
             "as_mode": "pure",
-            "ws_as_version": WS_AS_VERSION,
+            "ws_as_version": current_ws_as_version(),
             "would_quote": "would sync" in execution.lower(),
             "pid": os.getpid(),
             "events": [
@@ -603,7 +604,7 @@ class WsPureTradingEngine:
             price_source="ws_book_feed",
             price_history=list(self._price_history),
             as_mode="pure",
-            ws_as_version=WS_AS_VERSION,
+            ws_as_version=current_ws_as_version(),
             as_protected=True,
             ws_book_age_s=self._ws_feed.age_seconds() if self._ws_feed else None,
             ws_message_count=(
@@ -671,7 +672,7 @@ class WsPureTradingEngine:
                             "fills_session": self._session_fills,
                             "session_pnl_balance_xrp": session_bal_pnl,
                             "drawdown_pct": drawdown_pct,
-                            "ws_as_version": WS_AS_VERSION,
+                            "ws_as_version": current_ws_as_version(),
                         },
                     )
                 )

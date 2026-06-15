@@ -36,6 +36,11 @@ def _read_ws_as_version() -> str:
     return "2.0.0"
 
 
+def current_ws_as_version() -> str:
+    """Read WS_AS_VERSION file each call — safe for long-running HUD/engine processes."""
+    return _read_ws_as_version()
+
+
 WS_AS_VERSION = _read_ws_as_version()
 DEFAULT_INVENTORY_SKEW_STRENGTH = 1.0
 DEFAULT_MIN_SPREAD_FLOOR_PCT = 0.04
@@ -90,7 +95,7 @@ class PureQuoteDecision:
     size_rationale: str = ""
     quote_intents: List[Dict[str, Any]] = field(default_factory=list)
     as_mode: str = "pure"
-    path_version: str = WS_AS_VERSION
+    path_version: str = field(default_factory=current_ws_as_version)
     g2_size_mult: float = 1.0
     g2_spread_mult: float = 1.0
     g2_grade: str = "neutral"

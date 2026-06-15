@@ -56,7 +56,7 @@ from experimental.ws_feed.intel_decisions_log import (
     build_peer_scrape_intel_record,
 )
 from experimental.ws_feed.performance_metrics import build_performance_metrics
-from experimental.ws_feed.pure_quote_path import WS_AS_VERSION
+from experimental.ws_feed.pure_quote_path import WS_AS_VERSION, current_ws_as_version
 
 from experimental.ws_feed.real_time_as_hud import (
 
@@ -90,8 +90,8 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
 
     rt = dict(runtime)
 
-  # Project VERSION (2.1.0) ≠ WS path WS_AS_VERSION (2.1.1); never conflate them.
-    rt["ws_as_version"] = (str(rt.get("ws_as_version") or "").strip() or WS_AS_VERSION)
+    # File is authoritative — runtime may lag until next engine cycle after deploy.
+    rt["ws_as_version"] = current_ws_as_version()
 
     rt.setdefault("sample_count", rt.get("cycle_count", 0))
 
@@ -377,6 +377,8 @@ class ProductionHudMirror:
                 engine_profile=enriched.get("active_profile"),
 
                 active_profile=enriched.get("active_profile") or "ws_pure",
+
+                ws_as_version=current_ws_as_version(),
 
             )
 

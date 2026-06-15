@@ -142,6 +142,7 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         "would_quote": runtime.get("market_edge_met"),
         "last_note": runtime.get("quote_decision_summary"),
         "as_mode": "pure",
+        "ws_as_version": runtime.get("ws_as_version"),
         "balance_xrp": runtime.get("balance_xrp"),
         "balance_rlusd": runtime.get("balance_rlusd"),
         "portfolio_value_xrp": port,
