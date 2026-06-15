@@ -86,16 +86,38 @@ if app:
     _HUD_DIR = Path(__file__).parent / "hud"
     _INDEX_HTML = _HUD_DIR / "index.html"
 
-    @app.get("/", response_class=HTMLResponse)
-    async def index():
-        if not _INDEX_HTML.exists():
-            return HTMLResponse("<h1>index.html not found in hud/ — run from correct cwd or restore the file</h1>", status_code=500)
+    def _render_index_html() -> str:
+        from experimental.ws_feed.pure_quote_path import current_ws_as_version
+
+        ver = current_ws_as_version()
+        mtime = int(_INDEX_HTML.stat().st_mtime) if _INDEX_HTML.exists() else 0
+        build = f"{ver}-{mtime}"
         html = _INDEX_HTML.read_text(encoding="utf-8")
-        resp = HTMLResponse(html)
-        resp.headers["Content-Security-Policy"] = "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';"
+        return html.replace("__HUD_BUILD__", build)
+
+    def _index_response() -> HTMLResponse:
+        if not _INDEX_HTML.exists():
+            return HTMLResponse(
+                "<h1>index.html not found in hud/ — run from correct cwd or restore the file</h1>",
+                status_code=500,
+            )
+        resp = HTMLResponse(_render_index_html())
+        resp.headers["Content-Security-Policy"] = (
+            "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline';"
+        )
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
         return resp
+
+    @app.get("/", response_class=HTMLResponse)
+    async def index():
+        return _index_response()
+
+    @app.get("/hud", response_class=HTMLResponse)
+    async def hud_alias():
+        return _index_response()
 
 
 

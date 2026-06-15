@@ -2,6 +2,10 @@
 <html>
 <head>
     <meta charset="utf-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <!-- xlg-hud-build:__HUD_BUILD__ -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self';">
     <title>XLedgerMate — Live WS Market Maker HUD</title>
     <style>
@@ -471,7 +475,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     </div>
 
                     <div class="card">
-                        <div class="label">Quote ladder (L1–L3)</div>
+                        <div class="label" id="ladder-card-label">Quote ladder (L1–L3)</div>
                         <div id="suggested-ladder"></div>
                         <small id="ladder-hint" style="display:block; margin-top:6px; font-size:0.65rem; opacity:0.7;">Waiting for engine quote cycle…</small>
                     </div>
@@ -926,6 +930,29 @@ The A-S strategy itself decides presence via reservation price being inside the 
     <script>
         let lastState = null;
         let pinnedIntelAiResult = null;  // keep full Grok analysis across /state polls
+        const HUD_BUILD = '__HUD_BUILD__';
+
+        function ensureCacheBustUrl() {
+            if (!HUD_BUILD || HUD_BUILD.indexOf('__HUD_BUILD__') >= 0) return;
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('b') === HUD_BUILD) return;
+            params.set('b', HUD_BUILD);
+            window.location.replace(window.location.pathname + '?' + params.toString());
+        }
+
+        function applyProductionLabels() {
+            const ladderLabel = document.getElementById('ladder-card-label');
+            if (ladderLabel) ladderLabel.textContent = 'Quote ladder (L1–L3)';
+            document.querySelectorAll('.label').forEach(el => {
+                if (el.textContent.trim() === 'Suggested Levels (near book)') {
+                    el.textContent = 'Quote ladder (L1–L3)';
+                }
+            });
+        }
+
+        function pollBookAgeSource(s) {
+            return (s && s.ws_book_last_update_unix != null) ? 'WS tick' : 'last cycle';
+        }
 
         /** Seconds since last book mutation; ticks up live when ws_book_last_update_unix is set. */
         function computeLiveWsAge(s) {
@@ -1813,8 +1840,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     const ts = new Date().toLocaleTimeString();
                     const age = formatWsAge(s);
                     const msgs = (s.ws_message_count != null) ? s.ws_message_count : '?';
-                    const src = (s.ws_book_last_update_unix != null) ? 'WS tick' : 'last cycle';
-                    statusEl.textContent = `last poll: ${ts} · WS msgs: ${msgs} · book age: ${age} (${src}) · OK`;
+                    const src = pollBookAgeSource(s);
+                    statusEl.textContent = `HUD ${HUD_BUILD} · poll ${ts} · WS msgs ${msgs} · book age ${age} (${src}) · OK`;
                     statusEl.style.color = '#4ade80';
                 }
 
@@ -2520,6 +2547,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
         // Boot: attach nav (data-page driven), show Live, kick off immediate poll + recurring
         function bootHud() {
+            ensureCacheBustUrl();
+            applyProductionLabels();
+
             // Nav clicks
             document.querySelectorAll('.nav a').forEach(link => {
                 link.addEventListener('click', (e) => {
