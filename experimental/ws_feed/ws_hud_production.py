@@ -51,6 +51,11 @@ from experimental.ws_feed.hud_intel_support import (
 
 from experimental.ws_feed.live_pure_as_tester import _hud_market_payload
 
+from experimental.ws_feed.intel_decisions_log import (
+    append_intel_record,
+    build_peer_scrape_intel_record,
+)
+from experimental.ws_feed.performance_metrics import build_performance_metrics
 from experimental.ws_feed.pure_quote_path import WS_AS_VERSION
 
 from experimental.ws_feed.real_time_as_hud import (
@@ -335,6 +340,12 @@ class ProductionHudMirror:
 
         comp_fields = await self._maybe_competitor_fields(enriched)
 
+        if comp_fields and not comp_fields.get("competitor_error"):
+            try:
+                append_intel_record(build_peer_scrape_intel_record(comp_fields))
+            except OSError:
+                pass
+
         enriched.update(comp_fields)
 
         enriched.update(
@@ -349,7 +360,7 @@ class ProductionHudMirror:
 
         enriched.update(intel)
 
-
+        enriched["performance_metrics"] = build_performance_metrics(runtime=enriched)
 
         hud_update_state(
 

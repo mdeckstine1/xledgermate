@@ -137,7 +137,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 - [x] **G1 (E.1)** Posted-touch peer band in `competitor_intel.py` — `our_lane_xrp` from L1 intents; filter scrape by touch band; peer-only pressure; HUD peer vs book-wide lists
 - [x] **G2 (E.2)** Spread-quality scaler — `spread_quality_scaler.py` v2.1.0; brake on toxicity/markout (size× + vol/spread×); **no** win-chase, **no** kill coupling; wired in `PureQuotePath` + `ws-engine`
-- [ ] **G3 (E.3)** Intel JSONL + Performance Metrics tab (HUD and/or Streamlit)
+- [x] **G3 (E.3)** Intel JSONL + Performance Metrics tab (HUD and/or Streamlit)
 - [ ] **G4 (E.4)** Wire peer-lane signals into `PureQuotePath` size_mult / side bias (lab first; production `ws-engine` after E1 live sign-off)
 - [ ] **G5 (E.5)** Replay validation — peer coverage %, neutral-fallback rate on sacred + WS samples
 - [ ] **G6 (E.6)** Live activation graded by §7 (portfolio XRP-equiv from fills, capture, toxicity)

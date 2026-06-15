@@ -117,6 +117,14 @@
             padding-bottom: 24px; /* breathing room for bottom buttons when scrolled to end */
         }
 
+        .metric-grade { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid #1e293b; font-size: 0.78rem; }
+        .metric-grade:last-child { border-bottom: none; }
+        .grade-pill { font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; white-space: nowrap; }
+        .grade-good { background: rgba(74,222,128,0.15); color: #4ade80; }
+        .grade-attention { background: rgba(251,191,36,0.15); color: #fbbf24; }
+        .grade-unknown { background: rgba(100,116,139,0.2); color: #94a3b8; }
+        .intel-log-line { font-family: ui-monospace, monospace; font-size: 0.62rem; color: #94a3b8; padding: 2px 0; border-bottom: 1px solid #0f172a; word-break: break-all; }
+
         /* Live tab has UI chrome (marquee + status + button) above the scrollable cards.
            Prevent them from stretching; let only the .content area scroll. */
         #live > .marquee-container,
@@ -414,6 +422,7 @@
             <a href="#" data-page="config">Config</a>
             <a href="#" data-page="inventory">Inventory</a>
             <a href="#" data-page="intelligence">Intelligence</a>
+            <a href="#" data-page="metrics">Metrics</a>
             <a href="#" data-page="credentials">Credentials</a>
         </div>
 
@@ -579,6 +588,38 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     </div>
 
                     <button id="btn-apply-config" class="full-width" style="margin-top:12px;">Apply Changes (demo only)</button>
+                </div>
+
+                <div class="marquee-container" style="margin-top:12px;">
+                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="metrics" class="page">
+            <div class="content">
+                <h3 style="margin-top:0; color:#60a5fa;">Performance Metrics (G3)</h3>
+                <p style="font-size:0.8rem; color:#94a3b8; margin-top:0;">Grades from Phase E §7 — spread capture is primary; inventory is steering. Log: <code style="font-size:0.7rem;">logs/intel_decisions.jsonl</code></p>
+
+                <div class="grid" style="margin-top:12px;">
+                    <div class="card">
+                        <div class="label">Scoreboard</div>
+                        <div id="metrics-grades"></div>
+                    </div>
+                    <div class="card">
+                        <div class="label">Capture summary</div>
+                        <div class="metric-row"><span class="label">WS fills</span> <span id="metrics-ws-fills" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Total capture</span> <span id="metrics-total-cap" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Positive %</span> <span id="metrics-pos-pct" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Avg bps/fill</span> <span id="metrics-avg-bps" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">E1.5 gate (50 fills)</span> <span id="metrics-e15" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Intel log lines</span> <span id="metrics-intel-lines" class="value">—</span></div>
+                    </div>
+                </div>
+
+                <div class="card full-width" style="margin-top:12px;">
+                    <div class="label">Recent intel log (last 12)</div>
+                    <div id="metrics-intel-tail" style="max-height:220px; overflow-y:auto; margin-top:6px;">—</div>
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
@@ -1642,6 +1683,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 const hasKey = !!(s.intel_ai_key);
                 aiStatus.textContent = `${prov}${enabled ? '' : ' (disabled)'}${hasKey ? ' +key' : ''}`;
             }
+
+            renderMetrics(s);
+
             const intents = (s.quote_intents && Array.isArray(s.quote_intents)) ? s.quote_intents : [];
             if (intents.length) {
                 setText('config-l1-commit', _levelCommitText(intents, 1));
@@ -1709,6 +1753,49 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 el.innerHTML = full;
                 el.style.animation = 'marquee-seamless 90s linear infinite';
             });
+        }
+
+        function renderMetrics(s) {
+            const pm = s.performance_metrics || {};
+            const gradesEl = document.getElementById('metrics-grades');
+            if (gradesEl) {
+                const grades = pm.grades || [];
+                if (!grades.length) {
+                    gradesEl.innerHTML = '<div style="font-size:0.75rem;color:#64748b;">Waiting for metrics...</div>';
+                } else {
+                    gradesEl.innerHTML = grades.map(g => {
+                        const pill = g.grade || 'unknown';
+                        return `<div class="metric-grade">
+                            <div><strong>${g.label}</strong><br><span style="color:#cbd5e1">${g.value}</span><br><small style="opacity:0.65">${g.detail || ''}</small></div>
+                            <span class="grade-pill grade-${pill}">${pill}</span>
+                        </div>`;
+                    }).join('');
+                }
+            }
+            const cap = pm.capture || {};
+            setText('metrics-ws-fills', cap.ws_fills != null ? String(cap.ws_fills) : '—');
+            setText('metrics-total-cap', cap.total_capture_xrp != null ? (cap.total_capture_xrp >= 0 ? '+' : '') + cap.total_capture_xrp + ' XRP' : '—');
+            setText('metrics-pos-pct', cap.positive_capture_pct != null ? cap.positive_capture_pct + '%' : '—');
+            setText('metrics-avg-bps', cap.avg_capture_bps != null ? cap.avg_capture_bps + ' bps' : '—');
+            const e15 = pm.e15_fills_met ? 'PASS' : (cap.ws_fills != null ? cap.ws_fills + ' / ' + (pm.e15_fills_gate || 50) : '—');
+            setText('metrics-e15', e15);
+            setText('metrics-intel-lines', pm.intel_log_lines != null ? String(pm.intel_log_lines) : '—');
+            const tailEl = document.getElementById('metrics-intel-tail');
+            if (tailEl) {
+                const rows = pm.recent_intel || [];
+                if (!rows.length) {
+                    tailEl.textContent = 'No intel_decisions.jsonl yet — engine + HUD will append each cycle.';
+                } else {
+                    tailEl.innerHTML = rows.map(r => {
+                        const k = r.kind || '?';
+                        const ts = (r.ts_utc || '').slice(11, 19) || '—';
+                        if (k === 'peer_scrape') {
+                            return `<div class="intel-log-line">[${ts}] peer peers=${r.peer_lane_count} lane=${r.our_lane_xrp} pressure=${r.peer_pressure_score}</div>`;
+                        }
+                        return `<div class="intel-log-line">[${ts}] cycle ${r.cycle} inv=${r.inventory_label} pause_a=${r.pause_asks} g2=${r.g2_grade}</div>`;
+                    }).join('');
+                }
+            }
         }
 
         async function poll() {

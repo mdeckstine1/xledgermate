@@ -22,6 +22,7 @@ from core import DecisionLog, VERSION
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_sync import plan_order_sync
 from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter, WS_AS_VERSION
+from experimental.ws_feed.intel_decisions_log import append_intel_record, build_cycle_intel_record
 from experimental.ws_feed.pair_books import RlusdXrpPair
 from experimental.ws_feed.network_urls import rpc_url_to_websocket_url
 from experimental.ws_feed.ws_book_feed import WsBookFeed
@@ -650,3 +651,29 @@ class WsPureTradingEngine:
             g2_summary=str(ed.get("g2_summary") or ""),
         )
         self.state_store.save(state)
+        if ed:
+            try:
+                append_intel_record(
+                    build_cycle_intel_record(
+                        cycle=self._cycle_count,
+                        mid=mid,
+                        balance_xrp=balance_xrp,
+                        balance_rlusd=balance_rlusd,
+                        portfolio_xrp=portfolio,
+                        engine_dec=ed,
+                        runtime_extras={
+                            "inventory_target_xrp_ratio": float(
+                                config.inventory_target_xrp_ratio
+                            ),
+                            "toxic_fill_ratio": float(fill_quality.toxic_ratio),
+                            "toxic_fill_ratio_30s": float(fill_quality.toxic_ratio_30s),
+                            "mean_markout_30s_pct": float(fill_quality.mean_markout_30s_pct),
+                            "fills_session": self._session_fills,
+                            "session_pnl_balance_xrp": session_bal_pnl,
+                            "drawdown_pct": drawdown_pct,
+                            "ws_as_version": WS_AS_VERSION,
+                        },
+                    )
+                )
+            except OSError:
+                pass
