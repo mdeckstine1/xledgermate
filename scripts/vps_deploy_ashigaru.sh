@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Pull Ashigaru on VPS, verify version files, restart ws-engine + HUD (picks up new VERSION / HTML).
+# Pull Ashigaru-Kaizen on VPS, verify version files, restart ws-engine + HUD.
 set -euo pipefail
 cd /root/xledgermate
 
-echo "=== git pull Ashigaru ==="
-git fetch origin Ashigaru
-git checkout Ashigaru
-git pull origin Ashigaru
+BRANCH="Ashigaru-Kaizen"
+
+echo "=== git pull ${BRANCH} ==="
+git fetch origin "${BRANCH}"
+git checkout "${BRANCH}"
+git pull origin "${BRANCH}"
 echo "HEAD: $(git rev-parse --short HEAD)"
 
 PROJECT_VER="$(tr -d '\r\n' < VERSION)"

@@ -1,6 +1,6 @@
 # Phase E — VPS swap runbook
 
-**Branch:** `Ashigaru` · **Engine:** `python main.py --mode ws-engine`  
+**Branch:** `Ashigaru-Kaizen` · **Engine:** `python main.py --mode ws-engine`  
 **HUD:** `xledgermate-ws-hud` → `:8765` (production; retire Streamlit `:8502` for MM ops)  
 **Sacred corpus:** `grok-tier-2-collab` (Gate 2 labeled data + replay; **E2 merged** 2026-06-15)
 
@@ -40,7 +40,7 @@ This runbook is the operator ladder for **E1–E3** in [`PURE_AS_CRITICAL_PATH.m
 cd /root/xledgermate
 bash scripts/vps_deploy_ashigaru.sh
 # Or manually:
-git fetch && git checkout Ashigaru && git pull
+git fetch && git checkout Ashigaru-Kaizen && git pull
 systemctl restart xledgermate xledgermate-ws-hud
 ```
 
@@ -103,7 +103,7 @@ Post-live: run with `--live` (expects `dry_run: false`).
 
 **Discipline after E2:**
 
-- **VPS live MM:** always deploy **`Ashigaru`** — `ws-engine` + HUD `:8765`
+- **VPS live MM:** always deploy **`Ashigaru-Kaizen`** — `ws-engine` + HUD `:8765`
 - **Sacred replay / economics:** run on either branch (same WS code); corpus labels stay on collab
 - **Do not** switch VPS to legacy `--mode engine` poll path for production quoting
 

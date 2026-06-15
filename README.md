@@ -1,6 +1,6 @@
 # XLedgerMate
 
-XRPL XRP/RLUSD market-making bot (**v2** WS + pure A-S line on `Ashigaru`; sacred Gate 2 VPS remains v1.4.4 until swap) focused on:
+XRPL XRP/RLUSD market-making bot (**v2** WS + pure A-S line on `Ashigaru-Kaizen`; sacred Gate 2 VPS remains v1.4.4 until swap) focused on:
 
 - strict risk-capital isolation (Bot Account only)
 - transparent perception (volatility, liquidity, effective spreads)
@@ -79,9 +79,11 @@ xledgermate/
 
 ## Branches & Current Work
 
+- **`Ashigaru-Kaizen`** — **production VPS live MM** (`ws-engine` + HUD `:8765`, G1–G6, soak path)
 - `main` — stable baseline on GitHub (stale v1.0.0; real pilot on tier-2-polish lineage)
-- `tier-2-polish` / `grok-tier-2-collab` — **current mainnet pilot / Gate 2** (sacred gated long-run on VPS: HTTP poll + hard `market_edge_met` + full history/fills/kills). **Do not merge experimental changes here during Gate 2.**
-- `grok-ws-feed` — **experimental WS + pure A-S + real Grok exploitation lab** (only in `experimental/ws_feed/`). This is the committed future path (WS BookFeed + replicated wiring + pure Avellaneda-Stoikov with built-in protections only + competitor pressure + advisory Grok/xAI for holes/tactics/skim). **Local / Cursor focus only.** HUD at :8765. See `groks input/CURSOR_HANDOFF_ROADMAP.md` and `docs/WS_AS_MANUAL.md`.
+- `tier-2-polish` / `grok-tier-2-collab` — **sacred Gate 2 corpus** (HTTP poll + hard `market_edge_met` replay baseline). **Do not merge experimental changes here during Gate 2.**
+- `Ashigaru` — renamed to **`Ashigaru-Kaizen`** (2026-06-15)
+- `grok-ws-feed` — historical sandbox; superseded by Ashigaru-Kaizen
 - `development` / others — historical.
 
 **WS + pure A-S (moving away from hard gates):** [`docs/PURE_AS_CRITICAL_PATH.md`](docs/PURE_AS_CRITICAL_PATH.md) — **single task checklist**. Run commands: [`groks input/CURSOR_HANDOFF_ROADMAP.md`](groks%20input/CURSOR_HANDOFF_ROADMAP.md). VPS: [`groks input/FOR_AI_AND_FUTURE_SESSIONS.md`](groks%20input/FOR_AI_AND_FUTURE_SESSIONS.md).
@@ -123,7 +125,7 @@ Before **live** testnet (`dry_run: false`): run `setup-trust`, fund RLUSD, set n
 
 ## Versioning
 
-- Current version: see [`VERSION`](VERSION) (**2.1.0** Ashigaru · WS path `experimental/ws_feed/WS_AS_VERSION`)
+- Current version: see [`VERSION`](VERSION) (**2.1.10** Ashigaru Kaizen · WS path `experimental/ws_feed/WS_AS_VERSION`)
 - Release notes: [`CHANGELOG.md`](CHANGELOG.md)
 - Operator guide: [`docs/OPERATOR_MANUAL.md`](docs/OPERATOR_MANUAL.md)
 - Strategy + gates: [`docs/STRATEGY_MANUAL.md`](docs/STRATEGY_MANUAL.md), [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)

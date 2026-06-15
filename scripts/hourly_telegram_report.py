@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hourly operator summary to Telegram (fills, session, kill, Gate 2 hints)."""
+"""Hourly operator summary to Telegram (fills, session, kill, WS pure A-S metrics)."""
 
 from __future__ import annotations
 
@@ -9,13 +9,15 @@ import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 LOGS = ROOT / "logs"
+WS_FILL_MARKER = "WS pure fill"
+WS_ENGINE_START_MARKERS = ("Engine started", "WS-engine started", "ws-engine started")
 
 
 def _parse_ts(raw: str) -> datetime | None:
@@ -57,11 +59,16 @@ def _is_fill(row: dict[str, str]) -> bool:
     return side in ("BUY", "SELL")
 
 
+def _is_ws_fill(row: dict[str, str]) -> bool:
+    return WS_FILL_MARKER in (row.get("notes") or "")
+
+
 def _session_start_index(rows: list[dict[str, str]]) -> int:
     majors = [
         i
         for i, r in enumerate(rows)
-        if r.get("event_type") == "MAJOR" and "Engine started" in (r.get("notes") or "")
+        if r.get("event_type") == "MAJOR"
+        and any(m in (r.get("notes") or "") for m in WS_ENGINE_START_MARKERS)
     ]
     return majors[-1] if majors else 0
 
@@ -131,23 +138,45 @@ def _engine_running() -> bool:
             return False
 
 
-def build_report(*, window_hours: float = 1.0) -> str:
-    now = datetime.now(tz=timezone.utc)
+def _is_ws_runtime(rs: dict[str, Any]) -> bool:
+    if str(rs.get("as_mode") or "").lower() == "pure":
+        return True
+    if str(rs.get("active_profile") or "") == "ws_pure":
+        return True
+    return bool(rs.get("ws_as_version"))
+
+
+def build_report(
+    *,
+    window_hours: float = 1.0,
+    hud_url: str = "",
+    logs_dir: Optional[Path] = None,
+    now: Optional[datetime] = None,
+) -> str:
+    logs = logs_dir or LOGS
+    now = now or datetime.now(tz=timezone.utc)
     since_hour = now - timedelta(hours=window_hours)
-    rows = _all_trade_rows()
+    rows = _all_trade_rows() if logs_dir is None else _trade_rows_from_dir(logs)
     session_rows = rows[_session_start_index(rows) :]
     session_fills = [r for r in session_rows if _is_fill(r)]
     hour_fills = _fills_in_window(rows, since=since_hour)
+    ws_fills_all = [r for r in rows if _is_ws_fill(r)]
+    ws_session_fills = [r for r in session_fills if _is_ws_fill(r)]
+    ws_hour_fills = [r for r in hour_fills if _is_ws_fill(r)]
 
-    rs = _load_json(LOGS / "runtime_state.json")
-    kill = _load_json(LOGS / "kill_switch.json")
+    rs = _load_json(logs / "runtime_state.json")
+    kill = _load_json(logs / "kill_switch.json")
+    g6 = _load_json(logs / "g6_activation_report.json")
 
     hour = _summarize_fills(hour_fills)
     session = _summarize_fills(session_fills)
+    ws_hour = _summarize_fills(ws_hour_fills)
+    ws_session = _summarize_fills(ws_session_fills)
 
     kill_active = bool(kill.get("active")) or bool(rs.get("kill_switch_active"))
     kill_reason = str(kill.get("reason") or rs.get("kill_switch_reason") or "").strip()
     running = _engine_running()
+    ws_path = _is_ws_runtime(rs)
 
     portfolio = float(rs.get("portfolio_value_xrp") or 0)
     drawdown = float(rs.get("drawdown_pct") or 0)
@@ -165,14 +194,45 @@ def build_report(*, window_hours: float = 1.0) -> str:
     cancel_cf = float(rs.get("cancel_per_fill") or 0)
     policy = str(rs.get("quoting_policy_label") or rs.get("edge_resolution_summary") or "")[:80]
 
+    fills_session_rt = int(rs.get("fills_session") or 0)
+    session_fill_count = fills_session_rt if fills_session_rt > 0 else session["count"]
+    if ws_path and ws_session["count"]:
+        session_fill_count = max(session_fill_count, ws_session["count"])
+
     status = "KILL" if kill_active else ("RUNNING" if running else "STOPPED")
+    title = "XLedgerMate hourly (WS pure A-S)" if ws_path else "XLedgerMate hourly report"
     lines = [
-        f"XLedgerMate hourly report",
+        title,
         f"{now.strftime('%Y-%m-%d %H:%M')} UTC",
         "",
-        f"Status: {status} | Profile: {profile}",
-        f"Engine: {'up' if running else 'down'} | Cycles: {cycles}",
+        f"Fills — last {window_hours:g}h: {hour['count']} | session: {session_fill_count}",
     ]
+    if ws_path:
+        lines.append(f"WS fills — last {window_hours:g}h: {ws_hour['count']} | session: {ws_session['count']} | total: {len(ws_fills_all)}")
+    lines.extend(
+        [
+            "",
+            f"Status: {status} | Profile: {profile}",
+            f"Engine: {'up' if running else 'down'} | Cycles: {cycles}",
+        ]
+    )
+    if ws_path:
+        ws_ver = str(rs.get("ws_as_version") or g6.get("ws_as_version") or "?")
+        presence = rs.get("as_presence_pct")
+        g6_tier = str(
+            g6.get("activation_tier")
+            or (g6.get("performance_metrics") or {}).get("activation", {}).get("tier")
+            or ""
+        ).strip()
+        g2 = str(rs.get("g2_grade") or "").strip()
+        extra = f"v{ws_ver}"
+        if presence is not None:
+            extra += f" | Presence: {presence}%"
+        if g6_tier:
+            extra += f" | G6: {g6_tier}"
+        if g2:
+            extra += f" | G2: {g2}"
+        lines.append(extra)
     if kill_active and kill_reason:
         lines.append(f"Kill: {kill_reason[:200]}")
     lines.extend(
@@ -193,7 +253,7 @@ def build_report(*, window_hours: float = 1.0) -> str:
     lines.extend(
         [
             "",
-            f"Session (since restart) — fills: {session['count']}",
+            f"Session (since restart) — fills: {session_fill_count}",
             f"  Capture: {session['capture_xrp']:+.4f} XRP | ~{session['bps']:.1f} bps",
             f"  Neg capture: {session['neg_capture']}/{session['count']}",
             "",
@@ -202,12 +262,29 @@ def build_report(*, window_hours: float = 1.0) -> str:
     )
     if policy:
         lines.append(f"Policy: {policy}")
-    if session["count"] >= 45 and sess_bal_pnl <= -0.85:
+    kill_limit = 0.85
+    kill_min_fills = 45
+    if session_fill_count >= kill_min_fills and sess_bal_pnl <= -kill_limit:
         lines.append("")
-        lines.append("⚠ Near session kill band (−0.85 XRP @ 45+ fills)")
+        lines.append(f"⚠ Near session kill band (−{kill_limit} XRP @ {kill_min_fills}+ fills)")
+    hud = (hud_url or "").strip()
+    if hud:
+        lines.append("")
+        lines.append(f"HUD: {hud}")
     lines.append("")
     lines.append("Clear kill: clear-kill + systemctl restart xledgermate")
     return "\n".join(lines)
+
+
+def _trade_rows_from_dir(logs: Path) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for path in sorted(logs.glob("trades_*.csv")):
+        try:
+            with path.open(encoding="utf-8", newline="") as handle:
+                rows.extend(csv.DictReader(handle))
+        except OSError:
+            continue
+    return rows
 
 
 def main() -> int:
@@ -225,15 +302,19 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    text = build_report(window_hours=args.hours)
+    from config.settings import BotConfig
+
+    config = BotConfig.load()
+    text = build_report(
+        window_hours=args.hours,
+        hud_url=getattr(config, "telegram_hud_url", "") or "",
+    )
     if args.dry_run:
         print(text)
         return 0
 
-    from config.settings import BotConfig
     from monitoring.telegram_alerts import TelegramAlerts
 
-    config = BotConfig.load()
     alerts = TelegramAlerts(
         token=config.telegram_token,
         chat_id=config.telegram_chat_id,

@@ -1,7 +1,7 @@
 # Pure A-S Critical Path
 
 **Status:** Active — **WS + pure Avellaneda-Stoikov** is the production MM quoting model on VPS.  
-**Version:** **v2.1.7** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru` (VPS live MM)  
+**Version:** **v2.1.10** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru-Kaizen` (VPS live MM)  
 **Sacred corpus:** `grok-tier-2-collab` (Gate 2 replay + economics) · **E2 merged** 2026-06-15  
 **Last updated:** 2026-06-15 (G5 peer-lane replay validation; deploy script syncs version on restart)
 
@@ -20,7 +20,7 @@ This is the **single checklist** for WS + pure A-S work. Other docs point here; 
 
 **Safety contract:** `would_quote` = reservation inside live best bid/ask. Pressure, Grok, and AI only tune **inputs**.
 
-**Sacred replay** on `grok-tier-2-collab` is for economics baseline only. **Live VPS MM** runs `Ashigaru` `ws-engine` (Phase E1 complete).
+**Sacred replay** on `grok-tier-2-collab` is for economics baseline only. **Live VPS MM** runs `Ashigaru-Kaizen` `ws-engine` (Phase E1 complete).
 
 ---
 
@@ -120,7 +120,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 ### Phase E — VPS swap (complete 2026-06-15)
 
-*Production MM = **`Ashigaru`** `ws-engine`. Sacred replay = **`grok-tier-2-collab`**. **Runbook:** [`PHASE_E_VPS_RUNBOOK.md`](PHASE_E_VPS_RUNBOOK.md) · **Branches:** [`E2_BRANCH_DISCIPLINE.md`](E2_BRANCH_DISCIPLINE.md)*
+*Production MM = **`Ashigaru-Kaizen`** `ws-engine`. Sacred replay = **`grok-tier-2-collab`**. **Runbook:** [`PHASE_E_VPS_RUNBOOK.md`](PHASE_E_VPS_RUNBOOK.md) · **Branches:** [`E2_BRANCH_DISCIPLINE.md`](E2_BRANCH_DISCIPLINE.md)*
 
 - [x] **E1** Wholesale VPS replace with WS + pure A-S — **live quoting** 2026-06-15 (`dry_run: false`)
   - [x] E1.1 VPS on Ashigaru + `ws-engine` systemd

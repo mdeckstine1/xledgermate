@@ -201,6 +201,7 @@ class BotConfig:
     telegram_token: str = ""       # From @BotFather
     telegram_chat_id: str = ""     # Your chat ID (numeric, or @channel username)
     telegram_notify_each_cycle: bool = False
+    telegram_hud_url: str = ""  # Optional public HUD URL for hourly Telegram (e.g. http://host:8765)
 
     # === OTHER ===
     testnet: bool = True                    # Start on testnet by default

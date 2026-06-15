@@ -1,6 +1,6 @@
 # E2 — Branch discipline (WS + pure A-S vs sacred corpus)
 
-**Status:** Merged 2026-06-15 · **Production MM:** `Ashigaru` v2.1.0
+**Status:** `Ashigaru` → **`Ashigaru-Kaizen`** (2026-06-15) · **Production MM:** v2.1.10
 
 ---
 
@@ -8,9 +8,10 @@
 
 | Branch | Deploy to VPS live MM? | Role |
 |--------|------------------------|------|
-| **`Ashigaru`** | **Yes** | Production: `main.py --mode ws-engine`, HUD `:8765`, G1 peer lane, G2 scaler |
-| **`grok-tier-2-collab`** | No (use Ashigaru on VPS) | Sacred Gate 2 labeled corpus, `grokster`, `replay_long_run`, economics A/B |
-| **`grok-ws-feed`** | No (superseded by Ashigaru) | Historical; do not use for new work |
+| **`Ashigaru-Kaizen`** | **Yes** | Production: `main.py --mode ws-engine`, HUD `:8765`, G1–G6, hourly Telegram soak |
+| **`Ashigaru`** | No (renamed) | Historical name — use **`Ashigaru-Kaizen`** |
+| **`grok-tier-2-collab`** | No (use Ashigaru-Kaizen on VPS) | Sacred Gate 2 labeled corpus, `grokster`, `replay_long_run`, economics A/B |
+| **`grok-ws-feed`** | No (superseded) | Historical; do not use for new work |
 
 ---
 
@@ -27,11 +28,11 @@
 
 ## Operator commands
 
-**VPS production (Ashigaru):**
+**VPS production (Ashigaru-Kaizen):**
 
 ```bash
 cd /root/xledgermate
-git fetch && git checkout Ashigaru && git pull
+git fetch && git checkout Ashigaru-Kaizen && git pull
 systemctl restart xledgermate xledgermate-ws-hud
 ```
 

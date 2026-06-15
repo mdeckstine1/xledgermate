@@ -1,6 +1,6 @@
 # Handoff README — read this first (human or AI)
 
-**Last updated:** 2026-06-15 (VPS live **`Ashigaru`** `ws-engine` v2.1.0; E1+E2 complete; sacred replay on `grok-tier-2-collab`)
+**Last updated:** 2026-06-15 (VPS live **`Ashigaru-Kaizen`** `ws-engine` v2.1.10; E1+E2 complete; sacred replay on `grok-tier-2-collab`)
 **Purpose:** **New Grok session → read this file first.** Replaces chat memory for VPS, Gate 2, Telegram, kills, milestones. Path: `C:\Users\micha\xledgermate\groks input\FOR_AI_AND_FUTURE_SESSIONS.md`
 
 **Maintenance rule:** Update this file (and § Milestones) when the operator hits a milestone — VPS live, clean restart, Gate 2 start/end, profile change, major incident, git deploy to VPS, etc. Also update when major experimental observations (WS pure path behavior, funding model, scaling math, P&L targets, predator wiring) are captured for implementation.
@@ -40,7 +40,7 @@
 
 - **Repo:** [github.com/mdeckstine1/xledgermate](https://github.com/mdeckstine1/xledgermate) — XRPL **XRP/RLUSD** market-making bot  
 - **Local path (Windows):** `C:\Users\micha\xledgermate`  
-- **Production VPS (live MM):** branch **`Ashigaru`** · `python main.py --mode ws-engine` · v**2.1.0** · HUD **`:8765`** · pure A-S (no legacy `market_edge_met` gate on this path)
+- **Production VPS (live MM):** branch **`Ashigaru-Kaizen`** · `python main.py --mode ws-engine` · v**2.1.10** · HUD **`:8765`** · pure A-S (no legacy `market_edge_met` gate on this path)
 - **Sacred corpus / replay:** branch **`grok-tier-2-collab`** — Gate 2 labeled data, `grokster`, `replay_long_run --as-mode pure` for A/B vs live
 - **Legacy poll engine:** `python main.py --mode engine` — P0 hard gate (`6c1634a`) for sacred baseline replay **only**; not deployed on VPS production
 - **GitHub `main` is stale (v1.0.0)** — real system is local / `tier-2-polish`
@@ -152,7 +152,7 @@ Doc **05** / **03**: WebSocket remains **Tier 3** (post–Gate 2, capital scale)
 | **OS** | Ubuntu 26.04 LTS |
 | **SSH user** | `root` |
 | **SSH key (Windows)** | `C:\Users\micha\.ssh\hetzner_xledgermate` |
-| **Repo on VPS** | `/root/xledgermate` — branch **`Ashigaru`** (live MM); pull `grok-tier-2-collab` only for sacred replay work |
+| **Repo on VPS** | `/root/xledgermate` — branch **`Ashigaru-Kaizen`** (live MM); pull `grok-tier-2-collab` only for sacred replay work |
 | **Python** | 3.14 venv at `/root/xledgermate/.venv` |
 
 ### Systemd services (intended ownership)

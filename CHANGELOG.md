@@ -9,6 +9,26 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.10] — 2026-06-15 (`Ashigaru Kaizen`)
+
+**Theme:** Hourly Telegram for WS soak + trustworthy WS fill capture for G6.
+
+### Added
+
+- **Hourly Telegram (WS)** — fill counts (1h / session / WS total), G6 tier, presence %, optional HUD link via `telegram_hud_url`.
+- **HUD mobile layout** — viewport + narrow-screen CSS so `:8765` works on phone/tablet.
+- **WS-engine start MAJOR** — session boundary for hourly/session fill stats.
+
+### Changed
+
+- **Branch rename** — production VPS branch `Ashigaru` → **`Ashigaru-Kaizen`** (continuous improvement line).
+
+### Fixed
+
+- **WS fill `profit_xrp_equiv`** — uses mid at last quote sync (`_last_sync_mid`), not stale cycle mid; unlocks G6 spread-capture grades.
+
+---
+
 ## [2.1.9] — 2026-06-15 (`Ashigaru`)
 
 **Theme:** Fix ws-engine runtime persist after G4 — HUD and intel log live again.

@@ -251,6 +251,13 @@ class WsPureTradingEngine:
             current_ws_as_version(),
             self.config.dry_run,
         )
+        self.csv_logger.log_major(
+            network=self.config.network_name(),
+            notes=(
+                f"WS-engine started | dry_run={self.config.dry_run} "
+                f"| ws_as_version={current_ws_as_version()}"
+            ),
+        )
         while self._running:
             if ENGINE_STOP_FILE.exists():
                 ENGINE_STOP_FILE.unlink(missing_ok=True)
@@ -536,20 +543,22 @@ class WsPureTradingEngine:
         xrp_amount = float(fill["xrp_amount"])
         rlusd_amount = float(fill["rlusd_amount"])
         price = float(fill["price_rlusd_per_xrp"])
+        mid_at_quote = self._last_sync_mid or self._last_valid_mid or mid
         cap = estimate_spread_capture_xrp(
             side=side,
             xrp_amount=xrp_amount,
             fill_price_rlusd_per_xrp=price,
-            mid_at_quote_rlusd_per_xrp=mid,
+            mid_at_quote_rlusd_per_xrp=mid_at_quote,
         )
+        mid_at_fill = mid if is_trustworthy_rlusd_mid(mid) else mid_at_quote
         self._session_fills += 1
         self._session_spread_capture += cap
-        if mid:
+        if mid_at_fill:
             self._fill_quality.note_fill(
                 side=side,
                 xrp_amount=xrp_amount,
                 price=price,
-                mid_at_fill=mid,
+                mid_at_fill=mid_at_fill,
                 fill_source="ws_pure_balance_delta",
             )
         common = dict(
@@ -559,7 +568,10 @@ class WsPureTradingEngine:
             price_rlusd_per_xrp=price,
             profit_xrp_equiv=cap,
             cycle=self._cycle_count + 1,
-            notes=f"WS pure fill (balance delta); capture ~{cap:+.4f} XRP",
+            notes=(
+                f"WS pure fill (balance delta); capture ~{cap:+.4f} XRP "
+                f"@ mid {mid_at_quote or 'n/a'}"
+            ),
             balance_xrp_after=balance_xrp,
             balance_rlusd_after=balance_rlusd,
         )
