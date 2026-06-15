@@ -19,6 +19,10 @@ from experimental.ws_feed.probe_verbose import WsProbeStats, log_verbose_frame
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MAX_BOOK_AGE_S = 12.0
+DEFAULT_RECONNECT_BASE_S = 5.0
+DEFAULT_RECONNECT_MAX_S = 60.0
+
 try:
     from xrpl.asyncio.clients import AsyncWebsocketClient
     from xrpl.models.requests import BookOffers, Subscribe
@@ -53,6 +57,9 @@ class WsBookFeed(BookFeed):
     verbose: bool = False
     stats: Optional[WsProbeStats] = None
     max_drift_bps: float = 5.0  # reconciliation target from PROBE_RESULTS
+    max_book_age_s: float = DEFAULT_MAX_BOOK_AGE_S
+    reconnect_count: int = 0
+    last_reconnect_monotonic: float = 0.0
 
     def __post_init__(self) -> None:
         self.http_fallback = HttpPollBookFeed(self.connector)
@@ -213,6 +220,11 @@ class WsBookFeed(BookFeed):
             last_summary = time.monotonic()
             while time.monotonic() < deadline and not self._stop.is_set():
                 now = time.monotonic()
+                if not self.is_fresh():
+                    try:
+                        await self.seed_from_ws_snapshot()
+                    except Exception:
+                        logger.exception("Stale-book refresh failed in WS run loop")
                 if now - last_http >= http_refresh_seconds:
                     try:
                         # Use WS snapshot for periodic reconciliation (addresses
@@ -262,20 +274,56 @@ class WsBookFeed(BookFeed):
         if self.state.age_seconds() < 10.0:  # fresh enough
             return self.state.to_order_book()
         try:
-            return await self.fetch_order_book_over_ws(limit=limit)
+            book = await self.fetch_order_book_over_ws(limit=limit)
+            self.state.apply_snapshot("bid", book.get("bids", []))
+            self.state.apply_snapshot("ask", book.get("asks", []))
+            return book
         except Exception:
             return await self.seed_from_http(limit)
+
+    async def refresh_if_stale(self, max_age_s: float = 12.0, *, limit: int = 40) -> float:
+        """Re-seed book when age exceeds max_age_s; returns age after refresh attempt."""
+        if self.state.age_seconds() <= max_age_s:
+            return self.state.age_seconds()
+        try:
+            await self.seed_from_ws_snapshot(limit=limit)
+        except Exception:
+            logger.exception("WS stale refresh failed, trying HTTP")
+            try:
+                await self.seed_from_http(limit=limit)
+            except Exception:
+                logger.exception("HTTP stale refresh failed")
+        return self.state.age_seconds()
 
     def age_seconds(self) -> float:
         return self.state.age_seconds()
 
+    def freshness_snapshot(self) -> Dict[str, Any]:
+        return self.state.freshness_snapshot()
+
     def current_order_book(self) -> Dict[str, List[Dict[str, float]]]:
         return self.state.to_order_book()
 
+    def is_fresh(self, max_age_s: Optional[float] = None) -> bool:
+        """D1 guard: book state younger than max_age_s (default max_book_age_s)."""
+        limit = self.max_book_age_s if max_age_s is None else max_age_s
+        return self.age_seconds() < limit
+
     def data_freshness(self, max_age_s: float = 5.0) -> bool:
         """Data quality helper for A-S inputs: whether the book state is reasonably current."""
-        age = self.age_seconds()
-        return age < max_age_s
+        return self.is_fresh(max_age_s)
+
+    def reconnect_backoff_seconds(self) -> float:
+        """Exponential backoff capped for run_forever reconnects."""
+        exp = min(max(self.reconnect_count, 0), 4)
+        return min(DEFAULT_RECONNECT_BASE_S * (2**exp), DEFAULT_RECONNECT_MAX_S)
+
+    def feed_health_snapshot(self) -> Dict[str, Any]:
+        return {
+            "ws_reconnect_count": self.reconnect_count,
+            "ws_book_is_fresh": self.is_fresh(),
+            "ws_max_book_age_s": self.max_book_age_s,
+        }
 
     def data_quality_score(self) -> float:
         """Simple 0-1 score for A-S input quality (based on age and update volume from WS)."""
@@ -287,10 +335,11 @@ class WsBookFeed(BookFeed):
 
     async def run_forever(self, *, http_refresh_seconds: float = 45.0):
         """
-        Long-running loop (with basic reconnect skeleton) for sustained WS + pure A-S operation.
+        Long-running loop (with reconnect backoff) for sustained WS + pure A-S operation.
         The A-S strategy itself provides the quoting protections; this is just to keep feeding it fresh book data.
         """
         while not self._stop.is_set():
+            started = time.monotonic()
             try:
                 await self.run(
                     seconds=3600,
@@ -298,10 +347,22 @@ class WsBookFeed(BookFeed):
                     seed_http=True,
                     summary_interval_seconds=60.0,
                 )
+                if time.monotonic() - started >= 120.0:
+                    self.reconnect_count = 0
             except Exception:
-                logger.exception("[WS] run_forever error, will retry in 5s...")
-                await asyncio.sleep(5.0)
+                self.reconnect_count += 1
+                self.last_reconnect_monotonic = time.monotonic()
+                backoff = self.reconnect_backoff_seconds()
+                logger.exception(
+                    "[WS] run_forever error (reconnect #%s), backoff %.1fs...",
+                    self.reconnect_count,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
             if not self._stop.is_set():
-                logger.info("[WS] Reconnecting for continued pure A-S feed...")
+                logger.info(
+                    "[WS] Reconnecting for continued pure A-S feed (reconnect_count=%s)",
+                    self.reconnect_count,
+                )
 
     # best_and_mid and is_trustworthy inherited from BookFeed (uses connector + state)

@@ -98,8 +98,18 @@ class RuntimeState:
     toxic_fill_ratio: float = 0.0
     toxic_fill_ratio_30s: float = 0.0
     mean_markout_30s_pct: float = 0.0
+    g2_size_mult: float = 1.0
+    g2_spread_mult: float = 1.0
+    g2_grade: str = "neutral"
+    g2_active: bool = False
+    g2_summary: str = ""
+    g4_size_mult: float = 1.0
+    g4_grade: str = "neutral"
+    g4_active: bool = False
+    g4_summary: str = ""
 
     # WS + pure A-S (committed future path) — optional, for compatibility + new views
+    ws_as_version: str = ""
     as_mode: str = "off"  # "pure" | "hybrid" | "off"
     as_reservation: Optional[float] = None
     as_optimal_spread_pct: Optional[float] = None
@@ -241,6 +251,25 @@ class RuntimeStateStore:
             toxic_fill_ratio=float(data.get("toxic_fill_ratio", 0.0)),
             toxic_fill_ratio_30s=float(data.get("toxic_fill_ratio_30s", 0.0)),
             mean_markout_30s_pct=float(data.get("mean_markout_30s_pct", 0.0)),
+            g2_size_mult=float(data.get("g2_size_mult", 1.0)),
+            g2_spread_mult=float(data.get("g2_spread_mult", 1.0)),
+            g2_grade=str(data.get("g2_grade", "neutral")),
+            g2_active=bool(data.get("g2_active", False)),
+            g2_summary=str(data.get("g2_summary", "")),
+            g4_size_mult=float(data.get("g4_size_mult", 1.0)),
+            g4_grade=str(data.get("g4_grade", "neutral")),
+            g4_active=bool(data.get("g4_active", False)),
+            g4_summary=str(data.get("g4_summary", "")),
+            ws_as_version=str(data.get("ws_as_version", "")),
+            as_mode=str(data.get("as_mode", "off")),
+            as_reservation=data.get("as_reservation"),
+            as_optimal_spread_pct=data.get("as_optimal_spread_pct"),
+            as_gamma=data.get("as_gamma"),
+            as_kappa=data.get("as_kappa"),
+            ws_book_age_s=data.get("ws_book_age_s"),
+            ws_message_count=int(data.get("ws_message_count", 0)),
+            as_presence_pct=data.get("as_presence_pct"),
+            as_protected=bool(data.get("as_protected", False)),
             offers_cancelled_session=int(data.get("offers_cancelled_session", 0)),
             offers_kept_session=int(data.get("offers_kept_session", 0)),
             fills_session=int(data.get("fills_session", 0)),

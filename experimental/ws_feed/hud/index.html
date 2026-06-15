@@ -2,8 +2,12 @@
 <html>
 <head>
     <meta charset="utf-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <!-- xlg-hud-build:__HUD_BUILD__ -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self';">
-    <title>WS + Pure A-S Live HUD</title>
+    <title>XLedgerMate — Live WS Market Maker HUD</title>
     <style>
         html, body { height: 100%; }
         body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; }
@@ -117,6 +121,14 @@
             padding-bottom: 24px; /* breathing room for bottom buttons when scrolled to end */
         }
 
+        .metric-grade { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid #1e293b; font-size: 0.78rem; }
+        .metric-grade:last-child { border-bottom: none; }
+        .grade-pill { font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; white-space: nowrap; }
+        .grade-good { background: rgba(74,222,128,0.15); color: #4ade80; }
+        .grade-attention { background: rgba(251,191,36,0.15); color: #fbbf24; }
+        .grade-unknown { background: rgba(100,116,139,0.2); color: #94a3b8; }
+        .intel-log-line { font-family: ui-monospace, monospace; font-size: 0.62rem; color: #94a3b8; padding: 2px 0; border-bottom: 1px solid #0f172a; word-break: break-all; }
+
         /* Live tab has UI chrome (marquee + status + button) above the scrollable cards.
            Prevent them from stretching; let only the .content area scroll. */
         #live > .marquee-container,
@@ -154,6 +166,87 @@
         }
         .inventory-cards .full-width {
             grid-column: 1 / -1;
+        }
+
+        /* Intelligence tab: AI analysis + competitors — original half-grid slot (left column), scroll inside */
+        .intel-analysis-row {
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+            min-width: 0;
+        }
+        .intel-analysis-row > .card {
+            flex: 1;
+            min-width: 0;
+            overflow: visible;
+        }
+        /* Fixed-height scroll panels (Intelligence tab) — flex-shrink:0 so flex parents do not clip text */
+        .hud-scroll-box {
+            flex: 0 0 auto;
+            margin-top: 8px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            background: #0f172a;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.35);
+            scrollbar-width: thin;
+            scrollbar-color: #64748b #1e2937;
+        }
+        .hud-scroll-box::-webkit-scrollbar {
+            width: 10px;
+        }
+        .hud-scroll-box::-webkit-scrollbar-track {
+            background: #1e2937;
+            border-radius: 0 6px 6px 0;
+        }
+        .hud-scroll-box::-webkit-scrollbar-thumb {
+            background: #64748b;
+            border-radius: 5px;
+            border: 2px solid #1e2937;
+        }
+        .hud-scroll-box::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .hud-scroll-box-inner {
+            padding: 12px 14px;
+            font-size: 0.8rem;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+        .intel-ai-result-box {
+            height: 360px;
+            padding: 12px 14px;
+            font-family: ui-monospace, monospace;
+            font-size: 0.8rem;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+        .intel-top-list-box {
+            font-size: 0.75rem;
+        }
+        .intel-top-list-box .hud-scroll-box-inner {
+            font-family: ui-monospace, monospace;
+            font-size: 0.75rem;
+            line-height: 1.45;
+            padding: 8px 10px;
+        }
+        .hud-scroll-box-compact {
+            height: 220px;
+        }
+        .scroll-box-hint {
+            font-size: 0.6rem;
+            color: #64748b;
+            font-weight: normal;
+            text-transform: none;
+            letter-spacing: normal;
+            margin-left: 6px;
         }
 
         .address-box {
@@ -251,6 +344,37 @@
             0% { box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.3); }
             100% { box-shadow: none; }
         }
+
+        .ladder-level {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid #334155;
+        }
+        .ladder-level:first-child {
+            margin-top: 0;
+            padding-top: 0;
+            border-top: none;
+        }
+        .ladder-level-tag {
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: #94a3b8;
+            letter-spacing: 0.04em;
+            margin-bottom: 2px;
+        }
+        .ladder-level.planned .ladder-level-tag::after {
+            content: ' · planned';
+            font-weight: 400;
+            opacity: 0.75;
+        }
+        .ladder-level.inactive {
+            opacity: 0.55;
+        }
+        .ladder-size {
+            font-size: 0.72rem;
+            color: #94a3b8;
+            margin-left: 4px;
+        }
     </style>
 </head>
 <body>
@@ -260,6 +384,7 @@
         </div>
         <div class="section">
             <div class="label">Balances</div>
+            <div class="sidebar-value" id="sidebar-portfolio">Port: —</div>
             <div class="sidebar-value" id="sidebar-xrp">XRP: —</div>
             <div class="sidebar-value" id="sidebar-rlusd">RLUSD: —</div>
         </div>
@@ -269,34 +394,45 @@
         </div>
 
         <div class="section">
-            <div class="label">Status</div>
-            <div class="sidebar-value" id="sidebar-would-quote">—</div>
+            <div class="label">Session</div>
+            <div class="sidebar-value" id="sidebar-version" style="font-size:0.7rem;">v —</div>
+            <div class="sidebar-value" id="sidebar-samples" style="font-size:0.7rem;">Quote cycles: —</div>
+            <div class="sidebar-value" id="sidebar-fills" style="font-size:0.7rem;">Fills: —</div>
+            <div class="sidebar-value" id="sidebar-pnl" style="font-size:0.7rem;">Bal Δ: —</div>
+            <div class="sidebar-value" id="sidebar-markout" style="font-size:0.7rem;">Markout@30s: —</div>
+            <div class="sidebar-value" id="sidebar-presence" style="font-size:0.7rem;">Presence: —</div>
         </div>
         <div class="section">
-            <div class="label">Engine Controls (demo only)</div>
+            <div class="label">Status</div>
+            <div class="sidebar-value" id="sidebar-would-quote">—</div>
+            <div class="sidebar-value" id="sidebar-resting" style="font-size:0.65rem; opacity:0.85;">Resting: —</div>
+        </div>
+        <div class="section">
+            <div class="label" id="engine-controls-label">Engine Controls</div>
             <div style="display:flex; gap:4px;">
                 <button id="btn-start-engine" style="flex:1; font-size:0.65rem; padding:3px 4px; background:#22c55e; color:white; border:none; border-radius:3px;">▶ Start</button>
                 <button id="btn-stop-engine" style="flex:1; font-size:0.65rem; padding:3px 4px; background:#ef4444; color:white; border:none; border-radius:3px;">⏹ Stop</button>
                 <button id="btn-restart-engine" style="flex:1; font-size:0.65rem; padding:3px 4px; background:#14b8a6; color:white; border:none; border-radius:3px;">↻ Restart</button>
             </div>
-            <small style="font-size:0.6rem; opacity:0.7;">Full controls in base Streamlit when loading the runtime JSON from tester.</small>
+            <small id="engine-controls-hint" style="font-size:0.6rem; opacity:0.7;">Loading engine mode...</small>
         </div>
     </div>
 
     <div class="main">
-        <div class="header">WS + Pure A-S — Live Strategy HUD <span id="mode" style="font-size:0.9rem; color:#64748b;"></span></div>
+        <div class="header">XLedgerMate — Live Market Maker HUD <span id="mode" style="font-size:0.9rem; color:#64748b;"></span> <span id="header-session" style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">v — · cycles — · fills — · presence —</span></div>
 
         <div class="nav">
             <a href="#" data-page="live" class="active">Live</a>
             <a href="#" data-page="config">Config</a>
             <a href="#" data-page="inventory">Inventory</a>
             <a href="#" data-page="intelligence">Intelligence</a>
+            <a href="#" data-page="metrics">Metrics</a>
             <a href="#" data-page="credentials">Credentials</a>
         </div>
 
         <div id="live" class="page active">
             <div class="marquee-container">
-                <div class="marquee" id="marquee">PURE A-S active • WS book feed • loading decisions...</div>
+                <div class="marquee" id="marquee">Live engine · WS book feed · loading quote decisions…</div>
             </div>
             <div id="hud-poll-status" style="font-size:0.65rem; color:#64748b; padding:2px 16px 6px; font-family: ui-monospace, monospace; background:#0f172a; display:inline-block;">polling /state every 800ms...</div>
             <button id="btn-force-poll" style="font-size:0.55rem; padding:1px 5px; margin-left:4px; vertical-align:middle; cursor:pointer;">↻</button>
@@ -307,13 +443,13 @@
                         <div class="label">Live Book (WS)</div>
                         <div id="book" class="value">—</div>
                         <div class="metric-row"><span class="label">Spread</span> <span id="spread" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">WS Age <span class="info" title="How many seconds have passed since we got the most recent update from the live market. A low number means the prices you're seeing are fresh and reliable. A high number means the data is getting old.">?</span></span> <span id="age" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">WS Messages <span class="info" title="How many fresh price updates the bot has received from the live market. Higher numbers mean we're getting lots of up-to-date information, so the prices shown are more current and trustworthy.">?</span></span> <span id="msgs" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">Volatility <span class="info" title="Current volatility estimate used by the A-S model (simple proxy from live book spread in this tester). Higher vol generally leads to wider optimal spreads.">?</span></span> <span id="volatility" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Book freshness <span class="info" title="Seconds since the last WS book update. Should tick up between messages, then drop when a new tick arrives. Green &lt;5s, yellow &lt;12s, red ≥12s.">?</span></span> <span id="age" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">WS Messages <span class="info" title="Count of book updates received this session. Higher is better — stale counts mean reconnect or RPC issues.">?</span></span> <span id="msgs" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Volatility <span class="info" title="Effective vol input to A-S (scaled from live book spread + freshness). Higher vol → wider optimal spread.">?</span></span> <span id="volatility" class="value">—</span></div>
                     </div>
 
                     <div class="card">
-                        <div class="label">Pure A-S Decision <span style="font-size:0.6rem; color:#4ade80;">(A-S math only)</span></div>
+                        <div class="label">Quote decision <span style="font-size:0.6rem; color:#4ade80;">(pure A-S · live engine)</span></div>
                         <div class="metric-row"><span class="label">Reservation (inside book = protected)</span> <span id="reservation" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Optimal Spread</span> <span id="as_spread" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Gamma / Kappa <span class="info" title="Pure A-S parameters (no hard gate on top).
@@ -323,13 +459,25 @@ Kappa: Controls how competitive the optimal spread is.
 
 The A-S strategy itself decides presence via reservation price being inside the best bid/ask. This is the only protection in the WS + pure path.">?</span></span> <span id="params" class="value">—</span></div>
                         <div id="would_quote" class="value" style="margin-top:8px;">—</div>
+                        <div id="zero-quote-note" class="note" style="margin-top:6px; font-size:0.68rem; opacity:0.9; display:none;"></div>
                         <small style="display:block; margin-top:4px; font-size:0.65rem; opacity:0.7;">Protected by A-S math (reservation inside live book). No additional hard rules.</small>
                     </div>
 
                     <div class="card">
-                        <div class="label">Suggested Levels (near book)</div>
-                        <div class="metric-row"><span class="label">Bid</span> <span id="bid" class="value good">—</span></div>
-                        <div class="metric-row"><span class="label">Ask</span> <span id="ask" class="value">—</span></div>
+                        <div class="label">Session fills <span class="info" title="Fills since engine start. E1.5 checkpoint: 50 WS-path fills with markout tracking.">?</span></div>
+                        <div class="metric-row"><span class="label">Fills (E1.5 checkpoint)</span> <span id="fills-session" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Bal Δ (session)</span> <span id="session-pnl" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Spread capture</span> <span id="session-capture" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Markout @30s</span> <span id="session-markout" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Toxic ratio @30s</span> <span id="session-toxic" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">G2 scaler</span> <span id="g2-scaler" class="value">—</span></div>
+                        <small id="fill-quality-note" style="display:block; margin-top:6px; font-size:0.65rem; opacity:0.7;">—</small>
+                    </div>
+
+                    <div class="card">
+                        <div class="label" id="ladder-card-label">Quote ladder (L1–L3)</div>
+                        <div id="suggested-ladder"></div>
+                        <small id="ladder-hint" style="display:block; margin-top:6px; font-size:0.65rem; opacity:0.7;">Waiting for engine quote cycle…</small>
                     </div>
                 </div>
 
@@ -338,7 +486,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="label collapsible-header" data-target="last_note">
                             Last Decision Note <span class="chevron">▼</span>
                         </div>
-                        <div id="last_note" class="note collapsible-content">Waiting for first update...</div>
+                        <div id="last_note" class="note collapsible-content">Waiting for first engine update…</div>
                     </div>
 
                     <div class="card">
@@ -416,13 +564,13 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <select id="intel-ai-provider" style="width:100%; font-size:0.85rem; margin-top:2px;">
                                 <option value="stub">Stub (local heuristic)</option>
                                 <option value="ollama">Ollama (local)</option>
-                                <option value="grok">Grok / xAI</option>
+                                <option value="grok" selected>Grok / xAI (production)</option>
                                 <option value="openai">OpenAI</option>
                                 <option value="claude">Claude</option>
                             </select>
                         </div>
                         <div style="margin-top:6px;">
-                            <label style="font-size:0.7rem; color:#94a3b8;">API Key / Secret (demo only)</label>
+                            <label style="font-size:0.7rem; color:#94a3b8;">Grok / xAI API key</label>
                             <input type="password" id="intel-ai-key" placeholder="xai-... for Grok or ollama key" style="width:100%; font-family:monospace; font-size:0.8rem; margin:2px 0;">
                         </div>
                         <div style="margin-top:4px;">
@@ -437,13 +585,53 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             </label>
                         </div>
                         <small style="font-size:0.6rem; opacity:0.7; display:block; margin-top:4px;">
-                            Keys are in-memory demo only (this HUD's separate state; main Streamlit GUI key does not auto-copy here). 
-                            <strong>Recommended:</strong> use --intel-ai-model grok-3 on launch. Click "Fetch available models for this key" to get a dropdown of models your key supports (grok-3 is pre-selected at top). 
+                            Saved to <code>logs/hud_intel_config.json</code> on Apply (VPS). Streamlit GUI uses <code>.env</code> separately.
+                            <strong>Recommended:</strong> grok-3 — use Fetch models to verify your key.
                             The dropdown auto-applies when you change selection. AI is advisory only.
                         </small>
                     </div>
 
-                    <button id="btn-apply-config" class="full-width" style="margin-top:12px;">Apply Changes (demo only)</button>
+                    <button id="btn-apply-config" class="full-width" style="margin-top:12px;">Apply intelligence settings</button>
+                </div>
+
+                <div class="marquee-container" style="margin-top:12px;">
+                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="metrics" class="page">
+            <div class="content">
+                <h3 style="margin-top:0; color:#60a5fa;">Performance Metrics (G3 / G6)</h3>
+                <p style="font-size:0.8rem; color:#94a3b8; margin-top:0;">Grades from Phase E §7 — spread capture is primary; inventory is steering. G6 activation tier grades live posture. Log: <code style="font-size:0.7rem;">logs/intel_decisions.jsonl</code></p>
+
+                <div class="card full-width" style="margin-top:8px; margin-bottom:12px;">
+                    <div class="metric-row" style="align-items:center;">
+                        <span class="label">G6 activation</span>
+                        <span id="metrics-g6-tier" class="grade-pill grade-unknown">—</span>
+                    </div>
+                    <div id="metrics-g6-summary" style="font-size:0.75rem; color:#94a3b8; margin-top:6px;">Waiting for activation grade…</div>
+                </div>
+
+                <div class="grid" style="margin-top:12px;">
+                    <div class="card">
+                        <div class="label">Scoreboard</div>
+                        <div id="metrics-grades"></div>
+                    </div>
+                    <div class="card">
+                        <div class="label">Capture summary</div>
+                        <div class="metric-row"><span class="label">WS fills</span> <span id="metrics-ws-fills" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Total capture</span> <span id="metrics-total-cap" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Positive %</span> <span id="metrics-pos-pct" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Avg bps/fill</span> <span id="metrics-avg-bps" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">E1.5 checkpoint (50 fills)</span> <span id="metrics-e15" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Intel log lines</span> <span id="metrics-intel-lines" class="value">—</span></div>
+                    </div>
+                </div>
+
+                <div class="card full-width" style="margin-top:12px;">
+                    <div class="label">Recent intel log (last 12)</div>
+                    <div id="metrics-intel-tail" style="max-height:220px; overflow-y:auto; margin-top:6px;">—</div>
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
@@ -455,7 +643,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
         <div id="credentials" class="page">
             <div class="content">
                 <h3 style="margin-top:0; color:#60a5fa;">Credentials &amp; Keys</h3>
-                <p style="font-size:0.85rem; color:#94a3b8;">Enter or update credentials here (demo only — changes are in-memory for this HUD session). For persistent storage and the full tabbed form, use the main Streamlit GUI and load the runtime JSON from the tester.</p>
+                <p style="font-size:0.85rem; color:#94a3b8;">Bot credentials live in <code>config/credentials.local.yaml</code> (gitignored). Use Streamlit GUI for full account setup; this tab is a quick view only.</p>
 
                 <div class="credentials-cards">
                     <div class="card">
@@ -487,7 +675,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <small>Any extra keys/tokens used by the WS path or external providers.</small>
                     </div>
 
-                    <button id="btn-save-creds" class="full-width" style="margin-top:12px; padding:6px 12px;">Save Credentials (demo)</button>
+                    <button id="btn-save-creds" class="full-width" style="margin-top:12px; padding:6px 12px;">Save to HUD session (not persistent)</button>
                     <small class="full-width" style="display:block; margin-top:4px; font-size:0.7rem; opacity:0.7;">This updates the HUD display only. For real/persistent use: edit config/credentials.local.yaml (never commit secrets!) and restart. Full secure form + validation is in the main Streamlit GUI.</small>
                 </div>
 
@@ -497,26 +685,54 @@ The A-S strategy itself decides presence via reservation price being inside the 
             </div>
         </div>
 
-        <!-- New Inventory nav tab: funding, QR, send-from-bot (demo) -->
+        <!-- Inventory: on-ledger bot account (Xaman/custody is separate until you send funds) -->
         <div id="inventory" class="page">
             <div class="content">
-                <h3 style="margin-top:0; color:#60a5fa;">Bot Inventory &amp; Wallet Funding</h3>
-                <p style="font-size:0.8rem; color:#94a3b8; margin-bottom:8px;">Manage the bot's XRPL account balances. All actions here are demo-only (in-memory). Real deposits use any XRPL wallet to send to the bot address. Real sends/withdraws would be Payment txs signed by the engine.</p>
+                <h3 style="margin-top:0; color:#60a5fa;">Ledger Inventory (Bot Account)</h3>
+                <p style="font-size:0.8rem; color:#94a3b8; margin-bottom:8px;">
+                    Balances below are <strong>on-ledger for the bot r-address only</strong> (queried each engine cycle).
+                    Your Xaman / custody wallet is separate — nothing appears here until you send XRP or RLUSD <em>to the bot address</em>.
+                    Reserve capital in Xaman stays separate until E3 funding. Numbers below are <strong>on-ledger bot account</strong> (what the engine trades).
+                </p>
 
                 <div class="inventory-cards">
+                    <!-- On-ledger snapshot -->
+                    <div class="card full-width" style="border-left: 3px solid #22c55e;">
+                        <div class="label">On-ledger now (validated account state)</div>
+                        <div id="inv-funding-status" style="font-size:0.78rem; color:#fbbf24; margin:4px 0 8px;">—</div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:0.85rem;">
+                            <div class="metric-row"><span class="label">Portfolio (XRP-equiv)</span> <span id="inv-portfolio-xrp" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">On bot vs plan</span> <span id="inv-funding-pct" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">XRP on ledger</span> <span id="inv-xrp-balance" class="value good">—</span></div>
+                            <div class="metric-row"><span class="label">RLUSD on ledger</span> <span id="inv-rlusd-balance" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">RLUSD → XRP-equiv</span> <span id="inv-rlusd-xrp-equiv" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">Resting offers</span> <span id="inv-open-offers" class="value">—</span></div>
+                        </div>
+                        <div style="margin-top:10px;">
+                            <div style="font-size:0.75rem; color:#94a3b8; margin-bottom:2px;">
+                                XRP share: <span id="inv-xrp-ratio">—</span> (target <span id="inv-xrp-target">55</span>%)
+                            </div>
+                            <div style="height:8px; background:#1e293b; border-radius:4px; overflow:hidden;">
+                                <div id="inv-xrp-ratio-bar" style="height:100%; width:0%; background:#22c55e; transition:width 0.3s;"></div>
+                            </div>
+                            <div style="margin-top:6px; font-size:0.8rem;">A-S posture: <span id="inv-label">—</span></div>
+                        </div>
+                        <small id="inv-ledger-updated" style="display:block; margin-top:6px; opacity:0.65;">Ledger poll: —</small>
+                    </div>
+
                     <!-- Bot address + QR (receive) -->
                     <div class="card">
-                        <div class="label">Bot XRPL Address</div>
-                        <div id="inv-bot-address" class="address-box" style="margin:6px 0; font-size:0.82rem;">r... (from config / tester state)</div>
+                        <div class="label">Bot XRPL Address (deposit target)</div>
+                        <div id="inv-bot-address" class="address-box" style="margin:6px 0; font-size:0.82rem;">r... (from bot config)</div>
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
                             <button id="btn-copy-address" style="flex:1; padding:4px 8px; font-size:0.75rem; background:#334155; color:#e2e8f0; border:none; border-radius:3px; cursor:pointer;">📋 Copy Address</button>
                             <button id="btn-show-qr" style="flex:1; padding:4px 8px; font-size:0.75rem; background:#14b8a6; color:white; border:none; border-radius:3px; cursor:pointer;">◻ Show QR Code</button>
                         </div>
-                        <small style="display:block; margin-top:4px;">Scan with Xaman, Ledger Live, or any XRPL wallet to send XRP or RLUSD <strong>to</strong> the bot (bring in funds).</small>
+                        <small style="display:block; margin-top:4px;">Send from <strong>Xaman</strong> (or any XRPL wallet) <strong>to this address</strong> to fund the bot. Custody wallet balance is not shown here.</small>
                     </div>
 
-                    <!-- Current live balances (tied to state) -->
-                    <div class="card">
+                    <!-- Removed duplicate balance card — see on-ledger snapshot above -->
+                    <div class="card" style="display:none;">
                         <div class="label">Current Balances (live)</div>
                         <div class="metric-row" style="margin-top:6px;">
                             <span class="label">XRP</span>
@@ -529,7 +745,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div style="margin-top:6px; font-size:0.8rem;">
                             Inventory: <span id="inv-label">—</span>
                         </div>
-                        <small>These update from the live WS + tester state. Use demo buttons below to simulate movements for testing inventory skew / A-S behavior in the HUD.</small>
+                        <small>Balances refresh from the live engine each poll. Sandbox buttons below do <strong>not</strong> move on-ledger funds.</small>
                     </div>
 
                     <!-- Bring in / Receive section -->
@@ -541,15 +757,15 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                             <button id="btn-sim-deposit" style="background:#22c55e; color:#0f172a; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem; cursor:pointer;">+ Simulate incoming +10 XRP</button>
                             <button id="btn-sim-deposit-rlusd" style="background:#22c55e; color:#0f172a; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem; cursor:pointer;">+ Simulate incoming +50 RLUSD</button>
-                            <small style="opacity:0.7;">(demo only — updates HUD balances instantly for testing)</small>
+                            <small style="opacity:0.7;">(HUD sandbox — does not submit transactions)</small>
                         </div>
-                        <div id="inv-receive-note" style="margin-top:6px; font-size:0.7rem; color:#64748b;">Tip: On mainnet use a real wallet app (Xaman etc). After <code>pip install qrcode pillow</code> you <strong>must fully restart the tester process</strong> (the python command) for the QR images to appear. Address copy always works. Watch the console when starting the tester for "[HUD] QR support: ..."</div>
+                        <div id="inv-receive-note" style="margin-top:6px; font-size:0.7rem; color:#64748b;">Fund the bot from Xaman or any XRPL wallet — send to the address above. QR appears when <code>qrcode</code> is installed and ws-hud was restarted.</div>
                     </div>
 
                     <!-- Send / Withdraw from bot -->
                     <div class="card full-width" style="border-left: 3px solid #ef4444;">
                         <div class="label">Send / Withdraw from the bot → your wallet</div>
-                        <div style="font-size:0.8rem; margin:2px 0 8px;">Demo only. In a real run this would submit a signed Payment transaction from the bot account.</div>
+                        <div style="font-size:0.8rem; margin:2px 0 8px;">HUD sandbox — does not submit signed payments. Use Streamlit GUI or CLI for real withdrawals.</div>
 
                         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:0.85rem;">
                             <div>
@@ -566,32 +782,32 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <div style="grid-column: 1 / -1;">
                                 <label class="label" style="display:block; margin-bottom:2px;">Destination (your wallet r-address)</label>
                                 <input id="send-dest" type="text" value="rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh" style="width:100%; padding:3px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:3px; font-family:monospace;">
-                                <small style="opacity:0.65;">(demo default is the well-known test account — change to your own)</small>
+                                <small style="opacity:0.65;">(sandbox default — use your own r-address for real sends via Streamlit GUI)</small>
                             </div>
                         </div>
 
-                        <button id="btn-demo-send" style="margin-top:8px; width:100%; background:#ef4444; color:white; border:none; border-radius:3px; padding:6px 10px; font-size:0.85rem; cursor:pointer;">Send from Bot (demo)</button>
+                        <button id="btn-demo-send" style="margin-top:8px; width:100%; background:#ef4444; color:white; border:none; border-radius:3px; padding:6px 10px; font-size:0.85rem; cursor:pointer;">Simulate withdraw (HUD only)</button>
 
                         <div id="send-result" style="margin-top:6px; font-size:0.75rem; min-height:1.1em; color:#facc15;"></div>
                     </div>
 
                     <!-- Demo tx log for this session -->
                     <div class="card full-width">
-                        <div class="label">Demo Transaction Log (this HUD session)</div>
-                        <div id="inv-tx-log" class="recent" style="max-height:120px; font-size:0.7rem; background:#0f172a; padding:4px; border-radius:3px; white-space:pre-wrap;">No demo movements yet. Use the buttons above.</div>
-                        <small style="opacity:0.6;">These are client-side only. Restarting the tester clears them. Real history lives in the engine logs / trades csv.</small>
+                        <div class="label">HUD sandbox log (not on ledger)</div>
+                        <div id="inv-tx-log" class="recent" style="max-height:120px; font-size:0.7rem; background:#0f172a; padding:4px; border-radius:3px; white-space:pre-wrap;">No sandbox movements yet.</div>
+                        <small style="opacity:0.6;">Client-side only. Real fills and transfers: <code>logs/trades_*.csv</code> and on-chain history.</small>
                     </div>
 
                     <!-- Pure A-S + WS evidence (from replay/grokster on sacred long-run data) -->
                     <div class="card full-width" style="border-left: 3px solid #60a5fa;">
-                        <div class="label">Pure A-S + WS Evidence (replay on sacred hard-gate data)</div>
+                        <div class="label">Replay benchmark (path validation)</div>
                         <div style="font-size:0.8rem; margin-top:4px;">
-                            <strong>Presence lift:</strong> 90.7–93.8% (pure A-S) vs ~10.7% (hard gate baseline)<br>
+                            <strong>Presence lift:</strong> 90.7–93.8% (pure A-S) vs ~10.7% (legacy hard-gate baseline)<br>
                             <strong>Flip rate on 0-edge cases:</strong> 93.5%<br>
                             <strong>High-tox risk in sim:</strong> 0%<br>
-                            <strong>Key:</strong> Uses exact long-run wiring + A-S reservation inside book (no hard gate).
+                            <strong>Key:</strong> Same wiring as live engine — A-S reservation inside book, no hard gate.
                         </div>
-                        <small style="opacity:0.65;">Numbers from latest grokster + replay_long_run --as-mode pure on current vps decisions/trades. This is the proof for the post-Gate-2 wholesale server swap. Run the tools yourself for fresh numbers.</small>
+                        <small style="opacity:0.65;">From replay on sacred long-run data. Re-run <code>replay_long_run --as-mode pure</code> for fresh numbers.</small>
                         <div style="margin-top:8px; font-size:0.7rem;">
                             AI Config (from Config tab): <span id="intel-ai-status">stub (no key)</span>
                         </div>
@@ -627,6 +843,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     <div class="card">
                         <div class="label">Live Competitor Aggregates</div>
                         <div class="metric-row"><span class="label">Observed Market Spread</span> <span id="intel-observed-spread" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Our Lane (L1 touch XRP)</span> <span id="intel-our-lane" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Peers in Lane</span> <span id="intel-peer-count" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Fled Touch (peers)</span> <span id="intel-fled" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Pressure (0=defensive, scrape harder)</span> <span id="intel-pressure" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Active Makers</span> <span id="intel-active" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Competitor Depth (XRP)</span> <span id="intel-depth" class="value">—</span></div>
@@ -635,37 +854,43 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     <!-- Skim Advice -->
                     <div class="card" style="border-left: 3px solid #22c55e;">
                         <div class="label">Pure A-S Skim Advice (from scrape)</div>
-                        <div id="intel-advice" style="font-size:0.85rem; margin:6px 0; white-space:pre-wrap;">No competitor data yet. Start the tester with live book for real-time on-chain profiles. If still empty after 30s, click "Force Competitor Scrape + Update" below or check terminal for "CompetitorIntelProvider active".</div>
-                        <small>Pressure low → A-S reservation moves closer to mid (more aggressive presence). High pressure → math protects by backing off. This is how we beat them: better inputs to the same A-S math.</small>
+                        <div id="intel-advice" style="font-size:0.85rem; margin:6px 0; white-space:pre-wrap;">Waiting for peer-lane scrape (~15s). Use Force scrape if still empty after 30s.</div>
+                        <small>Peer-lane pressure feeds G4 sizing (advisory). Low pressure → tighter presence when reservation allows. AI never overrides the inside-book guard.</small>
                     </div>
 
                     <!-- AI Analysis (competitor-aware for competitive edge) -->
                     <div class="card" style="border-left: 3px solid #8b5cf6;">
-                        <div class="label">AI Analysis (stub — augments A-S with competitor reasoning)</div>
+                        <div class="label">AI advisory (Grok)</div>
                         <div class="metric-row"><span class="label">Edge Quality</span> <span id="intel-ai-quality" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Skimmable per AI</span> <span id="intel-ai-skimmable" class="value">—</span></div>
                         <div style="font-size:0.75rem; margin-top:4px;">Rationale: <span id="intel-ai-rationale" style="white-space:pre-wrap;">—</span></div>
-                        <div class="metric-row" style="margin-top:4px;"><span class="label">AI Suggested Posture</span> <span id="intel-ai-posture" class="value">—</span></div>
-                        <small>Per-sample stub reasons over current book + competitor profiles/pressure. Low pressure (defensive competitors) now strongly biases "AI Suggested Posture" to "near" (skim harder opportunity) + boosts edge/skimmable. The pressure model already tweaks A-S inputs (lower vol, higher size_mult, observed-spread anchor) for more aggressive reservation on soft books. AI is strictly advisory — final presence decision is always pure A-S "reservation inside the live WS book". Use the "Analyze with AI" button (with grok key) for deeper real Grok suggestions on specific competitors. Local LLM (Ollama etc.) stubs are in ai_analysis/ ready for sub-100ms swap-in.</small>
+                        <div class="metric-row" style="margin-top:4px;"><span class="label">Suggested posture</span> <span id="intel-ai-posture" class="value">—</span></div>
+                        <small>Advisory only — quoting guard remains reservation inside the live book.</small>
                     </div>
 
-                    <!-- Side-by-side: AI Address Analysis (left) + Top Scraped (right, filling the big empty space to the right of AI analysis) -->
-                    <div style="display:flex; gap:12px; align-items: flex-start;">
-                        <!-- AI Competitor Address Analysis (left) -->
-                        <div class="card" style="flex:1; min-width:0;">
-                            <div class="label">AI Competitor Address Analysis (demo — uses Config tab keys)</div>
-                            <div style="display:flex; gap:8px; align-items:center;">
+                    <!-- AI address analysis + top competitors (left grid column — original width/placement) -->
+                    <div class="intel-analysis-row">
+                        <!-- AI Competitor Address Analysis -->
+                        <div class="card" style="display:flex; flex-direction:column;">
+                            <div class="label">AI Competitor Address Analysis (uses Config tab keys)<span class="scroll-box-hint">↕ scrollable</span></div>
+                            <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
                                 <input id="intel-analyze-addr" type="text" placeholder="Paste real r-address from the list on the right (or any from the book)" style="flex:1; font-family:monospace; font-size:0.8rem;">
-                                <button id="btn-analyze-addr" style="background:#8b5cf6; color:white; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem;">Analyze with AI</button>
+                                <button id="btn-analyze-addr" style="background:#8b5cf6; color:white; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem; flex-shrink:0;">Analyze with AI</button>
                             </div>
-                            <div id="intel-ai-result" style="margin-top:6px; font-size:0.7rem; background:#0f172a; padding:4px; border-radius:3px; white-space:pre-wrap; min-height:1.2em;">Paste a real r-address from the "Top Scraped Competitors" list on the right (or any from the book). Click Analyze. With grok key + provider=grok in Config (Apply or launch flags), this does a real call to api.x.ai. The box will show debug + the Grok suggestion (now includes live pressure/context). If you get 400 on model, change "Model" in Config tab (e.g. try grok-2-1212 or check your xAI account) then Apply again.</div>
+                            <div id="intel-ai-result" class="hud-scroll-box intel-ai-result-box" tabindex="0" role="region" aria-label="AI competitor analysis result">Click a peer in the touch-band list (or paste an r-address), then Analyze. Grok output appears here.</div>
                         </div>
 
-                        <!-- Top Scraped Competitors (right, half-page card filling the space) -->
-                        <div class="card" style="flex:1; min-width:0;">
-                            <div class="label">Top Scraped Competitors (by activity)</div>
-                            <div id="intel-top-list" style="font-size:0.75rem; background:#0f172a; padding:6px; border-radius:3px; max-height:220px; overflow:auto;">No profiles yet.</div>
-                            <small style="opacity:0.6;">Click any row on the right to instantly fill a real (or demo) r-address into the Analyze box on the left. Real profiles come from the live order book via the connector (accounts are now preserved in scraping).</small>
+                        <!-- Peer lane + book-wide makers (separate lists) -->
+                        <div class="card" style="display:flex; flex-direction:column;">
+                            <div class="label">Peers in our touch band</div>
+                            <div id="intel-peer-list" class="hud-scroll-box hud-scroll-box-compact intel-top-list-box" tabindex="0" role="region" aria-label="Peer lane makers">
+                                <div id="intel-peer-list-inner" class="hud-scroll-box-inner">Waiting for peer scrape…</div>
+                            </div>
+                            <div class="label" style="margin-top:8px;">All active makers (book-wide)</div>
+                            <div id="intel-all-makers-list" class="hud-scroll-box hud-scroll-box-compact intel-top-list-box" tabindex="0" role="region" aria-label="All scraped competitors">
+                                <div id="intel-all-makers-inner" class="hud-scroll-box-inner">No profiles yet.</div>
+                            </div>
+                            <small style="opacity:0.6;">Peers = makers at L1 within 0.4×–2.5× your posted touch size. Book-wide list includes whales (e.g. 120k XRP) outside your lane — use peers for queue tactics; use book-wide only when you want to study a specific address.</small>
                             <small>Account prefix (domain if set on-ledger) | last/avg spread | activity | sides (b/a). XRPL has no native "full name" tokens or usernames. Best on-chain ID is the r-address + optional Domain field (set via AccountSet, verifiable via DNS). No standard ledger "identity tokens" for this. <em>Future (optional): internal nicknames — a local-only map (e.g. JSON or in-memory) keyed by r-address so you can label e.g. "Bob the aggressive L1 sniper" purely for your own recall, without any on-chain or shared data changes.</em></small>
                         </div>
                     </div>
@@ -685,10 +910,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
                     <!-- Controls -->
                     <div class="card full-width">
-                        <div class="label">Scrape Controls (demo)</div>
-                        <button id="btn-force-comp-scrape" style="background:#f59e0b; color:#0f172a; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem;">Force Competitor Scrape + Update</button>
-                        <button id="btn-sim-historical" style="margin-left:8px; background:#14b8a6; color:white; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem;">Simulate Historical Scrape (last 1h)</button>
-                        <div id="intel-scrape-log" style="margin-top:6px; font-size:0.7rem; color:#64748b;">Historical scrape populates profiles from ledger history / tx stream (extend in competitor_intel.py for real node walking).</div>
+                        <div class="label">Competitor scrape</div>
+                        <button id="btn-force-comp-scrape" style="background:#f59e0b; color:#0f172a; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem;">Force peer-lane scrape</button>
+                        <button id="btn-sim-historical" style="margin-left:8px; background:#14b8a6; color:white; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem;">Refresh historical context</button>
+                        <div id="intel-scrape-log" style="margin-top:6px; font-size:0.7rem; color:#64748b;">Production engine scrapes on-chain offers every ~15s for peer-lane intel.</div>
                     </div>
                 </div>
 
@@ -712,6 +937,55 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
     <script>
         let lastState = null;
+        let pinnedIntelAiResult = null;  // keep full Grok analysis across /state polls
+        const HUD_BUILD = '__HUD_BUILD__';
+
+        function ensureCacheBustUrl() {
+            if (!HUD_BUILD || HUD_BUILD.indexOf('__HUD_BUILD__') >= 0) return;
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('b') === HUD_BUILD) return;
+            params.set('b', HUD_BUILD);
+            window.location.replace(window.location.pathname + '?' + params.toString());
+        }
+
+        function applyProductionLabels() {
+            const ladderLabel = document.getElementById('ladder-card-label');
+            if (ladderLabel) ladderLabel.textContent = 'Quote ladder (L1–L3)';
+            document.querySelectorAll('.label').forEach(el => {
+                if (el.textContent.trim() === 'Suggested Levels (near book)') {
+                    el.textContent = 'Quote ladder (L1–L3)';
+                }
+            });
+        }
+
+        function pollBookAgeSource(s) {
+            return (s && s.ws_book_last_update_unix != null) ? 'WS tick' : 'last cycle';
+        }
+
+        /** Seconds since last book mutation; ticks up live when ws_book_last_update_unix is set. */
+        function computeLiveWsAge(s) {
+            if (!s) return null;
+            const unix = s.ws_book_last_update_unix;
+            if (unix != null && !isNaN(parseFloat(unix))) {
+                return Math.max(0, Date.now() / 1000 - parseFloat(unix));
+            }
+            if (s.ws_age_s != null && !isNaN(parseFloat(s.ws_age_s))) {
+                return Math.max(0, parseFloat(s.ws_age_s));
+            }
+            return null;
+        }
+
+        function formatWsAge(s) {
+            const age = computeLiveWsAge(s);
+            return (age != null) ? age.toFixed(1) + 's' : '-';
+        }
+
+        function wsAgeColor(age) {
+            if (age == null) return '#e2e8f0';
+            if (age < 5) return '#4ade80';
+            if (age < 12) return '#facc15';
+            return '#f87171';
+        }
         let lastMid = null;
         let lastMidDirectionStyle = 'color:#e2e8f0; font-weight:600;';
         let lastDirectionArrow = '';
@@ -726,6 +1000,25 @@ The A-S strategy itself decides presence via reservation price being inside the 
         function setText(id, text) {
             const el = document.getElementById(id);
             if (el) el.textContent = text;
+        }
+
+        async function applyIntelConfigFromForm() {
+            const provEl = document.getElementById('intel-ai-provider');
+            const keyIn = document.getElementById('intel-ai-key');
+            const modelEl = document.getElementById('intel-ai-model');
+            const enEl = document.getElementById('intel-ai-enabled');
+            let provider = provEl ? provEl.value : 'grok';
+            const keyVal = keyIn ? keyIn.value : '';
+            const model = modelEl ? modelEl.value : 'grok-3';
+            const enabled = !!(enEl && enEl.checked);
+            if (keyVal && provider === 'stub') provider = 'grok';
+            if (!keyVal) return { ok: false, had_key: false };
+            await fetch('/set_intel_config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, key: keyVal, model, enabled }),
+            });
+            return { ok: true, had_key: true, provider };
         }
 
         // === Model discovery helpers (for Grok /list_models) ===
@@ -847,13 +1140,93 @@ The A-S strategy itself decides presence via reservation price being inside the 
         window.fetchAvailableModels = fetchAvailableModels;
         window.useModel = useModel;
 
+        function _intentByLevel(intents, level, side) {
+            if (!intents || !Array.isArray(intents)) return null;
+            return intents.find(i => (i.level || 1) === level && i.side === side) || null;
+        }
+
+        function _formatLadderPrice(price) {
+            return (price != null && !isNaN(parseFloat(price))) ? parseFloat(price).toFixed(6) : '—';
+        }
+
+        function _formatLadderSize(size) {
+            return (size != null && !isNaN(parseFloat(size))) ? parseFloat(size).toFixed(1) + ' XRP' : '—';
+        }
+
+        function _levelCommitText(intents, level) {
+            const bid = _intentByLevel(intents, level, 'bid');
+            const ask = _intentByLevel(intents, level, 'ask');
+            if (!bid && !ask) return '—';
+            const b = bid && bid.size_xrp != null ? parseFloat(bid.size_xrp).toFixed(1) : '—';
+            const a = ask && ask.size_xrp != null ? parseFloat(ask.size_xrp).toFixed(1) : '—';
+            return `bid ${b} / ask ${a} XRP`;
+        }
+
+        function renderSuggestedLadder(s) {
+            const el = document.getElementById('suggested-ladder');
+            const hint = document.getElementById('ladder-hint');
+            if (!el) return;
+
+            const levels = Math.max(1, parseInt(s.order_levels, 10) || 3);
+            const intents = (s.quote_intents && Array.isArray(s.quote_intents)) ? s.quote_intents : [];
+            const active = !!s.would_quote;
+            let html = '';
+
+            if (!intents.length) {
+                const bidP = _formatLadderPrice(s.suggested_bid);
+                const askP = _formatLadderPrice(s.suggested_ask);
+                html += `<div class="ladder-level inactive">
+                    <div class="ladder-level-tag">L1</div>
+                    <div class="metric-row"><span class="label">Bid</span><span class="value good">${bidP}<span class="ladder-size">· —</span></span></div>
+                    <div class="metric-row"><span class="label">Ask</span><span class="value">${askP}<span class="ladder-size">· —</span></span></div>
+                </div>`;
+                for (let lv = 2; lv <= levels; lv++) {
+                    html += `<div class="ladder-level planned inactive">
+                        <div class="ladder-level-tag">L${lv}</div>
+                        <div class="metric-row"><span class="label">Bid</span><span class="value good">—<span class="ladder-size">· —</span></span></div>
+                        <div class="metric-row"><span class="label">Ask</span><span class="value">—<span class="ladder-size">· —</span></span></div>
+                    </div>`;
+                }
+            } else {
+                for (let lv = 1; lv <= levels; lv++) {
+                    const bid = _intentByLevel(intents, lv, 'bid');
+                    const ask = _intentByLevel(intents, lv, 'ask');
+                    const planned = lv > 1 || (bid && bid.planned) || (ask && ask.planned) || (!active && lv === 1);
+                    const cls = ['ladder-level'];
+                    if (planned) cls.push('planned');
+                    if (!active && lv === 1) cls.push('inactive');
+                    html += `<div class="${cls.join(' ')}">
+                        <div class="ladder-level-tag">L${lv}</div>
+                        <div class="metric-row"><span class="label">Bid</span><span class="value good">${_formatLadderPrice(bid && bid.price)}<span class="ladder-size">· ${_formatLadderSize(bid && bid.size_xrp)}</span></span></div>
+                        <div class="metric-row"><span class="label">Ask</span><span class="value">${_formatLadderPrice(ask && ask.price)}<span class="ladder-size">· ${_formatLadderSize(ask && ask.size_xrp)}</span></span></div>
+                    </div>`;
+                }
+            }
+
+            const ladderKey = JSON.stringify({ active, intents: intents.slice(0, 12) });
+            const ladderChanged = prevValues.ladder !== ladderKey;
+            prevValues.ladder = ladderKey;
+            el.innerHTML = html;
+            if (ladderChanged) triggerAnim(el.closest('.card') || el, 'card-updated', 400);
+
+            if (hint) {
+                if (!intents.length) {
+                    hint.textContent = 'Waiting for first quote cycle…';
+                } else if (active) {
+                    hint.textContent = 'L1 live on ledger. L2/L3 are planned depth (config sizes; WS path places L1 today).';
+                } else {
+                    hint.textContent = 'No live quotes — reservation outside book or inventory pause.';
+                }
+            }
+        }
+
         function renderLive(s) {
             if (!s) return;
 
             // Apply any demo inventory movements (deposits/withdraws) so balances stay consistent across polls
             applyDemoBalancePatchToState(s);
 
-            // Normalize data keys — the tester sends mid_price / best_bid_rlusd_per_xrp etc.
+            // Normalize data keys — engine sends mid_price / best_bid_rlusd_per_xrp etc.
             // for compatibility with the main Streamlit GUI. Support both.
             if (s.mid == null && s.mid_price != null) s.mid = s.mid_price;
             if (s.best_bid == null && s.best_bid_rlusd_per_xrp != null) s.best_bid = s.best_bid_rlusd_per_xrp;
@@ -861,9 +1234,57 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
             // Header mode badge (always present)
             const modeEl = document.getElementById('mode');
-            if (modeEl) modeEl.textContent = s.as_mode ? `(${s.as_mode.toUpperCase()})` : '';
+            if (modeEl) {
+                if (isProductionHud(s)) {
+                    modeEl.textContent = '(MAINNET · ws-engine)';
+                } else if (s.as_mode) {
+                    modeEl.textContent = `(LAB · ${String(s.as_mode).toUpperCase()})`;
+                } else {
+                    modeEl.textContent = '';
+                }
+            }
+            updateEngineControlsUi(s);
+
+            const sampleCount = (s.sample_count != null)
+                ? s.sample_count
+                : (Array.isArray(s.sample_history) ? s.sample_history.length : null);
+            const ver = s.ws_as_version || '—';
+            const presence = (s.as_presence_pct != null) ? `${parseFloat(s.as_presence_pct).toFixed(1)}%` : '—';
+            const fillsSession = (s.fills_session != null) ? parseInt(s.fills_session, 10) : 0;
+            const fillsCsv = (s.ws_fills_csv != null) ? parseInt(s.ws_fills_csv, 10) : 0;
+            const fillsE15 = Math.max(fillsSession, fillsCsv);
+            const fillsProcNote = (fillsCsv > fillsSession && fillsSession > 0)
+                ? ` · ${fillsSession} this process`
+                : '';
+            const balPnl = (s.session_pnl_balance_xrp != null) ? parseFloat(s.session_pnl_balance_xrp) : null;
+            const spreadCap = (s.session_spread_capture_xrp != null) ? parseFloat(s.session_spread_capture_xrp) : null;
+            const markout30 = (s.mean_markout_30s_pct != null) ? parseFloat(s.mean_markout_30s_pct) : null;
+            const toxic30 = (s.toxic_fill_ratio_30s != null) ? parseFloat(s.toxic_fill_ratio_30s) : null;
+            const sessionLine = `v ${ver} · cycles ${sampleCount != null ? sampleCount : '—'} · fills ${fillsE15}/50 · presence ${presence}`;
+            setText('header-session', sessionLine);
+            setText('sidebar-version', `v ${ver}`);
+            setText('sidebar-samples', `Quote cycles: ${sampleCount != null ? sampleCount : '—'}`);
+            setText('sidebar-fills', `Fills: ${fillsE15} / 50${fillsProcNote}`);
+            if (balPnl != null && !Number.isNaN(balPnl)) {
+                const sign = balPnl >= 0 ? '+' : '';
+                setText('sidebar-pnl', `Bal Δ: ${sign}${balPnl.toFixed(4)} XRP`);
+            } else {
+                setText('sidebar-pnl', 'Bal Δ: —');
+            }
+            if (markout30 != null && !Number.isNaN(markout30)) {
+                const toxicTxt = (toxic30 != null && !Number.isNaN(toxic30))
+                    ? ` · toxic ${(toxic30 * 100).toFixed(0)}%`
+                    : '';
+                setText('sidebar-markout', `Markout@30s: ${markout30.toFixed(3)}%${toxicTxt}`);
+            } else {
+                setText('sidebar-markout', 'Markout@30s: —');
+            }
+            setText('sidebar-presence', `Presence: ${presence}`);
 
             // Sidebar (always present) - force update with defaults if missing
+            setText('sidebar-portfolio', s.portfolio_value_xrp != null
+                ? `Port: ${parseFloat(s.portfolio_value_xrp).toFixed(1)} XRP`
+                : 'Port: —');
             setText('sidebar-xrp', s.balance_xrp !== undefined ? `XRP: ${parseFloat(s.balance_xrp).toFixed(2)}` : 'XRP: -');
             setText('sidebar-rlusd', s.balance_rlusd !== undefined ? `RLUSD: ${parseFloat(s.balance_rlusd).toFixed(2)}` : 'RLUSD: -');
             setText('sidebar-inventory', s.inventory_label || '-');
@@ -880,12 +1301,18 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     triggerAnim(wqSide, 'status-pop', 500);
                 }
             }
+            const restingN = (s.open_offers_count != null) ? parseInt(s.open_offers_count, 10) : 0;
+            const cycleLabel = s.would_quote ? 'quoting' : 'blocked — offers pulled when live';
+            setText(
+                'sidebar-resting',
+                `Resting on ledger: ${restingN} · cycle: ${s.would_quote ? 'WOULD QUOTE' : 'NO QUOTE'}`
+            );
 
             // Live page cards - ALWAYS update the DOM values (visibility is controlled by CSS on #live container only)
             const bookEl = document.getElementById('book');
             if (bookEl) {
                 if (!s.best_bid && !s.best_ask && !s.mid) {
-                    bookEl.innerHTML = '<span style="color:#64748b;">(waiting for first WS book sample...)</span>';
+                    bookEl.innerHTML = '<span style="color:#64748b;">Connecting to live book feed…</span>';
                 } else {
                     const newBook = (s.best_bid && s.best_ask)
                         ? `${parseFloat(s.best_bid).toFixed(6)} / ${parseFloat(s.best_ask).toFixed(6)} <span style="font-size:0.7rem;color:#64748b;">mid ${parseFloat(s.mid || 0).toFixed(6)}</span>`
@@ -911,10 +1338,12 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
             const ageEl = document.getElementById('age');
             if (ageEl) {
-                const newAge = (s.ws_age_s != null) ? parseFloat(s.ws_age_s).toFixed(1) + 's' : '-';
+                const liveAge = computeLiveWsAge(s);
+                const newAge = formatWsAge(s);
                 const ageChanged = prevValues.age !== newAge;
                 prevValues.age = newAge;
-                setText('age', newAge);
+                ageEl.textContent = newAge;
+                ageEl.style.color = wsAgeColor(liveAge);
                 if (ageChanged) triggerAnim(ageEl, 'value-updated', 400);
             }
             const msgsEl = document.getElementById('msgs');
@@ -988,29 +1417,65 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 }
             }
 
-            const bidEl = document.getElementById('bid');
-            if (bidEl) {
-                const newBid = (s.suggested_bid != null) ? parseFloat(s.suggested_bid).toFixed(6) : '-';
-                const bidChanged = prevValues.bid !== newBid;
-                prevValues.bid = newBid;
-                setText('bid', newBid);
-                if (bidChanged) triggerAnim(bidEl, 'flash-up', 500);
+            const zqn = document.getElementById('zero-quote-note');
+            if (zqn) {
+                const note = s.would_quote
+                    ? (s.tight_book_note || '')
+                    : (s.zero_quote_operator_note || s.zero_quote_detail || s.zero_quote_reason || '');
+                if (note) {
+                    zqn.style.display = 'block';
+                    zqn.textContent = note;
+                    zqn.style.color = s.would_quote ? '#94a3b8' : '#fbbf24';
+                } else {
+                    zqn.style.display = 'none';
+                    zqn.textContent = '';
+                }
             }
-            const askEl = document.getElementById('ask');
-            if (askEl) {
-                const newAsk = (s.suggested_ask != null) ? parseFloat(s.suggested_ask).toFixed(6) : '-';
-                const askChanged = prevValues.ask !== newAsk;
-                prevValues.ask = newAsk;
-                setText('ask', newAsk);
-                if (askChanged) triggerAnim(askEl, 'flash-down', 500);
+
+            setText('fills-session', `${fillsE15} / 50${fillsProcNote}`);
+            if (balPnl != null && !Number.isNaN(balPnl)) {
+                const sign = balPnl >= 0 ? '+' : '';
+                const pnlEl = document.getElementById('session-pnl');
+                if (pnlEl) {
+                    pnlEl.textContent = `${sign}${balPnl.toFixed(4)} XRP`;
+                    pnlEl.className = 'value ' + (balPnl >= 0 ? 'good' : 'warn');
+                }
+            } else {
+                setText('session-pnl', '—');
             }
+            if (spreadCap != null && !Number.isNaN(spreadCap)) {
+                const sign = spreadCap >= 0 ? '+' : '';
+                setText('session-capture', `${sign}${spreadCap.toFixed(4)} XRP`);
+            } else {
+                setText('session-capture', '—');
+            }
+            if (markout30 != null && !Number.isNaN(markout30)) {
+                setText('session-markout', `${markout30.toFixed(3)}%`);
+            } else {
+                setText('session-markout', '—');
+            }
+            if (toxic30 != null && !Number.isNaN(toxic30)) {
+                setText('session-toxic', `${(toxic30 * 100).toFixed(1)}%`);
+            } else {
+                setText('session-toxic', '—');
+            }
+            setText('fill-quality-note', s.g2_summary || s.fill_quality_summary || '—');
+            if (s.g2_active) {
+                const g2s = s.g2_size_mult != null ? parseFloat(s.g2_size_mult) : 1;
+                const g2p = s.g2_spread_mult != null ? parseFloat(s.g2_spread_mult) : 1;
+                setText('g2-scaler', `${s.g2_grade || 'brake'} size×${g2s.toFixed(2)} spread×${g2p.toFixed(2)}`);
+            } else {
+                setText('g2-scaler', s.g2_grade === 'ok' ? 'neutral (no chase)' : 'neutral');
+            }
+
+            renderSuggestedLadder(s);
 
             setText('last_note', s.last_note || 'Waiting for first WS update + A-S decision...');
 
             // === Config page: Wallet + L1-L3 Inventory Commitments (tied to bot wallet) ===
             const botAddr = document.getElementById('config-bot-address');
             if (botAddr) {
-                botAddr.textContent = s.bot_address || 'r... (bot wallet from config/tester)';
+                botAddr.textContent = s.bot_address || 'r… (from bot config)';
             }
 
             setText('config-xrp-balance', s.balance_xrp !== undefined ? `${parseFloat(s.balance_xrp).toFixed(2)} XRP` : '—');
@@ -1131,13 +1596,40 @@ The A-S strategy itself decides presence via reservation price being inside the 
             // === Inventory page (new tab) updates ===
             const invAddr = document.getElementById('inv-bot-address');
             if (invAddr) {
-                const addr = s.bot_address || s.bot_account_address || 'r... (bot wallet from config/tester)';
+                const addr = s.bot_account_address || s.bot_address || 'r... (set bot_account_address in config)';
                 invAddr.textContent = addr;
-                invAddr.dataset.address = addr;  // stash for copy/QR
+                invAddr.dataset.address = addr;
+            }
+            setText('inv-funding-status', s.funding_status_label || '—');
+            const riskCap = s.risk_capital_xrp != null ? parseFloat(s.risk_capital_xrp) : null;
+            if (riskCap != null && !Number.isNaN(riskCap)) {
+                setText('inv-risk-capital-label', `${riskCap.toLocaleString(undefined, {maximumFractionDigits: 0})} XRP`);
+            }
+            const port = s.portfolio_value_xrp != null ? parseFloat(s.portfolio_value_xrp) : null;
+            setText('inv-portfolio-xrp', port != null && !Number.isNaN(port) ? `${port.toFixed(2)} XRP` : '—');
+            if (port != null && riskCap != null && !Number.isNaN(port) && !Number.isNaN(riskCap) && riskCap > 0) {
+                const depPct = s.funding_deployed_pct != null ? parseFloat(s.funding_deployed_pct) : (port / riskCap * 100);
+                setText('inv-funding-pct', `${port.toFixed(0)} / ${riskCap.toFixed(0)} XRP (${depPct.toFixed(1)}%)`);
+            } else {
+                setText('inv-funding-pct', '—');
             }
             setText('inv-xrp-balance', s.balance_xrp !== undefined ? `${parseFloat(s.balance_xrp).toFixed(2)} XRP` : '—');
             setText('inv-rlusd-balance', s.balance_rlusd !== undefined ? `${parseFloat(s.balance_rlusd).toFixed(2)} RLUSD` : '—');
+            setText('inv-rlusd-xrp-equiv', s.rlusd_xrp_equiv != null ? `${parseFloat(s.rlusd_xrp_equiv).toFixed(2)} XRP` : '—');
+            setText('inv-open-offers', s.open_offers_count != null ? String(s.open_offers_count) : '—');
+            const xrpPct = s.inventory_xrp_ratio_pct != null ? parseFloat(s.inventory_xrp_ratio_pct) : null;
+            const tgtPct = s.inventory_target_xrp_pct != null ? parseFloat(s.inventory_target_xrp_pct) : 55;
+            setText('inv-xrp-target', String(tgtPct));
+            if (xrpPct != null && !Number.isNaN(xrpPct)) {
+                setText('inv-xrp-ratio', `${xrpPct.toFixed(1)}%`);
+                const bar = document.getElementById('inv-xrp-ratio-bar');
+                if (bar) bar.style.width = `${Math.min(100, Math.max(0, xrpPct))}%`;
+            } else {
+                setText('inv-xrp-ratio', '—');
+            }
             setText('inv-label', s.inventory_label || '—');
+            const ledUp = s.ledger_updated_utc || s.updated_utc;
+            setText('inv-ledger-updated', ledUp ? `Ledger poll: ${ledUp.replace('T', ' ').slice(0, 19)} UTC` : 'Ledger poll: —');
 
             // Competitor intel (from on-chain scrape in tester)
             setText('comp-observed-spread', s.competitor_observed_spread_pct != null ? `${parseFloat(s.competitor_observed_spread_pct).toFixed(3)}%` : '—');
@@ -1146,45 +1638,77 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
             // === Intelligence tab (full competitor scrape + skim strategy) ===
             setText('intel-observed-spread', s.competitor_observed_spread_pct != null ? `${parseFloat(s.competitor_observed_spread_pct).toFixed(3)}%` : '—');
+            setText('intel-our-lane', s.our_lane_xrp != null ? `${parseFloat(s.our_lane_xrp).toFixed(1)} XRP` : '—');
+            const peerBand = (s.peer_lane_low_xrp != null && s.peer_lane_high_xrp != null)
+                ? ` (${parseFloat(s.peer_lane_low_xrp).toFixed(0)}–${parseFloat(s.peer_lane_high_xrp).toFixed(0)})`
+                : '';
+            setText('intel-peer-count', s.peer_lane_count != null ? `${s.peer_lane_count}${peerBand}` : '—');
+            setText('intel-fled', s.peer_fled_touch_count != null ? s.peer_fled_touch_count : '—');
             setText('intel-pressure', s.competitor_pressure != null ? parseFloat(s.competitor_pressure).toFixed(2) : '—');
             setText('intel-active', s.num_active_mms != null ? s.num_active_mms : '—');
             setText('intel-depth', s.competitor_depth_xrp != null ? `${parseFloat(s.competitor_depth_xrp).toFixed(1)} XRP` : '—');
-            setText('intel-advice', s.competitor_skim_advice || 'No scrape data. Run tester with live WS book.');
+            setText('intel-advice', s.competitor_skim_advice || (isProductionHud(s)
+                ? 'Waiting for peer-lane scrape (~15s). Use Force scrape if still empty.'
+                : 'No scrape data — run live_pure_as_tester --serve-hud with a live WS book.'));
 
-            const topList = document.getElementById('intel-top-list');
-            if (topList && s.top_competitors && Array.isArray(s.top_competitors) && s.top_competitors.length) {
-                topList.innerHTML = s.top_competitors.map(c => {
+            function _renderIntelMakerList(listEl, rows, emptyMsg) {
+                if (!listEl) return;
+                if (!rows || !rows.length) {
+                    listEl.innerHTML = emptyMsg;
+                    return;
+                }
+                listEl.innerHTML = rows.map(c => {
                     const display = c.domain && c.domain !== 'no-domain' ? `${c.account} (${c.domain})` : c.account;
                     const full = c.account_full || c.account;
-                    // Clickable rows: clicking fills the Analyze input with the real full r-address
-                    return `<div data-full="${full}" style="cursor:pointer; padding:2px 0;" title="Click to use this address for Analyze with AI">${display} | ${c.last_spread}% / ${c.avg_spread}% | act:${c.activity} | ${c.sides}</div>`;
+                    const touch = c.touch_xrp != null && c.touch_xrp > 0 ? ` | touch:${c.touch_xrp}XRP` : '';
+                    const fled = c.cancels != null && c.cancels > 0 ? ` | cancels:${c.cancels}` : '';
+                    return `<div data-full="${full}" style="cursor:pointer; padding:2px 0;" title="Click to use this address for Analyze with AI">${display} | ${c.last_spread}% / ${c.avg_spread}% | act:${c.activity} | ${c.sides}${touch}${fled}</div>`;
                 }).join('');
-
-                // Attach click handlers to fill the analyze address input (do this after innerHTML)
-                topList.querySelectorAll('div[data-full]').forEach(row => {
+                listEl.querySelectorAll('div[data-full]').forEach(row => {
                     row.onclick = () => {
                         const input = document.getElementById('intel-analyze-addr');
                         if (input) {
                             input.value = row.getAttribute('data-full');
-                            // optional: auto-trigger the analyze? user can still click the button
                             const analyzeBtn = document.getElementById('btn-analyze-addr');
                             if (analyzeBtn) {
-                                // flash the button to show it's ready
                                 analyzeBtn.style.boxShadow = '0 0 0 3px #8b5cf6';
                                 setTimeout(() => { if (analyzeBtn) analyzeBtn.style.boxShadow = ''; }, 800);
                             }
                         }
                     };
                 });
-            } else if (topList) {
-                topList.innerHTML = 'No competitor profiles yet — start live tester for on-chain scrape. (Real r-addresses will appear in the list on the right and be clickable to auto-fill the Analyze box on the left.)';
             }
+
+            const peerListEl = document.getElementById('intel-peer-list-inner');
+            const allMakersEl = document.getElementById('intel-all-makers-inner');
+            const peerRows = (s.top_peers && Array.isArray(s.top_peers) && s.top_peers.length) ? s.top_peers : null;
+            const compRows = (s.top_competitors && Array.isArray(s.top_competitors) && s.top_competitors.length) ? s.top_competitors : null;
+            const laneTxt = s.our_lane_xrp != null ? `${parseFloat(s.our_lane_xrp).toFixed(1)} XRP` : 'your touch';
+            const bandTxt = (s.peer_lane_low_xrp != null && s.peer_lane_high_xrp != null)
+                ? `${parseFloat(s.peer_lane_low_xrp).toFixed(0)}–${parseFloat(s.peer_lane_high_xrp).toFixed(0)} XRP`
+                : '0.4×–2.5× lane';
+            const peerEmpty = (s.peer_lane_count > 0)
+                ? 'Peer accounts at touch but profiles still loading — retry in ~15s.'
+                : `No peers in touch band (${bandTxt} around ${laneTxt}). Whales in the book-wide list are outside this band.`;
+            _renderIntelMakerList(peerListEl, peerRows, peerEmpty);
+            _renderIntelMakerList(
+                allMakersEl,
+                compRows,
+                'No competitor profiles yet — production HUD scrapes the book every ~15s.'
+            );
 
             // AI fields in Intelligence tab
             setText('intel-ai-quality', s.ai_edge_quality != null ? parseFloat(s.ai_edge_quality).toFixed(2) : '—');
             setText('intel-ai-skimmable', s.ai_is_skimmable != null ? (s.ai_is_skimmable ? 'YES' : 'NO') : '—');
             setText('intel-ai-rationale', s.ai_rationale || '—');
             setText('intel-ai-posture', s.ai_suggested_posture || '—');
+
+            if (pinnedIntelAiResult) {
+                const aiResultEl = document.getElementById('intel-ai-result');
+                if (aiResultEl && aiResultEl.textContent !== pinnedIntelAiResult) {
+                    aiResultEl.textContent = pinnedIntelAiResult;
+                }
+            }
 
             // AI status from Config tab
             const aiStatus = document.getElementById('intel-ai-status');
@@ -1194,25 +1718,19 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 const hasKey = !!(s.intel_ai_key);
                 aiStatus.textContent = `${prov}${enabled ? '' : ' (disabled)'}${hasKey ? ' +key' : ''}`;
             }
-            let l1Txt = '—', l2Txt = '—', l3Txt = '—';
-            if (s.quote_intents && Array.isArray(s.quote_intents)) {
-                const l1i = s.quote_intents.find(i => i.level === 1);
-                if (l1i && l1i.size_xrp != null) {
-                    l1Txt = `${parseFloat(l1i.size_xrp).toFixed(1)} XRP`;
-                }
-            }
-            // Demo L2/L3 commitments (in real use these would come from profile + risk capital + current wallet)
-            if (l1Txt !== '—') {
-                l2Txt = (parseFloat(l1Txt) * 0.6).toFixed(1) + ' XRP (L2)';
-                l3Txt = (parseFloat(l1Txt) * 0.3).toFixed(1) + ' XRP (L3)';
+
+            renderMetrics(s);
+
+            const intents = (s.quote_intents && Array.isArray(s.quote_intents)) ? s.quote_intents : [];
+            if (intents.length) {
+                setText('config-l1-commit', _levelCommitText(intents, 1));
+                setText('config-l2-commit', _levelCommitText(intents, 2));
+                setText('config-l3-commit', _levelCommitText(intents, 3));
             } else {
-                l1Txt = '15.0 XRP (demo)';
-                l2Txt = '9.0 XRP (demo)';
-                l3Txt = '4.5 XRP (demo)';
+                setText('config-l1-commit', '—');
+                setText('config-l2-commit', '—');
+                setText('config-l3-commit', '—');
             }
-            setText('config-l1-commit', l1Txt);
-            setText('config-l2-commit', l2Txt);
-            setText('config-l3-commit', l3Txt);
 
             const recentEl = document.getElementById('recent');
             if (recentEl) {
@@ -1243,7 +1761,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const bidVal = (s.best_bid != null) ? parseFloat(s.best_bid).toFixed(6) : '—';
             const askVal = (s.best_ask != null) ? parseFloat(s.best_ask).toFixed(6) : '—';
             const spreadVal = (s.book_spread_pct != null) ? parseFloat(s.book_spread_pct).toFixed(3) + '%' : '—';
-            const ageVal = (s.ws_age_s != null) ? s.ws_age_s.toFixed(1) + 's' : '—';
+            const ageVal = formatWsAge(s);
 
             let midDisplay = midVal !== null ? midVal.toFixed(6) : '—';
             if (midVal !== null && lastMid !== null) {
@@ -1272,6 +1790,60 @@ The A-S strategy itself decides presence via reservation price being inside the 
             });
         }
 
+        function renderMetrics(s) {
+            const pm = s.performance_metrics || {};
+            const gradesEl = document.getElementById('metrics-grades');
+            if (gradesEl) {
+                const grades = pm.grades || [];
+                if (!grades.length) {
+                    gradesEl.innerHTML = '<div style="font-size:0.75rem;color:#64748b;">Waiting for metrics...</div>';
+                } else {
+                    gradesEl.innerHTML = grades.map(g => {
+                        const pill = g.grade || 'unknown';
+                        return `<div class="metric-grade">
+                            <div><strong>${g.label}</strong><br><span style="color:#cbd5e1">${g.value}</span><br><small style="opacity:0.65">${g.detail || ''}</small></div>
+                            <span class="grade-pill grade-${pill}">${pill}</span>
+                        </div>`;
+                    }).join('');
+                }
+            }
+            const cap = pm.capture || {};
+            const act = pm.activation || {};
+            const tierEl = document.getElementById('metrics-g6-tier');
+            const tier = act.tier || 'unknown';
+            if (tierEl) {
+                tierEl.textContent = tier.replace(/_/g, ' ');
+                tierEl.className = 'grade-pill grade-' + (tier === 'active' || tier === 'scale_ready' ? 'good' : (tier === 'hold' || tier === 'halted' ? 'attention' : 'neutral'));
+            }
+            const sumEl = document.getElementById('metrics-g6-summary');
+            if (sumEl) {
+                sumEl.textContent = act.summary || '—';
+            }
+            setText('metrics-ws-fills', cap.ws_fills != null ? String(cap.ws_fills) : '—');
+            setText('metrics-total-cap', cap.total_capture_xrp != null ? (cap.total_capture_xrp >= 0 ? '+' : '') + cap.total_capture_xrp + ' XRP' : '—');
+            setText('metrics-pos-pct', cap.positive_capture_pct != null ? cap.positive_capture_pct + '%' : '—');
+            setText('metrics-avg-bps', cap.avg_capture_bps != null ? cap.avg_capture_bps + ' bps' : '—');
+            const e15 = pm.e15_fills_met ? 'PASS' : (cap.ws_fills != null ? cap.ws_fills + ' / ' + (pm.e15_fills_gate || 50) : '—');
+            setText('metrics-e15', e15);
+            setText('metrics-intel-lines', pm.intel_log_lines != null ? String(pm.intel_log_lines) : '—');
+            const tailEl = document.getElementById('metrics-intel-tail');
+            if (tailEl) {
+                const rows = pm.recent_intel || [];
+                if (!rows.length) {
+                    tailEl.textContent = 'No intel_decisions.jsonl yet — engine + HUD will append each cycle.';
+                } else {
+                    tailEl.innerHTML = rows.map(r => {
+                        const k = r.kind || '?';
+                        const ts = (r.ts_utc || '').slice(11, 19) || '—';
+                        if (k === 'peer_scrape') {
+                            return `<div class="intel-log-line">[${ts}] peer peers=${r.peer_lane_count} lane=${r.our_lane_xrp} pressure=${r.peer_pressure_score}</div>`;
+                        }
+                        return `<div class="intel-log-line">[${ts}] cycle ${r.cycle} inv=${r.inventory_label} pause_a=${r.pause_asks} g2=${r.g2_grade}</div>`;
+                    }).join('');
+                }
+            }
+        }
+
         async function poll() {
             const statusEl = document.getElementById('hud-poll-status');
             try {
@@ -1285,9 +1857,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 // Visible status so "no data / just the card" is never mysterious
                 if (statusEl) {
                     const ts = new Date().toLocaleTimeString();
-                    const age = (s.ws_age_s != null) ? s.ws_age_s.toFixed(1) + 's' : '?';
+                    const age = formatWsAge(s);
                     const msgs = (s.ws_message_count != null) ? s.ws_message_count : '?';
-                    statusEl.textContent = `last poll: ${ts} - WS msgs: ${msgs} - book age: ${age} - server OK`;
+                    const src = pollBookAgeSource(s);
+                    statusEl.textContent = `HUD ${HUD_BUILD} · poll ${ts} · WS msgs ${msgs} · book age ${age} (${src}) · OK`;
                     statusEl.style.color = '#4ade80';
                 }
 
@@ -1301,7 +1874,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             } catch (e) {
                 console.error('[HUD] poll error', e);
                 if (statusEl) {
-                    statusEl.textContent = 'POLL FAILED - cannot reach /state on 8765. Is the tester running with --serve-hud? (only ONE instance can bind the port)';
+                    statusEl.textContent = 'POLL FAILED — keep SSH tunnel open: ssh -L 8765:127.0.0.1:8765 root@VPS (then http://localhost:8765)';
                     statusEl.style.color = '#f87171';
                 }
             }
@@ -1341,14 +1914,14 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 window._current_state.creds_other_api = otherApi;
             }
 
-            alert('Credentials & keys saved in this demo HUD session (in-memory only for this run).\n\n' +
+            alert('Credentials saved in this HUD session only (not written to disk).\n\n' +
                   'XRPL Bot Account Address: ' + (xrplAddr || '(empty)') + '\n' +
-                  'XRPL Secret: ' + (xrplSecret ? '******** (hidden for security)' : '(empty)') + '\n' +
+                  'XRPL Secret: ' + (xrplSecret ? '******** (hidden)' : '(empty)') + '\n' +
                   'Telegram Bot Token: ' + (tgToken || '(empty)') + '\n' +
                   'Telegram Chat ID: ' + (tgChat || '(empty)') + '\n' +
                   'Other API Key: ' + (otherApi || '(empty)') + '\n\n' +
-                  'For real/persistent use: edit config/credentials.local.yaml (never commit secrets!) and restart the tester.\n' +
-                  'The main Streamlit GUI (load the ws_as_demo_runtime.json) has the full interactive tabbed forms for entering and managing all credentials and keys securely.');
+                  'For persistent credentials: edit config/credentials.local.yaml (never commit secrets) and restart xledgermate.\n' +
+                  'Full account setup: Streamlit GUI (python main.py --mode gui).');
         }
 
         // --- Inventory tab helpers (funding / QR / demo send) ---
@@ -1404,7 +1977,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     if (img.naturalWidth <= 2 || img.naturalHeight <= 2) {
                         img.style.display = 'none';
                         if (statusEl) {
-                            statusEl.textContent = 'QR image is not active. Fully restart the tester (the python process) after pip install qrcode pillow.';
+                            statusEl.textContent = 'QR unavailable — restart xledgermate-ws-hud after: pip install qrcode pillow';
                             statusEl.style.color = '#f87171';
                         }
                     } else if (statusEl) {
@@ -1435,7 +2008,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             if (!log) return;
             const ts = new Date().toLocaleTimeString();
             const line = `[${ts}] ${message}\n`;
-            if (log.textContent.indexOf('No demo movements') === 0) log.textContent = '';
+            if (log.textContent.indexOf('No sandbox movements') === 0) log.textContent = '';
             log.textContent = line + log.textContent;
             // keep last ~12 lines
             const lines = log.textContent.trim().split('\n');
@@ -1455,7 +2028,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const curR = getEffectiveBalance(lastState, 'rlusd') || 0;
             demoBalancePatch.xrp = Math.max(0, curX + (deltaXrp || 0));
             demoBalancePatch.rlusd = Math.max(0, curR + (deltaRlusd || 0));
-            appendTxLog(`DEPOSIT demo +${deltaXrp||0} XRP +${deltaRlusd||0} RLUSD (new bal XRP ${demoBalancePatch.xrp.toFixed(2)})`);
+            appendTxLog(`SANDBOX deposit +${deltaXrp||0} XRP +${deltaRlusd||0} RLUSD (HUD bal XRP ${demoBalancePatch.xrp.toFixed(2)})`);
             updateSidebarAndInvFromPatch();
         }
 
@@ -1484,7 +2057,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
             const resEl = document.getElementById('send-result');
             if (ok) {
-                const note = `SENT demo ${amt} ${asset} → ${dest || 'external'} (new bal XRP ${(demoBalancePatch.xrp||curX).toFixed(2)})`;
+                const note = `SANDBOX sent ${amt} ${asset} → ${dest || 'external'} (HUD bal XRP ${(demoBalancePatch.xrp||curX).toFixed(2)})`;
                 if (resEl) { resEl.style.color = '#4ade80'; resEl.textContent = note; }
                 appendTxLog(note);
                 updateSidebarAndInvFromPatch();
@@ -1497,27 +2070,68 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setTimeout(() => { if (resEl) resEl.textContent = ''; }, 4500);
         }
 
+        function isProductionHud(s) {
+            return s && s.production_source === 'ws-engine';
+        }
+
+        async function productionEngineAction(action) {
+            try {
+                const r = await fetch('/engine/' + action, { method: 'POST' });
+                const j = await r.json();
+                alert(j.message || (j.ok ? 'OK' : 'Failed'));
+            } catch (e) {
+                alert('Engine control failed: ' + e + '\n\nKeep SSH tunnel open (port 8765).');
+            }
+        }
+
+        function updateEngineControlsUi(s) {
+            const hint = document.getElementById('engine-controls-hint');
+            const label = document.getElementById('engine-controls-label');
+            if (!hint) return;
+            if (isProductionHud(s)) {
+                if (label) label.textContent = 'Engine Controls';
+                const live = s.dry_run === false;
+                hint.textContent = live
+                    ? 'Mainnet live — offers on ledger. Controls systemd xledgermate.'
+                    : 'Paper mode (dry_run=true) — no live offers. Set dry_run=false in config to go live.';
+            } else {
+                if (label) label.textContent = 'Engine Controls (local lab)';
+                hint.textContent = 'Local lab — run live_pure_as_tester --serve-hud.';
+            }
+        }
+
         function attachDemoHandlers() {
-            // Engine control buttons (demo alerts only)
             const startBtn = document.getElementById('btn-start-engine');
             if (startBtn) {
                 startBtn.addEventListener('click', () => {
                     triggerAnim(startBtn, 'btn-press', 150);
-                    alert('Start Engine - demo only. Use main Streamlit GUI + load ws_as_demo_runtime.json for full interactive controls, sidebar, and tickers.');
+                    if (lastState && isProductionHud(lastState)) {
+                        productionEngineAction('start');
+                    } else {
+                        alert('Lab HUD only. On VPS production, use the tunnel to :8765 with ws-engine running.');
+                    }
                 });
             }
             const stopBtn = document.getElementById('btn-stop-engine');
             if (stopBtn) {
                 stopBtn.addEventListener('click', () => {
                     triggerAnim(stopBtn, 'btn-press', 150);
-                    alert('Stop Engine - demo only.');
+                    if (lastState && isProductionHud(lastState)) {
+                        productionEngineAction('stop');
+                    } else {
+                        alert('Lab HUD only.');
+                    }
                 });
             }
             const restartBtn = document.getElementById('btn-restart-engine');
             if (restartBtn) {
                 restartBtn.addEventListener('click', () => {
                     triggerAnim(restartBtn, 'btn-press', 150);
-                    alert('Restart Engine - demo only.');
+                    if (lastState && isProductionHud(lastState)) {
+                        productionEngineAction('restart');
+                    } else {
+                        alert('Lab HUD only.');
+                    }
                 });
             }
 
@@ -1527,7 +2141,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 profileSel.addEventListener('change', () => {
                     const prof = document.getElementById('config-profile');
                     if (prof) {
-                        prof.textContent = profileSel.value + ' (demo - restart tester with different --profile to use)';
+                        prof.textContent = profileSel.value + (isProductionHud(lastState || {})
+                            ? ' — change active_profile in config.yaml and restart engine'
+                            : ' — restart lab tester with --profile to apply');
                     }
                 });
             }
@@ -1663,7 +2279,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     } else {
                         console.error('fetchAvailableModels not available');
                         const resDiv = document.getElementById('model-list-result');
-                        if (resDiv) resDiv.textContent = 'Error: function not loaded. Hard refresh the page (Ctrl+Shift+R) or restart the tester.';
+                        if (resDiv) resDiv.textContent = 'Error: function not loaded. Hard refresh the page (Ctrl+Shift+R) or restart ws-hud.';
                     }
                 });
             }
@@ -1746,8 +2362,12 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     // Also immediately extend grace on click (before promise resolves) so very next 800ms poll is less likely to race the .then
                     window._intelConfigUserTouched = Date.now() + 45000;
 
-                    alert('Config & inventory settings are demo-only in the HUD.\n\nIntelligence API config captured (demo):\n' + JSON.stringify(intelConfig, null, 2) + 
-                          '\n\nReal changes (L1-L3 sizes, risk capital, profile params, inventory target, AI keys) are made in config/config.yaml or the main Streamlit GUI (which loads the live runtime JSON from the tester).\n\nAI is advisory only for competitor address trending — it does not touch A-S reservation math.');
+                    const prod = lastState && isProductionHud(lastState);
+                    alert((prod
+                        ? 'Intelligence settings saved to logs/hud_intel_config.json.\n\n'
+                        : 'Intelligence settings captured (lab session).\n\n') +
+                          JSON.stringify(intelConfig, null, 2) +
+                          '\n\nTrading params (L1–L3 sizes, risk capital, inventory target): config/config.yaml or Streamlit GUI.\n\nAI is advisory only — it does not override A-S reservation or the inside-book guard.');
                 });
             }
 
@@ -1811,23 +2431,32 @@ The A-S strategy itself decides presence via reservation price being inside the 
             // Intelligence tab demo controls (simulate harder scraping since real is in Python provider)
             const forceBtn = document.getElementById('btn-force-comp-scrape');
             if (forceBtn) {
-                forceBtn.addEventListener('click', () => {
+                forceBtn.addEventListener('click', async () => {
                     triggerAnim(forceBtn, 'btn-press', 120);
-                    // In real run this would call the provider; here we just force a poll + demo update
+                    const log = document.getElementById('intel-scrape-log');
+                    if (lastState && isProductionHud(lastState)) {
+                        if (log) log.textContent = 'Refreshing HUD state — production engine scrapes peer lane every ~15s.';
+                        try {
+                            const res = await fetch('/state');
+                            if (res.ok) {
+                                lastState = await res.json();
+                                renderLive(lastState);
+                            }
+                        } catch (e) { /* next poll will recover */ }
+                        return;
+                    }
                     if (lastState) {
                         lastState.competitor_pressure = Math.random() * 0.6;
-                        lastState.competitor_skim_advice = lastState.competitor_pressure < 0.3 ?
-                            "SCRAPE HARDER: Low pressure. A-S will go more aggressive." :
-                            "Monitor pressure. Let A-S math decide.";
-                        // Give demo data with full addresses so the Analyze box can get a usable (demo) r-address
+                        lastState.competitor_skim_advice = lastState.competitor_pressure < 0.3
+                            ? 'SCRAPE HARDER: Low pressure — A-S can lean more aggressive.'
+                            : 'Monitor pressure — A-S math decides presence.';
                         lastState.top_competitors = [
-                            {account: "rDemoM1...", account_full: "rDemoMaker1AddressForGrokAnalysisTest123456789", last_spread: 0.075, avg_spread: 0.085, activity: 650, sides: "b180/a95"},
-                            {account: "rDemoM2...", account_full: "rDemoMaker2AddressForGrokAnalysisTest987654321", last_spread: 0.12, avg_spread: 0.105, activity: 420, sides: "b55/a210"},
+                            {account: 'rDemoM1…', account_full: 'rDemoMaker1AddressForGrokAnalysisTest123456789', last_spread: 0.075, avg_spread: 0.085, activity: 650, sides: 'b180/a95'},
+                            {account: 'rDemoM2…', account_full: 'rDemoMaker2AddressForGrokAnalysisTest987654321', last_spread: 0.12, avg_spread: 0.105, activity: 420, sides: 'b55/a210'},
                         ];
                         renderLive(lastState);
                     }
-                    const log = document.getElementById('intel-scrape-log');
-                    if (log) log.textContent = 'Forced scrape — pressure updated from live book data.';
+                    if (log) log.textContent = 'Lab scrape simulated — use production HUD for real on-chain peer lane.';
                 });
             }
 
@@ -1836,7 +2465,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 histBtn.addEventListener('click', () => {
                     triggerAnim(histBtn, 'btn-press', 120);
                     const log = document.getElementById('intel-scrape-log');
-                    if (log) log.textContent = 'Historical scrape simulated (1h ledger walk). In real: extend scrape_historical() with AccountTx / repeated BookOffers over time.';
+                    if (lastState && isProductionHud(lastState)) {
+                        if (log) log.textContent = 'Historical walk is lab-only — production uses live peer-lane scrape.';
+                        return;
+                    }
+                    if (log) log.textContent = 'Lab: simulated 1h historical context (extend scrape_historical() for real ledger walk).';
                     // Populate some demo top competitors
                     if (lastState) {
                         // Use plausible full-length fake r-addresses so "Analyze with AI" has something real-looking to send
@@ -1859,25 +2492,27 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     // If empty or placeholder/demo, try to pull first real full r-address.
                     // Prefer data-full attributes on the (now clickable) list items.
                     if (!addrInput || addrInput.includes('Demo') || addrInput.includes('r...') || addrInput.length < 25) {
-                        const listEl = document.getElementById('intel-top-list');
-                        if (listEl) {
-                            const firstFull = listEl.querySelector('div[data-full]');
-                            if (firstFull && firstFull.getAttribute('data-full')) {
-                                addrInput = firstFull.getAttribute('data-full');
-                            } else if (listEl.textContent) {
-                                // fallback crude parse for full r-address (longer than truncated display)
-                                const match = listEl.textContent.match(/r[a-zA-Z0-9]{25,}/);
-                                if (match) addrInput = match[0];
-                            }
+                        const peerEl = document.getElementById('intel-peer-list-inner');
+                        const allEl = document.getElementById('intel-all-makers-inner');
+                        const pickFrom = (el) => {
+                            if (!el) return null;
+                            const row = el.querySelector('div[data-full]');
+                            return row ? row.getAttribute('data-full') : null;
+                        };
+                        addrInput = pickFrom(peerEl) || pickFrom(allEl) || addrInput;
+                        if ((!addrInput || addrInput.length < 25) && allEl && allEl.textContent) {
+                            const match = allEl.textContent.match(/r[a-zA-Z0-9]{25,}/);
+                            if (match) addrInput = match[0];
                         }
                     }
                     const addr = addrInput || 'rDemoCompetitorAddress';
                     const resultEl = document.getElementById('intel-ai-result');
                     if (resultEl) {
-                        resultEl.textContent = `Calling ${ (document.getElementById('intel-ai-provider') || {}).value || 'AI' } for ${addr}...`;
+                        pinnedIntelAiResult = null;
+                        resultEl.textContent = `Applying API config, then calling ${ (document.getElementById('intel-ai-provider') || {}).value || 'AI' } for ${addr}...`;
+                        resultEl.scrollTop = 0;
                         try {
-                            // Send address + any live intel we have from the last /state poll so the server
-                            // can build the richest possible prompt for the Grok suggestion (pressure, spreads, inventory).
+                            await applyIntelConfigFromForm();
                             const payload = { address: addr };
                             if (lastState) {
                                 if (lastState.competitor_pressure != null) payload.competitor_pressure = lastState.competitor_pressure;
@@ -1890,9 +2525,16 @@ The A-S strategy itself decides presence via reservation price being inside the 
                                 body: JSON.stringify(payload)
                             });
                             const data = await resp.json();
-                            resultEl.textContent = data.result || 'No result from analysis.';
+                            pinnedIntelAiResult = data.result || 'No result from analysis.';
+                            if (data.debug) console.log('[HUD analyze]', data.debug);
+                            resultEl.textContent = pinnedIntelAiResult;
+                            resultEl.scrollTop = 0;
+                            resultEl.classList.add('new-decision');
+                            setTimeout(() => resultEl.classList.remove('new-decision'), 400);
                         } catch (e) {
-                            resultEl.textContent = `Error calling /analyze_competitor: ${e}. (Tester must be running with --serve-hud and the address must be valid.)`;
+                            pinnedIntelAiResult = `Error calling /analyze_competitor: ${e}. (Tester must be running with --serve-hud and the address must be valid.)`;
+                            resultEl.textContent = pinnedIntelAiResult;
+                            resultEl.scrollTop = 0;
                         }
                     }
                 });
@@ -1924,6 +2566,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
         // Boot: attach nav (data-page driven), show Live, kick off immediate poll + recurring
         function bootHud() {
+            ensureCacheBustUrl();
+            applyProductionLabels();
+
             // Nav clicks
             document.querySelectorAll('.nav a').forEach(link => {
                 link.addEventListener('click', (e) => {
@@ -1971,6 +2616,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     // one more fast attempt
                     poll();
                 }
+            }, 250);
+
+            // Tick WS age upward between /state polls (uses ws_book_last_update_unix anchor)
+            setInterval(() => {
+                if (!lastState || lastState.ws_book_last_update_unix == null) return;
+                const ageEl = document.getElementById('age');
+                if (!ageEl) return;
+                const liveAge = computeLiveWsAge(lastState);
+                if (liveAge == null) return;
+                ageEl.textContent = liveAge.toFixed(1) + 's';
+                ageEl.style.color = wsAgeColor(liveAge);
             }, 250);
         }
 

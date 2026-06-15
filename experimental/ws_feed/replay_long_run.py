@@ -622,7 +622,89 @@ def main() -> None:
     parser.add_argument("--economics", action="store_true", help="Print sacred corpus economics (capture, neg-fill %%, balance-delta proxy) via experimental.sacred_economics")
     parser.add_argument("--ab", action="store_true", help="With --economics: A/B pure vs pressure variants (Grok excluded)")
     parser.add_argument("--trades", default=None, help="Trades CSV for --economics (default: auto-resolve in logs/)")
+    parser.add_argument(
+        "--swap-readiness",
+        action="store_true",
+        help="D4: full swap readiness report (replay + economics + live soak + wiring parity); writes logs/swap_readiness_report.json",
+    )
+    parser.add_argument(
+        "--peer-lane-g5",
+        action="store_true",
+        help="G5: peer-lane coverage + neutral-fallback validation (writes logs/peer_lane_g5_report.json)",
+    )
+    parser.add_argument(
+        "--g6-activation",
+        action="store_true",
+        help="G6: live activation grading from §7 (writes logs/g6_activation_report.json)",
+    )
+    parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="With --swap-readiness, --peer-lane-g5, or --g6-activation: exit 1 if gate fails",
+    )
     args = parser.parse_args()
+
+    if args.g6_activation:
+        from experimental.ws_feed.live_activation_grading import (
+            DEFAULT_REPORT_PATH as G6_REPORT_PATH,
+            build_g6_report,
+            format_g6_report,
+        )
+
+        report = build_g6_report()
+        G6_REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        G6_REPORT_PATH.write_text(
+            __import__("json").dumps(report.as_dict(), indent=2),
+            encoding="utf-8",
+        )
+        print(format_g6_report(report))
+        print(f"\nWrote {G6_REPORT_PATH}")
+        if args.gate and not report.passed:
+            sys.exit(1)
+        return
+
+    if args.peer_lane_g5:
+        from experimental.ws_feed.peer_lane_replay_validation import (
+            DEFAULT_REPORT_PATH,
+            build_g5_report,
+            format_g5_report,
+        )
+
+        report = build_g5_report(sacred_decisions_path=Path(args.decisions), strict=args.strict)
+        DEFAULT_REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DEFAULT_REPORT_PATH.write_text(
+            __import__("json").dumps(report.as_dict(), indent=2),
+            encoding="utf-8",
+        )
+        print(format_g5_report(report))
+        print(f"\nWrote {DEFAULT_REPORT_PATH}")
+        if args.gate and not report.passed:
+            sys.exit(1)
+        return
+
+    if args.swap_readiness:
+        from experimental.swap_readiness_report import (
+            SwapReadinessCriteria,
+            build_swap_readiness_report,
+            format_swap_readiness_report,
+        )
+
+        criteria = SwapReadinessCriteria()
+        report = build_swap_readiness_report(
+            decisions_path=Path(args.decisions),
+            trades_path=Path(args.trades) if args.trades else None,
+            profile=args.profile,
+            criteria=criteria,
+            include_economics_ab=args.ab or True,
+        )
+        out_path = Path("logs/swap_readiness_report.json")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(report.as_dict(), indent=2), encoding="utf-8")
+        print(format_swap_readiness_report(report))
+        print(f"\nWrote {out_path}")
+        if args.gate and not report.passed:
+            sys.exit(1)
+        return
 
     decisions_path = Path(args.decisions)
     if not decisions_path.exists():

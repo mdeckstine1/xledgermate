@@ -54,6 +54,8 @@ from gui.engine_control import (
     is_kill_switch_active,
     kill_switch_reason,
     is_engine_running,
+    engine_mode_label,
+    is_ws_engine_running,
     manual_rebalance_check,
     run_single_cycle,
     send_funds,
@@ -73,6 +75,31 @@ touch_operator_activity = _operator_activity.touch_operator_activity
 
 logger = logging.getLogger(__name__)
 RUNTIME_STATE_PATH = Path("logs/runtime_state.json")
+WS_DEMO_RUNTIME_PATH = Path("logs/ws_as_demo_runtime.json")
+_WS_DEMO_OVERLAY_KEYS = (
+    "ws_as_version",
+    "as_mode",
+    "as_presence_pct",
+    "sample_count",
+    "sample_history",
+    "as_reservation",
+    "as_optimal_spread_pct",
+    "as_gamma",
+    "as_kappa",
+    "ws_book_age_s",
+    "ws_message_count",
+    "book_spread_pct",
+    "volatility_pct",
+    "market_edge_met",
+    "quote_decision_summary",
+    "zero_quote_reason",
+    "inventory_label",
+    "balance_xrp",
+    "balance_rlusd",
+    "mid_price",
+    "best_bid_rlusd_per_xrp",
+    "best_ask_rlusd_per_xrp",
+)
 LOGO_PATH = Path(__file__).resolve().parent.parent / "Xledermate.jpg"
 
 _CREDENTIALS_FORM = "bot_account_credentials"
@@ -83,6 +110,7 @@ PROFILE_LABELS = {
     "thin_liquidity": "Thin liquidity",
     "tight_spread": "Tight spread",
     "profit_mode": "Profit mode",
+    "ws_pure": "WS Pure A-S",
 }
 
 PROFILE_SHORT = {
@@ -129,13 +157,158 @@ except AttributeError:  # pragma: no cover - older Streamlit
         return decorator
 
 
-def _load_runtime_state() -> dict:
-    if not RUNTIME_STATE_PATH.exists():
+def _read_runtime_json(path: Path) -> dict:
+    if not path.exists():
         return {}
     try:
-        return json.loads(RUNTIME_STATE_PATH.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
+
+
+def _load_sacred_runtime() -> dict:
+    """Sacred engine snapshot only — no WS demo overlay."""
+    return _read_runtime_json(RUNTIME_STATE_PATH)
+
+
+def _load_ws_demo_runtime() -> dict:
+    """WS + pure A-S lab snapshot from live tester."""
+    demo = _read_runtime_json(WS_DEMO_RUNTIME_PATH)
+    if demo.get("as_mode") == "pure" or demo.get("ws_as_version"):
+        return demo
+    return {}
+
+
+def _is_production_ws_runtime(runtime: dict) -> bool:
+    """True when runtime_state.json is from live ws-engine (not lab overlay)."""
+    return runtime.get("as_mode") == "pure" or runtime.get("price_source") == "ws_book_feed"
+
+
+def _load_runtime_state() -> dict:
+    runtime = _load_sacred_runtime()
+    if _is_production_ws_runtime(runtime):
+        return runtime
+    demo = _load_ws_demo_runtime()
+    if demo:
+        for key in _WS_DEMO_OVERLAY_KEYS:
+            if key in demo:
+                runtime[key] = demo[key]
+        if "sample_count" not in runtime:
+            runtime["sample_count"] = len(demo.get("sample_history") or [])
+    return runtime
+
+
+def _presence_pct_from_history(runtime: dict) -> Optional[float]:
+    hist = runtime.get("sample_history") or []
+    if not hist:
+        return runtime.get("as_presence_pct")
+    quoted = sum(1 for row in hist if row.get("would_quote") or row.get("zero_quote_reason") == "quoted")
+    return round(100.0 * quoted / len(hist), 1)
+
+
+def _render_ws_compare_column(title: str, runtime: dict, *, is_ws: bool) -> None:
+    st.markdown(f"#### {title}")
+    if not runtime:
+        st.warning("No snapshot loaded.")
+        return
+
+    updated = runtime.get("updated_utc") or runtime.get("sample_history", [{}])[-1].get("ts_utc", "n/a")
+    st.caption(f"Snapshot: **{updated}**")
+
+    policy = runtime.get("quoting_policy_label") or ("PURE A-S (WS)" if is_ws else "Sacred engine")
+    edge_ok = runtime.get("market_edge_met", True)
+    zero_reason = runtime.get("zero_quote_reason") or ("quoted" if edge_ok else "blocked")
+    presence = _presence_pct_from_history(runtime)
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Policy", policy[:24] + "…" if len(policy) > 24 else policy)
+    m2.metric("Would quote", "YES" if edge_ok or zero_reason == "quoted" else "NO")
+    m3.metric("Zero-quote reason", str(zero_reason))
+    m4.metric("Session presence", f"{presence}%" if presence is not None else "—")
+
+    b1, b2, b3, b4 = st.columns(4)
+    b1.metric("Best bid", _fmt_price(runtime.get("best_bid_rlusd_per_xrp"), 6))
+    b2.metric("Mid", _fmt_price(runtime.get("mid_price"), 6))
+    b3.metric("Best ask", _fmt_price(runtime.get("best_ask_rlusd_per_xrp"), 6))
+    b4.metric("Book spread", f"{float(runtime.get('book_spread_pct') or 0):.3f}%")
+
+    if is_ws:
+        w1, w2, w3, w4 = st.columns(4)
+        w1.metric("A-S reservation", _fmt_price(runtime.get("as_reservation"), 6))
+        w2.metric("A-S spread", f"{float(runtime.get('as_optimal_spread_pct') or 0):.3f}%")
+        ws_age = runtime.get("ws_book_age_s")
+        w3.metric("WS book age", f"{ws_age:.1f}s" if ws_age is not None else "—")
+        w4.metric("Dry-run offers", runtime.get("open_offers_count", "—"))
+        ver = runtime.get("ws_as_version") or "—"
+        st.caption(
+            f"Pure A-S v**{ver}** · γ={runtime.get('as_gamma', '?')} κ={runtime.get('as_kappa', '?')} "
+            f"· WS msgs **{runtime.get('ws_message_count', '—')}**"
+        )
+    else:
+        t1, t2, t3, t4 = st.columns(4)
+        t1.metric("Fill quality", f"{float(runtime.get('fill_quality_score', 100)):.0f}")
+        t2.metric("Toxic ratio", f"{float(runtime.get('toxic_fill_ratio', 0)) * 100:.0f}%")
+        t3.metric("Profile", str(runtime.get("active_profile") or "—"))
+        t4.metric("Open offers", runtime.get("open_offers_count", "—"))
+
+    summary = runtime.get("quote_decision_summary") or ""
+    if summary:
+        with st.expander("Why these quotes?", expanded=False):
+            st.caption(summary)
+
+    intents = runtime.get("quote_intents") or []
+    if intents:
+        with st.expander("Quote ladder (L1 active)", expanded=False):
+            _show_dataframe(_quote_table(intents), height=160)
+
+    decisions_df = clean_decisions_table(runtime, limit=5)
+    if not decisions_df.empty:
+        with st.expander("Recent decisions", expanded=False):
+            _show_dataframe(decisions_df, height=140)
+
+
+def _render_ws_compare_tab() -> None:
+    """D3: production ws-engine vs WS lab snapshot (when demo file exists)."""
+    sacred = _load_sacred_runtime()
+    ws = _load_ws_demo_runtime()
+    production_ws = (
+        sacred.get("as_mode") == "pure"
+        or sacred.get("price_source") == "ws_book_feed"
+    )
+
+    st.markdown("### WS Pure A-S — live vs lab")
+    if production_ws:
+        st.caption(
+            "**Left:** production `ws-engine` (`logs/runtime_state.json`). "
+            "**Right:** optional lab HUD export (`logs/ws_as_demo_runtime.json`)."
+        )
+    else:
+        st.caption(
+            "Left: **runtime_state.json**. Right: **WS lab** from `live_pure_as_tester`. "
+            "Start `main.py --mode ws-engine` for production WS path."
+        )
+
+    if not sacred and not ws:
+        st.info("No runtime snapshot. Start `systemctl start xledgermate` or `main.py --mode ws-engine`.")
+        return
+
+    if sacred and ws and not production_ws:
+        sp = _presence_pct_from_history(sacred)
+        wp = _presence_pct_from_history(ws)
+        sacred_edge = sacred.get("market_edge_met", True)
+        ws_quote = ws.get("market_edge_met", True) or ws.get("zero_quote_reason") == "quoted"
+        h1, h2, h3 = st.columns(3)
+        h1.metric("Sacred edge met", "YES" if sacred_edge else "NO")
+        h2.metric("WS would quote", "YES" if ws_quote else "NO")
+        if sp is not None and wp is not None:
+            h3.metric("Presence (session)", f"{sp}% → {wp}%", delta=f"{wp - sp:+.1f} pts")
+
+    left_title = "WS production (VPS)" if production_ws else "Sacred (VPS path)"
+    left, right = st.columns(2)
+    with left:
+        _render_ws_compare_column(left_title, sacred, is_ws=production_ws)
+    with right:
+        _render_ws_compare_column("WS lab (tester HUD)", ws, is_ws=True)
 
 
 def _effective_network(
@@ -957,6 +1130,8 @@ def _resolve_profiles(
 
 def _gui_display_profile(config: BotConfig, runtime: dict, *, engine_running: bool) -> str:
     """Profile shown in the GUI — config on disk when stopped, else latest engine cycle."""
+    if runtime.get("as_mode") == "pure" or runtime.get("price_source") == "ws_book_feed":
+        return "ws_pure"
     _disk, engine = _resolve_profiles(config, runtime, engine_running=engine_running)
     return engine if engine_running else _disk
 
@@ -1531,10 +1706,14 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
     e1.metric("Toxic ratio", tox_label, help=tox_help)
     e2.metric("Toxic @30s", tox30_label, help=tox30_help)
     e3.metric("Cancel / fill", f"{float(runtime.get('cancel_per_fill', 0.0)):.1f}", help="Lower is better — queue preservation")
-    poll = int(runtime.get("book_poll_interval_seconds", 15))
-    full = int(runtime.get("full_quote_refresh_seconds", 60))
-    refresh_label = "full" if runtime.get("last_cycle_full_refresh", True) else "poll"
-    e4.metric("Refresh cadence", f"{poll}s / {full}s", help=f"Last cycle: {refresh_label} (profile-owned)")
+    if _is_production_ws_runtime(runtime):
+        cycle_s = int(runtime.get("book_poll_interval_seconds") or 8)
+        e4.metric("WS cycle", f"{cycle_s}s", help="ws-engine loop interval (WS book, not HTTP poll)")
+    else:
+        poll = int(runtime.get("book_poll_interval_seconds", 15))
+        full = int(runtime.get("full_quote_refresh_seconds", 60))
+        refresh_label = "full" if runtime.get("last_cycle_full_refresh", True) else "poll"
+        e4.metric("Refresh cadence", f"{poll}s / {full}s", help=f"Last cycle: {refresh_label} (profile-owned)")
 
     # ── Balances & activity ──
     b1, b2, b3 = st.columns(3)
@@ -1602,9 +1781,15 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
         with st.expander("Why these quotes?", expanded=False):
             st.caption(runtime.get("quote_decision_summary"))
             c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric("Market edge", "OK" if runtime.get("market_edge_met", True) else "THIN")
-            if runtime.get("as_mode") == "pure":
-                c1.metric("A-S Mode", "PURE", help="Committed WS + pure A-S path (built-in protections, no hard gate)")
+            if _is_production_ws_runtime(runtime):
+                wq = bool(runtime.get("market_edge_met", True))
+                c1.metric(
+                    "Would quote",
+                    "YES" if wq else "NO",
+                    help="Pure A-S: reservation inside live best bid/ask",
+                )
+            else:
+                c1.metric("Market edge", "OK" if runtime.get("market_edge_met", True) else "THIN")
             c2.metric("Fill quality", f"{float(runtime.get('fill_quality_score', 100)):.0f}")
             toxic_pct = float(runtime.get("toxic_fill_ratio", 0.0)) * 100.0
             toxic_30 = float(runtime.get("toxic_fill_ratio_30s", 0.0)) * 100.0
@@ -1620,7 +1805,16 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
             # WS + pure A-S (new committed path) — show when present in runtime
             if runtime.get("as_mode") == "pure" or runtime.get("as_reservation") is not None:
                 st.divider()
-                st.markdown("**Pure A-S + WS (committed future path)**")
+                ver = runtime.get("ws_as_version") or "—"
+                samples = runtime.get("sample_count")
+                if samples is None:
+                    samples = len(runtime.get("sample_history") or [])
+                presence = runtime.get("as_presence_pct")
+                st.markdown(
+                    f"**Pure A-S + WS (production ws-engine)** · "
+                    f"v**{ver}** · samples **{samples}**"
+                    + (f" · presence **{presence}%**" if presence is not None else "")
+                )
                 ac1, ac2, ac3, ac4 = st.columns(4)
                 ac1.metric("A-S Reservation", f"{float(runtime.get('as_reservation') or 0):.6f}")
                 ac2.metric("A-S Optimal Spread", f"{float(runtime.get('as_optimal_spread_pct') or 0):.3f}%")
@@ -1861,11 +2055,18 @@ def _render_sidebar_commands(config: BotConfig) -> None:
             st.rerun()
 
     if engine_running:
-        st.success("Engine running")
+        mode = engine_mode_label()
+        live = "LIVE" if not config.dry_run else "dry-run"
+        st.success(f"Engine running — **{mode}** ({live})")
     else:
         st.caption("Engine stopped")
 
-    if refresh_paused and engine_running and not kill_active:
+    if (
+        refresh_paused
+        and engine_running
+        and not kill_active
+        and not _is_production_ws_runtime(runtime)
+    ):
         st.warning(
             "Refresh paused (toxic window). Existing offers stay; new refresh is blocked. "
             "**Restart engine** clears the in-memory fill window, or wait for an automatic "
@@ -1880,7 +2081,7 @@ def _render_sidebar_commands(config: BotConfig) -> None:
             type="primary",
             disabled=engine_running or not ready,
             use_container_width=True,
-            help="Start the trading engine (new console window).",
+            help="Start WS pure A-S engine (systemd on VPS, or --mode ws-engine locally).",
         ):
             _persist_config(config)[0]
             ok, msg = start_engine(force_restart=True)
@@ -1915,10 +2116,12 @@ def _render_sidebar_commands(config: BotConfig) -> None:
         _show_result(ok, msg, fail="warning")
         st.rerun()
 
-    if st.button("Run one cycle", use_container_width=True):
+    if st.button("Run one cycle", use_container_width=True, disabled=is_ws_engine_running()):
         with st.spinner("Running cycle..."):
             ok, msg = run_single_cycle()
         _show_result(ok, msg)
+    if is_ws_engine_running():
+        st.caption("Run one cycle is **legacy poll only** — disabled while ws-engine is live.")
 
 
 def _render_bot_controls(config: BotConfig) -> None:
@@ -1965,10 +2168,33 @@ def _show_rebalance_status(
             st.info(advice.summary)
 
 
+def _render_e15_gate(runtime: dict) -> None:
+    """E1.5 live fill gate progress (ws-engine only)."""
+    if not _is_production_ws_runtime(runtime) or bool(runtime.get("dry_run")):
+        return
+    try:
+        from scripts.ws_path_session_report import build_e15_report
+
+        report = build_e15_report()
+    except Exception:
+        return
+    gate = "PASS" if report.gate_fills_met else "IN PROGRESS"
+    toxic = report.runtime.get("toxic_fill_ratio_30s")
+    markout = report.runtime.get("mean_markout_30s_pct")
+    extra = ""
+    if toxic is not None:
+        extra = f" · toxic@30s **{float(toxic):.0%}** · markout **{float(markout or 0):+.3f}%**"
+    st.info(
+        f"**E1.5 live gate** — WS fills **{report.ws_fills} / {report.min_fills_gate}** "
+        f"· capture **{report.capture_xrp:+.4f} XRP** · **{gate}**{extra}"
+    )
+
+
 def _render_run_health_panel(
     config: BotConfig, runtime: dict, *, engine_running: bool
 ) -> None:
     """Single place for engine/ledger/toxic/book — reduces scattered warnings."""
+    _render_e15_gate(runtime)
     profile = (runtime.get("active_profile") or config.active_profile or "safe").strip().lower()
     ledger_n = (
         _effective_open_offers_count(runtime) if not engine_running else None
@@ -2881,8 +3107,8 @@ def run_gui() -> None:
     else:
         _paint_command_bar(config, runtime, engine_running=engine_running)
 
-    tab_dash, tab_ctrl, tab_inv, tab_logs, tab_adv = st.tabs(
-        ["Dashboard", "Controls", "Inventory", "Logs", "Advanced"]
+    tab_dash, tab_ws, tab_ctrl, tab_inv, tab_logs, tab_adv = st.tabs(
+        ["Dashboard", "WS compare", "Controls", "Inventory", "Logs", "Advanced"]
     )
 
     with tab_dash:
@@ -2890,6 +3116,9 @@ def run_gui() -> None:
             _dashboard_live_fragment()
         else:
             _update_live_dashboard(config, runtime)
+
+    with tab_ws:
+        _render_ws_compare_tab()
 
     with tab_ctrl:
         _render_controls_tab(config, engine_running=engine_running, runtime=runtime)

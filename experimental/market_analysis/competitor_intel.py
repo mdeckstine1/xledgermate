@@ -60,6 +60,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from connectors.xrpl_connector import XRPLConnector
 from experimental.market_analysis.external_data import ExternalMarketDataProvider, ExternalMarketSnapshot
+from experimental.market_analysis.peer_lane import (
+    PeerLaneConfig,
+    aggregate_peer_pressure,
+    book_best_prices,
+    compute_touch_by_account,
+    detect_fled_touch,
+    select_peer_lane,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +105,18 @@ class CompetitorSnapshot:
     pressure_score: float = 0.5  # 0=defensive (good for us to be aggressive), 1=aggressive
     source: str = "onchain-competitor"
     age_seconds: float = 0.0
+    # G1 peer lane (posted touch band)
+    our_lane_xrp: float = 0.0
+    peer_lane_count: int = 0
+    peer_lane_low_xrp: float = 0.0
+    peer_lane_high_xrp: float = 0.0
+    peer_pressure_score: float = 0.5
+    peer_observed_spread_pct: float = 0.0
+    peer_fled_touch_count: int = 0
+    peer_fled_events: List[Dict[str, Any]] = field(default_factory=list)
+    top_peers: List[CompetitorProfile] = field(default_factory=list)
+    peer_lane_widened: bool = False
+    peer_lane_empty: bool = False
 
 
 class CompetitorIntelProvider(ExternalMarketDataProvider):
@@ -128,18 +148,38 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
     - Cross with our own fills: did a competitor get hit right before us?
     """
 
-    def __init__(self, connector: XRPLConnector, pair: Any, lookback_offers: int = 40):
+    def __init__(
+        self,
+        connector: XRPLConnector,
+        pair: Any,
+        lookback_offers: int = 40,
+        peer_lane_config: Optional[PeerLaneConfig] = None,
+    ):
         self.connector = connector
         self.pair = pair
         self.lookback_offers = lookback_offers
+        self.peer_lane_config = peer_lane_config or PeerLaneConfig()
         self._profiles: Dict[str, CompetitorProfile] = {}
         self._last_fetch = 0.0
         self._cache: Optional[CompetitorSnapshot] = None
+        self._prev_touch: Dict[str, float] = {}
+        self._prev_fetch_ts: float = 0.0
+        self._recent_fled: List[Dict[str, Any]] = []
+        self._last_touch_by_account: Dict[str, float] = {}
 
-    async def fetch_snapshot(self) -> CompetitorSnapshot:
+    async def fetch_snapshot(
+        self,
+        *,
+        our_lane_xrp: Optional[float] = None,
+        best_bid: Optional[float] = None,
+        best_ask: Optional[float] = None,
+        ws_bids: Optional[List[Dict[str, Any]]] = None,
+        ws_asks: Optional[List[Dict[str, Any]]] = None,
+    ) -> CompetitorSnapshot:
         """Scrape current book, update profiles, return aggregate intel."""
         now = time.monotonic()
-        if self._cache and (now - self._last_fetch) < 10:  # simple cache
+        peer_mode = our_lane_xrp is not None and float(our_lane_xrp) > 0
+        if self._cache and (now - self._last_fetch) < 10 and not peer_mode:
             return self._cache
 
         try:
@@ -156,8 +196,11 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
         # NOTE: In real use, ensure _normalize_offers or raw keeps the account.
         # For stub, we simulate accounts if missing.
         maker_offers: Dict[str, List[Dict]] = defaultdict(list)
+        bot_addr = (getattr(self.connector, "account_address", None) or "").strip()
         for o in all_offers:
             acct = o.get("account") or o.get("Account") or f"unknown_{hash(str(o)) % 1000}"
+            if bot_addr and acct == bot_addr:
+                continue
             maker_offers[acct].append(o)
 
         # Update profiles (aggressive scraping: every offer counts)
@@ -225,8 +268,135 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
                 age_seconds=0.0,
             )
 
+        snap = self._apply_peer_lane(
+            snap,
+            bids=bids,
+            asks=asks,
+            our_lane_xrp=our_lane_xrp,
+            best_bid=best_bid,
+            best_ask=best_ask,
+            ws_bids=ws_bids,
+            ws_asks=ws_asks,
+            now=now,
+        )
+
         self._cache = snap
         self._last_fetch = now
+        return snap
+
+    def _apply_peer_lane(
+        self,
+        snap: CompetitorSnapshot,
+        *,
+        bids: List[Dict[str, Any]],
+        asks: List[Dict[str, Any]],
+        our_lane_xrp: Optional[float],
+        best_bid: Optional[float],
+        best_ask: Optional[float],
+        ws_bids: Optional[List[Dict[str, Any]]],
+        ws_asks: Optional[List[Dict[str, Any]]],
+        now: float,
+    ) -> CompetitorSnapshot:
+        """Posted-touch peer band + fled-touch detection (G1 / E.1)."""
+        lane = float(our_lane_xrp or 0.0)
+        if lane <= 0:
+            return snap
+
+        touch_bids = ws_bids if ws_bids is not None else bids
+        touch_asks = ws_asks if ws_asks is not None else asks
+        bb = best_bid
+        ba = best_ask
+        if bb is None or ba is None:
+            bb, ba = book_best_prices(touch_bids, touch_asks)
+
+        touch_by_account = compute_touch_by_account(
+            touch_bids,
+            touch_asks,
+            best_bid=bb,
+            best_ask=ba,
+            eps=self.peer_lane_config.price_match_eps,
+        )
+        bot_addr = (getattr(self.connector, "account_address", None) or "").strip()
+        if bot_addr:
+            touch_by_account.pop(bot_addr, None)
+        peer_result = select_peer_lane(touch_by_account, lane, self.peer_lane_config)
+
+        age_s = now - self._prev_fetch_ts if self._prev_fetch_ts > 0 else 0.0
+        fled_events = detect_fled_touch(
+            self._prev_touch,
+            touch_by_account,
+            our_lane_xrp=lane,
+            config=self.peer_lane_config,
+            age_s=age_s,
+            max_age_s=self.peer_lane_config.fled_max_age_s,
+        )
+        fled_in_lane = [e for e in fled_events if e.in_peer_lane]
+        for event in fled_events:
+            prof = self._profiles.get(event.account)
+            if prof is None:
+                prof = CompetitorProfile(account=event.account)
+                self._profiles[event.account] = prof
+            prof.total_cancels += 1
+            if event.in_peer_lane:
+                prof.cancel_after_fill_count += 1
+
+        fled_payload = [
+            {
+                "account": e.account[:12] + "...",
+                "account_full": e.account,
+                "previous_touch_xrp": round(e.previous_touch_xrp, 2),
+                "age_s": round(e.age_s, 1),
+                "in_peer_lane": e.in_peer_lane,
+            }
+            for e in fled_events[:10]
+        ]
+        if fled_payload:
+            self._recent_fled = (fled_payload + self._recent_fled)[:20]
+
+        peer_profiles: List[CompetitorProfile] = []
+        for acct in peer_result.peer_accounts:
+            prof = self._profiles.get(acct)
+            if prof is None:
+                prof = CompetitorProfile(account=acct)
+                touch = float(touch_by_account.get(acct) or 0.0)
+                if touch > 0:
+                    prof.avg_size_xrp = touch
+                    prof.last_seen_ts = now
+                self._profiles[acct] = prof
+            peer_profiles.append(prof)
+        peer_spreads = [p.last_spread_pct for p in peer_profiles if p.last_spread_pct > 0]
+        peer_obs = min(peer_spreads) if peer_spreads else snap.observed_market_spread_pct
+        peer_cancel_rate = 0.0
+        if peer_profiles:
+            offers = sum(p.total_offers_seen for p in peer_profiles)
+            cancels = sum(p.total_cancels for p in peer_profiles)
+            peer_cancel_rate = cancels / max(1, offers)
+
+        peer_pressure = aggregate_peer_pressure(
+            peer_spreads=peer_spreads,
+            global_spread=snap.observed_market_spread_pct,
+            peer_count=peer_result.peer_lane_count,
+            fled_in_lane_count=len(fled_in_lane),
+            cancel_proxy_rate=peer_cancel_rate,
+        )
+
+        snap.our_lane_xrp = round(lane, 2)
+        snap.peer_lane_count = peer_result.peer_lane_count
+        snap.peer_lane_low_xrp = round(peer_result.peer_low_xrp, 2)
+        snap.peer_lane_high_xrp = round(peer_result.peer_high_xrp, 2)
+        snap.peer_pressure_score = peer_pressure
+        snap.peer_observed_spread_pct = round(peer_obs, 4)
+        snap.peer_fled_touch_count = len(fled_in_lane)
+        snap.peer_fled_events = fled_payload
+        snap.top_peers = peer_profiles[:5]
+        snap.peer_lane_widened = peer_result.widened
+        snap.peer_lane_empty = peer_result.empty
+        if peer_result.peer_lane_count > 0:
+            snap.pressure_score = peer_pressure
+
+        self._prev_touch = dict(touch_by_account)
+        self._prev_fetch_ts = now
+        self._last_touch_by_account = touch_by_account
         return snap
 
     async def scrape_historical(self, hours: int = 1) -> List[Dict[str, Any]]:
@@ -288,12 +458,30 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
             return "No competitor data yet. Run with live book to start scraping."
 
         p = snap.pressure_score
+        fled_note = ""
+        if snap.peer_fled_touch_count > 0:
+            fled_note = (
+                f" {snap.peer_fled_touch_count} peer(s) fled touch since last scrape "
+                "(panic-cancel proxy) — defensive weakness, skim opportunity."
+            )
         if p < 0.3:
-            return "SCRAPE HARDER: Low competitor pressure (defensive/wide). Blend lower effective vol into A-S. Expect tighter reservation, more two-sided presence. Beat them by posting inside their observed spread when math allows."
+            return (
+                "SCRAPE HARDER: Low competitor pressure (defensive/wide). Blend lower effective vol into A-S. "
+                "Expect tighter reservation, more two-sided presence. Beat them by posting inside their observed spread when math allows."
+                + fled_note
+            )
         elif p > 0.7:
-            return "CAUTIOUS: High pressure (aggressive competitors). A-S will naturally back off via higher effective vol. Use their liquidity as signal but let reservation decide. Don't over-scrape."
+            return (
+                "CAUTIOUS: High pressure (aggressive competitors). A-S will naturally back off via higher effective vol. "
+                "Use their liquidity as signal but let reservation decide. Don't over-scrape."
+                + fled_note
+            )
         else:
-            return "NEUTRAL: Monitor. Use observed spread as 'real' market spread for A-S inputs. Good for calibration of gamma/kappa against what competitors actually post."
+            return (
+                "NEUTRAL: Monitor. Use observed spread as 'real' market spread for A-S inputs. "
+                "Good for calibration of gamma/kappa against what competitors actually post."
+                + fled_note
+            )
 
     def to_hud_state(self, snap: Optional[CompetitorSnapshot] = None) -> Dict[str, Any]:
         """Serialize for HUD / runtime (top makers, aggregates, advice)."""
@@ -301,36 +489,88 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
             snap = self._cache
         if not snap:
             return {"competitor_error": "no data"}
+        effective_pressure = (
+            snap.peer_pressure_score if snap.peer_lane_count > 0 else snap.pressure_score
+        )
+        effective_spread = (
+            snap.peer_observed_spread_pct
+            if snap.peer_lane_count > 0 and snap.peer_observed_spread_pct > 0
+            else snap.observed_market_spread_pct
+        )
+        peer_list = snap.top_peers or []
+
+        def _profile_row(p: CompetitorProfile, *, touch_xrp: float = 0.0) -> Dict[str, Any]:
+            tx = touch_xrp or self._last_touch_by_account.get(p.account, 0.0)
+            return {
+                "account": p.account[:12] + "...",
+                "account_full": p.account,
+                "last_spread": round(p.last_spread_pct, 3),
+                "avg_spread": round(p.avg_spread_pct, 3),
+                "activity": p.total_offers_seen,
+                "sides": f"b{p.sides_quoted.get('bid', 0)}/a{p.sides_quoted.get('ask', 0)}",
+                "domain": p.domain or "no-domain",
+                "touch_xrp": round(tx, 2),
+                "cancels": p.total_cancels,
+            }
+
         return {
-            "competitor_observed_spread_pct": snap.observed_market_spread_pct,
-            "competitor_pressure": snap.pressure_score,
+            "competitor_observed_spread_pct": effective_spread,
+            "competitor_pressure": effective_pressure,
             "competitor_depth_xrp": snap.total_competitor_depth_xrp,
             "num_active_mms": snap.num_active_makers,
             "competitor_skim_advice": self.get_skim_recommendation(snap),
-            "top_competitors": [
-                {
-                    "account": p.account[:12] + "...",  # display only (truncated)
-                    "account_full": p.account,          # usable full r-address for Analyze with AI etc.
-                    "last_spread": round(p.last_spread_pct, 3),
-                    "avg_spread": round(p.avg_spread_pct, 3),
-                    "activity": p.total_offers_seen,
-                    "sides": f"b{p.sides_quoted.get('bid',0)}/a{p.sides_quoted.get('ask',0)}",
-                    "domain": p.domain or "no-domain"
-                }
-                for p in snap.top_makers[:5]
-            ]
+            "our_lane_xrp": snap.our_lane_xrp,
+            "peer_lane_count": snap.peer_lane_count,
+            "peer_lane_low_xrp": snap.peer_lane_low_xrp,
+            "peer_lane_high_xrp": snap.peer_lane_high_xrp,
+            "peer_pressure_score": snap.peer_pressure_score,
+            "peer_observed_spread_pct": snap.peer_observed_spread_pct,
+            "peer_fled_touch_count": snap.peer_fled_touch_count,
+            "peer_fled_events": snap.peer_fled_events or self._recent_fled[:5],
+            "peer_lane_widened": snap.peer_lane_widened,
+            "peer_lane_empty": snap.peer_lane_empty,
+            "top_competitors": [_profile_row(p) for p in snap.top_makers[:5]],
+            "top_peers": [
+                _profile_row(p, touch_xrp=float(self._last_touch_by_account.get(p.account) or 0.0))
+                for p in peer_list[:5]
+            ],
         }
 
 
 # Example integration stub (use in live tester or replay)
-async def get_competitor_signals(provider: CompetitorIntelProvider) -> Dict[str, Any]:
-    snap = await provider.fetch_snapshot()
+async def get_competitor_signals(
+    provider: CompetitorIntelProvider,
+    *,
+    our_lane_xrp: Optional[float] = None,
+    best_bid: Optional[float] = None,
+    best_ask: Optional[float] = None,
+    ws_bids: Optional[List[Dict[str, Any]]] = None,
+    ws_asks: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    snap = await provider.fetch_snapshot(
+        our_lane_xrp=our_lane_xrp,
+        best_bid=best_bid,
+        best_ask=best_ask,
+        ws_bids=ws_bids,
+        ws_asks=ws_asks,
+    )
+    pressure = snap.peer_pressure_score if snap.peer_lane_count > 0 else snap.pressure_score
+    spread = (
+        snap.peer_observed_spread_pct
+        if snap.peer_lane_count > 0 and snap.peer_observed_spread_pct > 0
+        else snap.observed_market_spread_pct
+    )
     return {
-        "competitor_observed_spread_pct": snap.observed_market_spread_pct,
+        "competitor_observed_spread_pct": spread,
         "competitor_depth_xrp": snap.total_competitor_depth_xrp,
-        "competitor_pressure": snap.pressure_score,
+        "competitor_pressure": pressure,
+        "peer_competitor_pressure": snap.peer_pressure_score,
         "num_active_mms": snap.num_active_makers,
+        "peer_lane_count": snap.peer_lane_count,
+        "peer_fled_touch_count": snap.peer_fled_touch_count,
+        "our_lane_xrp": snap.our_lane_xrp,
         "top_maker_spreads": [p.last_spread_pct for p in snap.top_makers[:3]],
+        "top_peer_spreads": [p.last_spread_pct for p in snap.top_peers[:3]],
     }
 
 

@@ -49,6 +49,8 @@ def parse_args() -> argparse.Namespace:
         "--mode",
         choices=[
             "engine",
+            "ws-engine",
+            "ws-hud",
             "gui",
             "once",
             "cancel-offers",
@@ -60,7 +62,9 @@ def parse_args() -> argparse.Namespace:
         ],
         default="engine",
         help=(
-            "engine, gui, once, cancel-offers, clear-kill, setup-trust, "
+            "engine = HTTP poll (legacy); ws-engine = WS + pure A-S v2; "
+            "ws-hud = real-time WS A-S HUD (:8765, mirrors ws-engine); "
+            "gui, once, cancel-offers, clear-kill, setup-trust, "
             "trust-no-ripple, send, rebalance-check"
         ),
     )
@@ -171,6 +175,30 @@ async def run_engine_async(config: BotConfig, mode: str, args: argparse.Namespac
         # Windows consoles may be cp1252; keep output ASCII-safe.
         print(summary.encode("ascii", errors="replace").decode("ascii"))
         return
+    if mode == "ws-engine":
+        from experimental.ws_feed.ws_pure_engine import WsPureTradingEngine
+        from experimental.ws_feed.pure_quote_path import WS_AS_VERSION
+
+        ws_engine = WsPureTradingEngine(config)
+        logger.info("WS pure engine path v%s (same config/credentials as legacy engine)", WS_AS_VERSION)
+        _register_engine_pid_cleanup()
+        try:
+            await ws_engine.run()
+        except KeyboardInterrupt:
+            ws_engine.stop()
+            logger.info("WS pure engine stopped by user.")
+        finally:
+            _clear_engine_pid()
+        return
+    if mode == "ws-hud":
+        from experimental.ws_feed.ws_hud_production import run_production_hud
+
+        logger.info("WS Pure A-S HUD — production mirror of ws-engine (http://127.0.0.1:8765)")
+        try:
+            await run_production_hud()
+        except KeyboardInterrupt:
+            logger.info("WS HUD stopped by user.")
+        return
     _register_engine_pid_cleanup()
     try:
         await engine.run()
@@ -193,6 +221,8 @@ if __name__ == "__main__":
             run_gui()
         elif args.mode in {
             "engine",
+            "ws-engine",
+            "ws-hud",
             "once",
             "cancel-offers",
             "clear-kill",

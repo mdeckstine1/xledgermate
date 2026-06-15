@@ -1,6 +1,6 @@
 # XLedgerMate — WS + Pure A-S Manual
 
-*Experimental / committed future path (grok-ws-feed branch). Pure A-S + WS book feed + on-chain competitor intelligence + advisory Grok/xAI analysis.*
+*Production path (`Ashigaru`). Pure A-S + WS book feed + on-chain competitor intelligence + advisory Grok.*
 
 **Status (as of 2026-06-10, post cash addition):** Functional + actively running in `experimental/ws_feed/`. Real Grok/xAI competitor analysis via the HUD "Analyze with AI" button is live (grok-3, model fetch dropdown working). Pure A-S + WS BookFeed + competitor pressure (0.41 NEUTRAL in recent run) + 5 on-ledger competitors tracked (including heavy one-sided bidder). HUD (http://127.0.0.1:8765) serving with Intelligence tab re-laid out (AI analysis left, top scraped right). Unlimited runs supported (`--seconds 0`). Cash added to the bot account (portfolio ~252 XRP-equiv reflected in runtime_state). Sacred long-run (HTTP poll + hard gate on VPS) untouched and remains the data generator / validation corpus. All work here is for post-Gate 2 wholesale server replace. AI / Grok is **strictly advisory** — never touches A-S reservation price or quoting decisions.
 
@@ -51,6 +51,8 @@ The tester also writes `logs/ws_as_demo_runtime.json` (frequent + at end) so you
 ## Competitor Intelligence & Grok/xAI API (Advisory Layer)
 
 On-chain scraping (via the live book + connector) builds per-maker profiles (posted spreads/sizes, activity, sides, cancel proxies, domain if set). Aggregates (observed market spread, pressure score, active makers, depth) are fed as better inputs to pure A-S (effective vol/liquidity/pressure) so the math can be smarter about when to be aggressive.
+
+**G2 spread-quality scaler (v2.1.0)**: `experimental/ws_feed/spread_quality_scaler.py` — brake-only dimmer on rolling fill toxicity / 30s markout. Applies `size_mult` (≤1.0, no win-chase) and `spread_mult` (vol widen) inside `PureQuotePath` before A-S ladder. **Never** touches reservation or `would_quote`; **not** coupled to kill switch. HUD Live tab shows G2 grade + multipliers. See [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) Phase G2.
 
 **Formal pressure model (landed 2026-06-09)**: `experimental/competitor_pressure.py` — `CompetitorPressure` + `apply_competitor_pressure` (monotonic: low pressure → lower vol, higher size_mult, gamma_scale, observed-spread book anchor). Side-aware for XRP-heavy rebalance (ask_pressure when XRP heavy). Integrated in the PureQuotePath (`engine_adapter_example.compute_pure_as_decision`): accepts competitor_intel, applies before pure A-S call. Outputs `competitor_pressure`, `pressure_*` fields + rationale. Never touches reservation or the inside-book decision.
 

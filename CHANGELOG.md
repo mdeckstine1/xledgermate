@@ -7,6 +7,78 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+---
+
+## [2.1.9] — 2026-06-15 (`Ashigaru`)
+
+**Theme:** Fix ws-engine runtime persist after G4 — HUD and intel log live again.
+
+### Fixed
+
+- **`RuntimeState` G4 fields** — `g4_size_mult`, `g4_grade`, `g4_active`, `g4_summary` (fixes `TypeError` blocking `runtime_state.json` saves since 2.1.8).
+- **`RuntimeStateStore.load()`** — restores `as_mode`, reservation, and WS book fields on restart.
+
+---
+
+## [2.1.8] — 2026-06-15 (`Ashigaru`)
+
+**Theme:** G6 live activation grading — §7 portfolio + capture + structural signals on Metrics tab.
+
+### Added
+
+- **G6 live activation grading** — `experimental/ws_feed/live_activation_grading.py`; tiers (`warming_up` → `pilot` → `active` → `scale_ready`); CLI `--gate`; report `logs/g6_activation_report.json`.
+- **HUD G6 pill** — Metrics tab shows activation tier + summary from `performance_metrics.activation`.
+- **`--g6-activation`** on `replay_long_run.py`.
+
+### Changed
+
+- **`VERSION` / `WS_AS_VERSION` → 2.1.8** — G6 checked off in `PURE_AS_CRITICAL_PATH.md`.
+
+---
+
+## [2.1.0] — 2026-06-15 (`Ashigaru`)
+
+**Theme:** Phase E complete (live ws-engine E1.5 PASS) + **G2 spread-quality scaler** on production path.
+
+### Added
+
+- **G2 spread-quality scaler** — `experimental/ws_feed/spread_quality_scaler.py`; brake-only `size_mult` / `spread_mult` from rolling toxicity + 30s markout; no win-chase, no kill coupling.
+- **HUD inventory tab** — on-ledger bot balances, funding plan vs `risk_capital_xrp`, XRP share bar (Xaman stays separate until operator funds).
+- **HUD E1.5 fill count** — authoritative CSV count for gate display (`ws_fills_csv`).
+
+### Changed
+
+- **`VERSION` / `WS_AS_VERSION` → 2.1.0** — G2 wired in `PureQuotePath`, `ws_pure_engine`, HUD Live tab.
+- **`fill_quality.assess()`** — multipliers delegated to G2 module (single policy source).
+- **Phase E** marked complete in `PURE_AS_CRITICAL_PATH.md`; E3 funding blocked until dev complete.
+
+---
+
+## [2.0.0] — 2026-05-29 (`Ashigaru`)
+
+**Theme:** WS + pure A-S lab reaches **v2** — soak gates, dry-run offers, peer-lane intel, swap-readiness on the path to live MM.
+
+### Added
+
+- **G1 peer-lane intel** — posted-touch band (0.4×–2.5× our L1), fled-touch proxy, peer-only pressure (`peer_lane.py`, `competitor_intel.py`).
+- **Pure dry-run executor** — virtual offers on WS path without sacred engine edits (`pure_dry_run_executor.py`).
+- **Swap readiness report** — wiring parity + economics gate (`swap_readiness_report.py`).
+- **WS feed hardening** — reconnect backoff, `is_fresh`, book-age modulator, zero-quote operator notes.
+- **Dynamic L1 sizing** — `min(config, k × balance)` with inventory/pressure skew.
+- **Streamlit WS compare** tab + expanded runtime analysis / C2 soak gate.
+
+### Changed
+
+- **`WS_AS_VERSION` → 2.0.0** — single source in `experimental/ws_feed/WS_AS_VERSION`; `PureQuotePath` reads it at import.
+- **Project `VERSION` → 2.0.0** — Ashigaru product line (sacred VPS Gate 2 engine unchanged until Phase E swap).
+
+### Docs
+
+- [`docs/PURE_AS_CRITICAL_PATH.md`](docs/PURE_AS_CRITICAL_PATH.md) — Phases A–D complete; Phase G G1 shipped.
+- [`experimental/PHASE_E_INTELLIGENCE_IMPLEMENTATION_PLAN.md`](experimental/PHASE_E_INTELLIGENCE_IMPLEMENTATION_PLAN.md) — operator doctrine for peer lane.
+
+---
+
 ## [1.4.4] — 2026-05-29 (`tier-2-polish`)
 
 **Theme:** Gate 1 runs survive bad book ticks without spread-fail kill; **Tier 1 + Gate 1 signed off** — Gate 2 current.

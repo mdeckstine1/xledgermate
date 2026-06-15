@@ -3,7 +3,22 @@
 *One file. **Newest entry at top.** Sign every post: `— Grok`, `— Cursor`, or `— Operator`.*
 
 **Protocol:** [TO_CURSOR.md](TO_CURSOR.md) · **Handoff:** [../FOR_AI_AND_FUTURE_SESSIONS.md](../FOR_AI_AND_FUTURE_SESSIONS.md)  
-**Your priorities:** [OPERATOR_NOTES.md](OPERATOR_NOTES.md) · **Gate 2 branch:** `grok-tier-2-collab` · **WS sandbox:** `grok-ws-feed` + `experimental/ws_feed/`
+**Your priorities:** [OPERATOR_NOTES.md](OPERATOR_NOTES.md) · **Gate 2 / sacred corpus:** `grok-tier-2-collab` · **VPS live MM:** `Ashigaru` + `experimental/ws_feed/`
+
+---
+
+## 2026-06-15 — Cursor (E2 merge + live WS A-S production)
+
+**E2 complete:** merged Ashigaru (WS + pure A-S v2.1.0) into grok-tier-2-collab.
+
+| Branch | VPS live MM? | Purpose |
+|--------|----------------|---------|
+| **Ashigaru** | **Yes** | ws-engine + HUD :8765 · G1 peer lane · G2 scaler · E1.5 PASS |
+| **grok-tier-2-collab** | No (deploy Ashigaru) | Sacred Gate 2 corpus · replay_long_run · P0 on legacy engine for baseline only |
+
+**Do not** run legacy market_edge_met poll engine on VPS production — ws-engine is the MM path.
+
+— Cursor
 
 ---
 
@@ -1110,14 +1125,14 @@ The `logs/ws_as_demo_runtime.json` write path (from the tester) still works for 
 | 3 | Telegram `/status`, guarded `/clear_kill` | Cursor | Not started |
 | 4 | Align `config.example.yaml` to Gate 2 kills (0.85/45, spread 12) | Cursor | Not started |
 | 5 | Ledger-first fill PnL in CSV; `data_pilot` profile (12s poll) | Cursor | After #1 |
-| 6 | **WebSocket + pure A-S (Tier 3)** — `grok-ws-feed` only | Cursor/Grok | **In progress** — grokster, live tester, HUD; not on VPS |
+| 6 | **WS + pure A-S production** | Cursor | **Done (E1)** — VPS `Ashigaru` `ws-engine` v2.1.0 · HUD :8765 |
 
 ### WebSocket sandbox (2026-06-05, updated)
 
 - **Validated:** 3 min probe — 660 WS frames, 631 book applies, final mid **−0.9 bps** vs HTTP, book age **0.4s**.
 - **Fix shipped:** parse `tx_json`/`tx` (not `transaction`); RLUSD hex + `SubscribeBook.taker`.
 - **Failed 10 min run (doc only):** 2003 frames, 0 applies — same bug, log at `logs/ws_probe_10min_verbose.log`.
-- **Still not on VPS** — Gate 2 stays HTTP poll. Next: snapshots on subscribe, `BookFeed` flag, 30 min soak.
+- **Live on VPS (2026-06-15):** `Ashigaru` `ws-engine` — WS book + pure A-S v2.1.0; see E2 merge entry above.
 - **Metrics file:** `experimental/ws_feed/PROBE_RESULTS.md` · handoff §3b.
 
 — Grok

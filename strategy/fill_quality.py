@@ -159,42 +159,18 @@ class FillQualityTracker:
         )
         score = max(0.0, 100.0 - toxic_ratio * 60.0 - (n * 2.0))
 
-        size_mult = 1.0
-        spread_mult = 1.0
-        early_sample = n < 8
-        if toxic_ratio >= 0.5 and not early_sample:
-            size_mult = 0.55
-            spread_mult = 1.25
-            summary = (
-                f"Fill quality poor ({toxic}/{n} adverse, "
-                f"30s ratio {toxic_ratio_30s:.0%}) → defensive"
-            )
-        elif toxic_ratio >= 0.5 and early_sample:
-            size_mult = 0.82
-            spread_mult = 1.08
-            summary = (
-                f"Fill quality early sample ({toxic}/{n} adverse, "
-                f"30s ratio {toxic_ratio_30s:.0%}) → cautious (gates after 8 fills)"
-            )
-        elif toxic_ratio >= 0.25:
-            size_mult = 0.75
-            spread_mult = 1.12
-            summary = (
-                f"Fill quality mixed ({toxic}/{n} adverse, "
-                f"30s ratio {toxic_ratio_30s:.0%}) → cautious"
-            )
-        elif toxic_ratio >= 0.18:
-            size_mult = 0.65
-            spread_mult = 1.15
-            summary = (
-                f"Fill quality stressed ({toxic}/{n} adverse, "
-                f"30s ratio {toxic_ratio_30s:.0%}) → toxicity bailout sizing"
-            )
-        else:
-            summary = (
-                f"Fill quality OK ({n} fills, {toxic} adverse, "
-                f"30s mean markout {mean_markout_30s:+.3f}%)"
-            )
+        from experimental.ws_feed.spread_quality_scaler import compute_g2_adjustments
+
+        g2 = compute_g2_adjustments(
+            recent_fills=n,
+            toxic_ratio=toxic_ratio,
+            toxic_ratio_30s=toxic_ratio_30s,
+            mean_markout_30s_pct=mean_markout_30s,
+            markout_samples_30s=len(markouts_30s),
+        )
+        size_mult = g2.size_mult
+        spread_mult = g2.spread_mult
+        summary = g2.summary
 
         return FillQualityState(
             score=score,

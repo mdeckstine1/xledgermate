@@ -1,6 +1,6 @@
 # Handoff README — read this first (human or AI)
 
-**Last updated:** 2026-06-10 (Gate 2 running on `grok-tier-2-collab`; **WS + pure A-S + 11k predator observations + AI handoff + real Grok HUD integration** captured on `grok-ws-feed`; date context set to June 9th per boss)
+**Last updated:** 2026-06-15 (VPS live **`Ashigaru`** `ws-engine` v2.1.0; E1+E2 complete; sacred replay on `grok-tier-2-collab`)
 **Purpose:** **New Grok session → read this file first.** Replaces chat memory for VPS, Gate 2, Telegram, kills, milestones. Path: `C:\Users\micha\xledgermate\groks input\FOR_AI_AND_FUTURE_SESSIONS.md`
 
 **Maintenance rule:** Update this file (and § Milestones) when the operator hits a milestone — VPS live, clean restart, Gate 2 start/end, profile change, major incident, git deploy to VPS, etc. Also update when major experimental observations (WS pure path behavior, funding model, scaling math, P&L targets, predator wiring) are captured for implementation.
@@ -25,16 +25,14 @@
 | 2026-06-05 | **Gate 2 early data** — portfolio ~254 XRP equiv., session spread capture positive; **18/60** fills toward judgment (snapshot) |
 | 2026-06-05 | **WebSocket sandbox** — branch `grok-ws-feed`, folder `experimental/ws_feed/` (probe only; **not** wired to engine or VPS systemd) |
 | 2026-06-05 | **WS probe validated** — 3 min run: 660 frames, 631 book applies, final mid **−0.9 bps** vs HTTP; fix = parse `tx_json`/`tx` ([PROBE_RESULTS.md](../experimental/ws_feed/PROBE_RESULTS.md)) |
-| 2026-06-06 | **Tier 2.5 P0 on `grok-tier-2-collab` only** — `6c1634a` BookOffers + hard `market_edge_met` gate — **not on VPS** during 2-week Gate 2 |
-| 2026-06-07 | **Dual-branch discipline** — no merge `grok-ws-feed` ↔ `grok-tier-2-collab` until Gate 2 window ends; WS + pure A-S lab continues on `grok-ws-feed` |
-| 2026-06-08 | **AI handoff + 11k XRP WS pure A-S predator observations captured** — updated this file (FOR_AI...) with full session details: 11k XRP-only funding (no RLUSD), XRP-heavy start + rebalance via competitive L1/L2/L3 asks to 55% target, WS pure A-S works differently (no outer hard gate / "L1 too tight" / `market_edge_met=false`), higher presence via live WS book + competitor_pressure for "skim harder", scaling/compounding (more inventory = higher *absolute* skim via larger pull, not auto wider spreads; capital grows from rebalance + skim), live ledger (36k+ XRP offers, ~208k/282k depth supportive of scale), P&L targets (~500 XRP equiv/24h potential; conservative year-end +25–45k P&L skim / 36–56k value), current code gaps (legacy gates in main engine vs committed experimental/ws_feed pure path), immediate actions (bypass gates in pure, wire pressure as A-S aggression input, dynamic sizing, aggressive L1 on rebalance). Mirrors updates to IMPLEMENTATION_PLAN.md (Tier 3 subsection) + THE_AI_DISCUSSION.md. Pushed on `grok-ws-feed`. |
-| 2026-06-09 | **Date context updated to June 9th (per boss)** — reviewed Cursor's detailed THREAD feedback on the 11k/predator handoff (presence ≠ economics, P&L as hypothesis, promotion ladder, formal competitor_pressure, single PureQuotePath boundary preferred, doc hygiene). Added new Grok follow-up entry in THREAD.md (2026-06-09) to keep discussion going: acknowledged review, reinforced queue priorities, proposed concrete next steps on competitor_pressure formalization + PureQuotePath evolution using recently landed engine_adapter_example.py. Updated this handoff file. Committed/pushed on `grok-ws-feed`. |
-| 2026-06-09 | **All tasks executed (per boss "all of them")**: Analyzed landed `competitor_pressure.py` (side-aware for 11k rebalance, input-only adjustments) + adapter integration (PureQuotePath). Ran tests (8 passed) + economics sample + pressure A/B demo (low pressure demonstrably lowers vol, boosts size). Implemented `AIAdvisorySignal` dataclass in ai_analysis/base.py + hook inside `compute_pure_as_decision` (after pressure, peer, advisory-only further mults + output attachment). Updated IMPLEMENTATION_PLAN.md, FOR_AI, WS_AS_MANUAL.md, THE_AI_DISCUSSION.md with pressure model + AI places. Posted summary reply in THREAD. All on grok-ws-feed. |
-| 2026-06-10 | **Real xAI Grok integration live in experimental HUD** — "Analyze with AI" now returns full real Grok responses using `grok-3` (after resolving model-not-found 400s on grok-beta / grok-2-1212). Added working "Fetch available models for this key" (calls real `/v1/models`, renders as proper `<select>` dropdown with grok-3 forced to top as recommended + pre-selected, auto-applies on change). Updated all defaults, help text, error messages, JS, THREAD, WS_AS_MANUAL. Competitor scraping + live pressure context feeding into good quality on-chain MM analysis + actionable pure A-S advice. On `grok-ws-feed`. |
-| 2026-06-10 | **Cash added to bot account + full readme/docs sweep + dedicated CURSOR_HANDOFF_ROADMAP created for switch to Cursor** — User funded the ledger (portfolio ~252 XRP-equiv visible in runtime_state). Experimental pure A-S + WS + real grok-3 HUD is live and cooking (unlimited `--seconds 0`, 5 competitors tracked with activity including one-sided heavy bidder, pressure ~0.41, A-S correctly 0 quotes on 7.4bp book wanting 10.4bp per built-in math; HUD Intelligence tab re-laid out with AI left + scraped right). Created `groks input/CURSOR_HANDOFF_ROADMAP.md` (complete self-contained handoff: run commands, file map, Grok token details, exploitation prompt focus, Cursor loading tips, safety rules, open items). Updated root README, WS_AS_MANUAL, WS_HANDOFF, FOR_AI, THREAD, TO_CURSOR, START_HERE, experimental ws readmes, STRATEGY/IMPLEMENTATION_PLAN, and others for consistency + cross-refs. All on grok-ws-feed. See the new roadmap for the full Cursor handoff package. |
-| 2026-06-10 | **Doc consolidation + Pure A-S critical path** — Boss directive: merge like docs, move off hard gates toward pure A-S. Created `docs/PURE_AS_CRITICAL_PATH.md` (single Phase 0–E checklist). Slimmed `CURSOR_HANDOFF_ROADMAP.md` to run commands only; trimmed duplicate sections in IMPLEMENTATION_PLAN. All handoff docs point to critical path. |
+| 2026-06-06 | **Tier 2.5 P0 on `grok-tier-2-collab`** — `6c1634a` BookOffers + hard `market_edge_met` gate — **sacred replay baseline only**; not used by VPS `ws-engine` |
+| 2026-06-07 | **Dual-branch discipline** — collab = Gate 2 corpus; Ashigaru = production WS + pure A-S |
+| 2026-06-08–10 | **WS pure A-S lab → production path** — pressure model, Grok HUD, `PURE_AS_CRITICAL_PATH.md` |
+| 2026-06-15 | **Phase E1 complete** — VPS live `ws-engine` v2.1.0, E1.5 ≥50 fills PASS, G1 peer lane + G2 scaler |
+| 2026-06-15 | **E2 merge** — `Ashigaru` → `grok-tier-2-collab`; unified repo; live MM stays on Ashigaru |
+| 2026-06-15 | **Ledger vs refresh note** — no XRPL quote rate limit; bottleneck = sequential `submit_and_wait` (~3–5s/tx). Future L1–L4 in [`PURE_AS_CRITICAL_PATH.md`](../docs/PURE_AS_CRITICAL_PATH.md) |
 
-*Next expected updates: Phase A sacred economics A/B on grok-ws-feed; Gate 2 week-1 skim + ≥60 fills (doc 05) on VPS; wholesale pure A-S swap only after Gate 2 sign-off.*
+*Next: E3 rebalance (operator-blocked funding); sacred replay A/B vs live WS (`replay_long_run --as-mode pure`).*
 
 ---
 
@@ -42,8 +40,9 @@
 
 - **Repo:** [github.com/mdeckstine1/xledgermate](https://github.com/mdeckstine1/xledgermate) — XRPL **XRP/RLUSD** market-making bot  
 - **Local path (Windows):** `C:\Users\micha\xledgermate`  
-- **Gate 2 / VPS branch:** `grok-tier-2-collab` (from `tier-2-polish`) · version **~1.4.4** — **this is what runs on the server**  
-- **WebSocket lab branch:** `grok-ws-feed` (from `grok-tier-2-collab`) — `experimental/ws_feed/` only; **do not deploy to VPS** until Tier 3 sign-off · **do not merge into VPS branch** during Gate 2  
+- **Production VPS (live MM):** branch **`Ashigaru`** · `python main.py --mode ws-engine` · v**2.1.0** · HUD **`:8765`** · pure A-S (no legacy `market_edge_met` gate on this path)
+- **Sacred corpus / replay:** branch **`grok-tier-2-collab`** — Gate 2 labeled data, `grokster`, `replay_long_run --as-mode pure` for A/B vs live
+- **Legacy poll engine:** `python main.py --mode engine` — P0 hard gate (`6c1634a`) for sacred baseline replay **only**; not deployed on VPS production
 - **GitHub `main` is stale (v1.0.0)** — real system is local / `tier-2-polish`
 - **Risk model:** Only **bot wallet** trades; main “Mangie” bag must never be configured on the VPS  
 - **All live trading data** lives on VPS: `/root/xledgermate/logs/` (not on the Windows PC)
@@ -70,7 +69,7 @@
 
 ```
 xledgermate/
-├── experimental/ws_feed/   ← Tier 3 WebSocket sandbox (branch grok-ws-feed; NOT on VPS)
+├── experimental/ws_feed/   ← **Production WS + pure A-S** (`ws-engine`, HUD :8765) + lab tester
 └── groks input/
     ├── FOR_AI_AND_FUTURE_SESSIONS.md   ← THIS FILE
     ├── START_HERE.md
@@ -97,16 +96,14 @@ xledgermate/
 
 ---
 
-## 3b. Book data: poll (live) vs WebSocket (lab)
+## 3b. Book data: legacy poll vs WS (production)
 
 | Mode | Where | Used by |
 |------|--------|---------|
-| **HTTP `BookOffers` poll** | VPS + Gate 2 | `trading_engine` → `XRPLConnector.fetch_xrp_rlusd_order_book()` |
-| **WebSocket subscribe** | Local `grok-ws-feed` only | `experimental/ws_feed/` — probe + future adapter |
+| **HTTP `BookOffers` poll** | Local replay / sacred baseline | Legacy `trading_engine` (`--mode engine`) — P0 `market_edge_met` gate |
+| **WebSocket subscribe** | **VPS production + local lab** | `WsPureTradingEngine` (`--mode ws-engine`), `live_pure_as_tester`, HUD `:8765` |
 
-**Poll intervals (Gate 2 `tight_spread`, `tiered_refresh_enabled: true`):** ~**15s** book poll, ~**45s** full quote refresh (profile-driven; not always the yaml `order_refresh_time_seconds`).
-
-**Why two branches:** Gate 2 needs uninterrupted poll-only data on VPS while WS feed is built and compared offline.
+**Production MM on VPS:** WS book feed only — no poll-era hard gate on the quoting path. Sacred replay on collab compares economics vs pure A-S (`replay_long_run --as-mode pure`).
 
 ### WS probe results (2026-06-05) — ready for next phase
 
@@ -155,15 +152,16 @@ Doc **05** / **03**: WebSocket remains **Tier 3** (post–Gate 2, capital scale)
 | **OS** | Ubuntu 26.04 LTS |
 | **SSH user** | `root` |
 | **SSH key (Windows)** | `C:\Users\micha\.ssh\hetzner_xledgermate` |
-| **Repo on VPS** | `/root/xledgermate` (branch `tier-2-polish` or `grok-tier-2-collab` after pull — **not** `grok-ws-feed`) |
+| **Repo on VPS** | `/root/xledgermate` — branch **`Ashigaru`** (live MM); pull `grok-tier-2-collab` only for sacred replay work |
 | **Python** | 3.14 venv at `/root/xledgermate/.venv` |
 
 ### Systemd services (intended ownership)
 
 | Service | What it does | Port | Windows launcher |
 |---------|----------------|------|------------------|
-| `xledgermate` | **Trading engine (sole owner)** | — | Do **not** start from GUI |
-| `xledgermate-gui` | Full trading GUI (`gui/streamlit_gui.py`) | **8502** | **XLedgerMate Full GUI** → `localhost:8502` |
+| `xledgermate` | **Trading engine** — `python main.py --mode ws-engine` | — | Do **not** start from GUI |
+| `xledgermate-ws-hud` | **Production MM HUD** (`ws_hud_production.py`) | **8765** | SSH tunnel `localhost:8765` |
+| `xledgermate-gui` | Legacy Streamlit GUI (not production MM path) | **8502** | Optional |
 | `xledgermate-dashboard` | Light monitor GUI | **8501** | XLedgerMate Dashboard → `localhost:8501` |
 | `xledgermate-hourly-report.timer` | Hourly Telegram ops/fill summary | — | `scripts/hourly_telegram_report.py` |
 
@@ -382,16 +380,16 @@ ssh -i $env:USERPROFILE\.ssh\hetzner_xledgermate root@188.245.50.229 "systemctl 
 
 ---
 
-## 13. WS + pure A-S + 11k XRP predator (grok-ws-feed experimental handoff)
+## 13. WS + pure A-S + 11k XRP predator (production + E3 hypothesis)
 
-**This section captures the June 2026 session observations for all future Grok / AI / Cursor sessions (implementation-ready).** Work lives in `experimental/` (ws_feed/, ai_analysis/, grokster.py, market_analysis/) on the `grok-ws-feed` branch only. Sacred long-run (HTTP poll + hard `market_edge_met` gate + current Gate 2 `tight_spread` on VPS) is **never modified** — it is the data source/oracle. All WS/pure/AI changes are advisory-only or experimental until explicit post-Gate 2 sign-off + operator opt-in for any engine swap. Prior requests (tab reorg, Inventory+QR+funding flows, Intelligence tab for Grok competitor analysis, animations, ticker fixes, data loss/NameError fixes, Grok API, "skim harder and beat competitors", recurring long-run data queries on VPS logs, layout, etc.) remain in scope and are reflected here + in the plan.
+**Status (2026-06-15):** WS + pure A-S is **live on VPS** (`Ashigaru`, `ws-engine` v2.1.0, HUD `:8765`). E2 merged Ashigaru into `grok-tier-2-collab` — same code, dual branch roles. Sacred HTTP poll + P0 gate remains for **replay baseline only** (`--mode engine`). G1 peer lane + G2 spread-quality scaler wired in production path.
 
 **Branch / deployment facts:**
-- `grok-ws-feed`: WS book feed, pure Avellaneda-Stoikov (built-in protection only), live HUD (real_time_as_hud.py with as_reservation, as_optimal_spread_pct, would_quote, as_mode="pure"), live_pure_as_tester.py, engine_adapter_example.py, grokster validation, competitor intel, Intelligence tab, Grok/xAI `/analyze_competitor` (Config-driven), AI analysis (`experimental/ai_analysis/`). **Do not deploy to VPS or merge to grok-tier-2-collab during Gate 2.**
-- `grok-tier-2-collab` (VPS): sacred long-run data generator + Gate 2 pilot. WS/pure work stays off it.
-- Dual-branch discipline: keep WS lab isolated until Tier 3 readiness (post-Gate 2).
+- **`Ashigaru` (VPS live MM):** `WsPureTradingEngine`, `PureQuotePath`, G1/G2, `ws_hud_production.py`, E1.5 PASS (~234 XRP-equiv pilot; no 11k funding until E3).
+- **`grok-tier-2-collab`:** Sacred Gate 2 corpus + `replay_long_run --as-mode pure` economics A/B — deploy Ashigaru to VPS, not collab, for live quoting.
+- **`grok-ws-feed`:** Historical sandbox branch — superseded by Ashigaru; do not use for new work.
 
-**11k XRP-only funding + rebalance model (no initial RLUSD):**
+**11k XRP-only funding + rebalance model (E3 — operator blocked until dev complete):**
 - Starts 100% XRP heavy (11k XRP is the *only* funding).
 - Bot uses inventory-skewed + explicit "XRP-only mode → competitive asks" L1/L2/L3 asks to sell ~4.5–5.5k XRP and build RLUSD toward 0.55 target ratio (order_levels=3, target in config, 0.12 max_leg_size_pct_of_capital).
 - This front-loads positive skim (spread capture on the sells) during the rebalance window (est. 60–120 days depending on fill rate hitting the ladder).

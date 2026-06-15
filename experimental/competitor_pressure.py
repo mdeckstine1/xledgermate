@@ -54,7 +54,9 @@ class PressureAdjustedInputs:
 def from_intel_dict(data: Optional[Mapping[str, Any]]) -> Optional[CompetitorPressure]:
     if not data:
         return None
-    raw = data.get("competitor_pressure", data.get("pressure_score"))
+    raw = data.get("peer_competitor_pressure")
+    if raw is None:
+        raw = data.get("competitor_pressure", data.get("pressure_score"))
     if raw is None:
         return None
     return CompetitorPressure(
