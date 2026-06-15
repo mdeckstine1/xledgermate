@@ -64,6 +64,10 @@ class WSBookFeedAdapter:
         intel_ai_enabled: bool = True,
         book_state_for_ai: Optional[Dict[str, Any]] = None,
         fill_quality: Optional[FillQualityState] = None,
+        inventory_max_deviation: float = 0.12,
+        inventory_mode: str = "market_make",
+        xrp_reserve: float = 12.0,
+        inventory_overshoot_slack: float = 0.03,
     ) -> Dict[str, Any]:
         book_age = ws_book_age_s
         if book_age is None and hasattr(self.book_feed, "age_seconds"):
@@ -82,6 +86,10 @@ class WSBookFeedAdapter:
             base_volatility_pct=volatility_pct,
             ws_book_age_s=float(book_age or 0.0),
             fill_quality=fill_quality,
+            inventory_max_deviation=inventory_max_deviation,
+            inventory_mode=inventory_mode,
+            xrp_reserve=xrp_reserve,
+            inventory_overshoot_slack=inventory_overshoot_slack,
         )
         if inventory_skew_override is not None:
             pass  # reserved for future override hook
@@ -109,8 +117,9 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "ws_as_version": decision.path_version,
         "competitor_pressure": decision.competitor_pressure,
         "inventory_label": decision.inventory_label,
-        "pause_bids": False,
-        "pause_asks": False,
+        "pause_bids": decision.pause_bids,
+        "pause_asks": decision.pause_asks,
+        "inventory_limits_summary": decision.inventory_limits_summary,
         "suggested_bid": decision.suggested_bid,
         "suggested_ask": decision.suggested_ask,
         "ws_book_age_s": decision.ws_book_age_s if decision.ws_book_age_s else ws_age,

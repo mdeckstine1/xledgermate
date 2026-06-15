@@ -56,14 +56,14 @@ def test_b2_dynamic_sizing_on_quote() -> None:
             mid=1.120508,
             best_bid=1.1198083175159341,
             best_ask=1.1212070418817652,
-            xrp_bal=2000.0,
-            rlusd_bal=100.0,
+            xrp_bal=650.0,
+            rlusd_bal=500.0,
             competitor_intel={
                 "competitor_pressure": 0.2,
                 "competitor_observed_spread_pct": 0.11,
             },
         )
-        assert d.l1_xrp == 140.0  # min(150, 0.07*2000)
+        assert d.l1_xrp == 45.5  # min(150, 0.07*650)
         assert d.bid_size > 0
         assert d.ask_size > d.bid_size  # xrp-heavy + low pressure → ask boost
         assert "SIZE L1=" in d.quote_decision_summary

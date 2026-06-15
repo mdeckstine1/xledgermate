@@ -15,6 +15,11 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from experimental.competitor_pressure import apply_competitor_pressure, from_intel_dict
 from experimental.ws_feed.dynamic_sizing import build_pure_quote_ladder, compute_pure_l1_sizes
+from experimental.ws_feed.pure_inventory_policy import (
+    apply_pause_to_ladder,
+    apply_pure_inventory_policy,
+    count_active_l1_quotes,
+)
 from experimental.ws_feed.ws_book_age_modulator import apply_ws_book_age_modulator
 from experimental.ws_feed.spread_quality_scaler import G2Adjustments, compute_g2_adjustments
 from strategy.fill_quality import FillQualityState
@@ -91,6 +96,9 @@ class PureQuoteDecision:
     g2_grade: str = "neutral"
     g2_active: bool = False
     g2_summary: str = ""
+    pause_bids: bool = False
+    pause_asks: bool = False
+    inventory_limits_summary: str = ""
 
     def to_runtime_dict(self, *, competitor_intel: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -111,8 +119,8 @@ class PureQuoteDecision:
             "as_gamma": self.as_gamma,
             "as_kappa": self.as_kappa,
             "as_protected": True,
-            "pause_bids": False,
-            "pause_asks": False,
+            "pause_bids": self.pause_bids,
+            "pause_asks": self.pause_asks,
             "ai_edge_quality": self.ai_edge_quality,
             "ai_is_skimmable": self.ai_is_skimmable,
             "ai_rationale": self.ai_rationale,
@@ -155,8 +163,9 @@ def _build_summary(
     ai_rationale: str = "",
 ) -> str:
     n = decision.quote_count
+    side_label = "two-sided" if n >= 2 else ("one-sided" if n == 1 else "zero")
     parts = [
-        f"Generated {n} quotes (two-sided) from mid={decision.mid:.6f} RLUSD/XRP",
+        f"Generated {n} quotes ({side_label}) from mid={decision.mid:.6f} RLUSD/XRP",
         f"inventory={decision.inventory_label}",
         f"book={decision.book_spread_pct:.3f}%",
         (
@@ -166,9 +175,12 @@ def _build_summary(
         ),
     ]
     if decision.would_quote:
-        parts.append(
-            f"would quote bid~{decision.suggested_bid:.6f} ask~{decision.suggested_ask:.6f}"
-        )
+        legs = []
+        if decision.suggested_bid is not None:
+            legs.append(f"bid~{decision.suggested_bid:.6f}")
+        if decision.suggested_ask is not None:
+            legs.append(f"ask~{decision.suggested_ask:.6f}")
+        parts.append(f"would quote {' '.join(legs) or '—'}")
     else:
         parts.append(f"0 quotes: {decision.zero_quote_reason} ({decision.zero_quote_detail})")
     if decision.book_age_rationale:
@@ -183,6 +195,8 @@ def _build_summary(
         parts.append(decision.size_rationale)
     if decision.g2_active and decision.g2_summary:
         parts.append(decision.g2_summary)
+    if decision.inventory_limits_summary:
+        parts.append(f"INV: {decision.inventory_limits_summary}")
     note = decision.tight_book_note or decision.zero_quote_operator_note
     if note:
         parts.append(note)
@@ -233,6 +247,10 @@ class PureQuotePath:
         base_volatility_pct: Optional[float] = None,
         ws_book_age_s: float = 0.0,
         fill_quality: Optional[FillQualityState] = None,
+        inventory_max_deviation: float = 0.12,
+        inventory_mode: str = "market_make",
+        xrp_reserve: float = 12.0,
+        inventory_overshoot_slack: float = 0.03,
     ) -> PureQuoteDecision:
         book_spread_pct = (best_ask - best_bid) / mid * 100.0 if mid else 0.0
         raw_vol = (
@@ -358,12 +376,31 @@ class PureQuotePath:
             pressure_size_mult=pressure_size_mult,
             effective_pressure=effective_pressure,
         )
+        inv_policy = apply_pure_inventory_policy(
+            bid_size_xrp=sizes.bid_size_xrp,
+            ask_size_xrp=sizes.ask_size_xrp,
+            xrp_balance=xrp_bal,
+            rlusd_balance=rlusd_bal,
+            mid_price=mid,
+            target_xrp_ratio=target_ratio,
+            inventory_max_deviation=inventory_max_deviation,
+            inventory_mode=inventory_mode,
+            xrp_reserve=xrp_reserve,
+            inventory_overshoot_slack=inventory_overshoot_slack,
+            min_order_size_xrp=self.min_order_size_xrp,
+            bid_size_mult=inv_state.bid_size_mult,
+            ask_size_mult=inv_state.ask_size_mult,
+        )
+        size_rationale = sizes.rationale
+        if inv_policy.policy_tag:
+            size_rationale = f"{size_rationale} | {inv_policy.policy_tag}"
+
         ladder = build_pure_quote_ladder(
             mid=mid,
             l1_bid_price=as_quote.bid_price,
             l1_ask_price=as_quote.ask_price,
-            l1_bid_size=sizes.bid_size_xrp,
-            l1_ask_size=sizes.ask_size_xrp,
+            l1_bid_size=inv_policy.bid_size_xrp,
+            l1_ask_size=inv_policy.ask_size_xrp,
             optimal_spread_pct=as_quote.optimal_spread_pct,
             level_spread_increment=self.level_spread_increment,
             order_levels=self.order_levels,
@@ -371,10 +408,17 @@ class PureQuotePath:
             configured_level_sizes=self.configured_order_sizes,
             active=would_quote,
         )
+        ladder = apply_pause_to_ladder(
+            ladder,
+            pause_bids=inv_policy.pause_bids,
+            pause_asks=inv_policy.pause_asks,
+            min_order_size_xrp=self.min_order_size_xrp,
+        )
+        active_quotes = count_active_l1_quotes(ladder)
 
         decision = PureQuoteDecision(
-            would_quote=would_quote,
-            quote_count=2 if would_quote else 0,
+            would_quote=would_quote and active_quotes > 0,
+            quote_count=active_quotes if would_quote else 0,
             mid=mid,
             best_bid=best_bid,
             best_ask=best_ask,
@@ -401,13 +445,16 @@ class PureQuotePath:
             ai_is_skimmable=ai_skimmable,
             ai_rationale=ai_rationale,
             ai_suggested_posture=ai_posture,
-            suggested_bid=as_quote.bid_price if would_quote else None,
-            suggested_ask=as_quote.ask_price if would_quote else None,
-            bid_size=sizes.bid_size_xrp,
-            ask_size=sizes.ask_size_xrp,
+            suggested_bid=as_quote.bid_price if would_quote and not inv_policy.pause_bids else None,
+            suggested_ask=as_quote.ask_price if would_quote and not inv_policy.pause_asks else None,
+            bid_size=inv_policy.bid_size_xrp,
+            ask_size=inv_policy.ask_size_xrp,
             l1_xrp=sizes.l1_xrp,
-            size_rationale=sizes.rationale,
+            size_rationale=size_rationale,
             quote_intents=ladder,
+            pause_bids=inv_policy.pause_bids,
+            pause_asks=inv_policy.pause_asks,
+            inventory_limits_summary=inv_policy.limits_summary,
             g2_size_mult=g2.size_mult,
             g2_spread_mult=g2.spread_mult,
             g2_grade=g2.grade,

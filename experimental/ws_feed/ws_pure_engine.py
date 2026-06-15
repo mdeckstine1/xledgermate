@@ -261,6 +261,10 @@ class WsPureTradingEngine:
             target_ratio=config.inventory_target_xrp_ratio,
             ws_book_age_s=state.age_seconds(),
             fill_quality=self._fill_quality.assess(),
+            inventory_max_deviation=float(config.inventory_max_deviation),
+            inventory_mode=str(config.inventory_mode or "market_make"),
+            xrp_reserve=float(config.xrp_reserve),
+            inventory_overshoot_slack=float(config.inventory_overshoot_slack),
         )
         would_quote = bool(engine_dec.get("would_quote"))
         intents = pure_intents_to_quote_intents(
@@ -616,6 +620,8 @@ class WsPureTradingEngine:
             quote_decision_summary=str(ed.get("quote_decision_summary") or ""),
             quoting_policy_label=str(ed.get("quoting_policy_label") or "ws_pure_as"),
             inventory_label=str(ed.get("inventory_label") or ""),
+            pause_bids=bool(ed.get("pause_bids")),
+            pause_asks=bool(ed.get("pause_asks")),
             as_reservation=ed.get("as_reservation"),
             as_optimal_spread_pct=ed.get("as_optimal_spread_pct"),
             as_gamma=ed.get("as_gamma"),

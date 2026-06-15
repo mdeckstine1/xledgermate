@@ -15,6 +15,8 @@ DEFAULT_LADDER_SIZE_FRACS = (1.0, 0.6, 0.3)
 DEFAULT_BALANCE_FRACTION_K = 0.07
 DEFAULT_ASK_BOOST_XRP_HEAVY_LOW_PRESSURE = 1.35
 DEFAULT_BID_TRIM_XRP_HEAVY_LOW_PRESSURE = 0.85
+DEFAULT_BID_BOOST_RLUSD_HEAVY_LOW_PRESSURE = 1.35
+DEFAULT_ASK_TRIM_RLUSD_HEAVY_LOW_PRESSURE = 0.85
 LOW_PRESSURE_THRESHOLD = 0.4
 
 
@@ -44,20 +46,28 @@ def compute_pure_l1_sizes(
     balance_cap = max(min_order_size_xrp, balance_fraction_k * max(xrp_balance, 0.0))
     l1 = round(max(min_order_size_xrp, min(configured_l1_xrp, balance_cap)), 4)
 
-    bid_mult = 1.0 - max(0.0, inventory_skew) * 0.5
-    ask_mult = 1.0 + max(0.0, inventory_skew) * 0.5
+    bid_mult = max(0.25, min(1.45, 1.0 - inventory_skew * 0.5))
+    ask_mult = max(0.25, min(1.45, 1.0 + inventory_skew * 0.5))
 
     bid = l1 * pressure_size_mult * bid_mult
     ask = l1 * pressure_size_mult * ask_mult
 
     label = (inventory_label or "").lower()
     xrp_heavy = inventory_skew > 0.12 or "xrp_heavy" in label
+    rlusd_heavy = inventory_skew < -0.12 or "rlusd_heavy" in label
     low_pressure = effective_pressure is not None and effective_pressure < low_pressure_threshold
     boost_tag = ""
     if xrp_heavy and low_pressure:
         ask *= ask_boost
         bid *= bid_trim
         boost_tag = f" ask-boost×{ask_boost:.2f}(XRP-heavy+low-pressure)"
+    elif rlusd_heavy and low_pressure:
+        bid *= DEFAULT_BID_BOOST_RLUSD_HEAVY_LOW_PRESSURE
+        ask *= DEFAULT_ASK_TRIM_RLUSD_HEAVY_LOW_PRESSURE
+        boost_tag = (
+            f" bid-boost×{DEFAULT_BID_BOOST_RLUSD_HEAVY_LOW_PRESSURE:.2f}"
+            f"(RLUSD-heavy+low-pressure)"
+        )
 
     bid = max(min_order_size_xrp, round(bid, 4))
     ask = max(min_order_size_xrp, round(ask, 4))

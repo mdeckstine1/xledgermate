@@ -23,6 +23,28 @@ def test_l1_uses_config_when_balance_small() -> None:
     assert sizes.l1_xrp == 7.0  # min(150, 7)
 
 
+def test_rlusd_heavy_skew_boosts_bid_under_low_pressure() -> None:
+    base = compute_pure_l1_sizes(
+        xrp_balance=200.0,
+        configured_l1_xrp=50.0,
+        inventory_skew=-0.30,
+        inventory_label="rlusd_heavy",
+        pressure_size_mult=1.0,
+        effective_pressure=0.25,
+    )
+    no_boost = compute_pure_l1_sizes(
+        xrp_balance=200.0,
+        configured_l1_xrp=50.0,
+        inventory_skew=-0.30,
+        inventory_label="rlusd_heavy",
+        pressure_size_mult=1.0,
+        effective_pressure=0.55,
+    )
+    assert base.bid_size_xrp > no_boost.bid_size_xrp
+    assert base.ask_size_xrp < no_boost.ask_size_xrp
+    assert "bid-boost" in base.rationale
+
+
 def test_ask_boost_xrp_heavy_low_pressure() -> None:
     base = compute_pure_l1_sizes(
         xrp_balance=2000.0,
@@ -43,6 +65,24 @@ def test_ask_boost_xrp_heavy_low_pressure() -> None:
     assert base.ask_size_xrp > no_boost.ask_size_xrp
     assert base.bid_size_xrp < no_boost.bid_size_xrp
     assert "ask-boost" in base.rationale
+
+
+def test_signed_skew_boosts_bid_when_rlusd_heavy() -> None:
+    heavy_rlusd = compute_pure_l1_sizes(
+        xrp_balance=1000.0,
+        configured_l1_xrp=150.0,
+        inventory_skew=-0.30,
+        inventory_label="rlusd_heavy",
+        pressure_size_mult=1.0,
+    )
+    balanced = compute_pure_l1_sizes(
+        xrp_balance=1000.0,
+        configured_l1_xrp=150.0,
+        inventory_skew=0.0,
+        pressure_size_mult=1.0,
+    )
+    assert heavy_rlusd.bid_size_xrp > balanced.bid_size_xrp
+    assert heavy_rlusd.ask_size_xrp < balanced.ask_size_xrp
 
 
 def test_pressure_size_mult_scales_both_sides() -> None:
