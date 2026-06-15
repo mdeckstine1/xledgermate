@@ -176,6 +176,7 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         "intel_ai_key": runtime.get("intel_ai_key", ""),
         "intel_ai_model": runtime.get("intel_ai_model"),
         "intel_ai_enabled": runtime.get("intel_ai_enabled", True),
+        "performance_metrics": runtime.get("performance_metrics"),
         **_session_fields(runtime),
         **extra,
     }
