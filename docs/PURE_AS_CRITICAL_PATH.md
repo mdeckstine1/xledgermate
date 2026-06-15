@@ -1,9 +1,9 @@
 # Pure A-S Critical Path
 
 **Status:** Active — **WS + pure Avellaneda-Stoikov** is the production MM quoting model on VPS.  
-**Version:** **v2.1.0** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru` (VPS live MM)  
+**Version:** **v2.1.7** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru` (VPS live MM)  
 **Sacred corpus:** `grok-tier-2-collab` (Gate 2 replay + economics) · **E2 merged** 2026-06-15  
-**Last updated:** 2026-06-15 (E1 + E2 complete; G2/G3 shipped; 2.1.3 quote-refresh; ledger L1–L4 noted)
+**Last updated:** 2026-06-15 (G5 peer-lane replay validation; deploy script syncs version on restart)
 
 This is the **single checklist** for WS + pure A-S work. Other docs point here; do not duplicate task lists elsewhere.
 
@@ -69,6 +69,8 @@ python -m experimental.swap_readiness_report
 python -m experimental.ws_feed.replay_long_run --swap-readiness --gate
 python -m experimental.as_calibration_grok --dry-run
 python -m experimental.as_calibration_grok
+python -m experimental.ws_feed.peer_lane_replay_validation
+python -m experimental.ws_feed.replay_long_run --peer-lane-g5 --gate
 ```
 
 ---
@@ -139,7 +141,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 - [x] **G2 (E.2)** Spread-quality scaler — `spread_quality_scaler.py` v2.1.0; brake on toxicity/markout (size× + vol/spread×); **no** win-chase, **no** kill coupling; wired in `PureQuotePath` + `ws-engine`
 - [x] **G3 (E.3)** Intel JSONL + Performance Metrics tab (HUD and/or Streamlit)
 - [x] **G4 (E.4)** Wire peer-lane signals into `PureQuotePath` size_mult / side bias — `peer_lane_quoting.py` v2.1.4; production `ws-engine` scrapes peer lane ~15s
-- [ ] **G5 (E.5)** Replay validation — peer coverage %, neutral-fallback rate on sacred + WS samples
+- [x] **G5 (E.5)** Replay validation — `peer_lane_replay_validation.py`; peer coverage % + neutral-fallback rate on `intel_decisions.jsonl` + WS samples; sacred eligibility baseline
 - [ ] **G6 (E.6)** Live activation graded by §7 (portfolio XRP-equiv from fills, capture, toxicity)
 
 ### Phase F — Grok exploitation & operator UX (after path solid)
@@ -259,7 +261,10 @@ experimental/ws_feed/zero_quote_notes.py
 experimental/ws_feed/pure_dry_run_executor.py
 experimental/swap_readiness_report.py
 experimental/PHASE_E_INTELLIGENCE_IMPLEMENTATION_PLAN.md
+experimental/ws_feed/peer_lane_replay_validation.py   # G5 peer coverage + neutral-fallback gate
+experimental/ws_feed/peer_lane_quoting.py
 experimental/ws_feed/replay_long_run.py
+scripts/vps_deploy_ashigaru.sh              # VPS pull + restart (version + HUD)
 experimental/ai_analysis/grok_analyzer.py
 strategy/avellaneda_strategy.py
 ```

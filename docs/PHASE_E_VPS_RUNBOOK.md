@@ -38,9 +38,15 @@ This runbook is the operator ladder for **E1–E3** in [`PURE_AS_CRITICAL_PATH.m
 
 ```bash
 cd /root/xledgermate
+bash scripts/vps_deploy_ashigaru.sh
+# Or manually:
 git fetch && git checkout Ashigaru && git pull
+systemctl restart xledgermate xledgermate-ws-hud
+```
 
-# Health / pre-live gate
+After deploy, HUD shows `ws_as_version` from `experimental/ws_feed/WS_AS_VERSION` (re-read on each `/state` poll). Engine logs `WsPureTradingEngine v…` on restart.
+
+```bash
 python scripts/vps_ws_engine_signoff.py
 python scripts/vps_ws_engine_signoff.py --gate   # exit 1 if not ready
 

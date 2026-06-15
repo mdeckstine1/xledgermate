@@ -11,4 +11,9 @@ def _read_version() -> str:
     return "0.0.0"
 
 
+def current_version() -> str:
+    """Read VERSION file each call — matches WS path after deploy + service restart."""
+    return _read_version()
+
+
 VERSION = _read_version()

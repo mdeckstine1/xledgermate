@@ -627,8 +627,32 @@ def main() -> None:
         action="store_true",
         help="D4: full swap readiness report (replay + economics + live soak + wiring parity); writes logs/swap_readiness_report.json",
     )
-    parser.add_argument("--gate", action="store_true", help="With --swap-readiness: exit 1 if gate fails")
+    parser.add_argument(
+        "--peer-lane-g5",
+        action="store_true",
+        help="G5: peer-lane coverage + neutral-fallback validation (writes logs/peer_lane_g5_report.json)",
+    )
+    parser.add_argument("--gate", action="store_true", help="With --swap-readiness or --peer-lane-g5: exit 1 if gate fails")
     args = parser.parse_args()
+
+    if args.peer_lane_g5:
+        from experimental.ws_feed.peer_lane_replay_validation import (
+            DEFAULT_REPORT_PATH,
+            build_g5_report,
+            format_g5_report,
+        )
+
+        report = build_g5_report(sacred_decisions_path=Path(args.decisions))
+        DEFAULT_REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DEFAULT_REPORT_PATH.write_text(
+            __import__("json").dumps(report.as_dict(), indent=2),
+            encoding="utf-8",
+        )
+        print(format_g5_report(report))
+        print(f"\nWrote {DEFAULT_REPORT_PATH}")
+        if args.gate and not report.passed:
+            sys.exit(1)
+        return
 
     if args.swap_readiness:
         from experimental.swap_readiness_report import (
