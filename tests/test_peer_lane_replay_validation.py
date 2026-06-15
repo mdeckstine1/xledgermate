@@ -57,6 +57,7 @@ def test_build_g5_report_passes_with_intel(tmp_path) -> None:
         ws_runtime_path=tmp_path / "missing.json",
         sacred_decisions_path=tmp_path / "missing.jsonl",
         criteria=G5Criteria(min_ws_intel_rows=5, min_peer_coverage_pct=40.0, max_neutral_fallback_pct=60.0),
+        strict=True,
     )
     assert report.passed is True
     assert report.intel_log["gate_counts"]["peer_lane_eligible"] >= 5

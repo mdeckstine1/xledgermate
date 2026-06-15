@@ -642,7 +642,7 @@ def main() -> None:
             format_g5_report,
         )
 
-        report = build_g5_report(sacred_decisions_path=Path(args.decisions))
+        report = build_g5_report(sacred_decisions_path=Path(args.decisions), strict=args.strict)
         DEFAULT_REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
         DEFAULT_REPORT_PATH.write_text(
             __import__("json").dumps(report.as_dict(), indent=2),

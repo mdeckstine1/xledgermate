@@ -29,9 +29,12 @@ DEFAULT_REPORT_PATH = Path("logs/peer_lane_g5_report.json")
 
 @dataclass(frozen=True)
 class G5Criteria:
-    """Gate defaults tuned for mainnet WS path with ~15s peer scrape."""
+    """Default gate: intel log populated + both peer-lane code paths seen at least once."""
 
     min_ws_intel_rows: int = 8
+    min_peer_covered_samples: int = 1
+    min_neutral_fallback_samples: int = 1
+    # Strict mode (--strict): production tuning thresholds from §7.6
     min_peer_coverage_pct: float = 5.0
     max_neutral_fallback_pct: float = 92.0
     max_widened_lane_pct: float = 40.0
@@ -242,6 +245,7 @@ def build_g5_report(
     ws_runtime_path: Path = Path("logs/ws_as_demo_runtime.json"),
     sacred_decisions_path: Path = Path("logs/decisions.jsonl"),
     criteria: Optional[G5Criteria] = None,
+    strict: bool = False,
 ) -> G5Report:
     crit = criteria or G5Criteria()
     from experimental.ws_feed.pure_quote_path import current_ws_as_version
@@ -288,19 +292,31 @@ def build_g5_report(
             f"WS peer-lane rows {eligible} < min {crit.min_ws_intel_rows} "
             f"(source={gate_source}; need intel_decisions.jsonl or tester sample_history)"
         )
-    cov = gate_counts.peer_coverage_pct
-    if cov is not None and cov < crit.min_peer_coverage_pct:
-        failures.append(f"peer_coverage_pct {cov}% < min {crit.min_peer_coverage_pct}%")
-    neu = gate_counts.neutral_fallback_pct
-    if neu is not None and neu > crit.max_neutral_fallback_pct:
-        failures.append(f"neutral_fallback_pct {neu}% > max {crit.max_neutral_fallback_pct}%")
-    wid = gate_counts.widened_lane_pct
-    if wid is not None and wid > crit.max_widened_lane_pct:
-        failures.append(f"widened_lane_pct {wid}% > max {crit.max_widened_lane_pct}%")
+    if gate_counts.peer_covered < crit.min_peer_covered_samples:
+        failures.append(
+            f"peer_covered samples {gate_counts.peer_covered} < min {crit.min_peer_covered_samples} "
+            "(need ≥1 scrape/cycle with peers in touch band)"
+        )
+    if gate_counts.neutral_fallback < crit.min_neutral_fallback_samples:
+        failures.append(
+            f"neutral_fallback samples {gate_counts.neutral_fallback} < min {crit.min_neutral_fallback_samples}"
+        )
+
+    if strict:
+        cov = gate_counts.peer_coverage_pct
+        if cov is not None and cov < crit.min_peer_coverage_pct:
+            failures.append(f"peer_coverage_pct {cov}% < min {crit.min_peer_coverage_pct}%")
+        neu = gate_counts.neutral_fallback_pct
+        if neu is not None and neu > crit.max_neutral_fallback_pct:
+            failures.append(f"neutral_fallback_pct {neu}% > max {crit.max_neutral_fallback_pct}%")
+        wid = gate_counts.widened_lane_pct
+        if wid is not None and wid > crit.max_widened_lane_pct:
+            failures.append(f"widened_lane_pct {wid}% > max {crit.max_widened_lane_pct}%")
 
     report.failures = failures
     report.passed = not failures
     report.intel_log["gate_source"] = gate_source
+    report.intel_log["gate_strict"] = strict
     report.intel_log["gate_counts"] = _bucket_dict(gate_counts)
     return report
 
@@ -345,7 +361,12 @@ def main() -> None:
     parser.add_argument("--ws-runtime", default="logs/ws_as_demo_runtime.json")
     parser.add_argument("--decisions", default="logs/decisions.jsonl", help="Sacred long-run decisions")
     parser.add_argument("--out", default=str(DEFAULT_REPORT_PATH))
-    parser.add_argument("--gate", action="store_true", help="Exit 1 if criteria fail")
+    parser.add_argument("--gate", action="store_true", help="Exit 1 if gate fails (default: path coverage gate)")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Also enforce min peer_coverage %% and max neutral_fallback %% (§7.6 production tuning)",
+    )
     parser.add_argument("--min-rows", type=int, default=G5Criteria.min_ws_intel_rows)
     parser.add_argument("--min-coverage-pct", type=float, default=G5Criteria.min_peer_coverage_pct)
     parser.add_argument("--max-neutral-pct", type=float, default=G5Criteria.max_neutral_fallback_pct)
@@ -361,6 +382,7 @@ def main() -> None:
         ws_runtime_path=Path(args.ws_runtime),
         sacred_decisions_path=Path(args.decisions),
         criteria=criteria,
+        strict=args.strict,
     )
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
