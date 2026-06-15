@@ -9,6 +9,20 @@
     <!-- xlg-hud-build:__HUD_BUILD__ -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self';">
     <title>XLedgerMate — Live WS Market Maker HUD</title>
+    <script>
+    (function () {
+        const nativeFetch = window.fetch.bind(window);
+        window.fetch = async function (...args) {
+            const response = await nativeFetch(...args);
+            const url = String(args[0] || '');
+            if (response.status === 401 && !url.includes('/login')) {
+                const next = encodeURIComponent(location.pathname + location.search);
+                location.href = '/login?next=' + next;
+            }
+            return response;
+        };
+    })();
+    </script>
     <style>
         html, body { height: 100%; }
         body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; }
@@ -445,6 +459,9 @@
             </div>
             <small id="engine-controls-hint" style="font-size:0.6rem; opacity:0.7;">Loading engine mode...</small>
         </div>
+        <div class="section" style="margin-top:auto; padding-top:12px; border-top:1px solid #334155;">
+            <a href="/login/passkey-setup" style="font-size:0.7rem; color:#94a3b8; text-decoration:none;">Passkey / biometric setup</a>
+        </div>
     </div>
 
     <div class="main">
@@ -493,8 +510,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     </div>
 
                     <div class="card">
-                        <div class="label">Session fills <span class="info" title="Fills since engine start. E1.5 checkpoint: 50 WS-path fills with markout tracking.">?</span></div>
-                        <div class="metric-row"><span class="label">Fills (E1.5 checkpoint)</span> <span id="fills-session" class="value">—</span></div>
+                        <div class="label">Session fills <span class="info" title="WS-path fills since engine start (CSV authoritative across restarts).">?</span></div>
+                        <div class="metric-row"><span class="label">Fills (session)</span> <span id="fills-session" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Bal Δ (session)</span> <span id="session-pnl" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Spread capture</span> <span id="session-capture" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Markout @30s</span> <span id="session-markout" class="value">—</span></div>
@@ -653,7 +670,6 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="metric-row"><span class="label">Total capture</span> <span id="metrics-total-cap" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Positive %</span> <span id="metrics-pos-pct" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Avg bps/fill</span> <span id="metrics-avg-bps" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">E1.5 checkpoint (50 fills)</span> <span id="metrics-e15" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Intel log lines</span> <span id="metrics-intel-lines" class="value">—</span></div>
                     </div>
                 </div>
@@ -1281,7 +1297,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const presence = (s.as_presence_pct != null) ? `${parseFloat(s.as_presence_pct).toFixed(1)}%` : '—';
             const fillsSession = (s.fills_session != null) ? parseInt(s.fills_session, 10) : 0;
             const fillsCsv = (s.ws_fills_csv != null) ? parseInt(s.ws_fills_csv, 10) : 0;
-            const fillsE15 = Math.max(fillsSession, fillsCsv);
+            const fillsCount = Math.max(fillsSession, fillsCsv);
             const fillsProcNote = (fillsCsv > fillsSession && fillsSession > 0)
                 ? ` · ${fillsSession} this process`
                 : '';
@@ -1289,11 +1305,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const spreadCap = (s.session_spread_capture_xrp != null) ? parseFloat(s.session_spread_capture_xrp) : null;
             const markout30 = (s.mean_markout_30s_pct != null) ? parseFloat(s.mean_markout_30s_pct) : null;
             const toxic30 = (s.toxic_fill_ratio_30s != null) ? parseFloat(s.toxic_fill_ratio_30s) : null;
-            const sessionLine = `v ${ver} · cycles ${sampleCount != null ? sampleCount : '—'} · fills ${fillsE15}/50 · presence ${presence}`;
+            const sessionLine = `v ${ver} · cycles ${sampleCount != null ? sampleCount : '—'} · fills ${fillsCount} · presence ${presence}`;
             setText('header-session', sessionLine);
             setText('sidebar-version', `v ${ver}`);
             setText('sidebar-samples', `Quote cycles: ${sampleCount != null ? sampleCount : '—'}`);
-            setText('sidebar-fills', `Fills: ${fillsE15} / 50${fillsProcNote}`);
+            setText('sidebar-fills', `Fills: ${fillsCount}${fillsProcNote}`);
             if (balPnl != null && !Number.isNaN(balPnl)) {
                 const sign = balPnl >= 0 ? '+' : '';
                 setText('sidebar-pnl', `Bal Δ: ${sign}${balPnl.toFixed(4)} XRP`);
@@ -1461,7 +1477,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 }
             }
 
-            setText('fills-session', `${fillsE15} / 50${fillsProcNote}`);
+            setText('fills-session', `${fillsCount}${fillsProcNote}`);
             if (balPnl != null && !Number.isNaN(balPnl)) {
                 const sign = balPnl >= 0 ? '+' : '';
                 const pnlEl = document.getElementById('session-pnl');
@@ -1852,8 +1868,6 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setText('metrics-total-cap', cap.total_capture_xrp != null ? (cap.total_capture_xrp >= 0 ? '+' : '') + cap.total_capture_xrp + ' XRP' : '—');
             setText('metrics-pos-pct', cap.positive_capture_pct != null ? cap.positive_capture_pct + '%' : '—');
             setText('metrics-avg-bps', cap.avg_capture_bps != null ? cap.avg_capture_bps + ' bps' : '—');
-            const e15 = pm.e15_fills_met ? 'PASS' : (cap.ws_fills != null ? cap.ws_fills + ' / ' + (pm.e15_fills_gate || 50) : '—');
-            setText('metrics-e15', e15);
             setText('metrics-intel-lines', pm.intel_log_lines != null ? String(pm.intel_log_lines) : '—');
             const tailEl = document.getElementById('metrics-intel-tail');
             if (tailEl) {

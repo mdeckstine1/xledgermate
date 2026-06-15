@@ -9,3 +9,4 @@ pytest
 fastapi
 uvicorn[standard]
 requests  # used for real Grok/xAI calls from the HUD Intelligence tab and model discovery
+webauthn  # optional HUD passkey login (HTTPS); password auth works without it

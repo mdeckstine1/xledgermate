@@ -68,6 +68,11 @@ telegram_token: ""          # Bot token from @BotFather
 telegram_chat_id: ""        # Your numeric chat ID (message @userinfobot or /getUpdates)
 telegram_notify_each_cycle: false
 telegram_hud_url: ""          # Optional — public WS HUD for hourly report (e.g. http://YOUR_VPS:8765)
+hud_bind_host: "127.0.0.1"    # Set 0.0.0.0 on VPS when telegram_hud_url is public
+hud_auth_enabled: false       # Auto-enables when bind is public and username+password are set
+hud_auth_username: ""        # Or XLG_HUD_USERNAME in .env
+hud_auth_password: ""         # Or XLG_HUD_PASSWORD in .env — use a strong password
+hud_auth_rp_id: ""            # Optional WebAuthn rp_id (VPS IP or domain, no port)
 
 testnet: true
 send_destination_default: ""

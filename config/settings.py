@@ -202,6 +202,11 @@ class BotConfig:
     telegram_chat_id: str = ""     # Your chat ID (numeric, or @channel username)
     telegram_notify_each_cycle: bool = False
     telegram_hud_url: str = ""  # Optional public HUD URL for hourly Telegram (e.g. http://host:8765)
+    hud_bind_host: str = "127.0.0.1"  # 0.0.0.0 for phone/browser without SSH tunnel (read-only HUD)
+    hud_auth_enabled: bool = False  # Require login when username/password set (auto-on for public bind)
+    hud_auth_username: str = ""
+    hud_auth_password: str = ""  # Or XLG_HUD_PASSWORD in .env (gitignored)
+    hud_auth_rp_id: str = ""  # WebAuthn rp_id override (default: request Host without port)
 
     # === OTHER ===
     testnet: bool = True                    # Start on testnet by default

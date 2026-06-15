@@ -476,11 +476,27 @@ def update_state(new_state: Dict[str, Any]):
         _current_state["recent_notes"] = _current_state["recent_notes"][:_recent_limit]
 
 
-def run_hud(host: str = "127.0.0.1", port: int = 8765, background: bool = True):
+_auth_attached = False
+
+
+def run_hud(
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    background: bool = True,
+    auth: Optional[Any] = None,
+):
     """Start the HUD server. Set background=False to block."""
+    global _auth_attached
     if FastAPI is None or uvicorn is None:
         print("FastAPI / uvicorn not installed. Run: pip install fastapi uvicorn")
         return None
+
+    if app and auth and not _auth_attached:
+        from experimental.ws_feed.hud_auth import attach_hud_auth
+
+        attach_hud_auth(app, auth)
+        _auth_attached = True
+        print("[HUD] Access control enabled (username/password; passkeys on HTTPS)")
 
     qr_status = "ENABLED (real scannable codes)" if HAS_QRCODE else "DISABLED (run: pip install qrcode pillow, then fully restart this tester)"
     print(f"[HUD] QR support: {qr_status}")

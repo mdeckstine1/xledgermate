@@ -3,7 +3,7 @@
 **Status:** Active — **WS + pure Avellaneda-Stoikov** is the production MM quoting model on VPS.  
 **Version:** **v2.1.10** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru-Kaizen` (VPS live MM)  
 **Sacred corpus:** `grok-tier-2-collab` (Gate 2 replay + economics) · **E2 merged** 2026-06-15  
-**Last updated:** 2026-06-15 (G5 peer-lane replay validation; deploy script syncs version on restart)
+**Last updated:** 2026-06-15 (Phase H on-ledger arb roadmap; G5 peer-lane replay validation)
 
 This is the **single checklist** for WS + pure A-S work. Other docs point here; do not duplicate task lists elsewhere.
 
@@ -144,6 +144,57 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 - [x] **G5 (E.5)** Replay validation — `peer_lane_replay_validation.py`; peer coverage % + neutral-fallback rate on `intel_decisions.jsonl` + WS samples; sacred eligibility baseline
 - [x] **G6 (E.6)** Live activation graded by §7 — `live_activation_grading.py` (portfolio XRP-equiv, capture, toxicity, G2/G4 rates); HUD Metrics tab; `python -m experimental.ws_feed.live_activation_grading --gate`
 
+### Phase H — On-ledger arbitrage & multi-pair (separate product line)
+
+*Deferred until **G6 soak** + live activation gate pass. **Not** a tweak to ws-engine MM — a **second stack** (taker / path / AMM), optionally on a **second wallet**. Reuses sensors (WS book, competitor intel, fill economics); different execution (`Payment` + path, `AMMSwap`, not standing `OfferCreate`). Advisory intel today: HUD “Active Makers” = RLUSD/XRP CLOB accounts seen in ~5 min (not whole-ledger census).*
+
+**Operator thesis:** Thin RLUSD/XRP CLOB can still show **CLOB↔AMM** or **stable-basis** edges when book-wide MM grinds. Arb does not fix thin MM; it is an adjacent PnL line when mispricings exceed fees + inventory risk.
+
+**On-ledger paths (priority order for XLedgerMate):**
+
+| Priority | Path | Venue | Reuse from MM stack | Main new work |
+|----------|------|-------|----------------------|---------------|
+| **H1** | XRP/RLUSD **CLOB vs AMM** | Order book + XLS-30 pool | Same pair, trust line, WS mid | Pool quote feed, `AMMSwap` / LP txs, edge vs CLOB |
+| **H2** | **RLUSD ↔ USDC** basis via XRP | Two stables + bridge leg | Connector, portfolio XRP-equiv | Second trust line, dual-book scrape, path `Payment` |
+| **H3** | **Triangular / path arb** | Path engine (offers + AMM) | RPC, wallet, logging | `path_find` scanner, atomic `Payment`, sim before send |
+| **H4** | Cross-pair stat (RLUSD book vs USDC book) | Two CLOBs | Intel scraper pattern | Multi-pair config, correlated spread monitor |
+
+**Explicitly out of scope (Phase H):** meme/community IOUs, CEX↔XRPL (latency/custody), bridge/wXRP arb, RWA pools — different risk and infra.
+
+**Wallet architecture (required before live H2+):**
+
+| Wallet | Role | Why separate |
+|--------|------|--------------|
+| **A — MM** | ws-engine, resting offers | Sequence-bound; refresh churn competes with taker txs |
+| **B — Arb** (optional) | path payments, AMM swaps | Snipe dislocations without canceling MM quotes |
+
+Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sync and arb `Payment` on one account at high frequency.
+
+**Gate before any Phase H live tx:**
+
+- [ ] G6 `--gate` pass on current soak (or successor activation tier)
+- [ ] Read-only monitor shows edge > threshold for ≥N hours (see H1 below)
+- [ ] Arb wallet funded separately; MM soak uninterrupted
+- [ ] Trust-line / No-Ripple parity for any new stable (same discipline as RLUSD)
+
+**Phase H checklist (future dev):**
+
+- [ ] **H1** Read-only **CLOB vs AMM monitor** — log each cycle: CLOB mid (WS), AMM implied XRP/RLUSD price, spread bps, fees; artifact `logs/clob_amm_spread.jsonl`; HUD or Metrics tab pill; **no trades**
+- [ ] **H2** `experimental/liquidity/amm_provider.py` — fetch pool state (XRP/RLUSD), normalize to RLUSD/XRP; config flag `amm_monitor_enabled`
+- [ ] **H3** CLOB↔AMM **paper executor** — simulate round-trip PnL after pool fee + ledger fee; gate on min edge (e.g. 8–15 bps net)
+- [ ] **H4** Live **arb wallet** + `AMMSwap` / two-leg path prototype (XRP/RLUSD CLOB vs AMM only)
+- [ ] **H5** USDC trust line + dual-book scrape (RLUSD + USDC vs XRP); stable-basis monitor (read-only first)
+- [ ] **H6** Path-arb scanner (`path_find` + `Payment`) — separate process; rate-limited; optional second stable
+- [ ] **H7** Operator runbook + kill: max daily arb loss, min net edge, inventory caps per asset
+
+**H1 monitor pass/fail (suggested defaults — tune after data):**
+
+- Log when `|clob_mid − amm_implied_mid| / mid × 10_000 ≥ 8` bps (before fees)
+- Report: count/hour, max bps, time-of-day distribution
+- **Promote to H3** only if ≥5 events/hour above 12 bps net for 24h paper window
+
+**Relation to AMM LP extension:** Passive LP (fee earning) stays under “Optional AMM Liquidity” below — complementary, not arb. Phase H **H1–H4** is **active dislocation capture**; LP is **passive**.
+
 ### Phase F — Grok exploitation & operator UX (after path solid)
 
 *Hold until Phases B–D are running solid (fresh WS book, stable presence, D2 dry-run). Items stay on the critical path but are **not** in scope for current sprint. Advisory only — never overrides reservation.*
@@ -170,20 +221,22 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 **Explicitly deferred / separate products:**
 
-| Option | Why not now |
-|--------|-------------|
-| End-to-end deep RL quoting | Data-hungry; hard to debug on mainnet |
-| Cross-venue / CEX–DEX arb | Different capital, latency, infra |
-| AMM vs DEX arb | Separate stack |
-| Pure trend / momentum | Conflicts with MM economics |
+| Option | Why not now | Track in |
+|--------|-------------|----------|
+| End-to-end deep RL quoting | Data-hungry; hard to debug on mainnet | Future strategy §7 |
+| Cross-venue / CEX–DEX arb | Different capital, latency, infra | Out of scope |
+| AMM vs DEX arb | Separate stack; taker not maker | **Phase H** (H1–H4) |
+| RLUSD ↔ USDC basis | Second trust line + dual book | **Phase H** (H5) |
+| Path / triangular arb | Sequence + scanner infra | **Phase H** (H6) |
+| Pure trend / momentum | Conflicts with MM economics | — |
 
 **New: Optional AMM Liquidity & Fee Earning (Future Extension)**
 
-- **Status**: Deferred — future hybrid layer only.
+- **Status**: Deferred — future hybrid layer only (passive LP; distinct from **Phase H** active arb).
 - **How it works**: Deposit XRP + counter-asset into XLS-30 pools (with Swappable Curves when live) to earn trading fees pro-rata.
 - **Impact on pure A-S**: None on core order-book quoting. Can run in parallel as complementary passive income.
 - **Future-proofing**: Keep modular. Add `experimental/liquidity/amm_provider.py` later with config flag. Integrate inventory tracking but never touch reservation price.
-- **When to consider**: After bag >30k XRP and stable order-book performance.
+- **When to consider**: After bag >30k XRP and stable order-book performance; after **H1** monitor proves pool vs CLOB linkage.
 
 **Decision rule before any option ships:**
 
@@ -265,6 +318,9 @@ experimental/ws_feed/peer_lane_replay_validation.py   # G5 peer coverage + neutr
 experimental/ws_feed/live_activation_grading.py       # G6 §7 live activation tier + gate
 experimental/ws_feed/peer_lane_quoting.py
 experimental/ws_feed/replay_long_run.py
+# Phase H (planned — not shipped)
+experimental/liquidity/amm_provider.py              # H2 pool quotes + H1 monitor
+experimental/arb/clob_amm_monitor.py              # H1 read-only CLOB vs AMM log
 scripts/vps_deploy_ashigaru.sh              # VPS pull + restart (version + HUD)
 experimental/ai_analysis/grok_analyzer.py
 strategy/avellaneda_strategy.py

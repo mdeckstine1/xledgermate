@@ -7,6 +7,23 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.11] — 2026-06-15 (`Ashigaru Kaizen`)
+
+**Theme:** Public HUD login + session-only fill display (E1.5 gate UI retired).
+
+### Added
+
+- **HUD authentication** — username/password session cookie; optional WebAuthn passkeys (`hud_auth.py`, `hud_bind_host`, `.env` / config credentials).
+- **Phase H** — on-ledger arbitrage & multi-pair checklist in `PURE_AS_CRITICAL_PATH.md`.
+
+### Changed
+
+- **HUD / Streamlit fills** — show session count only (no E1.5 `/50` checkpoint).
+
+### Tests
+
+- **`tests/test_hud_auth.py`** — login, session cookie, 401 redirect.
+
 ---
 
 ## [2.1.10] — 2026-06-15 (`Ashigaru Kaizen`)

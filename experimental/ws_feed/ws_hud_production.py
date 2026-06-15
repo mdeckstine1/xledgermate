@@ -385,15 +385,18 @@ class ProductionHudMirror:
 
 
 
-async def run_production_hud(*, host: str = "127.0.0.1", port: int = 8765) -> None:
+async def run_production_hud(*, host: str | None = None, port: int = 8765) -> None:
 
     config = BotConfig.load()
+    bind_host = (host or (config.hud_bind_host or "127.0.0.1")).strip() or "127.0.0.1"
 
     bot_address = (config.bot_account_address or "").strip() or "r... (set bot_account_address)"
 
+    from experimental.ws_feed.hud_auth import resolve_hud_auth
 
+    hud_auth = resolve_hud_auth(config, bind_host=bind_host)
 
-    server = run_hud(host=host, port=port, background=True)
+    server = run_hud(host=bind_host, port=port, background=True, auth=hud_auth)
 
     if server is None:
 
@@ -411,7 +414,7 @@ async def run_production_hud(*, host: str = "127.0.0.1", port: int = 8765) -> No
 
         "WS Pure A-S production HUD on http://%s:%s (ws-engine + competitor intel + Grok)",
 
-        host,
+        bind_host,
 
         port,
 

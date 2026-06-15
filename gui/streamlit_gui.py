@@ -2168,33 +2168,10 @@ def _show_rebalance_status(
             st.info(advice.summary)
 
 
-def _render_e15_gate(runtime: dict) -> None:
-    """E1.5 live fill gate progress (ws-engine only)."""
-    if not _is_production_ws_runtime(runtime) or bool(runtime.get("dry_run")):
-        return
-    try:
-        from scripts.ws_path_session_report import build_e15_report
-
-        report = build_e15_report()
-    except Exception:
-        return
-    gate = "PASS" if report.gate_fills_met else "IN PROGRESS"
-    toxic = report.runtime.get("toxic_fill_ratio_30s")
-    markout = report.runtime.get("mean_markout_30s_pct")
-    extra = ""
-    if toxic is not None:
-        extra = f" · toxic@30s **{float(toxic):.0%}** · markout **{float(markout or 0):+.3f}%**"
-    st.info(
-        f"**E1.5 live gate** — WS fills **{report.ws_fills} / {report.min_fills_gate}** "
-        f"· capture **{report.capture_xrp:+.4f} XRP** · **{gate}**{extra}"
-    )
-
-
 def _render_run_health_panel(
     config: BotConfig, runtime: dict, *, engine_running: bool
 ) -> None:
     """Single place for engine/ledger/toxic/book — reduces scattered warnings."""
-    _render_e15_gate(runtime)
     profile = (runtime.get("active_profile") or config.active_profile or "safe").strip().lower()
     ledger_n = (
         _effective_open_offers_count(runtime) if not engine_running else None
