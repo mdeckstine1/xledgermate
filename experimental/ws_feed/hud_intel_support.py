@@ -162,6 +162,28 @@ def our_lane_xrp_from_runtime(runtime: Dict[str, Any], *, fallback_l1: float) ->
     return float(fallback_l1)
 
 
+async def fetch_competitor_quoting_intel(
+    provider: Any,
+    ws_feed: Any,
+    *,
+    our_lane_xrp: float,
+    fallback_l1_xrp: float,
+) -> Dict[str, Any]:
+    """On-chain scrape with WS book for production ws-engine G4 quoting inputs."""
+    state = ws_feed.state
+    bb, ba = state.best_prices()
+    book = state.to_order_book() if hasattr(state, "to_order_book") else {"bids": [], "asks": []}
+    our_lane = our_lane_xrp if our_lane_xrp > 0 else float(fallback_l1_xrp)
+    snap = await provider.fetch_snapshot(
+        our_lane_xrp=our_lane,
+        best_bid=bb,
+        best_ask=ba,
+        ws_bids=book.get("bids"),
+        ws_asks=book.get("asks"),
+    )
+    return provider.to_hud_state(snap)
+
+
 async def fetch_competitor_hud_fields(
     provider: Any,
     runtime: Dict[str, Any],

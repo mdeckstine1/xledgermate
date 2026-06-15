@@ -141,6 +141,14 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "g2_grade": decision.g2_grade,
         "g2_active": decision.g2_active,
         "g2_summary": decision.g2_summary,
+        "g4_size_mult": decision.g4_size_mult,
+        "g4_bid_size_mult": decision.g4_bid_size_mult,
+        "g4_ask_size_mult": decision.g4_ask_size_mult,
+        "g4_grade": decision.g4_grade,
+        "g4_active": decision.g4_active,
+        "g4_summary": decision.g4_summary,
+        "g4_peer_lane_count": decision.g4_peer_lane_count,
+        "g4_peer_pressure": decision.g4_peer_pressure,
     }
 
 

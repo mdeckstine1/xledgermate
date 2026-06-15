@@ -21,6 +21,7 @@ from experimental.ws_feed.pure_inventory_policy import (
     count_active_l1_quotes,
 )
 from experimental.ws_feed.ws_book_age_modulator import apply_ws_book_age_modulator
+from experimental.ws_feed.peer_lane_quoting import compute_g4_adjustments, prepare_quoting_intel
 from experimental.ws_feed.spread_quality_scaler import G2Adjustments, compute_g2_adjustments
 from strategy.fill_quality import FillQualityState
 from experimental.ws_feed.zero_quote_notes import classify_and_explain_pure_zero_quote
@@ -101,6 +102,14 @@ class PureQuoteDecision:
     g2_grade: str = "neutral"
     g2_active: bool = False
     g2_summary: str = ""
+    g4_size_mult: float = 1.0
+    g4_bid_size_mult: float = 1.0
+    g4_ask_size_mult: float = 1.0
+    g4_grade: str = "neutral"
+    g4_active: bool = False
+    g4_summary: str = ""
+    g4_peer_lane_count: int = 0
+    g4_peer_pressure: Optional[float] = None
     pause_bids: bool = False
     pause_asks: bool = False
     inventory_limits_summary: str = ""
@@ -200,6 +209,8 @@ def _build_summary(
         parts.append(decision.size_rationale)
     if decision.g2_active and decision.g2_summary:
         parts.append(decision.g2_summary)
+    if decision.g4_active and decision.g4_summary:
+        parts.append(decision.g4_summary)
     if decision.inventory_limits_summary:
         parts.append(f"INV: {decision.inventory_limits_summary}")
     note = decision.tight_book_note or decision.zero_quote_operator_note
@@ -273,7 +284,8 @@ class PureQuotePath:
         )
         inv_skew = _inventory_skew_from_label(inv_state.label)
 
-        pressure_model = from_intel_dict(competitor_intel)
+        quoting_intel = prepare_quoting_intel(competitor_intel)
+        pressure_model = from_intel_dict(quoting_intel)
         pressure_preview = pressure_model.value if pressure_model else None
         age_adj = apply_ws_book_age_modulator(
             base_volatility_pct=raw_vol,
@@ -316,6 +328,14 @@ class PureQuotePath:
             effective_vol *= g2.spread_mult
             pressure_size_mult *= g2.size_mult
 
+        g4 = compute_g4_adjustments(
+            quoting_intel,
+            inventory_skew=inv_skew,
+            inventory_label=inv_state.label,
+            g2_size_mult=g2.size_mult,
+        )
+        pressure_size_mult *= g4.size_mult
+
         ai_rationale = ""
         ai_edge = 0.0
         ai_skimmable = False
@@ -332,6 +352,8 @@ class PureQuotePath:
                     "inventory_skew": inv_skew,
                     "competitor_pressure": competitor_pressure,
                     "top_competitors": (competitor_intel or {}).get("top_competitors", []),
+                    "peer_lane_count": g4.peer_lane_count,
+                    "peer_pressure_score": g4.peer_pressure,
                 }
                 ai = await ai_analyzer.analyze(book_for_ai, run_context=run_ctx)
                 if ai:
@@ -393,8 +415,8 @@ class PureQuotePath:
             xrp_reserve=xrp_reserve,
             inventory_overshoot_slack=inventory_overshoot_slack,
             min_order_size_xrp=self.min_order_size_xrp,
-            bid_size_mult=inv_state.bid_size_mult,
-            ask_size_mult=inv_state.ask_size_mult,
+            bid_size_mult=inv_state.bid_size_mult * g4.bid_size_mult,
+            ask_size_mult=inv_state.ask_size_mult * g4.ask_size_mult,
         )
         size_rationale = sizes.rationale
         if inv_policy.policy_tag:
@@ -465,6 +487,14 @@ class PureQuotePath:
             g2_grade=g2.grade,
             g2_active=g2.active,
             g2_summary=g2.summary,
+            g4_size_mult=g4.size_mult,
+            g4_bid_size_mult=g4.bid_size_mult,
+            g4_ask_size_mult=g4.ask_size_mult,
+            g4_grade=g4.grade,
+            g4_active=g4.active,
+            g4_summary=g4.summary,
+            g4_peer_lane_count=g4.peer_lane_count,
+            g4_peer_pressure=g4.peer_pressure,
         )
         skim = (competitor_intel or {}).get("competitor_skim_advice", "") or ""
         decision.quote_decision_summary = _build_summary(

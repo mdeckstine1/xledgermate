@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
@@ -22,7 +23,12 @@ from core import DecisionLog, VERSION
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_sync import plan_order_sync
 from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter
-from experimental.ws_feed.intel_decisions_log import append_intel_record, build_cycle_intel_record
+from experimental.ws_feed.intel_decisions_log import (
+    append_intel_record,
+    build_cycle_intel_record,
+    build_peer_scrape_intel_record,
+)
+from experimental.ws_feed.hud_intel_support import fetch_competitor_quoting_intel
 from experimental.ws_feed.pure_quote_path import current_ws_as_version
 from experimental.ws_feed.pair_books import RlusdXrpPair
 from experimental.ws_feed.network_urls import rpc_url_to_websocket_url
@@ -42,6 +48,7 @@ logger = logging.getLogger(__name__)
 ENGINE_STOP_FILE = Path("logs/engine.stop")
 WS_STALE_REFRESH_S = 12.0
 DEFAULT_SAMPLE_INTERVAL_S = 5.0
+COMP_SCRAPE_INTERVAL_S = 15.0
 WS_MID_MOVE_REFRESH_BPS = 4.0
 WS_TOXIC_PRESERVE_OFF_RATIO = 0.35
 
@@ -145,6 +152,10 @@ class WsPureTradingEngine:
         self._price_history: list[float] = []
         self._sample_interval_s = DEFAULT_SAMPLE_INTERVAL_S
         self._last_sync_mid: Optional[float] = None
+        self._comp_provider: Any = None
+        self._last_comp_scrape: float = 0.0
+        self._comp_intel_cache: Dict[str, Any] = {}
+        self._last_our_lane_xrp: float = 0.0
 
     def stop(self) -> None:
         self._running = False
@@ -188,7 +199,49 @@ class WsPureTradingEngine:
             self._ws_feed.run_forever(http_refresh_seconds=20.0),
             name="ws_pure_engine_feed",
         )
+        try:
+            from experimental.market_analysis.competitor_intel import CompetitorIntelProvider
+
+            self._comp_provider = CompetitorIntelProvider(connector, pair)
+        except Exception:
+            logger.warning("CompetitorIntelProvider unavailable — G4 peer lane off", exc_info=True)
+            self._comp_provider = None
+        self._last_our_lane_xrp = l1
         await asyncio.sleep(2.0)
+
+    async def _maybe_refresh_competitor_intel(self, config: BotConfig) -> Optional[Dict[str, Any]]:
+        """Periodic on-chain peer-lane scrape for G4 quoting (cached ~15s)."""
+        if not self._comp_provider or not self._ws_feed:
+            return self._comp_intel_cache or None
+
+        now = time.monotonic()
+        if (
+            now - self._last_comp_scrape < COMP_SCRAPE_INTERVAL_S
+            and self._comp_intel_cache
+        ):
+            return self._comp_intel_cache
+
+        fallback_l1 = float(config.order_sizes[0]) if config.order_sizes else 150.0
+        our_lane = self._last_our_lane_xrp if self._last_our_lane_xrp > 0 else fallback_l1
+        try:
+            fields = await fetch_competitor_quoting_intel(
+                self._comp_provider,
+                self._ws_feed,
+                our_lane_xrp=our_lane,
+                fallback_l1_xrp=fallback_l1,
+            )
+            if fields.get("competitor_error"):
+                return self._comp_intel_cache or None
+            self._comp_intel_cache = fields
+            self._last_comp_scrape = now
+            try:
+                append_intel_record(build_peer_scrape_intel_record(fields))
+            except OSError:
+                pass
+            return fields
+        except Exception:
+            logger.warning("G4 competitor scrape failed", exc_info=True)
+            return self._comp_intel_cache or None
 
     async def run(self, *, sample_interval_s: float = DEFAULT_SAMPLE_INTERVAL_S) -> None:
         self._running = True
@@ -292,6 +345,8 @@ class WsPureTradingEngine:
                 await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
             return
 
+        comp_intel = await self._maybe_refresh_competitor_intel(config)
+
         engine_dec = await self._adapter.compute_pure_as_decision(
             mid=mid or 0.0,
             best_bid=bb or 0.0,
@@ -305,7 +360,16 @@ class WsPureTradingEngine:
             inventory_mode=str(config.inventory_mode or "market_make"),
             xrp_reserve=float(config.xrp_reserve),
             inventory_overshoot_slack=float(config.inventory_overshoot_slack),
+            competitor_intel=comp_intel,
         )
+        l1_from_dec = float(engine_dec.get("l1_xrp") or 0)
+        if l1_from_dec > 0:
+            self._last_our_lane_xrp = l1_from_dec
+        bid_sz = float(engine_dec.get("bid_size") or engine_dec.get("bid_size_xrp") or 0)
+        ask_sz = float(engine_dec.get("ask_size") or engine_dec.get("ask_size_xrp") or 0)
+        lane_sz = max(bid_sz, ask_sz)
+        if lane_sz > 0:
+            self._last_our_lane_xrp = lane_sz
         would_quote = bool(engine_dec.get("would_quote"))
         intents = pure_intents_to_quote_intents(
             engine_dec.get("quote_intents") or [],
@@ -710,6 +774,10 @@ class WsPureTradingEngine:
             g2_grade=str(ed.get("g2_grade") or "neutral"),
             g2_active=bool(ed.get("g2_active")),
             g2_summary=str(ed.get("g2_summary") or ""),
+            g4_size_mult=float(ed.get("g4_size_mult") or 1.0),
+            g4_grade=str(ed.get("g4_grade") or "neutral"),
+            g4_active=bool(ed.get("g4_active")),
+            g4_summary=str(ed.get("g4_summary") or ""),
         )
         self.state_store.save(state)
         if ed:

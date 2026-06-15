@@ -130,3 +130,44 @@ def test_zero_quote_reason_in_summary() -> None:
             assert d.zero_quote_reason in d.quote_decision_summary
 
     asyncio.run(run())
+
+
+def test_g4_peer_lane_in_quote_path() -> None:
+    """G4: empty lane neutral; peer lane + fled applies skim side bias."""
+    path = PureQuotePath(gamma=0.35, kappa=3.5, configured_l1_xrp=150.0, balance_fraction_k=0.07)
+
+    async def run() -> None:
+        empty = await path.compute_decision(
+            mid=1.120508,
+            best_bid=1.1198083175159341,
+            best_ask=1.1212070418817652,
+            xrp_bal=650.0,
+            rlusd_bal=500.0,
+            competitor_intel={
+                "competitor_pressure": 0.85,
+                "peer_lane_count": 0,
+                "peer_lane_empty": True,
+            },
+        )
+        assert empty.g4_grade == "empty_lane"
+        assert "G4 neutral" in empty.g4_summary
+
+        skim = await path.compute_decision(
+            mid=1.120508,
+            best_bid=1.1198083175159341,
+            best_ask=1.1212070418817652,
+            xrp_bal=650.0,
+            rlusd_bal=500.0,
+            competitor_intel={
+                "peer_lane_count": 2,
+                "peer_pressure_score": 0.2,
+                "peer_observed_spread_pct": 0.11,
+                "peer_fled_touch_count": 2,
+            },
+        )
+        assert skim.g4_grade == "skim"
+        assert skim.g4_active is True
+        assert skim.g4_ask_size_mult > 1.0
+        assert skim.ask_size > empty.ask_size
+
+    asyncio.run(run())

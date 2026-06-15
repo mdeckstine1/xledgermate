@@ -3,7 +3,7 @@
 **Status:** Active — **WS + pure Avellaneda-Stoikov** is the production MM quoting model on VPS.  
 **Version:** **v2.1.0** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru` (VPS live MM)  
 **Sacred corpus:** `grok-tier-2-collab` (Gate 2 replay + economics) · **E2 merged** 2026-06-15  
-**Last updated:** 2026-06-15 (E1 + E2 complete; G2 shipped; E3 blocked by operator)
+**Last updated:** 2026-06-15 (E1 + E2 complete; G2/G3 shipped; 2.1.3 quote-refresh; ledger L1–L4 noted)
 
 This is the **single checklist** for WS + pure A-S work. Other docs point here; do not duplicate task lists elsewhere.
 
@@ -138,7 +138,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 - [x] **G1 (E.1)** Posted-touch peer band in `competitor_intel.py` — `our_lane_xrp` from L1 intents; filter scrape by touch band; peer-only pressure; HUD peer vs book-wide lists
 - [x] **G2 (E.2)** Spread-quality scaler — `spread_quality_scaler.py` v2.1.0; brake on toxicity/markout (size× + vol/spread×); **no** win-chase, **no** kill coupling; wired in `PureQuotePath` + `ws-engine`
 - [x] **G3 (E.3)** Intel JSONL + Performance Metrics tab (HUD and/or Streamlit)
-- [ ] **G4 (E.4)** Wire peer-lane signals into `PureQuotePath` size_mult / side bias (lab first; production `ws-engine` after E1 live sign-off)
+- [x] **G4 (E.4)** Wire peer-lane signals into `PureQuotePath` size_mult / side bias — `peer_lane_quoting.py` v2.1.4; production `ws-engine` scrapes peer lane ~15s
 - [ ] **G5 (E.5)** Replay validation — peer coverage %, neutral-fallback rate on sacred + WS samples
 - [ ] **G6 (E.6)** Live activation graded by §7 (portfolio XRP-equiv from fills, capture, toxicity)
 
@@ -202,6 +202,29 @@ We are a **market maker**, not a trend-trading bot. Revisit after E1.5 live fill
 - [x] **R4** Wire R1–R3 through **G2 spread-quality scaler** + markout loop — G2 shipped v2.1.0; kill decoupled; validate on ongoing live samples
 
 *Until R1 ships: legacy kill switch remains a safety net from the poll era; config tunable but philosophically misaligned with pure MM.*
+
+**Future consideration — XRPL ledger vs quote refresh cadence (operator note, 2026-06-15):**
+
+XRPL has **no dedicated “quotes per second” rate limit** for market makers. `OfferCreate` / `OfferCancel` are normal account transactions. Practical ceilings:
+
+| Constraint | Effect on ws-engine |
+|------------|---------------------|
+| **Account sequence** | One validated tx at a time per bot wallet; next submit waits on prior `Sequence`. |
+| **Ledger close ~3–5s** | Each `submit_and_wait` in `connectors/xrpl_connector.py` blocks until validation — not a separate quote API throttle. |
+| **Sequential sync** | `_sync_offers` cancels then places in series; full churn (2 cancel + 2 place) ≈ **12–20s wall time** even when the **decision loop is 5s** (v2.1.3). |
+| **Object reserve** | ~250 open offers/account (not binding at L1-only ~2 offers). |
+| **Public RPC** | `amendmentBlocked` / node health (`utils/rpc_health.py`) — not a quote quota. |
+
+**Implication:** Faster WS book + shorter cycle improves *intent* freshness; **ledger confirm latency** can still leave resting offers stale until cancel/replace lands. Toxicity from stale quotes (pre-2.1.3) was a software refresh issue, not ledger rate limits. At ~234 XRP / ~7 XRP L1, current tx volume is far below network capacity.
+
+**Promote to implementation when:** heavy churn cycles routinely exceed one loop interval, or `terQUEUED` / failed submits appear in logs.
+
+- [ ] **L1** Instrument ledger tx rate (`OFFER_REFRESH` CSV + `decisions.jsonl` cancel/place counts per hour).
+- [ ] **L2** Async submit path (submit without blocking full ledger close on every leg; poll `tx` / sequence) so 5s loop is not extended by 4× `submit_and_wait`.
+- [ ] **L3** Optional private rippled / lower-latency RPC if public round-trip becomes the bottleneck at scale.
+- [ ] **L4** Re-evaluate after E3 scale — whether cancel-all-then-place beats selective sync when sequence-bound.
+
+*Related:* v2.1.3 `resolve_ws_sync_tolerances` (5s cycle, mid-move + G2 refresh) addresses **software-side** staleness; L1–L4 address **ledger-side** execution if we outrun confirms.*
 
 ---
 

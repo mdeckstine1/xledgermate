@@ -30,6 +30,7 @@
 | 2026-06-08–10 | **WS pure A-S lab → production path** — pressure model, Grok HUD, `PURE_AS_CRITICAL_PATH.md` |
 | 2026-06-15 | **Phase E1 complete** — VPS live `ws-engine` v2.1.0, E1.5 ≥50 fills PASS, G1 peer lane + G2 scaler |
 | 2026-06-15 | **E2 merge** — `Ashigaru` → `grok-tier-2-collab`; unified repo; live MM stays on Ashigaru |
+| 2026-06-15 | **Ledger vs refresh note** — no XRPL quote rate limit; bottleneck = sequential `submit_and_wait` (~3–5s/tx). Future L1–L4 in [`PURE_AS_CRITICAL_PATH.md`](../docs/PURE_AS_CRITICAL_PATH.md) |
 
 *Next: E3 rebalance (operator-blocked funding); sacred replay A/B vs live WS (`replay_long_run --as-mode pure`).*
 
