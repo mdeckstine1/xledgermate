@@ -3,7 +3,7 @@
 **Status:** Active — we are moving from **hard `market_edge_met` gates** to **WS + pure Avellaneda-Stoikov** as the production quoting model.  
 **Version:** **v2.0.0** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru`  
 **Sacred data / VPS Gate 2:** `grok-tier-2-collab` (labeled corpus only until swap sign-off)  
-**Last updated:** 2026-05-29
+**Last updated:** 2026-06-15
 
 This is the **single checklist** for WS + pure A-S work. Other docs point here; do not duplicate task lists elsewhere.
 
@@ -105,7 +105,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 *Focus: prove the pure path on live WS data. No new Grok exploitation or nickname UX yet.*
 
 - [x] **C1** Track presence when pressure low vs high + `zero_quote_reason` breakdown in runtime export / `ws_runtime_analysis` — `compute_c1_metrics`, `presence_by_pressure` + `zero_quote_breakdown` on each sample append; analysis report + `--json`
-- [x] **C2** Long-run soak criteria (30+ min, presence %, book-age distribution, flip rate) — gate before D2; `evaluate_soak_gate` + `soak_evaluation` on runtime export; `python -m experimental.ws_runtime_analysis --soak-gate` (exit 1 if fail). Defaults: ≥30 min, ≥50% presence, flip rate ≤0.20, WS age mean ≤12s / p95 ≤20s, ≥80% samples fresh (&lt;12s)
+- [x] **C2** Long-run soak criteria (30+ min, presence %, book-age distribution, flip rate) — gate before D2; `evaluate_soak_gate` + `soak_evaluation` on runtime export; `python -m experimental.ws_runtime_analysis --soak-gate` (exit 1 if fail). Defaults: ≥30 min, ≥50% presence, flip rate ≤0.20, WS age mean ≤12s / p95 ≤20s, ≥80% samples fresh (<12s)
 
 ### Phase D — Infrastructure (pre-swap)
 
@@ -166,6 +166,14 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 | Cross-venue / CEX–DEX arb | Different capital, latency, infra |
 | AMM vs DEX arb | Separate stack |
 | Pure trend / momentum | Conflicts with MM economics |
+
+**New: Optional AMM Liquidity & Fee Earning (Future Extension)**
+
+- **Status**: Deferred — future hybrid layer only.
+- **How it works**: Deposit XRP + counter-asset into XLS-30 pools (with Swappable Curves when live) to earn trading fees pro-rata.
+- **Impact on pure A-S**: None on core order-book quoting. Can run in parallel as complementary passive income.
+- **Future-proofing**: Keep modular. Add `experimental/liquidity/amm_provider.py` later with config flag. Integrate inventory tracking but never touch reservation price.
+- **When to consider**: After bag >30k XRP and stable order-book performance.
 
 **Decision rule before any option ships:**
 
