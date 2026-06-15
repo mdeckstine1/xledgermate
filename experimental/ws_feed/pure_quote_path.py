@@ -9,15 +9,17 @@ Pressure + Grok are inputs only (vol, spread anchor, gamma scale, advisory notes
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Sequence
 
 from experimental.competitor_pressure import apply_competitor_pressure, from_intel_dict
-from experimental.ws_runtime_analysis import classify_zero_quote_reason
+from experimental.ws_feed.dynamic_sizing import build_pure_quote_ladder, compute_pure_l1_sizes
+from experimental.ws_feed.ws_book_age_modulator import apply_ws_book_age_modulator
+from experimental.ws_feed.zero_quote_notes import classify_and_explain_pure_zero_quote
 from strategy.avellaneda_strategy import AvellanedaStrategy, AvellanedaQuote
 from strategy.quote_decision import assess_inventory
 
-WS_AS_VERSION = "0.1.1"
+WS_AS_VERSION = "0.1.4"
 DEFAULT_INVENTORY_SKEW_STRENGTH = 1.0
 DEFAULT_MIN_SPREAD_FLOOR_PCT = 0.04
 
@@ -52,8 +54,13 @@ class PureQuoteDecision:
     zero_quote_detail: str
     quote_decision_summary: str
     quoting_policy_label: str
+    zero_quote_operator_note: str = ""
+    tight_book_note: str = ""
     competitor_pressure: Optional[float] = None
     pressure_rationale: str = ""
+    ws_book_age_s: float = 0.0
+    book_age_rationale: str = ""
+    base_volatility_pct: float = 0.0
     ai_edge_quality: float = 0.0
     ai_is_skimmable: bool = False
     ai_rationale: str = ""
@@ -62,6 +69,9 @@ class PureQuoteDecision:
     suggested_ask: Optional[float] = None
     bid_size: float = 0.0
     ask_size: float = 0.0
+    l1_xrp: float = 0.0
+    size_rationale: str = ""
+    quote_intents: List[Dict[str, Any]] = field(default_factory=list)
     as_mode: str = "pure"
     path_version: str = WS_AS_VERSION
 
@@ -90,13 +100,14 @@ class PureQuoteDecision:
             "ai_is_skimmable": self.ai_is_skimmable,
             "ai_rationale": self.ai_rationale,
             "ai_suggested_posture": self.ai_suggested_posture,
-            "quote_intents": [],
+            "l1_xrp": self.l1_xrp,
+            "bid_size_xrp": self.bid_size,
+            "ask_size_xrp": self.ask_size,
+            "pure_as_size_rationale": self.size_rationale,
+            "suggested_bid": self.suggested_bid,
+            "suggested_ask": self.suggested_ask,
+            "quote_intents": list(self.quote_intents),
         }
-        if self.would_quote:
-            out["quote_intents"] = [
-                {"level": 1, "side": "bid", "price": self.suggested_bid, "size_xrp": self.bid_size},
-                {"level": 1, "side": "ask", "price": self.suggested_ask, "size_xrp": self.ask_size},
-            ]
         if competitor_intel:
             out.update({k: v for k, v in competitor_intel.items() if k != "top_competitors"})
             out["top_competitors"] = competitor_intel.get("top_competitors", [])
@@ -118,28 +129,6 @@ def _inventory_skew_from_label(label: str) -> float:
     if "rlusd_heavy" in lower:
         return -0.30 if "slight" not in lower else -0.08
     return 0.0
-
-
-def _zero_quote_detail(
-    reason: str,
-    *,
-    reservation: float,
-    best_bid: float,
-    best_ask: float,
-    book_spread_pct: float,
-    optimal_spread_pct: float,
-) -> str:
-    if reason == "reservation_outside_l1":
-        if reservation <= best_bid:
-            return f"reservation {reservation:.6f} <= bid {best_bid:.6f}"
-        if reservation >= best_ask:
-            return f"reservation {reservation:.6f} >= ask {best_ask:.6f}"
-        return "reservation not strictly inside L1"
-    if reason == "optimal_spread_wider_than_book":
-        return f"optimal {optimal_spread_pct:.3f}% > book {book_spread_pct:.3f}%"
-    if reason == "quoted":
-        return "reservation inside L1"
-    return reason
 
 
 def _build_summary(
@@ -165,12 +154,19 @@ def _build_summary(
         )
     else:
         parts.append(f"0 quotes: {decision.zero_quote_reason} ({decision.zero_quote_detail})")
+    if decision.book_age_rationale:
+        parts.append(decision.book_age_rationale)
     if decision.pressure_rationale:
         parts.append(f"PRESSURE: {decision.pressure_rationale}")
     if competitor_skim:
         parts.append(f"COMPETITOR: {competitor_skim}")
     if ai_rationale:
         parts.append(f"AI: {ai_rationale}")
+    if decision.size_rationale:
+        parts.append(decision.size_rationale)
+    note = decision.tight_book_note or decision.zero_quote_operator_note
+    if note:
+        parts.append(note)
     return " | ".join(parts)
 
 
@@ -184,10 +180,22 @@ class PureQuotePath:
         kappa: float = 3.5,
         min_spread_floor_pct: float = DEFAULT_MIN_SPREAD_FLOOR_PCT,
         inventory_skew_strength: float = DEFAULT_INVENTORY_SKEW_STRENGTH,
+        configured_l1_xrp: float = 150.0,
+        min_order_size_xrp: float = 1.0,
+        balance_fraction_k: float = 0.07,
+        order_levels: int = 3,
+        level_spread_increment: float = 0.0003,
+        configured_order_sizes: Optional[Sequence[float]] = None,
     ) -> None:
         self.as_strat = AvellanedaStrategy(None, gamma=gamma, kappa=kappa, T=1.0)
         self.min_spread_floor_pct = min_spread_floor_pct
         self.inventory_skew_strength = inventory_skew_strength
+        self.configured_l1_xrp = configured_l1_xrp
+        self.min_order_size_xrp = min_order_size_xrp
+        self.balance_fraction_k = balance_fraction_k
+        self.order_levels = order_levels
+        self.level_spread_increment = level_spread_increment
+        self.configured_order_sizes = configured_order_sizes
         self._spread_profile = _MinSpreadProfile(min_spread_floor_pct=min_spread_floor_pct)
 
     async def compute_decision(
@@ -204,9 +212,10 @@ class PureQuotePath:
         intel_ai_enabled: bool = True,
         book_state_for_ai: Optional[Dict[str, Any]] = None,
         base_volatility_pct: Optional[float] = None,
+        ws_book_age_s: float = 0.0,
     ) -> PureQuoteDecision:
         book_spread_pct = (best_ask - best_bid) / mid * 100.0 if mid else 0.0
-        volatility_pct = (
+        raw_vol = (
             base_volatility_pct
             if base_volatility_pct is not None
             else book_scaled_volatility_pct(book_spread_pct)
@@ -221,23 +230,37 @@ class PureQuotePath:
         )
         inv_skew = _inventory_skew_from_label(inv_state.label)
 
+        pressure_model = from_intel_dict(competitor_intel)
+        pressure_preview = pressure_model.value if pressure_model else None
+        age_adj = apply_ws_book_age_modulator(
+            base_volatility_pct=raw_vol,
+            ws_book_age_s=ws_book_age_s,
+            competitor_pressure=pressure_preview,
+        )
+        volatility_pct = age_adj.volatility_pct
+        age_size_mult = age_adj.size_mult
+
         effective_vol = volatility_pct
         effective_book_spread = book_spread_pct
         pressure_rationale = ""
         competitor_pressure: Optional[float] = None
+        effective_pressure: Optional[float] = None
+        pressure_size_mult = age_size_mult
         pressure_adj = None
-        pressure_model = from_intel_dict(competitor_intel)
         if pressure_model:
             pressure_adj = apply_competitor_pressure(
                 pressure_model,
                 base_volatility_pct=volatility_pct,
                 base_book_spread_pct=book_spread_pct,
                 inventory_skew=inv_skew,
+                base_size_mult=age_size_mult,
             )
             effective_vol = pressure_adj.volatility_pct
             effective_book_spread = pressure_adj.book_spread_pct
             pressure_rationale = pressure_adj.rationale
             competitor_pressure = pressure_model.value
+            effective_pressure = pressure_adj.effective_pressure
+            pressure_size_mult = pressure_adj.size_mult
 
         ai_rationale = ""
         ai_edge = 0.0
@@ -282,21 +305,40 @@ class PureQuotePath:
             self.as_strat.gamma = base_gamma
 
         would_quote = best_bid < as_quote.reservation_price < best_ask
-        zero_reason = classify_zero_quote_reason(
+        zero_reason, zero_detail, operator_note = classify_and_explain_pure_zero_quote(
             would_quote=would_quote,
             best_bid=best_bid,
             best_ask=best_ask,
             reservation=as_quote.reservation_price,
             book_spread_pct=book_spread_pct,
             optimal_spread_pct=as_quote.optimal_spread_pct,
+            min_spread_floor_pct=self.min_spread_floor_pct,
         )
-        zero_detail = _zero_quote_detail(
-            zero_reason,
-            reservation=as_quote.reservation_price,
-            best_bid=best_bid,
-            best_ask=best_ask,
-            book_spread_pct=book_spread_pct,
+        tight_note = operator_note if would_quote else ""
+        blocked_note = operator_note if not would_quote else ""
+
+        sizes = compute_pure_l1_sizes(
+            xrp_balance=xrp_bal,
+            configured_l1_xrp=self.configured_l1_xrp,
+            min_order_size_xrp=self.min_order_size_xrp,
+            balance_fraction_k=self.balance_fraction_k,
+            inventory_skew=inv_skew,
+            inventory_label=inv_state.label,
+            pressure_size_mult=pressure_size_mult,
+            effective_pressure=effective_pressure,
+        )
+        ladder = build_pure_quote_ladder(
+            mid=mid,
+            l1_bid_price=as_quote.bid_price,
+            l1_ask_price=as_quote.ask_price,
+            l1_bid_size=sizes.bid_size_xrp,
+            l1_ask_size=sizes.ask_size_xrp,
             optimal_spread_pct=as_quote.optimal_spread_pct,
+            level_spread_increment=self.level_spread_increment,
+            order_levels=self.order_levels,
+            min_order_size_xrp=self.min_order_size_xrp,
+            configured_level_sizes=self.configured_order_sizes,
+            active=would_quote,
         )
 
         decision = PureQuoteDecision(
@@ -309,12 +351,17 @@ class PureQuotePath:
             inventory_label=inv_state.label,
             inventory_skew=inv_skew,
             volatility_pct=effective_vol,
+            base_volatility_pct=raw_vol,
+            ws_book_age_s=ws_book_age_s,
+            book_age_rationale=age_adj.rationale,
             as_reservation=as_quote.reservation_price,
             as_optimal_spread_pct=as_quote.optimal_spread_pct,
             as_gamma=self.as_strat.gamma,
             as_kappa=self.as_strat.kappa,
             zero_quote_reason=zero_reason,
             zero_quote_detail=zero_detail,
+            zero_quote_operator_note=blocked_note,
+            tight_book_note=tight_note,
             quote_decision_summary="",
             quoting_policy_label="PURE A-S (inside L1)" if would_quote else "PURE A-S (math blocked)",
             competitor_pressure=competitor_pressure,
@@ -325,8 +372,11 @@ class PureQuotePath:
             ai_suggested_posture=ai_posture,
             suggested_bid=as_quote.bid_price if would_quote else None,
             suggested_ask=as_quote.ask_price if would_quote else None,
-            bid_size=as_quote.bid_size,
-            ask_size=as_quote.ask_size,
+            bid_size=sizes.bid_size_xrp,
+            ask_size=sizes.ask_size_xrp,
+            l1_xrp=sizes.l1_xrp,
+            size_rationale=sizes.rationale,
+            quote_intents=ladder,
         )
         skim = (competitor_intel or {}).get("competitor_skim_advice", "") or ""
         decision.quote_decision_summary = _build_summary(

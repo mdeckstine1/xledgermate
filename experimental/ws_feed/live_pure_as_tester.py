@@ -58,11 +58,84 @@ def _runtime_for_disk(runtime: dict) -> dict:
     out["intel_ai_key"] = ""
     return out
 
+
+def _session_fields(runtime: dict) -> dict[str, Any]:
+    """HUD / GUI session counters (sample count + presence %)."""
+    history = runtime.get("sample_history") or []
+    count = runtime.get("sample_count")
+    if count is None:
+        count = len(history)
+    return {
+        "ws_as_version": runtime.get("ws_as_version", WS_AS_VERSION),
+        "sample_count": count,
+        "as_presence_pct": runtime.get("as_presence_pct"),
+        "presence_by_pressure": runtime.get("presence_by_pressure"),
+        "zero_quote_breakdown": runtime.get("zero_quote_breakdown"),
+        "soak_evaluation": runtime.get("soak_evaluation"),
+        "last_execution_summary": runtime.get("last_execution_summary"),
+        "open_offers_count": runtime.get("open_offers_count"),
+    }
+
+
+def _ws_freshness_payload(ws_feed: WsBookFeed) -> dict[str, Any]:
+    """Recompute age from live BookState (monotonic clock); push every ~1s to HUD."""
+    snap = ws_feed.freshness_snapshot()
+    return {
+        "ws_age_s": snap["ws_book_age_s"],
+        "ws_message_count": snap["ws_message_count"],
+        "ws_book_last_update_unix": snap["ws_book_last_update_unix"],
+        "ws_book_last_update_utc": snap["ws_book_last_update_utc"],
+        **ws_feed.feed_health_snapshot(),
+    }
+
+
+def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
+    """Shared Live-tab fields: ladder, sizes, A-S, balances."""
+    return {
+        "mid": runtime.get("mid_price"),
+        "best_bid": runtime.get("best_bid_rlusd_per_xrp"),
+        "best_ask": runtime.get("best_ask_rlusd_per_xrp"),
+        "book_spread_pct": runtime.get("book_spread_pct"),
+        "ws_age_s": runtime.get("ws_book_age_s"),
+        "ws_message_count": runtime.get("ws_message_count"),
+        "ws_book_last_update_unix": runtime.get("ws_book_last_update_unix"),
+        "ws_book_last_update_utc": runtime.get("ws_book_last_update_utc"),
+        "volatility_pct": runtime.get("volatility_pct"),
+        "as_reservation": runtime.get("as_reservation"),
+        "as_optimal_spread_pct": runtime.get("as_optimal_spread_pct"),
+        "as_gamma": runtime.get("as_gamma"),
+        "as_kappa": runtime.get("as_kappa"),
+        "suggested_bid": runtime.get("suggested_bid"),
+        "suggested_ask": runtime.get("suggested_ask"),
+        "would_quote": runtime.get("market_edge_met"),
+        "last_note": runtime.get("quote_decision_summary"),
+        "as_mode": "pure",
+        "balance_xrp": runtime.get("balance_xrp"),
+        "balance_rlusd": runtime.get("balance_rlusd"),
+        "inventory_label": runtime.get("inventory_label"),
+        "zero_quote_reason": runtime.get("zero_quote_reason"),
+        "zero_quote_detail": runtime.get("zero_quote_detail"),
+        "zero_quote_operator_note": runtime.get("zero_quote_operator_note"),
+        "tight_book_note": runtime.get("tight_book_note"),
+        "quote_intents": runtime.get("quote_intents") or [],
+        "order_levels": runtime.get("order_levels", 3),
+        "l1_xrp": runtime.get("l1_xrp"),
+        "bid_size_xrp": runtime.get("bid_size_xrp"),
+        "ask_size_xrp": runtime.get("ask_size_xrp"),
+        "ai_edge_quality": runtime.get("ai_edge_quality", 0.0),
+        "ai_is_skimmable": runtime.get("ai_is_skimmable", False),
+        "ai_rationale": runtime.get("ai_rationale", ""),
+        "ai_suggested_posture": runtime.get("ai_suggested_posture", "off"),
+        **_session_fields(runtime),
+        **extra,
+    }
+
 from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig
 from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter, WS_AS_VERSION
 from experimental.ws_feed.network_urls import rpc_url_to_websocket_url
 from experimental.ws_feed.pair_books import RlusdXrpPair
+from experimental.ws_feed.pure_dry_run_executor import PureDryRunExecutor
 from experimental.ws_feed.ws_book_feed import WsBookFeed
 from experimental.ws_runtime_analysis import append_runtime_sample
 from utils.env_secrets import resolve_intel_ai_config
@@ -104,6 +177,56 @@ def _build_connector(config: BotConfig) -> XRPLConnector:
 
 
 
+WS_STALE_REFRESH_S = 12.0
+WS_FRESH_WAIT_S = 8.0
+
+
+async def _wait_for_ws_feed(ws_feed: WsBookFeed, *, timeout_s: float = WS_FRESH_WAIT_S) -> None:
+    """Wait for subscribe snapshots after background WS task starts."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if ws_feed.state.message_count >= 2 and ws_feed.age_seconds() < WS_STALE_REFRESH_S:
+            return
+        await asyncio.sleep(0.1)
+    age = ws_feed.age_seconds()
+    if age >= WS_STALE_REFRESH_S:
+        logger.warning(
+            "WS feed not fresh after %.0fs wait (age=%.1fs msgs=%s) — will retry refresh on samples",
+            timeout_s,
+            age,
+            ws_feed.state.message_count,
+        )
+
+
+async def _fetch_comp_snapshot(
+    comp_provider: Any,
+    ws_feed: WsBookFeed,
+    gui_runtime: dict,
+    fallback_l1_xrp: float,
+) -> dict:
+    """On-chain scrape with posted-touch peer lane (G1) using WS book + prior L1."""
+    from experimental.market_analysis.peer_lane import our_lane_from_runtime
+
+    state = ws_feed.state
+    bb, ba = state.best_prices()
+    book = state.to_order_book() if hasattr(state, "to_order_book") else {"bids": [], "asks": []}
+    our_lane = our_lane_from_runtime(
+        l1_xrp=gui_runtime.get("l1_xrp"),
+        bid_size_xrp=gui_runtime.get("bid_size_xrp"),
+        ask_size_xrp=gui_runtime.get("ask_size_xrp"),
+    )
+    if our_lane <= 0:
+        our_lane = fallback_l1_xrp
+    snap = await comp_provider.fetch_snapshot(
+        our_lane_xrp=our_lane,
+        best_bid=bb,
+        best_ask=ba,
+        ws_bids=book.get("bids"),
+        ws_asks=book.get("asks"),
+    )
+    return comp_provider.to_hud_state(snap)
+
+
 async def _sample_and_decide(
     ws_feed: WsBookFeed,
     adapter: WSBookFeedAdapter,
@@ -114,8 +237,10 @@ async def _sample_and_decide(
     runtime: dict | None = None,
     comp_snapshot: dict | None = None,
     ai_analyzer=None,
+    dry_run_executor: PureDryRunExecutor | None = None,
 ) -> None:
     """Sample WS state and run PureQuotePath (no profiles / no sacred gates)."""
+    await ws_feed.refresh_if_stale(WS_STALE_REFRESH_S)
     state = ws_feed.state
     bb, ba = state.best_prices()
     mid = (bb + ba) / 2.0 if bb and ba else None
@@ -127,8 +252,7 @@ async def _sample_and_decide(
             "best_bid_rlusd_per_xrp": bb,
             "best_ask_rlusd_per_xrp": ba,
             "book_spread_pct": spread,
-            "ws_book_age_s": state.age_seconds(),
-            "ws_message_count": state.message_count,
+            **state.freshness_snapshot(),
         })
 
     if not bb or not ba or bb <= 0 or ba <= 0 or not mid:
@@ -151,9 +275,18 @@ async def _sample_and_decide(
         ai_analyzer=ai_analyzer,
         intel_ai_enabled=intel_enabled,
         book_state_for_ai=book_for_ai,
+        ws_book_age_s=state.age_seconds(),
     )
     note = engine_dec["quote_decision_summary"]
     logger.info(note)
+
+    dry_diff = None
+    if dry_run_executor is not None:
+        dry_diff = dry_run_executor.sync(
+            engine_dec.get("quote_intents") or [],
+            would_quote=bool(engine_dec.get("would_quote")),
+        )
+        logger.info("[DRY-RUN] %s", dry_diff.summary)
 
     if verbose:
         logger.info(
@@ -181,10 +314,11 @@ async def _sample_and_decide(
             "ws_as_version": engine_dec.get("ws_as_version", WS_AS_VERSION),
             "zero_quote_reason": engine_dec.get("zero_quote_reason"),
             "zero_quote_detail": engine_dec.get("zero_quote_detail"),
+            "zero_quote_operator_note": engine_dec.get("zero_quote_operator_note", ""),
+            "tight_book_note": engine_dec.get("tight_book_note", ""),
             "balance_xrp": xrp_bal,
             "balance_rlusd": rlusd_bal,
-            "ws_book_age_s": state.age_seconds(),
-            "ws_message_count": state.message_count,
+            **state.freshness_snapshot(),
             "as_mode": "pure",
             "as_reservation": engine_dec.get("as_reservation"),
             "as_optimal_spread_pct": engine_dec.get("as_optimal_spread_pct"),
@@ -202,16 +336,30 @@ async def _sample_and_decide(
             "intel_ai_key": runtime.get("intel_ai_key", ""),
             "intel_ai_model": runtime.get("intel_ai_model", "grok-3"),
             "intel_ai_enabled": intel_enabled,
-            "quote_intents": [
-                {"level": 1, "side": "bid", "price": engine_dec.get("suggested_bid"), "size_xrp": 1.0},
-                {"level": 1, "side": "ask", "price": engine_dec.get("suggested_ask"), "size_xrp": 1.0},
-            ] if engine_dec.get("would_quote") else [],
+            "l1_xrp": engine_dec.get("l1_xrp"),
+            "bid_size_xrp": engine_dec.get("bid_size"),
+            "ask_size_xrp": engine_dec.get("ask_size"),
+            "pure_as_size_rationale": engine_dec.get("pure_as_size_rationale", ""),
+            "suggested_bid": engine_dec.get("suggested_bid"),
+            "suggested_ask": engine_dec.get("suggested_ask"),
+            "quote_intents": engine_dec.get("quote_intents") or [],
+            "order_levels": runtime.get("order_levels", 3),
             "recent_decisions": runtime.get("recent_decisions", []) + [{
                 "ts_utc": datetime.now(tz=timezone.utc).isoformat(),
                 "category": "as_pure",
                 "message": note[:200],
             }][-20:],
+            **ws_feed.feed_health_snapshot(),
         })
+        if dry_diff is not None:
+            runtime.update({
+                "dry_run": True,
+                "dry_run_execution": dry_diff.as_dict(),
+                "last_execution_summary": dry_diff.summary,
+                "open_offers_count": len(dry_diff.open_offers),
+                "open_offers": dry_diff.open_offers,
+                "offers_placed_last_cycle": len(dry_diff.to_place),
+            })
         append_runtime_sample(
             runtime,
             {
@@ -243,8 +391,10 @@ async def run_live_test(
     rlusd_bal: float,
     target_ratio: float,
     sample_interval: float = 8.0,
+    ws_refresh_seconds: float = 20.0,
     verbose: bool = False,
     serve_hud: bool = False,
+    dry_run_offers: bool = True,
     intel_ai_provider: str = "stub",
     intel_ai_key: str = "",
     intel_ai_model: str = "grok-3",
@@ -300,7 +450,24 @@ async def run_live_test(
         ai_analyzer = StubAIAnalyzer()
         logger.info("AI analysis using enhanced stub (real Grok available when --intel-ai-provider=grok + key configured).")
 
-    adapter = WSBookFeedAdapter(ws_feed, gamma=gamma, kappa=kappa)
+    l1_config = float(config.order_sizes[0]) if config.order_sizes else 150.0
+    order_sizes = tuple(float(x) for x in (config.order_sizes or [l1_config]))
+    adapter = WSBookFeedAdapter(
+        ws_feed,
+        gamma=gamma,
+        kappa=kappa,
+        configured_l1_xrp=l1_config,
+        min_order_size_xrp=float(config.min_order_size_xrp),
+        balance_fraction_k=0.07,
+        order_levels=int(config.order_levels),
+        level_spread_increment=float(config.level_spread_increment),
+        configured_order_sizes=order_sizes,
+    )
+    logger.info(
+        "B2 dynamic sizing: L1=min(%.0f, 7%%×XRP bal) min_order=%.1f",
+        l1_config,
+        float(config.min_order_size_xrp),
+    )
 
     duration_str = f"{seconds:.0f}s" if seconds > 0 else "unlimited (until Ctrl+C)"
     logger.info(
@@ -317,18 +484,32 @@ async def run_live_test(
         "Starting inventory assumption: XRP=%.1f RLUSD=%.1f target_ratio=%.2f (adjust with --xrp-bal etc.)",
         xrp_bal, rlusd_bal, target_ratio,
     )
-    logger.info("This is simulation only. No orders placed. Pure A-S built-ins decide presence.")
+    dry_run_executor = PureDryRunExecutor() if dry_run_offers else None
+    if dry_run_offers:
+        logger.info(
+            "D2 dry-run offers ON — virtual place/cancel from PureQuotePath (no ledger txs)."
+        )
+    else:
+        logger.info("Dry-run offers OFF — decision-only mode.")
 
-    # Initial seed from WS snapshot (preferred for the WS version)
-    try:
-        await ws_feed.seed_from_ws_snapshot(limit=40)
-    except Exception:
-        logger.warning("WS seed failed, will rely on run()")
+    # Background WS subscribe loop — without this, book age grows forever after one-time seed.
+    ws_task = asyncio.create_task(
+        ws_feed.run_forever(http_refresh_seconds=ws_refresh_seconds),
+        name="ws_book_feed",
+    )
+    await _wait_for_ws_feed(ws_feed)
+    logger.info(
+        "WS background feed active (age=%.1fs msgs=%s refresh=%.0fs)",
+        ws_feed.age_seconds(),
+        ws_feed.state.message_count,
+        ws_refresh_seconds,
+    )
 
     # Runtime dict for GUI demo / compatibility (populated on each sample)
     gui_runtime: dict = {
         "as_mode": "pure",
         "ws_as_version": WS_AS_VERSION,
+        "order_levels": int(config.order_levels),
         "dry_run": True,
         "recent_decisions": [],
         # Intelligence API config (for AI competitor address trending — advisory only)
@@ -351,8 +532,9 @@ async def run_live_test(
         initial_comp = {}
         if comp_provider:
             try:
-                snap = await comp_provider.fetch_snapshot()
-                initial_comp = comp_provider.to_hud_state(snap)
+                initial_comp = await _fetch_comp_snapshot(
+                    comp_provider, ws_feed, gui_runtime, l1_config,
+                )
             except Exception:
                 initial_comp = {}
         await _sample_and_decide(
@@ -365,6 +547,7 @@ async def run_live_test(
             runtime=gui_runtime,
             comp_snapshot=initial_comp,
             ai_analyzer=ai_analyzer,
+            dry_run_executor=dry_run_executor,
         )
         # Quick save
         out = Path("logs/ws_as_demo_runtime.json")
@@ -404,38 +587,19 @@ async def run_live_test(
     # Now send the rich initial state (built from the gui_runtime the seed just populated)
     # so the first browser poll gets full Live page data immediately.
     if hud_update_state:
-        initial_hud = {
-            "mid": gui_runtime.get("mid_price"),
-            "best_bid": gui_runtime.get("best_bid_rlusd_per_xrp"),
-            "best_ask": gui_runtime.get("best_ask_rlusd_per_xrp"),
-            "book_spread_pct": gui_runtime.get("book_spread_pct"),
-            "ws_age_s": gui_runtime.get("ws_book_age_s"),
-            "ws_message_count": gui_runtime.get("ws_message_count"),
-            "volatility_pct": gui_runtime.get("volatility_pct"),
-            "as_reservation": gui_runtime.get("as_reservation"),
-            "as_optimal_spread_pct": gui_runtime.get("as_optimal_spread_pct"),
-            "as_gamma": gui_runtime.get("as_gamma"),
-            "as_kappa": gui_runtime.get("as_kappa"),
-            "suggested_bid": gui_runtime.get("suggested_bid"),
-            "suggested_ask": gui_runtime.get("suggested_ask"),
-            "would_quote": gui_runtime.get("market_edge_met"),
-            "last_note": gui_runtime.get("quote_decision_summary", "Initial seed from WS snapshot - full samples starting..."),
-            "as_mode": "pure",
-            "balance_xrp": gui_runtime.get("balance_xrp"),
-            "balance_rlusd": gui_runtime.get("balance_rlusd"),
-            "inventory_label": gui_runtime.get("inventory_label"),
-            "ws_as_version": gui_runtime.get("ws_as_version", WS_AS_VERSION),
-            "zero_quote_reason": gui_runtime.get("zero_quote_reason"),
-            "bot_address": config.bot_account_address or "r... (from config)",
-            **{k: v for k, v in initial_comp.items() if k not in ("top_competitors",)},
-            "top_competitors": initial_comp.get("top_competitors", []),
-            **_hud_intel_fields(),
-            "ai_edge_quality": gui_runtime.get("ai_edge_quality", 0.0),
-            "ai_is_skimmable": gui_runtime.get("ai_is_skimmable", False),
-            "ai_rationale": gui_runtime.get("ai_rationale", ""),
-            "ai_suggested_posture": gui_runtime.get("ai_suggested_posture", "off"),
-        }
-        hud_update_state(initial_hud)
+        hud_update_state(
+            _hud_market_payload(
+                gui_runtime,
+                last_note=gui_runtime.get(
+                    "quote_decision_summary",
+                    "Initial seed from WS snapshot - full samples starting...",
+                ),
+                bot_address=config.bot_account_address or "r... (from config)",
+                **{k: v for k, v in initial_comp.items() if k not in ("top_competitors",)},
+                top_competitors=initial_comp.get("top_competitors", []),
+                **_hud_intel_fields(),
+            )
+        )
 
     if seconds > 0:
         end = time.monotonic() + seconds
@@ -443,17 +607,22 @@ async def run_live_test(
         end = float("inf")  # unlimited run (until Ctrl+C); for long data collection like 11k+ cycles
     last_sample = 0.0
     last_json_save = 0.0
+    last_hud_fresh = 0.0
 
     try:
         while time.monotonic() < end:
             now = time.monotonic()
+            if hud_update_state and now - last_hud_fresh >= 1.0:
+                hud_update_state(_ws_freshness_payload(ws_feed))
+                last_hud_fresh = now
             if now - last_sample >= sample_interval:
                 # Fetch competitor intel here in main loop (comp_provider in scope)
                 comp_snapshot = {}
                 if comp_provider:
                     try:
-                        snap = await comp_provider.fetch_snapshot()
-                        comp_snapshot = comp_provider.to_hud_state(snap)
+                        comp_snapshot = await _fetch_comp_snapshot(
+                            comp_provider, ws_feed, gui_runtime, l1_config,
+                        )
                     except Exception:
                         comp_snapshot = {}
 
@@ -477,6 +646,7 @@ async def run_live_test(
                     runtime=gui_runtime,
                     comp_snapshot=comp_snapshot,
                     ai_analyzer=ai_analyzer,
+                    dry_run_executor=dry_run_executor,
                 )
                 last_sample = now
 
@@ -487,42 +657,16 @@ async def run_live_test(
 
                 # Feed the new real-time A-S HUD (the dedicated "new gui" for WS + pure A-S)
                 if hud_update_state:
-                    hud_state = {
-                        "mid": gui_runtime.get("mid_price"),
-                        "best_bid": gui_runtime.get("best_bid_rlusd_per_xrp"),
-                        "best_ask": gui_runtime.get("best_ask_rlusd_per_xrp"),
-                        "book_spread_pct": gui_runtime.get("book_spread_pct"),
-                        "ws_age_s": gui_runtime.get("ws_book_age_s"),
-                        "ws_message_count": gui_runtime.get("ws_message_count"),
-                        "volatility_pct": gui_runtime.get("volatility_pct"),
-                        "as_reservation": gui_runtime.get("as_reservation"),
-                        "as_optimal_spread_pct": gui_runtime.get("as_optimal_spread_pct"),
-                        "as_gamma": gui_runtime.get("as_gamma"),
-                        "as_kappa": gui_runtime.get("as_kappa"),
-                        "suggested_bid": None,  # could compute if needed
-                        "suggested_ask": None,
-                        "would_quote": gui_runtime.get("market_edge_met"),
-                        "last_note": gui_runtime.get("quote_decision_summary"),
-                        "as_mode": "pure",
-                        "balance_xrp": gui_runtime.get("balance_xrp"),
-                        "balance_rlusd": gui_runtime.get("balance_rlusd"),
-                        "inventory_label": gui_runtime.get("inventory_label"),
-                        "ws_as_version": gui_runtime.get("ws_as_version", WS_AS_VERSION),
-                        "zero_quote_reason": gui_runtime.get("zero_quote_reason"),
-                        "bot_address": config.bot_account_address or "r... (set bot_account_address in config or use --xrp-bal etc for demo)",
-                        # Full competitor intelligence (from persistent scraper)
-                        # Feeds Intelligence tab + A-S (pressure adjusts effective vol for reservation math).
-                        **{k: v for k, v in comp_snapshot.items() if k not in ("top_competitors",)},  # flat for HUD
-                        "top_competitors": comp_snapshot.get("top_competitors", []),
-                        "ai_edge_quality": gui_runtime.get("ai_edge_quality", 0.0),
-                        "ai_is_skimmable": gui_runtime.get("ai_is_skimmable", False),
-                        "ai_rationale": gui_runtime.get("ai_rationale", ""),
-                        "ai_suggested_posture": gui_runtime.get("ai_suggested_posture", "off"),
-                        # Intelligence API config (from Config tab) — for AI analysis of competitor ledger addresses / trending.
-                        # AI is strictly advisory. It never mutates A-S reservation price or quoting decisions.
-                        **_hud_intel_fields(),
-                    }
-                    hud_update_state(hud_state)
+                    hud_update_state(
+                        _hud_market_payload(
+                            gui_runtime,
+                            bot_address=config.bot_account_address
+                            or "r... (set bot_account_address in config or use --xrp-bal etc for demo)",
+                            **{k: v for k, v in comp_snapshot.items() if k not in ("top_competitors",)},
+                            top_competitors=comp_snapshot.get("top_competitors", []),
+                            **_hud_intel_fields(),
+                        )
+                    )
 
                 # Save the runtime JSON frequently while the tester is running
                 # so you can load the *current* WS + pure A-S data into the main Streamlit GUI
@@ -550,10 +694,13 @@ async def run_live_test(
             await asyncio.sleep(0.5)
     finally:
         ws_feed._stop.set()
+        ws_task.cancel()
         try:
             await ws_task
-        except Exception:
+        except asyncio.CancelledError:
             pass
+        except Exception:
+            logger.debug("WS task shutdown", exc_info=True)
 
     logger.info("Live WS + pure A-S test complete.")
     logger.info("GUI demo runtime available in-memory (last state has A-S fields, full competitor intel for Intelligence tab + standard decision_summary for Streamlit/ticker reuse).")
@@ -584,6 +731,18 @@ def main() -> None:
     parser.add_argument("--rlusd-bal", type=float, default=124.0, help="Assumed RLUSD balance for inventory calc")
     parser.add_argument("--target-ratio", type=float, default=0.55, help="Target XRP ratio")
     parser.add_argument("--sample-interval", type=float, default=8.0, help="Seconds between decision samples")
+    parser.add_argument(
+        "--ws-refresh-seconds",
+        type=float,
+        default=20.0,
+        help="Periodic WS snapshot reconciliation interval (default 20s)",
+    )
+    parser.add_argument(
+        "--dry-run-offers",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="D2: sync virtual place/cancel from quote_intents (default on; no ledger txs)",
+    )
     parser.add_argument("--verbose", action="store_true", help="Extra WS age / message count logging")
     parser.add_argument("--serve-hud", action="store_true", help="Start the new dedicated real-time WS + pure A-S HUD (http://127.0.0.1:8765) — this is the live 'new gui' surface for the committed path (book + A-S math + WS freshness updating in real time)")
     parser.add_argument(
@@ -625,8 +784,10 @@ def main() -> None:
             rlusd_bal=args.rlusd_bal,
             target_ratio=args.target_ratio,
             sample_interval=args.sample_interval,
+            ws_refresh_seconds=args.ws_refresh_seconds,
             verbose=args.verbose,
             serve_hud=args.serve_hud,
+            dry_run_offers=args.dry_run_offers,
             intel_ai_provider=intel_provider,
             intel_ai_key=intel_key,
             intel_ai_model=intel_model,

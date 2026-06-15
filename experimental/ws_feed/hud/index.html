@@ -156,6 +156,87 @@
             grid-column: 1 / -1;
         }
 
+        /* Intelligence tab: AI analysis + competitors — original half-grid slot (left column), scroll inside */
+        .intel-analysis-row {
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+            min-width: 0;
+        }
+        .intel-analysis-row > .card {
+            flex: 1;
+            min-width: 0;
+            overflow: visible;
+        }
+        /* Fixed-height scroll panels (Intelligence tab) — flex-shrink:0 so flex parents do not clip text */
+        .hud-scroll-box {
+            flex: 0 0 auto;
+            margin-top: 8px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            background: #0f172a;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.35);
+            scrollbar-width: thin;
+            scrollbar-color: #64748b #1e2937;
+        }
+        .hud-scroll-box::-webkit-scrollbar {
+            width: 10px;
+        }
+        .hud-scroll-box::-webkit-scrollbar-track {
+            background: #1e2937;
+            border-radius: 0 6px 6px 0;
+        }
+        .hud-scroll-box::-webkit-scrollbar-thumb {
+            background: #64748b;
+            border-radius: 5px;
+            border: 2px solid #1e2937;
+        }
+        .hud-scroll-box::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .hud-scroll-box-inner {
+            padding: 12px 14px;
+            font-size: 0.8rem;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+        .intel-ai-result-box {
+            height: 360px;
+            padding: 12px 14px;
+            font-family: ui-monospace, monospace;
+            font-size: 0.8rem;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+        .intel-top-list-box {
+            font-size: 0.75rem;
+        }
+        .intel-top-list-box .hud-scroll-box-inner {
+            font-family: ui-monospace, monospace;
+            font-size: 0.75rem;
+            line-height: 1.45;
+            padding: 8px 10px;
+        }
+        .hud-scroll-box-compact {
+            height: 220px;
+        }
+        .scroll-box-hint {
+            font-size: 0.6rem;
+            color: #64748b;
+            font-weight: normal;
+            text-transform: none;
+            letter-spacing: normal;
+            margin-left: 6px;
+        }
+
         .address-box {
             font-family: ui-monospace, monospace;
             font-size: 0.85rem;
@@ -251,6 +332,37 @@
             0% { box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.3); }
             100% { box-shadow: none; }
         }
+
+        .ladder-level {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid #334155;
+        }
+        .ladder-level:first-child {
+            margin-top: 0;
+            padding-top: 0;
+            border-top: none;
+        }
+        .ladder-level-tag {
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: #94a3b8;
+            letter-spacing: 0.04em;
+            margin-bottom: 2px;
+        }
+        .ladder-level.planned .ladder-level-tag::after {
+            content: ' · planned';
+            font-weight: 400;
+            opacity: 0.75;
+        }
+        .ladder-level.inactive {
+            opacity: 0.55;
+        }
+        .ladder-size {
+            font-size: 0.72rem;
+            color: #94a3b8;
+            margin-left: 4px;
+        }
     </style>
 </head>
 <body>
@@ -269,6 +381,12 @@
         </div>
 
         <div class="section">
+            <div class="label">Session</div>
+            <div class="sidebar-value" id="sidebar-version" style="font-size:0.7rem;">v —</div>
+            <div class="sidebar-value" id="sidebar-samples" style="font-size:0.7rem;">Samples: —</div>
+            <div class="sidebar-value" id="sidebar-presence" style="font-size:0.7rem;">Presence: —</div>
+        </div>
+        <div class="section">
             <div class="label">Status</div>
             <div class="sidebar-value" id="sidebar-would-quote">—</div>
         </div>
@@ -284,7 +402,7 @@
     </div>
 
     <div class="main">
-        <div class="header">WS + Pure A-S — Live Strategy HUD <span id="mode" style="font-size:0.9rem; color:#64748b;"></span></div>
+        <div class="header">WS + Pure A-S — Live Strategy HUD <span id="mode" style="font-size:0.9rem; color:#64748b;"></span> <span id="header-session" style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">v — · samples — · presence —</span></div>
 
         <div class="nav">
             <a href="#" data-page="live" class="active">Live</a>
@@ -307,7 +425,7 @@
                         <div class="label">Live Book (WS)</div>
                         <div id="book" class="value">—</div>
                         <div class="metric-row"><span class="label">Spread</span> <span id="spread" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">WS Age <span class="info" title="How many seconds have passed since we got the most recent update from the live market. A low number means the prices you're seeing are fresh and reliable. A high number means the data is getting old.">?</span></span> <span id="age" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">WS Age <span class="info" title="Seconds since the last book change (WS message or reconciliation refresh). Should tick UP between updates, then drop when a new book update arrives. Green &lt;5s, yellow &lt;12s, red ≥12s.">?</span></span> <span id="age" class="value">—</span></div>
                         <div class="metric-row"><span class="label">WS Messages <span class="info" title="How many fresh price updates the bot has received from the live market. Higher numbers mean we're getting lots of up-to-date information, so the prices shown are more current and trustworthy.">?</span></span> <span id="msgs" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Volatility <span class="info" title="Current volatility estimate used by the A-S model (simple proxy from live book spread in this tester). Higher vol generally leads to wider optimal spreads.">?</span></span> <span id="volatility" class="value">—</span></div>
                     </div>
@@ -323,13 +441,14 @@ Kappa: Controls how competitive the optimal spread is.
 
 The A-S strategy itself decides presence via reservation price being inside the best bid/ask. This is the only protection in the WS + pure path.">?</span></span> <span id="params" class="value">—</span></div>
                         <div id="would_quote" class="value" style="margin-top:8px;">—</div>
+                        <div id="zero-quote-note" class="note" style="margin-top:6px; font-size:0.68rem; opacity:0.9; display:none;"></div>
                         <small style="display:block; margin-top:4px; font-size:0.65rem; opacity:0.7;">Protected by A-S math (reservation inside live book). No additional hard rules.</small>
                     </div>
 
                     <div class="card">
                         <div class="label">Suggested Levels (near book)</div>
-                        <div class="metric-row"><span class="label">Bid</span> <span id="bid" class="value good">—</span></div>
-                        <div class="metric-row"><span class="label">Ask</span> <span id="ask" class="value">—</span></div>
+                        <div id="suggested-ladder"></div>
+                        <small id="ladder-hint" style="display:block; margin-top:6px; font-size:0.65rem; opacity:0.7;">Waiting for ladder...</small>
                     </div>
                 </div>
 
@@ -627,6 +746,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     <div class="card">
                         <div class="label">Live Competitor Aggregates</div>
                         <div class="metric-row"><span class="label">Observed Market Spread</span> <span id="intel-observed-spread" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Our Lane (L1 touch XRP)</span> <span id="intel-our-lane" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Peers in Lane</span> <span id="intel-peer-count" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Fled Touch (peers)</span> <span id="intel-fled" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Pressure (0=defensive, scrape harder)</span> <span id="intel-pressure" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Active Makers</span> <span id="intel-active" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Competitor Depth (XRP)</span> <span id="intel-depth" class="value">—</span></div>
@@ -649,22 +771,24 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <small>Per-sample stub reasons over current book + competitor profiles/pressure. Low pressure (defensive competitors) now strongly biases "AI Suggested Posture" to "near" (skim harder opportunity) + boosts edge/skimmable. The pressure model already tweaks A-S inputs (lower vol, higher size_mult, observed-spread anchor) for more aggressive reservation on soft books. AI is strictly advisory — final presence decision is always pure A-S "reservation inside the live WS book". Use the "Analyze with AI" button (with grok key) for deeper real Grok suggestions on specific competitors. Local LLM (Ollama etc.) stubs are in ai_analysis/ ready for sub-100ms swap-in.</small>
                     </div>
 
-                    <!-- Side-by-side: AI Address Analysis (left) + Top Scraped (right, filling the big empty space to the right of AI analysis) -->
-                    <div style="display:flex; gap:12px; align-items: flex-start;">
-                        <!-- AI Competitor Address Analysis (left) -->
-                        <div class="card" style="flex:1; min-width:0;">
-                            <div class="label">AI Competitor Address Analysis (demo — uses Config tab keys)</div>
-                            <div style="display:flex; gap:8px; align-items:center;">
+                    <!-- AI address analysis + top competitors (left grid column — original width/placement) -->
+                    <div class="intel-analysis-row">
+                        <!-- AI Competitor Address Analysis -->
+                        <div class="card" style="display:flex; flex-direction:column;">
+                            <div class="label">AI Competitor Address Analysis (uses Config tab keys)<span class="scroll-box-hint">↕ scrollable</span></div>
+                            <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
                                 <input id="intel-analyze-addr" type="text" placeholder="Paste real r-address from the list on the right (or any from the book)" style="flex:1; font-family:monospace; font-size:0.8rem;">
-                                <button id="btn-analyze-addr" style="background:#8b5cf6; color:white; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem;">Analyze with AI</button>
+                                <button id="btn-analyze-addr" style="background:#8b5cf6; color:white; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem; flex-shrink:0;">Analyze with AI</button>
                             </div>
-                            <div id="intel-ai-result" style="margin-top:6px; font-size:0.7rem; background:#0f172a; padding:4px; border-radius:3px; white-space:pre-wrap; min-height:1.2em;">Paste a real r-address from the "Top Scraped Competitors" list on the right (or any from the book). Click Analyze. With grok key + provider=grok in Config (Apply or launch flags), this does a real call to api.x.ai. The box will show debug + the Grok suggestion (now includes live pressure/context). If you get 400 on model, change "Model" in Config tab (e.g. try grok-2-1212 or check your xAI account) then Apply again.</div>
+                            <div id="intel-ai-result" class="hud-scroll-box intel-ai-result-box" tabindex="0" role="region" aria-label="AI competitor analysis result">Paste a real r-address from the Top Scraped Competitors list, then click Analyze. Full Grok output appears here — scroll inside this box (no character limit on display).</div>
                         </div>
 
-                        <!-- Top Scraped Competitors (right, half-page card filling the space) -->
-                        <div class="card" style="flex:1; min-width:0;">
+                        <!-- Top Scraped Competitors -->
+                        <div class="card" style="display:flex; flex-direction:column;">
                             <div class="label">Top Scraped Competitors (by activity)</div>
-                            <div id="intel-top-list" style="font-size:0.75rem; background:#0f172a; padding:6px; border-radius:3px; max-height:220px; overflow:auto;">No profiles yet.</div>
+                            <div id="intel-top-list" class="hud-scroll-box hud-scroll-box-compact intel-top-list-box" tabindex="0" role="region" aria-label="Top scraped competitors">
+                                <div id="intel-top-list-inner" class="hud-scroll-box-inner">No profiles yet.</div>
+                            </div>
                             <small style="opacity:0.6;">Click any row on the right to instantly fill a real (or demo) r-address into the Analyze box on the left. Real profiles come from the live order book via the connector (accounts are now preserved in scraping).</small>
                             <small>Account prefix (domain if set on-ledger) | last/avg spread | activity | sides (b/a). XRPL has no native "full name" tokens or usernames. Best on-chain ID is the r-address + optional Domain field (set via AccountSet, verifiable via DNS). No standard ledger "identity tokens" for this. <em>Future (optional): internal nicknames — a local-only map (e.g. JSON or in-memory) keyed by r-address so you can label e.g. "Bob the aggressive L1 sniper" purely for your own recall, without any on-chain or shared data changes.</em></small>
                         </div>
@@ -712,6 +836,32 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
     <script>
         let lastState = null;
+        let pinnedIntelAiResult = null;  // keep full Grok analysis across /state polls
+
+        /** Seconds since last book mutation; ticks up live when ws_book_last_update_unix is set. */
+        function computeLiveWsAge(s) {
+            if (!s) return null;
+            const unix = s.ws_book_last_update_unix;
+            if (unix != null && !isNaN(parseFloat(unix))) {
+                return Math.max(0, Date.now() / 1000 - parseFloat(unix));
+            }
+            if (s.ws_age_s != null && !isNaN(parseFloat(s.ws_age_s))) {
+                return Math.max(0, parseFloat(s.ws_age_s));
+            }
+            return null;
+        }
+
+        function formatWsAge(s) {
+            const age = computeLiveWsAge(s);
+            return (age != null) ? age.toFixed(1) + 's' : '-';
+        }
+
+        function wsAgeColor(age) {
+            if (age == null) return '#e2e8f0';
+            if (age < 5) return '#4ade80';
+            if (age < 12) return '#facc15';
+            return '#f87171';
+        }
         let lastMid = null;
         let lastMidDirectionStyle = 'color:#e2e8f0; font-weight:600;';
         let lastDirectionArrow = '';
@@ -847,6 +997,86 @@ The A-S strategy itself decides presence via reservation price being inside the 
         window.fetchAvailableModels = fetchAvailableModels;
         window.useModel = useModel;
 
+        function _intentByLevel(intents, level, side) {
+            if (!intents || !Array.isArray(intents)) return null;
+            return intents.find(i => (i.level || 1) === level && i.side === side) || null;
+        }
+
+        function _formatLadderPrice(price) {
+            return (price != null && !isNaN(parseFloat(price))) ? parseFloat(price).toFixed(6) : '—';
+        }
+
+        function _formatLadderSize(size) {
+            return (size != null && !isNaN(parseFloat(size))) ? parseFloat(size).toFixed(1) + ' XRP' : '—';
+        }
+
+        function _levelCommitText(intents, level) {
+            const bid = _intentByLevel(intents, level, 'bid');
+            const ask = _intentByLevel(intents, level, 'ask');
+            if (!bid && !ask) return '—';
+            const b = bid && bid.size_xrp != null ? parseFloat(bid.size_xrp).toFixed(1) : '—';
+            const a = ask && ask.size_xrp != null ? parseFloat(ask.size_xrp).toFixed(1) : '—';
+            return `bid ${b} / ask ${a} XRP`;
+        }
+
+        function renderSuggestedLadder(s) {
+            const el = document.getElementById('suggested-ladder');
+            const hint = document.getElementById('ladder-hint');
+            if (!el) return;
+
+            const levels = Math.max(1, parseInt(s.order_levels, 10) || 3);
+            const intents = (s.quote_intents && Array.isArray(s.quote_intents)) ? s.quote_intents : [];
+            const active = !!s.would_quote;
+            let html = '';
+
+            if (!intents.length) {
+                const bidP = _formatLadderPrice(s.suggested_bid);
+                const askP = _formatLadderPrice(s.suggested_ask);
+                html += `<div class="ladder-level inactive">
+                    <div class="ladder-level-tag">L1</div>
+                    <div class="metric-row"><span class="label">Bid</span><span class="value good">${bidP}<span class="ladder-size">· —</span></span></div>
+                    <div class="metric-row"><span class="label">Ask</span><span class="value">${askP}<span class="ladder-size">· —</span></span></div>
+                </div>`;
+                for (let lv = 2; lv <= levels; lv++) {
+                    html += `<div class="ladder-level planned inactive">
+                        <div class="ladder-level-tag">L${lv}</div>
+                        <div class="metric-row"><span class="label">Bid</span><span class="value good">—<span class="ladder-size">· —</span></span></div>
+                        <div class="metric-row"><span class="label">Ask</span><span class="value">—<span class="ladder-size">· —</span></span></div>
+                    </div>`;
+                }
+            } else {
+                for (let lv = 1; lv <= levels; lv++) {
+                    const bid = _intentByLevel(intents, lv, 'bid');
+                    const ask = _intentByLevel(intents, lv, 'ask');
+                    const planned = lv > 1 || (bid && bid.planned) || (ask && ask.planned) || (!active && lv === 1);
+                    const cls = ['ladder-level'];
+                    if (planned) cls.push('planned');
+                    if (!active && lv === 1) cls.push('inactive');
+                    html += `<div class="${cls.join(' ')}">
+                        <div class="ladder-level-tag">L${lv}</div>
+                        <div class="metric-row"><span class="label">Bid</span><span class="value good">${_formatLadderPrice(bid && bid.price)}<span class="ladder-size">· ${_formatLadderSize(bid && bid.size_xrp)}</span></span></div>
+                        <div class="metric-row"><span class="label">Ask</span><span class="value">${_formatLadderPrice(ask && ask.price)}<span class="ladder-size">· ${_formatLadderSize(ask && ask.size_xrp)}</span></span></div>
+                    </div>`;
+                }
+            }
+
+            const ladderKey = JSON.stringify({ active, intents: intents.slice(0, 12) });
+            const ladderChanged = prevValues.ladder !== ladderKey;
+            prevValues.ladder = ladderKey;
+            el.innerHTML = html;
+            if (ladderChanged) triggerAnim(el.closest('.card') || el, 'card-updated', 400);
+
+            if (hint) {
+                if (!intents.length) {
+                    hint.textContent = 'Waiting for first A-S sample...';
+                } else if (active) {
+                    hint.textContent = 'L1 inside book (live). L2/L3 are planned depth (not placed on WS path yet).';
+                } else {
+                    hint.textContent = 'Planned ladder — reservation not inside book, so L1 is not live.';
+                }
+            }
+        }
+
         function renderLive(s) {
             if (!s) return;
 
@@ -862,6 +1092,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
             // Header mode badge (always present)
             const modeEl = document.getElementById('mode');
             if (modeEl) modeEl.textContent = s.as_mode ? `(${s.as_mode.toUpperCase()})` : '';
+
+            const sampleCount = (s.sample_count != null)
+                ? s.sample_count
+                : (Array.isArray(s.sample_history) ? s.sample_history.length : null);
+            const ver = s.ws_as_version || '—';
+            const presence = (s.as_presence_pct != null) ? `${parseFloat(s.as_presence_pct).toFixed(1)}%` : '—';
+            const sessionLine = `v ${ver} · samples ${sampleCount != null ? sampleCount : '—'} · presence ${presence}`;
+            setText('header-session', sessionLine);
+            setText('sidebar-version', `v ${ver}`);
+            setText('sidebar-samples', `Samples: ${sampleCount != null ? sampleCount : '—'}`);
+            setText('sidebar-presence', `Presence: ${presence}`);
 
             // Sidebar (always present) - force update with defaults if missing
             setText('sidebar-xrp', s.balance_xrp !== undefined ? `XRP: ${parseFloat(s.balance_xrp).toFixed(2)}` : 'XRP: -');
@@ -911,10 +1152,12 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
             const ageEl = document.getElementById('age');
             if (ageEl) {
-                const newAge = (s.ws_age_s != null) ? parseFloat(s.ws_age_s).toFixed(1) + 's' : '-';
+                const liveAge = computeLiveWsAge(s);
+                const newAge = formatWsAge(s);
                 const ageChanged = prevValues.age !== newAge;
                 prevValues.age = newAge;
-                setText('age', newAge);
+                ageEl.textContent = newAge;
+                ageEl.style.color = wsAgeColor(liveAge);
                 if (ageChanged) triggerAnim(ageEl, 'value-updated', 400);
             }
             const msgsEl = document.getElementById('msgs');
@@ -988,22 +1231,22 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 }
             }
 
-            const bidEl = document.getElementById('bid');
-            if (bidEl) {
-                const newBid = (s.suggested_bid != null) ? parseFloat(s.suggested_bid).toFixed(6) : '-';
-                const bidChanged = prevValues.bid !== newBid;
-                prevValues.bid = newBid;
-                setText('bid', newBid);
-                if (bidChanged) triggerAnim(bidEl, 'flash-up', 500);
+            const zqn = document.getElementById('zero-quote-note');
+            if (zqn) {
+                const note = s.would_quote
+                    ? (s.tight_book_note || '')
+                    : (s.zero_quote_operator_note || s.zero_quote_detail || s.zero_quote_reason || '');
+                if (note) {
+                    zqn.style.display = 'block';
+                    zqn.textContent = note;
+                    zqn.style.color = s.would_quote ? '#94a3b8' : '#fbbf24';
+                } else {
+                    zqn.style.display = 'none';
+                    zqn.textContent = '';
+                }
             }
-            const askEl = document.getElementById('ask');
-            if (askEl) {
-                const newAsk = (s.suggested_ask != null) ? parseFloat(s.suggested_ask).toFixed(6) : '-';
-                const askChanged = prevValues.ask !== newAsk;
-                prevValues.ask = newAsk;
-                setText('ask', newAsk);
-                if (askChanged) triggerAnim(askEl, 'flash-down', 500);
-            }
+
+            renderSuggestedLadder(s);
 
             setText('last_note', s.last_note || 'Waiting for first WS update + A-S decision...');
 
@@ -1146,18 +1389,31 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
             // === Intelligence tab (full competitor scrape + skim strategy) ===
             setText('intel-observed-spread', s.competitor_observed_spread_pct != null ? `${parseFloat(s.competitor_observed_spread_pct).toFixed(3)}%` : '—');
+            setText('intel-our-lane', s.our_lane_xrp != null ? `${parseFloat(s.our_lane_xrp).toFixed(1)} XRP` : '—');
+            const peerBand = (s.peer_lane_low_xrp != null && s.peer_lane_high_xrp != null)
+                ? ` (${parseFloat(s.peer_lane_low_xrp).toFixed(0)}–${parseFloat(s.peer_lane_high_xrp).toFixed(0)})`
+                : '';
+            setText('intel-peer-count', s.peer_lane_count != null ? `${s.peer_lane_count}${peerBand}` : '—');
+            setText('intel-fled', s.peer_fled_touch_count != null ? s.peer_fled_touch_count : '—');
             setText('intel-pressure', s.competitor_pressure != null ? parseFloat(s.competitor_pressure).toFixed(2) : '—');
             setText('intel-active', s.num_active_mms != null ? s.num_active_mms : '—');
             setText('intel-depth', s.competitor_depth_xrp != null ? `${parseFloat(s.competitor_depth_xrp).toFixed(1)} XRP` : '—');
             setText('intel-advice', s.competitor_skim_advice || 'No scrape data. Run tester with live WS book.');
 
-            const topList = document.getElementById('intel-top-list');
-            if (topList && s.top_competitors && Array.isArray(s.top_competitors) && s.top_competitors.length) {
-                topList.innerHTML = s.top_competitors.map(c => {
+            const topList = document.getElementById('intel-top-list-inner') || document.getElementById('intel-top-list');
+            const peerRows = (s.top_peers && Array.isArray(s.top_peers) && s.top_peers.length) ? s.top_peers : null;
+            const compRows = (s.top_competitors && Array.isArray(s.top_competitors) && s.top_competitors.length) ? s.top_competitors : null;
+            const listSource = (s.peer_lane_count > 0 && peerRows) ? peerRows : compRows;
+            if (topList && listSource) {
+                const header = (s.peer_lane_count > 0 && peerRows)
+                    ? `<div style="font-size:0.7rem;color:#94a3b8;margin-bottom:4px;">Peer lane (posted touch band)</div>`
+                    : '';
+                topList.innerHTML = header + listSource.map(c => {
                     const display = c.domain && c.domain !== 'no-domain' ? `${c.account} (${c.domain})` : c.account;
                     const full = c.account_full || c.account;
-                    // Clickable rows: clicking fills the Analyze input with the real full r-address
-                    return `<div data-full="${full}" style="cursor:pointer; padding:2px 0;" title="Click to use this address for Analyze with AI">${display} | ${c.last_spread}% / ${c.avg_spread}% | act:${c.activity} | ${c.sides}</div>`;
+                    const touch = c.touch_xrp != null && c.touch_xrp > 0 ? ` | touch:${c.touch_xrp}XRP` : '';
+                    const fled = c.cancels != null && c.cancels > 0 ? ` | cancels:${c.cancels}` : '';
+                    return `<div data-full="${full}" style="cursor:pointer; padding:2px 0;" title="Click to use this address for Analyze with AI">${display} | ${c.last_spread}% / ${c.avg_spread}% | act:${c.activity} | ${c.sides}${touch}${fled}</div>`;
                 }).join('');
 
                 // Attach click handlers to fill the analyze address input (do this after innerHTML)
@@ -1186,6 +1442,13 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setText('intel-ai-rationale', s.ai_rationale || '—');
             setText('intel-ai-posture', s.ai_suggested_posture || '—');
 
+            if (pinnedIntelAiResult) {
+                const aiResultEl = document.getElementById('intel-ai-result');
+                if (aiResultEl && aiResultEl.textContent !== pinnedIntelAiResult) {
+                    aiResultEl.textContent = pinnedIntelAiResult;
+                }
+            }
+
             // AI status from Config tab
             const aiStatus = document.getElementById('intel-ai-status');
             if (aiStatus) {
@@ -1194,25 +1457,16 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 const hasKey = !!(s.intel_ai_key);
                 aiStatus.textContent = `${prov}${enabled ? '' : ' (disabled)'}${hasKey ? ' +key' : ''}`;
             }
-            let l1Txt = '—', l2Txt = '—', l3Txt = '—';
-            if (s.quote_intents && Array.isArray(s.quote_intents)) {
-                const l1i = s.quote_intents.find(i => i.level === 1);
-                if (l1i && l1i.size_xrp != null) {
-                    l1Txt = `${parseFloat(l1i.size_xrp).toFixed(1)} XRP`;
-                }
-            }
-            // Demo L2/L3 commitments (in real use these would come from profile + risk capital + current wallet)
-            if (l1Txt !== '—') {
-                l2Txt = (parseFloat(l1Txt) * 0.6).toFixed(1) + ' XRP (L2)';
-                l3Txt = (parseFloat(l1Txt) * 0.3).toFixed(1) + ' XRP (L3)';
+            const intents = (s.quote_intents && Array.isArray(s.quote_intents)) ? s.quote_intents : [];
+            if (intents.length) {
+                setText('config-l1-commit', _levelCommitText(intents, 1));
+                setText('config-l2-commit', _levelCommitText(intents, 2));
+                setText('config-l3-commit', _levelCommitText(intents, 3));
             } else {
-                l1Txt = '15.0 XRP (demo)';
-                l2Txt = '9.0 XRP (demo)';
-                l3Txt = '4.5 XRP (demo)';
+                setText('config-l1-commit', '—');
+                setText('config-l2-commit', '—');
+                setText('config-l3-commit', '—');
             }
-            setText('config-l1-commit', l1Txt);
-            setText('config-l2-commit', l2Txt);
-            setText('config-l3-commit', l3Txt);
 
             const recentEl = document.getElementById('recent');
             if (recentEl) {
@@ -1243,7 +1497,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const bidVal = (s.best_bid != null) ? parseFloat(s.best_bid).toFixed(6) : '—';
             const askVal = (s.best_ask != null) ? parseFloat(s.best_ask).toFixed(6) : '—';
             const spreadVal = (s.book_spread_pct != null) ? parseFloat(s.book_spread_pct).toFixed(3) + '%' : '—';
-            const ageVal = (s.ws_age_s != null) ? s.ws_age_s.toFixed(1) + 's' : '—';
+            const ageVal = formatWsAge(s);
 
             let midDisplay = midVal !== null ? midVal.toFixed(6) : '—';
             if (midVal !== null && lastMid !== null) {
@@ -1285,9 +1539,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 // Visible status so "no data / just the card" is never mysterious
                 if (statusEl) {
                     const ts = new Date().toLocaleTimeString();
-                    const age = (s.ws_age_s != null) ? s.ws_age_s.toFixed(1) + 's' : '?';
+                    const age = formatWsAge(s);
                     const msgs = (s.ws_message_count != null) ? s.ws_message_count : '?';
-                    statusEl.textContent = `last poll: ${ts} - WS msgs: ${msgs} - book age: ${age} - server OK`;
+                    const live = (s.ws_book_last_update_unix != null) ? 'live age' : 'sample age';
+                    statusEl.textContent = `last poll: ${ts} - WS msgs: ${msgs} - book age: ${age} (${live}) - server OK`;
                     statusEl.style.color = '#4ade80';
                 }
 
@@ -1859,7 +2114,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     // If empty or placeholder/demo, try to pull first real full r-address.
                     // Prefer data-full attributes on the (now clickable) list items.
                     if (!addrInput || addrInput.includes('Demo') || addrInput.includes('r...') || addrInput.length < 25) {
-                        const listEl = document.getElementById('intel-top-list');
+                        const listEl = document.getElementById('intel-top-list-inner') || document.getElementById('intel-top-list');
                         if (listEl) {
                             const firstFull = listEl.querySelector('div[data-full]');
                             if (firstFull && firstFull.getAttribute('data-full')) {
@@ -1874,7 +2129,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     const addr = addrInput || 'rDemoCompetitorAddress';
                     const resultEl = document.getElementById('intel-ai-result');
                     if (resultEl) {
+                        pinnedIntelAiResult = null;
                         resultEl.textContent = `Calling ${ (document.getElementById('intel-ai-provider') || {}).value || 'AI' } for ${addr}...`;
+                        resultEl.scrollTop = 0;
                         try {
                             // Send address + any live intel we have from the last /state poll so the server
                             // can build the richest possible prompt for the Grok suggestion (pressure, spreads, inventory).
@@ -1890,9 +2147,16 @@ The A-S strategy itself decides presence via reservation price being inside the 
                                 body: JSON.stringify(payload)
                             });
                             const data = await resp.json();
-                            resultEl.textContent = data.result || 'No result from analysis.';
+                            pinnedIntelAiResult = data.result || 'No result from analysis.';
+                            if (data.debug) console.log('[HUD analyze]', data.debug);
+                            resultEl.textContent = pinnedIntelAiResult;
+                            resultEl.scrollTop = 0;
+                            resultEl.classList.add('new-decision');
+                            setTimeout(() => resultEl.classList.remove('new-decision'), 400);
                         } catch (e) {
-                            resultEl.textContent = `Error calling /analyze_competitor: ${e}. (Tester must be running with --serve-hud and the address must be valid.)`;
+                            pinnedIntelAiResult = `Error calling /analyze_competitor: ${e}. (Tester must be running with --serve-hud and the address must be valid.)`;
+                            resultEl.textContent = pinnedIntelAiResult;
+                            resultEl.scrollTop = 0;
                         }
                     }
                 });
@@ -1971,6 +2235,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     // one more fast attempt
                     poll();
                 }
+            }, 250);
+
+            // Tick WS age upward between /state polls (uses ws_book_last_update_unix anchor)
+            setInterval(() => {
+                if (!lastState || lastState.ws_book_last_update_unix == null) return;
+                const ageEl = document.getElementById('age');
+                if (!ageEl) return;
+                const liveAge = computeLiveWsAge(lastState);
+                if (liveAge == null) return;
+                ageEl.textContent = liveAge.toFixed(1) + 's';
+                ageEl.style.color = wsAgeColor(liveAge);
             }, 250);
         }
 

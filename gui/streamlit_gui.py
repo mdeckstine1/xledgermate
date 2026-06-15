@@ -73,6 +73,31 @@ touch_operator_activity = _operator_activity.touch_operator_activity
 
 logger = logging.getLogger(__name__)
 RUNTIME_STATE_PATH = Path("logs/runtime_state.json")
+WS_DEMO_RUNTIME_PATH = Path("logs/ws_as_demo_runtime.json")
+_WS_DEMO_OVERLAY_KEYS = (
+    "ws_as_version",
+    "as_mode",
+    "as_presence_pct",
+    "sample_count",
+    "sample_history",
+    "as_reservation",
+    "as_optimal_spread_pct",
+    "as_gamma",
+    "as_kappa",
+    "ws_book_age_s",
+    "ws_message_count",
+    "book_spread_pct",
+    "volatility_pct",
+    "market_edge_met",
+    "quote_decision_summary",
+    "zero_quote_reason",
+    "inventory_label",
+    "balance_xrp",
+    "balance_rlusd",
+    "mid_price",
+    "best_bid_rlusd_per_xrp",
+    "best_ask_rlusd_per_xrp",
+)
 LOGO_PATH = Path(__file__).resolve().parent.parent / "Xledermate.jpg"
 
 _CREDENTIALS_FORM = "bot_account_credentials"
@@ -129,13 +154,141 @@ except AttributeError:  # pragma: no cover - older Streamlit
         return decorator
 
 
-def _load_runtime_state() -> dict:
-    if not RUNTIME_STATE_PATH.exists():
+def _read_runtime_json(path: Path) -> dict:
+    if not path.exists():
         return {}
     try:
-        return json.loads(RUNTIME_STATE_PATH.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
+
+
+def _load_sacred_runtime() -> dict:
+    """Sacred engine snapshot only — no WS demo overlay."""
+    return _read_runtime_json(RUNTIME_STATE_PATH)
+
+
+def _load_ws_demo_runtime() -> dict:
+    """WS + pure A-S lab snapshot from live tester."""
+    demo = _read_runtime_json(WS_DEMO_RUNTIME_PATH)
+    if demo.get("as_mode") == "pure" or demo.get("ws_as_version"):
+        return demo
+    return {}
+
+
+def _load_runtime_state() -> dict:
+    runtime = _load_sacred_runtime()
+    demo = _load_ws_demo_runtime()
+    if demo:
+        for key in _WS_DEMO_OVERLAY_KEYS:
+            if key in demo:
+                runtime[key] = demo[key]
+        if "sample_count" not in runtime:
+            runtime["sample_count"] = len(demo.get("sample_history") or [])
+    return runtime
+
+
+def _presence_pct_from_history(runtime: dict) -> Optional[float]:
+    hist = runtime.get("sample_history") or []
+    if not hist:
+        return runtime.get("as_presence_pct")
+    quoted = sum(1 for row in hist if row.get("would_quote") or row.get("zero_quote_reason") == "quoted")
+    return round(100.0 * quoted / len(hist), 1)
+
+
+def _render_ws_compare_column(title: str, runtime: dict, *, is_ws: bool) -> None:
+    st.markdown(f"#### {title}")
+    if not runtime:
+        st.warning("No snapshot loaded.")
+        return
+
+    updated = runtime.get("updated_utc") or runtime.get("sample_history", [{}])[-1].get("ts_utc", "n/a")
+    st.caption(f"Snapshot: **{updated}**")
+
+    policy = runtime.get("quoting_policy_label") or ("PURE A-S (WS)" if is_ws else "Sacred engine")
+    edge_ok = runtime.get("market_edge_met", True)
+    zero_reason = runtime.get("zero_quote_reason") or ("quoted" if edge_ok else "blocked")
+    presence = _presence_pct_from_history(runtime)
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Policy", policy[:24] + "…" if len(policy) > 24 else policy)
+    m2.metric("Would quote", "YES" if edge_ok or zero_reason == "quoted" else "NO")
+    m3.metric("Zero-quote reason", str(zero_reason))
+    m4.metric("Session presence", f"{presence}%" if presence is not None else "—")
+
+    b1, b2, b3, b4 = st.columns(4)
+    b1.metric("Best bid", _fmt_price(runtime.get("best_bid_rlusd_per_xrp"), 6))
+    b2.metric("Mid", _fmt_price(runtime.get("mid_price"), 6))
+    b3.metric("Best ask", _fmt_price(runtime.get("best_ask_rlusd_per_xrp"), 6))
+    b4.metric("Book spread", f"{float(runtime.get('book_spread_pct') or 0):.3f}%")
+
+    if is_ws:
+        w1, w2, w3, w4 = st.columns(4)
+        w1.metric("A-S reservation", _fmt_price(runtime.get("as_reservation"), 6))
+        w2.metric("A-S spread", f"{float(runtime.get('as_optimal_spread_pct') or 0):.3f}%")
+        ws_age = runtime.get("ws_book_age_s")
+        w3.metric("WS book age", f"{ws_age:.1f}s" if ws_age is not None else "—")
+        w4.metric("Dry-run offers", runtime.get("open_offers_count", "—"))
+        ver = runtime.get("ws_as_version") or "—"
+        st.caption(
+            f"Pure A-S v**{ver}** · γ={runtime.get('as_gamma', '?')} κ={runtime.get('as_kappa', '?')} "
+            f"· WS msgs **{runtime.get('ws_message_count', '—')}**"
+        )
+    else:
+        t1, t2, t3, t4 = st.columns(4)
+        t1.metric("Fill quality", f"{float(runtime.get('fill_quality_score', 100)):.0f}")
+        t2.metric("Toxic ratio", f"{float(runtime.get('toxic_fill_ratio', 0)) * 100:.0f}%")
+        t3.metric("Profile", str(runtime.get("active_profile") or "—"))
+        t4.metric("Open offers", runtime.get("open_offers_count", "—"))
+
+    summary = runtime.get("quote_decision_summary") or ""
+    if summary:
+        with st.expander("Why these quotes?", expanded=False):
+            st.caption(summary)
+
+    intents = runtime.get("quote_intents") or []
+    if intents:
+        with st.expander("Quote ladder (L1 active)", expanded=False):
+            _show_dataframe(_quote_table(intents), height=160)
+
+    decisions_df = clean_decisions_table(runtime, limit=5)
+    if not decisions_df.empty:
+        with st.expander("Recent decisions", expanded=False):
+            _show_dataframe(decisions_df, height=140)
+
+
+def _render_ws_compare_tab() -> None:
+    """D3: sacred long-run vs WS + pure A-S lab — side-by-side swap demo."""
+    sacred = _load_sacred_runtime()
+    ws = _load_ws_demo_runtime()
+
+    st.markdown("### WS vs Sacred — swap preview")
+    st.caption(
+        "Left: **sacred engine** (`logs/runtime_state.json`). "
+        "Right: **WS lab** (`logs/ws_as_demo_runtime.json` from `live_pure_as_tester`). "
+        "Dashboard tab still overlays WS fields when the demo file exists."
+    )
+
+    if not sacred and not ws:
+        st.info("Load at least one snapshot. Run the sacred engine and/or `live_pure_as_tester`.")
+        return
+
+    if sacred and ws:
+        sp = _presence_pct_from_history(sacred)
+        wp = _presence_pct_from_history(ws)
+        sacred_edge = sacred.get("market_edge_met", True)
+        ws_quote = ws.get("market_edge_met", True) or ws.get("zero_quote_reason") == "quoted"
+        h1, h2, h3 = st.columns(3)
+        h1.metric("Sacred edge met", "YES" if sacred_edge else "NO")
+        h2.metric("WS would quote", "YES" if ws_quote else "NO")
+        if sp is not None and wp is not None:
+            h3.metric("Presence (session)", f"{sp}% → {wp}%", delta=f"{wp - sp:+.1f} pts")
+
+    left, right = st.columns(2)
+    with left:
+        _render_ws_compare_column("Sacred (VPS path)", sacred, is_ws=False)
+    with right:
+        _render_ws_compare_column("WS + Pure A-S (lab)", ws, is_ws=True)
 
 
 def _effective_network(
@@ -1620,7 +1773,16 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
             # WS + pure A-S (new committed path) — show when present in runtime
             if runtime.get("as_mode") == "pure" or runtime.get("as_reservation") is not None:
                 st.divider()
-                st.markdown("**Pure A-S + WS (committed future path)**")
+                ver = runtime.get("ws_as_version") or "—"
+                samples = runtime.get("sample_count")
+                if samples is None:
+                    samples = len(runtime.get("sample_history") or [])
+                presence = runtime.get("as_presence_pct")
+                st.markdown(
+                    f"**Pure A-S + WS (committed future path)** · "
+                    f"v**{ver}** · samples **{samples}**"
+                    + (f" · presence **{presence}%**" if presence is not None else "")
+                )
                 ac1, ac2, ac3, ac4 = st.columns(4)
                 ac1.metric("A-S Reservation", f"{float(runtime.get('as_reservation') or 0):.6f}")
                 ac2.metric("A-S Optimal Spread", f"{float(runtime.get('as_optimal_spread_pct') or 0):.3f}%")
@@ -2881,8 +3043,8 @@ def run_gui() -> None:
     else:
         _paint_command_bar(config, runtime, engine_running=engine_running)
 
-    tab_dash, tab_ctrl, tab_inv, tab_logs, tab_adv = st.tabs(
-        ["Dashboard", "Controls", "Inventory", "Logs", "Advanced"]
+    tab_dash, tab_ws, tab_ctrl, tab_inv, tab_logs, tab_adv = st.tabs(
+        ["Dashboard", "WS compare", "Controls", "Inventory", "Logs", "Advanced"]
     )
 
     with tab_dash:
@@ -2890,6 +3052,9 @@ def run_gui() -> None:
             _dashboard_live_fragment()
         else:
             _update_live_dashboard(config, runtime)
+
+    with tab_ws:
+        _render_ws_compare_tab()
 
     with tab_ctrl:
         _render_controls_tab(config, engine_running=engine_running, runtime=runtime)

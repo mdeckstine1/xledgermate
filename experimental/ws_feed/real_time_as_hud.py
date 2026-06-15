@@ -72,6 +72,9 @@ _current_state: Dict[str, Any] = {
     "last_note": "Waiting for first WS update + A-S decision...",
     "recent_notes": [],
     "as_mode": "pure",
+    "ws_as_version": None,
+    "sample_count": 0,
+    "as_presence_pct": None,
 }
 
 _recent_limit = 20
@@ -323,17 +326,21 @@ if app:
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 600,
+                "max_tokens": 2048,
                 "temperature": 0.6,
             }
 
             print(debug_note + " | sending real Grok call with prompt len=" + str(len(prompt)))
 
-            resp = requests.post(url, headers=headers, json=payload, timeout=45)
+            resp = requests.post(url, headers=headers, json=payload, timeout=60)
             resp.raise_for_status()
-            content = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "No content returned from Grok.")
-            result = f"{debug_note} | REAL GROK RESPONSE:\n\n{content}"
-            return {"result": result}
+            choice = resp.json().get("choices", [{}])[0] or {}
+            content = choice.get("message", {}).get("content", "No content returned from Grok.")
+            finish = choice.get("finish_reason") or ""
+            result = content.strip()
+            if finish == "length":
+                result += "\n\n---\n(Response hit the token limit and may be cut off mid-thought.)"
+            return {"result": result, "truncated": finish == "length", "debug": debug_note}
         except Exception as e:
             # Surface the actual API error body for 4xx/5xx so we can debug model names, auth, etc.
             api_error = ""

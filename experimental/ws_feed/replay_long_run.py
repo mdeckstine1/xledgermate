@@ -622,7 +622,37 @@ def main() -> None:
     parser.add_argument("--economics", action="store_true", help="Print sacred corpus economics (capture, neg-fill %%, balance-delta proxy) via experimental.sacred_economics")
     parser.add_argument("--ab", action="store_true", help="With --economics: A/B pure vs pressure variants (Grok excluded)")
     parser.add_argument("--trades", default=None, help="Trades CSV for --economics (default: auto-resolve in logs/)")
+    parser.add_argument(
+        "--swap-readiness",
+        action="store_true",
+        help="D4: full swap readiness report (replay + economics + live soak + wiring parity); writes logs/swap_readiness_report.json",
+    )
+    parser.add_argument("--gate", action="store_true", help="With --swap-readiness: exit 1 if gate fails")
     args = parser.parse_args()
+
+    if args.swap_readiness:
+        from experimental.swap_readiness_report import (
+            SwapReadinessCriteria,
+            build_swap_readiness_report,
+            format_swap_readiness_report,
+        )
+
+        criteria = SwapReadinessCriteria()
+        report = build_swap_readiness_report(
+            decisions_path=Path(args.decisions),
+            trades_path=Path(args.trades) if args.trades else None,
+            profile=args.profile,
+            criteria=criteria,
+            include_economics_ab=args.ab or True,
+        )
+        out_path = Path("logs/swap_readiness_report.json")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(report.as_dict(), indent=2), encoding="utf-8")
+        print(format_swap_readiness_report(report))
+        print(f"\nWrote {out_path}")
+        if args.gate and not report.passed:
+            sys.exit(1)
+        return
 
     decisions_path = Path(args.decisions)
     if not decisions_path.exists():

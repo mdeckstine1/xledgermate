@@ -1,8 +1,9 @@
 """
-Phase A2 — analyze live WS + pure A-S runtime exports.
+Phase A2 + C1 + C2 — analyze live WS + pure A-S runtime exports.
 
 Reads `logs/ws_as_demo_runtime.json` (and optional timestamped backups) for:
-- pressure variance and bucketed presence
+- pressure variance and bucketed presence (low / mid / high)
+- zero_quote_reason breakdown (all samples, including quoted)
 - book spread vs A-S optimal spread (why 0 quotes)
 - would_quote flip rate
 - competitor pressure vs quoting / spread correlation
@@ -18,12 +19,53 @@ import json
 import math
 import re
 import statistics
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 SAMPLE_HISTORY_MAX = 2000
 _WQ_RE = re.compile(r"Generated (\d+) quotes", re.I)
+
+# C1 — competitor pressure buckets for presence tracking
+PRESSURE_BUCKETS: Dict[str, Tuple[float, float]] = {
+    "low (<0.30)": (0.0, 0.30),
+    "mid (0.30-0.70)": (0.30, 0.70),
+    "high (>0.70)": (0.70, 1.01),
+}
+
+# C2 — soak gate defaults (pre-D2); aligned with B3 stale threshold
+DEFAULT_STALE_AGE_S = 12.0
+
+
+@dataclass(frozen=True)
+class SoakCriteria:
+    """Minimum bar for a 30+ min WS + pure A-S soak before D2 dry-run."""
+
+    min_duration_minutes: float = 30.0
+    min_presence_pct: float = 50.0
+    max_flip_rate: float = 0.20
+    max_ws_age_mean_s: float = 12.0
+    max_ws_age_p95_s: float = 20.0
+    min_fresh_sample_pct: float = 80.0
+    min_samples: int = 15
+    stale_age_s: float = DEFAULT_STALE_AGE_S
+
+
+@dataclass
+class SoakEvaluation:
+    passed: bool = False
+    metrics: Dict[str, Any] = field(default_factory=dict)
+    criteria: Dict[str, Any] = field(default_factory=dict)
+    failures: List[str] = field(default_factory=list)
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "passed": self.passed,
+            "metrics": self.metrics,
+            "criteria": self.criteria,
+            "failures": self.failures,
+        }
 
 
 def classify_zero_quote_reason(
@@ -61,6 +103,71 @@ def classify_zero_quote_reason(
     return "other"
 
 
+def _sample_zero_quote_reason(sample: Dict[str, Any]) -> str:
+    existing = sample.get("zero_quote_reason")
+    if existing:
+        return str(existing)
+    would_quote = bool(sample.get("would_quote"))
+    return classify_zero_quote_reason(
+        would_quote=would_quote,
+        best_bid=_f(sample.get("best_bid")),
+        best_ask=_f(sample.get("best_ask")),
+        reservation=_f(sample.get("as_reservation")),
+        book_spread_pct=_f(sample.get("book_spread_pct")),
+        optimal_spread_pct=_f(sample.get("as_optimal_spread_pct")),
+    )
+
+
+def compute_c1_metrics(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    C1 aggregates: presence by pressure bucket + zero_quote_reason breakdown.
+    Written to gui_runtime on each sample append and mirrored in RuntimeAnalysis.
+    """
+    n = len(samples)
+    if n == 0:
+        return {
+            "sample_count": 0,
+            "as_presence_pct": 0.0,
+            "presence_by_pressure": {},
+            "zero_quote_breakdown": {},
+        }
+
+    quoted = sum(1 for s in samples if s.get("would_quote"))
+    presence_by_pressure: Dict[str, Dict[str, float]] = {}
+    for label, (lo, hi) in PRESSURE_BUCKETS.items():
+        bucket = [
+            s
+            for s in samples
+            if (p := _f(s.get("competitor_pressure"))) is not None and lo <= p < hi
+        ]
+        if not bucket:
+            continue
+        b_wq = [bool(s.get("would_quote")) for s in bucket if s.get("would_quote") is not None]
+        presence_by_pressure[label] = {
+            "n": float(len(bucket)),
+            "would_quote_pct": round(100.0 * sum(b_wq) / len(b_wq), 1) if b_wq else 0.0,
+            "mean_pressure": round(
+                statistics.mean(_f(s.get("competitor_pressure")) or 0.0 for s in bucket), 4
+            ),
+        }
+
+    reason_counts: Dict[str, int] = {}
+    for s in samples:
+        reason = _sample_zero_quote_reason(s)
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    zero_quote_breakdown = {
+        reason: {"count": count, "pct": round(100.0 * count / n, 1)}
+        for reason, count in sorted(reason_counts.items(), key=lambda x: -x[1])
+    }
+
+    return {
+        "sample_count": n,
+        "as_presence_pct": round(100.0 * quoted / n, 1),
+        "presence_by_pressure": presence_by_pressure,
+        "zero_quote_breakdown": zero_quote_breakdown,
+    }
+
+
 def compact_sample_from_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
     """Extract one analysis row from a full gui_runtime snapshot."""
     bb = _f(runtime.get("best_bid_rlusd_per_xrp"))
@@ -91,7 +198,8 @@ def compact_sample_from_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
         "volatility_pct": _f(runtime.get("volatility_pct")),
         "ws_book_age_s": _f(runtime.get("ws_book_age_s")),
         "inventory_label": runtime.get("inventory_label"),
-        "zero_quote_reason": classify_zero_quote_reason(
+        "zero_quote_reason": runtime.get("zero_quote_reason")
+        or classify_zero_quote_reason(
             would_quote=would_quote,
             best_bid=bb,
             best_ask=ba,
@@ -107,10 +215,151 @@ def compact_sample_from_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
 def append_runtime_sample(runtime: Dict[str, Any], sample: Dict[str, Any]) -> None:
     """Append a compact sample to gui_runtime sample_history (bounded)."""
     history: List[Dict[str, Any]] = list(runtime.get("sample_history") or [])
+    if not sample.get("zero_quote_reason"):
+        sample = dict(sample)
+        sample["zero_quote_reason"] = _sample_zero_quote_reason(sample)
     history.append(sample)
     runtime["sample_history"] = history[-SAMPLE_HISTORY_MAX:]
-    quoted = sum(1 for s in runtime["sample_history"] if s.get("would_quote"))
-    runtime["as_presence_pct"] = round(100.0 * quoted / len(runtime["sample_history"]), 1)
+    c1 = compute_c1_metrics(runtime["sample_history"])
+    runtime["sample_count"] = c1["sample_count"]
+    runtime["as_presence_pct"] = c1["as_presence_pct"]
+    runtime["presence_by_pressure"] = c1["presence_by_pressure"]
+    runtime["zero_quote_breakdown"] = c1["zero_quote_breakdown"]
+    runtime["soak_evaluation"] = evaluate_soak_gate(runtime["sample_history"]).as_dict()
+
+
+def _parse_ts_utc(ts: Any) -> Optional[datetime]:
+    if not ts:
+        return None
+    try:
+        text = str(ts).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (TypeError, ValueError):
+        return None
+
+
+def _percentile(vals: Sequence[float], pct: float) -> float:
+    if not vals:
+        return 0.0
+    ordered = sorted(vals)
+    if len(ordered) == 1:
+        return ordered[0]
+    k = (len(ordered) - 1) * (pct / 100.0)
+    lo = int(math.floor(k))
+    hi = int(math.ceil(k))
+    if lo == hi:
+        return ordered[lo]
+    return ordered[lo] + (k - lo) * (ordered[hi] - ordered[lo])
+
+
+def compute_soak_metrics(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """C2 session metrics: duration, presence, flips, WS book-age distribution."""
+    n = len(samples)
+    if n == 0:
+        return {
+            "sample_count": 0,
+            "session_duration_minutes": 0.0,
+            "presence_pct": 0.0,
+            "flip_count": 0,
+            "flip_rate": 0.0,
+            "ws_age_mean_s": None,
+            "ws_age_p50_s": None,
+            "ws_age_p95_s": None,
+            "ws_age_max_s": None,
+            "fresh_sample_pct": 0.0,
+        }
+
+    timestamps = [_parse_ts_utc(s.get("ts_utc")) for s in samples]
+    timestamps = [t for t in timestamps if t is not None]
+    duration_min = 0.0
+    if len(timestamps) >= 2:
+        duration_min = (timestamps[-1] - timestamps[0]).total_seconds() / 60.0
+
+    wq_flags = [bool(s.get("would_quote")) for s in samples if s.get("would_quote") is not None]
+    presence_pct = 100.0 * sum(wq_flags) / len(wq_flags) if wq_flags else 0.0
+
+    flip_count = 0
+    prev: Optional[bool] = None
+    for s in samples:
+        wq = s.get("would_quote")
+        if wq is None:
+            continue
+        if prev is not None and wq != prev:
+            flip_count += 1
+        prev = wq
+    transitions = max(sum(1 for s in samples if s.get("would_quote") is not None) - 1, 0)
+    flip_rate = flip_count / transitions if transitions else 0.0
+
+    ages = [_f(s.get("ws_book_age_s")) for s in samples]
+    ages = [x for x in ages if x is not None]
+    fresh_n = sum(1 for x in ages if x < DEFAULT_STALE_AGE_S)
+    fresh_pct = 100.0 * fresh_n / len(ages) if ages else 0.0
+
+    return {
+        "sample_count": n,
+        "session_duration_minutes": round(duration_min, 2),
+        "session_start_utc": timestamps[0].isoformat() if timestamps else None,
+        "session_end_utc": timestamps[-1].isoformat() if timestamps else None,
+        "presence_pct": round(presence_pct, 1),
+        "flip_count": flip_count,
+        "flip_rate": round(flip_rate, 3),
+        "ws_age_mean_s": round(statistics.mean(ages), 2) if ages else None,
+        "ws_age_p50_s": round(_percentile(ages, 50), 2) if ages else None,
+        "ws_age_p95_s": round(_percentile(ages, 95), 2) if ages else None,
+        "ws_age_max_s": round(max(ages), 2) if ages else None,
+        "fresh_sample_pct": round(fresh_pct, 1),
+    }
+
+
+def evaluate_soak_gate(
+    samples: Sequence[Dict[str, Any]],
+    criteria: Optional[SoakCriteria] = None,
+) -> SoakEvaluation:
+    """C2 pass/fail gate for long-run soak before D2."""
+    crit = criteria or SoakCriteria()
+    metrics = compute_soak_metrics(samples)
+    failures: List[str] = []
+
+    if metrics["sample_count"] < crit.min_samples:
+        failures.append(
+            f"samples {metrics['sample_count']} < min {crit.min_samples}"
+        )
+    if metrics["session_duration_minutes"] < crit.min_duration_minutes:
+        failures.append(
+            f"duration {metrics['session_duration_minutes']:.1f}m < min {crit.min_duration_minutes:.0f}m"
+        )
+    if metrics["presence_pct"] < crit.min_presence_pct:
+        failures.append(
+            f"presence {metrics['presence_pct']:.1f}% < min {crit.min_presence_pct:.0f}%"
+        )
+    if metrics["flip_rate"] > crit.max_flip_rate:
+        failures.append(
+            f"flip_rate {metrics['flip_rate']:.3f} > max {crit.max_flip_rate:.2f}"
+        )
+    mean_age = metrics.get("ws_age_mean_s")
+    if mean_age is not None and mean_age > crit.max_ws_age_mean_s:
+        failures.append(
+            f"ws_age mean {mean_age:.2f}s > max {crit.max_ws_age_mean_s:.0f}s"
+        )
+    p95_age = metrics.get("ws_age_p95_s")
+    if p95_age is not None and p95_age > crit.max_ws_age_p95_s:
+        failures.append(
+            f"ws_age p95 {p95_age:.2f}s > max {crit.max_ws_age_p95_s:.0f}s"
+        )
+    if metrics["fresh_sample_pct"] < crit.min_fresh_sample_pct:
+        failures.append(
+            f"fresh samples {metrics['fresh_sample_pct']:.1f}% < min {crit.min_fresh_sample_pct:.0f}%"
+        )
+
+    return SoakEvaluation(
+        passed=len(failures) == 0,
+        metrics=metrics,
+        criteria=asdict(crit),
+        failures=failures,
+    )
 
 
 def _f(v: Any) -> Optional[float]:
@@ -237,12 +486,14 @@ class RuntimeAnalysis:
     optimal_spread: Dict[str, float] = field(default_factory=dict)
     spread_gap: Dict[str, float] = field(default_factory=dict)
     zero_quote_reasons: Dict[str, int] = field(default_factory=dict)
+    zero_quote_breakdown: Dict[str, Dict[str, float]] = field(default_factory=dict)
     pressure: Dict[str, float] = field(default_factory=dict)
     pressure_buckets: Dict[str, Dict[str, float]] = field(default_factory=dict)
     corr_pressure_would_quote: Optional[float] = None
     corr_pressure_book_spread: Optional[float] = None
     corr_comp_spread_book_spread: Optional[float] = None
     ws_age: Dict[str, float] = field(default_factory=dict)
+    soak: Optional[SoakEvaluation] = None
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -256,12 +507,14 @@ class RuntimeAnalysis:
             "optimal_spread": self.optimal_spread,
             "spread_gap": self.spread_gap,
             "zero_quote_reasons": self.zero_quote_reasons,
+            "zero_quote_breakdown": self.zero_quote_breakdown,
             "pressure": self.pressure,
             "pressure_buckets": self.pressure_buckets,
             "corr_pressure_would_quote": self.corr_pressure_would_quote,
             "corr_pressure_book_spread": self.corr_pressure_book_spread,
             "corr_comp_spread_book_spread": self.corr_comp_spread_book_spread,
             "ws_age": self.ws_age,
+            "soak": self.soak.as_dict() if self.soak else None,
         }
 
 
@@ -297,35 +550,16 @@ def analyze_samples(samples: Sequence[Dict[str, Any]]) -> RuntimeAnalysis:
     result.optimal_spread = _stats(opt)
     result.spread_gap = _stats(gap)
 
-    for s in samples:
-        if s.get("would_quote"):
-            continue
-        reason = s.get("zero_quote_reason") or "unknown"
-        result.zero_quote_reasons[reason] = result.zero_quote_reasons.get(reason, 0) + 1
+    c1 = compute_c1_metrics(samples)
+    result.zero_quote_breakdown = c1["zero_quote_breakdown"]
+    result.pressure_buckets = c1["presence_by_pressure"]
+    for reason, stats in c1["zero_quote_breakdown"].items():
+        if reason != "quoted":
+            result.zero_quote_reasons[reason] = int(stats["count"])
 
     pressures = [_f(s.get("competitor_pressure")) for s in samples]
     pressures_clean = [x for x in pressures if x is not None]
     result.pressure = _stats(pressures_clean)
-
-    buckets = {
-        "low (<0.30)": (0.0, 0.30),
-        "mid (0.30-0.70)": (0.30, 0.70),
-        "high (>0.70)": (0.70, 1.01),
-    }
-    for label, (lo, hi) in buckets.items():
-        bucket_samples = [
-            s
-            for s in samples
-            if (p := _f(s.get("competitor_pressure"))) is not None and lo <= p < hi
-        ]
-        if not bucket_samples:
-            continue
-        b_wq = [bool(s.get("would_quote")) for s in bucket_samples if s.get("would_quote") is not None]
-        result.pressure_buckets[label] = {
-            "n": float(len(bucket_samples)),
-            "would_quote_pct": 100.0 * sum(b_wq) / len(b_wq) if b_wq else 0.0,
-            "mean_pressure": statistics.mean(_f(s.get("competitor_pressure")) or 0.0 for s in bucket_samples),
-        }
 
     # Correlations (numeric samples only)
     paired_p_wq: List[Tuple[float, float]] = []
@@ -355,6 +589,10 @@ def analyze_samples(samples: Sequence[Dict[str, Any]]) -> RuntimeAnalysis:
     ages = [_f(s.get("ws_book_age_s")) for s in samples]
     ages = [x for x in ages if x is not None]
     result.ws_age = _stats(ages)
+    if ages:
+        result.ws_age["p50"] = _percentile(ages, 50)
+        result.ws_age["p95"] = _percentile(ages, 95)
+    result.soak = evaluate_soak_gate(samples)
 
     return result
 
@@ -365,7 +603,7 @@ def format_runtime_analysis_report(
     path_label: str = "logs/ws_as_demo_runtime.json",
 ) -> str:
     lines = [
-        "=== WS RUNTIME ANALYSIS (Phase A2) ===",
+        "=== WS RUNTIME ANALYSIS (Phase A2 + C1 + C2) ===",
         "",
         f"Primary artifact: {path_label}",
         f"Samples analyzed: {analysis.sample_count}",
@@ -399,7 +637,12 @@ def format_runtime_analysis_report(
             f"Gap (book - optimal) %: mean={analysis.spread_gap.get('mean', 0):+.4f} "
             f"(negative => optimal wider than book)"
         )
-    if analysis.zero_quote_reasons:
+    if analysis.zero_quote_breakdown:
+        lines.append("")
+        lines.append("zero_quote_reason breakdown (all samples):")
+        for reason, stats in analysis.zero_quote_breakdown.items():
+            lines.append(f"  {reason}: {int(stats['count'])} ({stats['pct']:.1f}%)")
+    elif analysis.zero_quote_reasons:
         lines.append("")
         lines.append("Zero-quote reasons (non-quoted samples):")
         for reason, count in sorted(analysis.zero_quote_reasons.items(), key=lambda x: -x[1]):
@@ -416,11 +659,15 @@ def format_runtime_analysis_report(
         lines.append("No competitor_pressure in samples (run live tester with CompetitorIntelProvider).")
 
     if analysis.pressure_buckets:
-        lines.append("Presence by pressure bucket:")
+        lines.append("Presence by pressure bucket (C1):")
         for label, stats in analysis.pressure_buckets.items():
             lines.append(
                 f"  {label}: n={int(stats['n'])} presence={stats['would_quote_pct']:.1f}%"
             )
+        low = analysis.pressure_buckets.get("low (<0.30)", {}).get("would_quote_pct")
+        high = analysis.pressure_buckets.get("high (>0.70)", {}).get("would_quote_pct")
+        if low is not None and high is not None:
+            lines.append(f"  low vs high presence delta: {low - high:+.1f} pp")
 
     lines.extend(["", "--- correlations (Pearson) ---"])
     lines.append(
@@ -438,9 +685,33 @@ def format_runtime_analysis_report(
             [
                 "",
                 "--- WS book age (seconds) ---",
-                f"mean={analysis.ws_age.get('mean', 0):.2f} max={analysis.ws_age.get('max', 0):.2f}",
+                f"mean={analysis.ws_age.get('mean', 0):.2f} "
+                f"p50={analysis.ws_age.get('p50', 0):.2f} "
+                f"p95={analysis.ws_age.get('p95', 0):.2f} "
+                f"max={analysis.ws_age.get('max', 0):.2f}",
             ]
         )
+
+    if analysis.soak:
+        s = analysis.soak
+        m = s.metrics
+        lines.extend(
+            [
+                "",
+                "--- C2 soak gate (pre-D2) ---",
+                f"Result: {'PASS' if s.passed else 'FAIL'}",
+                f"Duration: {m.get('session_duration_minutes', 0):.1f} min "
+                f"({m.get('sample_count', 0)} samples)",
+                f"Presence: {m.get('presence_pct', 0):.1f}% | "
+                f"Flips: {m.get('flip_count', 0)} (rate {m.get('flip_rate', 0):.3f})",
+                f"WS age: mean={m.get('ws_age_mean_s')}s p95={m.get('ws_age_p95_s')}s "
+                f"fresh<{DEFAULT_STALE_AGE_S:.0f}s: {m.get('fresh_sample_pct', 0):.1f}% of samples",
+            ]
+        )
+        if s.failures:
+            lines.append("Failures:")
+            for fail in s.failures:
+                lines.append(f"  - {fail}")
 
     lines.extend(
         [
@@ -490,6 +761,11 @@ def main() -> None:
         help="Also load ws_as_demo_runtime_*.json backups from logs/",
     )
     parser.add_argument("--json", action="store_true", dest="as_json", help="Emit machine-readable JSON")
+    parser.add_argument(
+        "--soak-gate",
+        action="store_true",
+        help="Exit 1 if C2 soak criteria not met (for CI / pre-D2 check)",
+    )
     args = parser.parse_args()
 
     path = args.path or Path("logs/ws_as_demo_runtime.json")
@@ -499,6 +775,9 @@ def main() -> None:
         print(json.dumps(analysis.as_dict(), indent=2))
     else:
         print(format_runtime_analysis_report(analysis, path_label=str(path)))
+
+    if args.soak_gate and (not analysis.soak or not analysis.soak.passed):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

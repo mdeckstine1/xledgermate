@@ -16,9 +16,30 @@ from experimental.ws_feed.pure_quote_path import PureQuotePath, PureQuoteDecisio
 class WSBookFeedAdapter:
     """Engine-facing adapter: WS book + pure A-S decision."""
 
-    def __init__(self, book_feed: BookFeed, gamma: float = 0.35, kappa: float = 3.5):
+    def __init__(
+        self,
+        book_feed: BookFeed,
+        gamma: float = 0.35,
+        kappa: float = 3.5,
+        *,
+        configured_l1_xrp: float = 150.0,
+        min_order_size_xrp: float = 1.0,
+        balance_fraction_k: float = 0.07,
+        order_levels: int = 3,
+        level_spread_increment: float = 0.0003,
+        configured_order_sizes: Optional[tuple] = None,
+    ):
         self.book_feed = book_feed
-        self.path = PureQuotePath(gamma=gamma, kappa=kappa)
+        self.path = PureQuotePath(
+            gamma=gamma,
+            kappa=kappa,
+            configured_l1_xrp=configured_l1_xrp,
+            min_order_size_xrp=min_order_size_xrp,
+            balance_fraction_k=balance_fraction_k,
+            order_levels=order_levels,
+            level_spread_increment=level_spread_increment,
+            configured_order_sizes=configured_order_sizes,
+        )
 
     def get_current_book(self) -> Dict[str, Any]:
         if hasattr(self.book_feed, "current_order_book"):
@@ -34,13 +55,17 @@ class WSBookFeedAdapter:
         rlusd_bal: float,
         target_ratio: float = 0.55,
         book_spread_pct: Optional[float] = None,
-        volatility_pct: float = 0.5,
+        volatility_pct: Optional[float] = None,
+        ws_book_age_s: Optional[float] = None,
         competitor_intel: Optional[Dict[str, Any]] = None,
         inventory_skew_override: Optional[float] = None,
         ai_analyzer: Optional[Any] = None,
         intel_ai_enabled: bool = True,
         book_state_for_ai: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        book_age = ws_book_age_s
+        if book_age is None and hasattr(self.book_feed, "age_seconds"):
+            book_age = self.book_feed.age_seconds()
         decision = await self.path.compute_decision(
             mid=mid,
             best_bid=best_bid,
@@ -53,6 +78,7 @@ class WSBookFeedAdapter:
             intel_ai_enabled=intel_ai_enabled,
             book_state_for_ai=book_state_for_ai,
             base_volatility_pct=volatility_pct,
+            ws_book_age_s=float(book_age or 0.0),
         )
         if inventory_skew_override is not None:
             pass  # reserved for future override hook
@@ -70,6 +96,8 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "quoting_policy_label": decision.quoting_policy_label,
         "zero_quote_reason": decision.zero_quote_reason,
         "zero_quote_detail": decision.zero_quote_detail,
+        "zero_quote_operator_note": decision.zero_quote_operator_note,
+        "tight_book_note": decision.tight_book_note,
         "as_reservation": decision.as_reservation,
         "as_optimal_spread_pct": decision.as_optimal_spread_pct,
         "as_gamma": decision.as_gamma,
@@ -82,13 +110,20 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "pause_asks": False,
         "suggested_bid": decision.suggested_bid,
         "suggested_ask": decision.suggested_ask,
-        "ws_book_age_s": ws_age,
+        "ws_book_age_s": decision.ws_book_age_s if decision.ws_book_age_s else ws_age,
+        "book_age_rationale": decision.book_age_rationale,
+        "base_volatility_pct": decision.base_volatility_pct,
         "book_spread_pct": decision.book_spread_pct,
         "volatility_pct": decision.volatility_pct,
         "ai_edge_quality": decision.ai_edge_quality,
         "ai_is_skimmable": decision.ai_is_skimmable,
         "ai_rationale": decision.ai_rationale,
         "ai_suggested_posture": decision.ai_suggested_posture,
+        "bid_size": decision.bid_size,
+        "ask_size": decision.ask_size,
+        "l1_xrp": decision.l1_xrp,
+        "pure_as_size_rationale": decision.size_rationale,
+        "quote_intents": list(decision.quote_intents),
     }
 
 
