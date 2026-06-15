@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 
 from experimental.ws_feed.book_feed import BookFeed
 from experimental.ws_feed.pure_quote_path import PureQuotePath, PureQuoteDecision, WS_AS_VERSION
+from strategy.fill_quality import FillQualityState
 
 
 class WSBookFeedAdapter:
@@ -62,6 +63,7 @@ class WSBookFeedAdapter:
         ai_analyzer: Optional[Any] = None,
         intel_ai_enabled: bool = True,
         book_state_for_ai: Optional[Dict[str, Any]] = None,
+        fill_quality: Optional[FillQualityState] = None,
     ) -> Dict[str, Any]:
         book_age = ws_book_age_s
         if book_age is None and hasattr(self.book_feed, "age_seconds"):
@@ -79,6 +81,7 @@ class WSBookFeedAdapter:
             book_state_for_ai=book_state_for_ai,
             base_volatility_pct=volatility_pct,
             ws_book_age_s=float(book_age or 0.0),
+            fill_quality=fill_quality,
         )
         if inventory_skew_override is not None:
             pass  # reserved for future override hook
@@ -124,6 +127,11 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "l1_xrp": decision.l1_xrp,
         "pure_as_size_rationale": decision.size_rationale,
         "quote_intents": list(decision.quote_intents),
+        "g2_size_mult": decision.g2_size_mult,
+        "g2_spread_mult": decision.g2_spread_mult,
+        "g2_grade": decision.g2_grade,
+        "g2_active": decision.g2_active,
+        "g2_summary": decision.g2_summary,
     }
 
 

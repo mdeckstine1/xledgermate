@@ -1,9 +1,9 @@
 # Pure A-S Critical Path
 
-**Status:** Active — we are moving from **hard `market_edge_met` gates** to **WS + pure Avellaneda-Stoikov** as the production quoting model.  
+**Status:** Active — **WS + pure Avellaneda-Stoikov** is the production MM quoting model on VPS.  
 **Version:** **v2.1.0** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru` (VPS live MM)  
 **Sacred corpus:** `grok-tier-2-collab` (Gate 2 replay + economics) · **E2 merged** 2026-06-15  
-**Last updated:** 2026-06-15 (Phase E1 + E2 complete; G2 shipped)
+**Last updated:** 2026-06-15 (E1 + E2 complete; G2 shipped; E3 blocked by operator)
 
 This is the **single checklist** for WS + pure A-S work. Other docs point here; do not duplicate task lists elsewhere.
 
@@ -31,7 +31,8 @@ This is the **single checklist** for WS + pure A-S work. Other docs point here; 
 | 1 | **This file** | Critical path checklist |
 | 2 | [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) | Run tester + HUD + Grok |
 | 2b | [`E2_BRANCH_DISCIPLINE.md`](E2_BRANCH_DISCIPLINE.md) | Branch roles (Ashigaru vs collab) |
-| 3 | [`PHASE_E_VPS_RUNBOOK.md`](PHASE_E_VPS_RUNBOOK.md) | VPS E1 ladder |
+| 3 | [`PHASE_E_VPS_RUNBOOK.md`](PHASE_E_VPS_RUNBOOK.md) | VPS swap ladder (E1–E3) |
+| 3b | [`../groks input/FOR_AI_AND_FUTURE_SESSIONS.md`](../groks%20input/FOR_AI_AND_FUTURE_SESSIONS.md) | VPS ops, milestones |
 | 4 | [`../experimental/ws_feed/WS_HANDOFF.md`](../experimental/ws_feed/WS_HANDOFF.md) | Architecture + wiring parity |
 | 5 | [`../groks input/docs/05_MASTER_ROADMAP_REALISTIC_METRICS.md`](../groks%20input/docs/05_MASTER_ROADMAP_REALISTIC_METRICS.md) | Gate pass metrics (doc 05) |
 | 6 | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) | Tiers 1–2 history + field gates |
@@ -49,7 +50,7 @@ cd C:\Users\micha\xledgermate
 .\.venv\Scripts\Activate.ps1
 python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 300 --sample-interval 4 --verbose
 ```
-(Grok key: `.env` → `XLG_GROK_KEY`. No `--profile` — PureQuotePath **v2.0.0**.)
+(Grok key: `.env` → `XLG_GROK_KEY`. No `--profile` — PureQuotePath **v2.1.0**.)
 
 ```powershell
 python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 0 --verbose
@@ -119,22 +120,25 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 *Production MM = **`Ashigaru`** `ws-engine`. Sacred replay = **`grok-tier-2-collab`**. **Runbook:** [`PHASE_E_VPS_RUNBOOK.md`](PHASE_E_VPS_RUNBOOK.md) · **Branches:** [`E2_BRANCH_DISCIPLINE.md`](E2_BRANCH_DISCIPLINE.md)*
 
-- [x] **E1** Wholesale VPS replace with WS + pure A-S — live `dry_run: false`, E1.5 PASS (72+ fills)
-  - [x] E1.1–E1.4 systemd, sign-off, live flip
-  - [x] E1.5 ≥50 WS-path fills + markout — PASS (`logs/e15_report.json`)
-  - [x] E1.6 Operator sign-off
-- [x] **E2** Merge `Ashigaru` → `grok-tier-2-collab` — 2026-06-15; P0 gate = sacred replay only; VPS stays `ws-engine`
-- [ ] **E3** 11k funding + rebalance execution — **operator blocked** until dev complete; pilot ~234 XRP-equiv on bot ledger
+- [x] **E1** Wholesale VPS replace with WS + pure A-S — **live quoting** 2026-06-15 (`dry_run: false`)
+  - [x] E1.1 VPS on Ashigaru + `ws-engine` systemd
+  - [x] E1.2 Dry-run smoke ≥30 cycles (`cycle_count`)
+  - [x] E1.3 `python scripts/vps_ws_engine_signoff.py --gate` PASS (2026-06-15)
+  - [x] E1.4 Flip `dry_run: false` + restart — **live** 2026-06-15
+  - [x] E1.5 ≥50 WS-path live fills + markout — **PASS** (`logs/e15_report.json`, `scripts/ws_path_session_report.py --gate-full`; CSV authoritative after restarts)
+  - [x] E1.6 Operator sign-off — positive 30s markout; inventory skew → rebalance layer (E3)
+- [x] **E2** Merge `Ashigaru` → `grok-tier-2-collab` — 2026-06-15; P0 `market_edge_met` gate = legacy replay only; VPS stays `ws-engine`
+- [ ] **E3** 11k funding + rebalance execution — **operator blocked** until dev complete; pilot ~234 XRP-equiv on bot ledger only
 - [x] **E4** `WsPureTradingEngine` via **`python main.py --mode ws-engine`**
 
 ### Phase G — Peer-lane intelligence (experimental)
 
-*Advisory only — never overrides reservation. G4+ unblocked after E1 sign-off (2026-06-15).*
+*Operator-locked: **posted touch** defines peer lane; **portfolio XRP-equiv** grades success. Full spec: [`PHASE_E_INTELLIGENCE_IMPLEMENTATION_PLAN.md`](../experimental/PHASE_E_INTELLIGENCE_IMPLEMENTATION_PLAN.md). Advisory only — never overrides reservation. G4+ unblocked after E1 sign-off (2026-06-15).*
 
-- [x] **G1 (E.1)** Posted-touch peer band — `competitor_intel.py`, HUD peer vs book-wide lists
-- [x] **G2 (E.2)** Spread-quality scaler — `spread_quality_scaler.py` v2.1.0; brake-only; wired in `ws-engine`
+- [x] **G1 (E.1)** Posted-touch peer band in `competitor_intel.py` — `our_lane_xrp` from L1 intents; filter scrape by touch band; peer-only pressure; HUD peer vs book-wide lists
+- [x] **G2 (E.2)** Spread-quality scaler — `spread_quality_scaler.py` v2.1.0; brake on toxicity/markout (size× + vol/spread×); **no** win-chase, **no** kill coupling; wired in `PureQuotePath` + `ws-engine`
 - [ ] **G3 (E.3)** Intel JSONL + Performance Metrics tab (HUD and/or Streamlit)
-- [ ] **G4 (E.4)** Wire peer-lane signals into `PureQuotePath` size_mult / side bias (lab → engine after E4)
+- [ ] **G4 (E.4)** Wire peer-lane signals into `PureQuotePath` size_mult / side bias (lab first; production `ws-engine` after E1 live sign-off)
 - [ ] **G5 (E.5)** Replay validation — peer coverage %, neutral-fallback rate on sacred + WS samples
 - [ ] **G6 (E.6)** Live activation graded by §7 (portfolio XRP-equiv from fills, capture, toxicity)
 
@@ -188,6 +192,17 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 **Offense vs defense (tuning note):** WS trades gated “sit out” for “quote if inside book.” Offense wins on **presence**; defense wins on **size/tightness** at high pressure. Future options should sharpen **when to lean in** (low pressure, good markout history), not reintroduce binary hard gates.
 
+**Future review — MM posture vs kill switch (operator thesis, 2026-06-15):**
+
+We are a **market maker**, not a trend-trading bot. Revisit after E1.5 live fills:
+
+- [ ] **R1** Replace binary kill-first behavior with **continuous posture**: stay on book; **brighten** (size / tightness / presence) on good capture + markout runs; **dim** (wider spread, smaller size, one-sided skew) on bad runs — do **not** mirror competitors who cancel entirely on bad tape (exploitable flee).
+- [ ] **R2** Good run: A-S reservation + optimal spread stay the core — no momentum chase; aggression = larger size / tighter *inside-book* quotes when own markout + peer pressure allow (competitor intel: others double down here).
+- [ ] **R3** Bad run: session/drawdown limits become **graduated brakes** (caps on size, refresh cadence, side bias) before full halt; kill switch only for operator-defined catastrophe (RPC death, wallet integrity), not normal adverse selection.
+- [x] **R4** Wire R1–R3 through **G2 spread-quality scaler** + markout loop — G2 shipped v2.1.0; kill decoupled; validate on ongoing live samples
+
+*Until R1 ships: legacy kill switch remains a safety net from the poll era; config tunable but philosophically misaligned with pure MM.*
+
 ---
 
 ## Promotion ladder (hard gate → pure A-S)
@@ -196,7 +211,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 2. HUD observe-only + long runs (running now)  
 3. Dry-run offers on WS path (D2)  
 4. Shadow: WS pure vs HTTP gated on same wallet (optional)  
-5. Wholesale server swap (E1)
+5. Wholesale server swap (E1) — **done** 2026-06-15 (live ws-engine; E1.5 gate PASS)
 
 ---
 
@@ -204,12 +219,17 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 ```
 experimental/ws_feed/live_pure_as_tester.py   # live loop
+experimental/ws_feed/ws_pure_engine.py      # VPS production loop (ws-engine)
+experimental/ws_feed/e1_vps_signoff.py      # E1 sign-off checks
+scripts/vps_ws_engine_signoff.py            # E1 CLI (VPS)
+scripts/ws_path_session_report.py           # E1.5 fills + markout gate
 experimental/ws_feed/engine_adapter_example.py # PureQuotePath
 experimental/competitor_pressure.py
 experimental/sacred_economics.py
 experimental/grokster.py
 experimental/ws_runtime_analysis.py
 experimental/as_calibration_grok.py
+experimental/ws_feed/spread_quality_scaler.py   # G2 brake-only dimmer (v2.1.0)
 experimental/ws_feed/pure_quote_path.py
 experimental/ws_feed/ws_book_age_modulator.py
 experimental/ws_feed/zero_quote_notes.py

@@ -54,6 +54,8 @@ from gui.engine_control import (
     is_kill_switch_active,
     kill_switch_reason,
     is_engine_running,
+    engine_mode_label,
+    is_ws_engine_running,
     manual_rebalance_check,
     run_single_cycle,
     send_funds,
@@ -108,6 +110,7 @@ PROFILE_LABELS = {
     "thin_liquidity": "Thin liquidity",
     "tight_spread": "Tight spread",
     "profit_mode": "Profit mode",
+    "ws_pure": "WS Pure A-S",
 }
 
 PROFILE_SHORT = {
@@ -176,8 +179,15 @@ def _load_ws_demo_runtime() -> dict:
     return {}
 
 
+def _is_production_ws_runtime(runtime: dict) -> bool:
+    """True when runtime_state.json is from live ws-engine (not lab overlay)."""
+    return runtime.get("as_mode") == "pure" or runtime.get("price_source") == "ws_book_feed"
+
+
 def _load_runtime_state() -> dict:
     runtime = _load_sacred_runtime()
+    if _is_production_ws_runtime(runtime):
+        return runtime
     demo = _load_ws_demo_runtime()
     if demo:
         for key in _WS_DEMO_OVERLAY_KEYS:
@@ -258,22 +268,31 @@ def _render_ws_compare_column(title: str, runtime: dict, *, is_ws: bool) -> None
 
 
 def _render_ws_compare_tab() -> None:
-    """D3: sacred long-run vs WS + pure A-S lab — side-by-side swap demo."""
+    """D3: production ws-engine vs WS lab snapshot (when demo file exists)."""
     sacred = _load_sacred_runtime()
     ws = _load_ws_demo_runtime()
-
-    st.markdown("### WS vs Sacred — swap preview")
-    st.caption(
-        "Left: **sacred engine** (`logs/runtime_state.json`). "
-        "Right: **WS lab** (`logs/ws_as_demo_runtime.json` from `live_pure_as_tester`). "
-        "Dashboard tab still overlays WS fields when the demo file exists."
+    production_ws = (
+        sacred.get("as_mode") == "pure"
+        or sacred.get("price_source") == "ws_book_feed"
     )
 
+    st.markdown("### WS Pure A-S — live vs lab")
+    if production_ws:
+        st.caption(
+            "**Left:** production `ws-engine` (`logs/runtime_state.json`). "
+            "**Right:** optional lab HUD export (`logs/ws_as_demo_runtime.json`)."
+        )
+    else:
+        st.caption(
+            "Left: **runtime_state.json**. Right: **WS lab** from `live_pure_as_tester`. "
+            "Start `main.py --mode ws-engine` for production WS path."
+        )
+
     if not sacred and not ws:
-        st.info("Load at least one snapshot. Run the sacred engine and/or `live_pure_as_tester`.")
+        st.info("No runtime snapshot. Start `systemctl start xledgermate` or `main.py --mode ws-engine`.")
         return
 
-    if sacred and ws:
+    if sacred and ws and not production_ws:
         sp = _presence_pct_from_history(sacred)
         wp = _presence_pct_from_history(ws)
         sacred_edge = sacred.get("market_edge_met", True)
@@ -284,11 +303,12 @@ def _render_ws_compare_tab() -> None:
         if sp is not None and wp is not None:
             h3.metric("Presence (session)", f"{sp}% → {wp}%", delta=f"{wp - sp:+.1f} pts")
 
+    left_title = "WS production (VPS)" if production_ws else "Sacred (VPS path)"
     left, right = st.columns(2)
     with left:
-        _render_ws_compare_column("Sacred (VPS path)", sacred, is_ws=False)
+        _render_ws_compare_column(left_title, sacred, is_ws=production_ws)
     with right:
-        _render_ws_compare_column("WS + Pure A-S (lab)", ws, is_ws=True)
+        _render_ws_compare_column("WS lab (tester HUD)", ws, is_ws=True)
 
 
 def _effective_network(
@@ -1110,6 +1130,8 @@ def _resolve_profiles(
 
 def _gui_display_profile(config: BotConfig, runtime: dict, *, engine_running: bool) -> str:
     """Profile shown in the GUI — config on disk when stopped, else latest engine cycle."""
+    if runtime.get("as_mode") == "pure" or runtime.get("price_source") == "ws_book_feed":
+        return "ws_pure"
     _disk, engine = _resolve_profiles(config, runtime, engine_running=engine_running)
     return engine if engine_running else _disk
 
@@ -1684,10 +1706,14 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
     e1.metric("Toxic ratio", tox_label, help=tox_help)
     e2.metric("Toxic @30s", tox30_label, help=tox30_help)
     e3.metric("Cancel / fill", f"{float(runtime.get('cancel_per_fill', 0.0)):.1f}", help="Lower is better — queue preservation")
-    poll = int(runtime.get("book_poll_interval_seconds", 15))
-    full = int(runtime.get("full_quote_refresh_seconds", 60))
-    refresh_label = "full" if runtime.get("last_cycle_full_refresh", True) else "poll"
-    e4.metric("Refresh cadence", f"{poll}s / {full}s", help=f"Last cycle: {refresh_label} (profile-owned)")
+    if _is_production_ws_runtime(runtime):
+        cycle_s = int(runtime.get("book_poll_interval_seconds") or 8)
+        e4.metric("WS cycle", f"{cycle_s}s", help="ws-engine loop interval (WS book, not HTTP poll)")
+    else:
+        poll = int(runtime.get("book_poll_interval_seconds", 15))
+        full = int(runtime.get("full_quote_refresh_seconds", 60))
+        refresh_label = "full" if runtime.get("last_cycle_full_refresh", True) else "poll"
+        e4.metric("Refresh cadence", f"{poll}s / {full}s", help=f"Last cycle: {refresh_label} (profile-owned)")
 
     # ── Balances & activity ──
     b1, b2, b3 = st.columns(3)
@@ -1755,9 +1781,15 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
         with st.expander("Why these quotes?", expanded=False):
             st.caption(runtime.get("quote_decision_summary"))
             c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric("Market edge", "OK" if runtime.get("market_edge_met", True) else "THIN")
-            if runtime.get("as_mode") == "pure":
-                c1.metric("A-S Mode", "PURE", help="Committed WS + pure A-S path (built-in protections, no hard gate)")
+            if _is_production_ws_runtime(runtime):
+                wq = bool(runtime.get("market_edge_met", True))
+                c1.metric(
+                    "Would quote",
+                    "YES" if wq else "NO",
+                    help="Pure A-S: reservation inside live best bid/ask",
+                )
+            else:
+                c1.metric("Market edge", "OK" if runtime.get("market_edge_met", True) else "THIN")
             c2.metric("Fill quality", f"{float(runtime.get('fill_quality_score', 100)):.0f}")
             toxic_pct = float(runtime.get("toxic_fill_ratio", 0.0)) * 100.0
             toxic_30 = float(runtime.get("toxic_fill_ratio_30s", 0.0)) * 100.0
@@ -1779,7 +1811,7 @@ def _update_live_dashboard(config: BotConfig, runtime: Optional[dict] = None) ->
                     samples = len(runtime.get("sample_history") or [])
                 presence = runtime.get("as_presence_pct")
                 st.markdown(
-                    f"**Pure A-S + WS (committed future path)** · "
+                    f"**Pure A-S + WS (production ws-engine)** · "
                     f"v**{ver}** · samples **{samples}**"
                     + (f" · presence **{presence}%**" if presence is not None else "")
                 )
@@ -2023,11 +2055,18 @@ def _render_sidebar_commands(config: BotConfig) -> None:
             st.rerun()
 
     if engine_running:
-        st.success("Engine running")
+        mode = engine_mode_label()
+        live = "LIVE" if not config.dry_run else "dry-run"
+        st.success(f"Engine running — **{mode}** ({live})")
     else:
         st.caption("Engine stopped")
 
-    if refresh_paused and engine_running and not kill_active:
+    if (
+        refresh_paused
+        and engine_running
+        and not kill_active
+        and not _is_production_ws_runtime(runtime)
+    ):
         st.warning(
             "Refresh paused (toxic window). Existing offers stay; new refresh is blocked. "
             "**Restart engine** clears the in-memory fill window, or wait for an automatic "
@@ -2042,7 +2081,7 @@ def _render_sidebar_commands(config: BotConfig) -> None:
             type="primary",
             disabled=engine_running or not ready,
             use_container_width=True,
-            help="Start the trading engine (new console window).",
+            help="Start WS pure A-S engine (systemd on VPS, or --mode ws-engine locally).",
         ):
             _persist_config(config)[0]
             ok, msg = start_engine(force_restart=True)
@@ -2077,10 +2116,12 @@ def _render_sidebar_commands(config: BotConfig) -> None:
         _show_result(ok, msg, fail="warning")
         st.rerun()
 
-    if st.button("Run one cycle", use_container_width=True):
+    if st.button("Run one cycle", use_container_width=True, disabled=is_ws_engine_running()):
         with st.spinner("Running cycle..."):
             ok, msg = run_single_cycle()
         _show_result(ok, msg)
+    if is_ws_engine_running():
+        st.caption("Run one cycle is **legacy poll only** — disabled while ws-engine is live.")
 
 
 def _render_bot_controls(config: BotConfig) -> None:
@@ -2127,10 +2168,33 @@ def _show_rebalance_status(
             st.info(advice.summary)
 
 
+def _render_e15_gate(runtime: dict) -> None:
+    """E1.5 live fill gate progress (ws-engine only)."""
+    if not _is_production_ws_runtime(runtime) or bool(runtime.get("dry_run")):
+        return
+    try:
+        from scripts.ws_path_session_report import build_e15_report
+
+        report = build_e15_report()
+    except Exception:
+        return
+    gate = "PASS" if report.gate_fills_met else "IN PROGRESS"
+    toxic = report.runtime.get("toxic_fill_ratio_30s")
+    markout = report.runtime.get("mean_markout_30s_pct")
+    extra = ""
+    if toxic is not None:
+        extra = f" · toxic@30s **{float(toxic):.0%}** · markout **{float(markout or 0):+.3f}%**"
+    st.info(
+        f"**E1.5 live gate** — WS fills **{report.ws_fills} / {report.min_fills_gate}** "
+        f"· capture **{report.capture_xrp:+.4f} XRP** · **{gate}**{extra}"
+    )
+
+
 def _render_run_health_panel(
     config: BotConfig, runtime: dict, *, engine_running: bool
 ) -> None:
     """Single place for engine/ledger/toxic/book — reduces scattered warnings."""
+    _render_e15_gate(runtime)
     profile = (runtime.get("active_profile") or config.active_profile or "safe").strip().lower()
     ledger_n = (
         _effective_open_offers_count(runtime) if not engine_running else None

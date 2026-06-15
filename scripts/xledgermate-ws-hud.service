@@ -1,0 +1,17 @@
+[Unit]
+Description=XLedgerMate WS Pure A-S HUD (real-time :8765)
+After=network-online.target xledgermate.service
+Wants=xledgermate.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/xledgermate
+Environment=XLEDGERMATE_ROOT=/root/xledgermate
+EnvironmentFile=-/root/xledgermate/.env
+ExecStart=/root/xledgermate/.venv/bin/python main.py --mode ws-hud
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

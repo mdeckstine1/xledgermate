@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -120,6 +121,44 @@ if app:
             _current_state["recent_notes"] = _current_state["recent_notes"][:_recent_limit]
         return {"ok": True}
 
+    @app.post("/engine/{action}")
+    async def engine_control(action: str):
+        """Production VPS: start/stop/restart ws-engine via systemd."""
+        allowed = {"start", "stop", "restart"}
+        if action not in allowed:
+            return {"ok": False, "message": f"Unknown action: {action}"}
+        unit = Path("/etc/systemd/system/xledgermate.service")
+        if not unit.is_file():
+            return {
+                "ok": False,
+                "message": "Engine control needs systemd (VPS). Local lab: run live_pure_as_tester --serve-hud.",
+            }
+        try:
+            proc = subprocess.run(
+                ["systemctl", action, "xledgermate"],
+                capture_output=True,
+                text=True,
+                timeout=45,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return {"ok": False, "message": str(exc)}
+        active = subprocess.run(
+            ["systemctl", "is-active", "xledgermate"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        running = (active.stdout or "").strip() == "active"
+        if proc.returncode == 0:
+            return {
+                "ok": True,
+                "message": f"ws-engine {action} OK — {'running' if running else 'stopped'}.",
+                "running": running,
+            }
+        err = (proc.stderr or proc.stdout or "systemctl failed").strip()
+        return {"ok": False, "message": err[-500:], "running": running}
+
     @app.get("/qr")
     async def qr_image(text: str = ""):
         """Return a real scannable QR PNG for an XRPL address (used by Inventory tab).
@@ -178,16 +217,32 @@ if app:
 
     @app.post("/set_intel_config")
     async def set_intel_config(request: Request):
-        """Update the live Intelligence API config from the HUD Config tab (demo only).
-        Allows changing provider/key/model mid-run without restarting the tester.
-        The key is kept server-side for /analyze_competitor calls.
-        """
+        """Update Intelligence API config from HUD Config tab; persists to logs/hud_intel_config.json."""
+        from experimental.ws_feed.hud_intel_support import save_persisted_intel_config
+
         data = await request.json()
-        _current_state["intel_ai_provider"] = data.get("provider", _current_state.get("intel_ai_provider", "stub"))
-        _current_state["intel_ai_key"] = data.get("key", _current_state.get("intel_ai_key", ""))
-        _current_state["intel_ai_model"] = data.get("model", _current_state.get("intel_ai_model", "grok-3"))
-        _current_state["intel_ai_enabled"] = bool(data.get("enabled", _current_state.get("intel_ai_enabled", True)))
-        return {"ok": True, "provider": _current_state.get("intel_ai_provider")}
+        provider = str(data.get("provider") or _current_state.get("intel_ai_provider") or "grok")
+        key = str(data.get("key") or _current_state.get("intel_ai_key") or "")
+        model = str(data.get("model") or _current_state.get("intel_ai_model") or "grok-3")
+        enabled = bool(data.get("enabled", _current_state.get("intel_ai_enabled", True)))
+        if key.strip() and provider.lower() == "stub":
+            provider = "grok"
+        _current_state["intel_ai_provider"] = provider
+        _current_state["intel_ai_key"] = key
+        _current_state["intel_ai_model"] = model
+        _current_state["intel_ai_enabled"] = enabled and bool(key.strip())
+        if key.strip():
+            save_persisted_intel_config(
+                provider=provider,
+                key=key,
+                model=model,
+                enabled=_current_state["intel_ai_enabled"],
+            )
+        return {
+            "ok": True,
+            "provider": _current_state.get("intel_ai_provider"),
+            "had_key": bool(key.strip()),
+        }
 
     @app.get("/list_models")
     async def list_models():
@@ -255,7 +310,14 @@ if app:
         live_obs_spread = data.get("observed_spread_pct") or _current_state.get("competitor_observed_spread_pct")
         live_depth = _current_state.get("competitor_depth_xrp")
         inv_label = data.get("inventory_label") or _current_state.get("inventory_label")
-        top_comps = _current_state.get("top_competitors", [])[:3] if _current_state.get("top_competitors") else []
+        peer_count = int(_current_state.get("peer_lane_count") or 0)
+        our_lane = _current_state.get("our_lane_xrp")
+        if peer_count > 0 and _current_state.get("top_peers"):
+            top_comps = _current_state.get("top_peers", [])[:3]
+            comp_source = "peer_lane"
+        else:
+            top_comps = _current_state.get("top_competitors", [])[:3] if _current_state.get("top_competitors") else []
+            comp_source = "book_wide"
 
         debug_note = f"[HUD /analyze] provider={provider} had_key={bool(key)} (len={len(key) if key else 0}) enabled={enabled} model={model}"
 
@@ -291,8 +353,13 @@ if app:
                 context_lines.append(f"recent competitor depth ~{live_depth:.1f} XRP")
             if inv_label:
                 context_lines.append(f"our current inventory posture: {inv_label}")
+            if our_lane is not None:
+                context_lines.append(f"our posted touch lane ~{float(our_lane):.1f} XRP (peer band 0.4×–2.5×)")
+            if peer_count > 0:
+                context_lines.append(f"peer_lane_count={peer_count} (pressure/spread from touch-band peers, not book-wide whales)")
             if top_comps:
-                context_lines.append(f"other active makers visible: {', '.join([str(c.get('account','?'))[:8] for c in top_comps])}")
+                label = "peer makers at our touch" if comp_source == "peer_lane" else "other active makers (book-wide)"
+                context_lines.append(f"{label}: {', '.join([str(c.get('account','?'))[:8] for c in top_comps])}")
 
             context_str = (" Current live WS book context: " + "; ".join(context_lines) + ".") if context_lines else ""
 
@@ -354,9 +421,26 @@ if app:
             return {"result": err}
 
 
+def get_hud_current_state() -> Dict[str, Any]:
+    """Snapshot of in-memory HUD state (intel config, competitor fields, etc.)."""
+    return dict(_current_state)
+
+
 def update_state(new_state: Dict[str, Any]):
     """Call this from the live tester / engine on every decision cycle."""
     global _current_state
+    old_key = (_current_state.get("intel_ai_key") or "").strip()
+    if old_key:
+        if not (new_state.get("intel_ai_key") or "").strip():
+            new_state = {k: v for k, v in new_state.items() if k != "intel_ai_key"}
+        if new_state.get("intel_ai_provider") == "stub" and _current_state.get("intel_ai_provider") not in (
+            None,
+            "",
+            "stub",
+        ):
+            new_state = {k: v for k, v in new_state.items() if k != "intel_ai_provider"}
+        if new_state.get("intel_ai_enabled") is False and _current_state.get("intel_ai_enabled"):
+            new_state = {k: v for k, v in new_state.items() if k != "intel_ai_enabled"}
     _current_state.update(new_state)
     if "recent_notes" not in _current_state:
         _current_state["recent_notes"] = []

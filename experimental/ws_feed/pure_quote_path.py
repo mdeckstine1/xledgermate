@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional, Sequence
 from experimental.competitor_pressure import apply_competitor_pressure, from_intel_dict
 from experimental.ws_feed.dynamic_sizing import build_pure_quote_ladder, compute_pure_l1_sizes
 from experimental.ws_feed.ws_book_age_modulator import apply_ws_book_age_modulator
+from experimental.ws_feed.spread_quality_scaler import G2Adjustments, compute_g2_adjustments
+from strategy.fill_quality import FillQualityState
 from experimental.ws_feed.zero_quote_notes import classify_and_explain_pure_zero_quote
 from strategy.avellaneda_strategy import AvellanedaStrategy, AvellanedaQuote
 from strategy.quote_decision import assess_inventory
@@ -84,6 +86,11 @@ class PureQuoteDecision:
     quote_intents: List[Dict[str, Any]] = field(default_factory=list)
     as_mode: str = "pure"
     path_version: str = WS_AS_VERSION
+    g2_size_mult: float = 1.0
+    g2_spread_mult: float = 1.0
+    g2_grade: str = "neutral"
+    g2_active: bool = False
+    g2_summary: str = ""
 
     def to_runtime_dict(self, *, competitor_intel: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -174,6 +181,8 @@ def _build_summary(
         parts.append(f"AI: {ai_rationale}")
     if decision.size_rationale:
         parts.append(decision.size_rationale)
+    if decision.g2_active and decision.g2_summary:
+        parts.append(decision.g2_summary)
     note = decision.tight_book_note or decision.zero_quote_operator_note
     if note:
         parts.append(note)
@@ -223,6 +232,7 @@ class PureQuotePath:
         book_state_for_ai: Optional[Dict[str, Any]] = None,
         base_volatility_pct: Optional[float] = None,
         ws_book_age_s: float = 0.0,
+        fill_quality: Optional[FillQualityState] = None,
     ) -> PureQuoteDecision:
         book_spread_pct = (best_ask - best_bid) / mid * 100.0 if mid else 0.0
         raw_vol = (
@@ -271,6 +281,17 @@ class PureQuotePath:
             competitor_pressure = pressure_model.value
             effective_pressure = pressure_adj.effective_pressure
             pressure_size_mult = pressure_adj.size_mult
+
+        g2 = G2Adjustments()
+        if fill_quality and fill_quality.recent_fills > 0:
+            g2 = compute_g2_adjustments(
+                recent_fills=fill_quality.recent_fills,
+                toxic_ratio=fill_quality.toxic_ratio,
+                toxic_ratio_30s=fill_quality.toxic_ratio_30s,
+                mean_markout_30s_pct=fill_quality.mean_markout_30s_pct,
+            )
+            effective_vol *= g2.spread_mult
+            pressure_size_mult *= g2.size_mult
 
         ai_rationale = ""
         ai_edge = 0.0
@@ -387,6 +408,11 @@ class PureQuotePath:
             l1_xrp=sizes.l1_xrp,
             size_rationale=sizes.rationale,
             quote_intents=ladder,
+            g2_size_mult=g2.size_mult,
+            g2_spread_mult=g2.spread_mult,
+            g2_grade=g2.grade,
+            g2_active=g2.active,
+            g2_summary=g2.summary,
         )
         skim = (competitor_intel or {}).get("competitor_skim_advice", "") or ""
         decision.quote_decision_summary = _build_summary(

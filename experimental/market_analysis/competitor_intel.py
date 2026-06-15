@@ -196,8 +196,11 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
         # NOTE: In real use, ensure _normalize_offers or raw keeps the account.
         # For stub, we simulate accounts if missing.
         maker_offers: Dict[str, List[Dict]] = defaultdict(list)
+        bot_addr = (getattr(self.connector, "account_address", None) or "").strip()
         for o in all_offers:
             acct = o.get("account") or o.get("Account") or f"unknown_{hash(str(o)) % 1000}"
+            if bot_addr and acct == bot_addr:
+                continue
             maker_offers[acct].append(o)
 
         # Update profiles (aggressive scraping: every offer counts)
@@ -313,6 +316,9 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
             best_ask=ba,
             eps=self.peer_lane_config.price_match_eps,
         )
+        bot_addr = (getattr(self.connector, "account_address", None) or "").strip()
+        if bot_addr:
+            touch_by_account.pop(bot_addr, None)
         peer_result = select_peer_lane(touch_by_account, lane, self.peer_lane_config)
 
         age_s = now - self._prev_fetch_ts if self._prev_fetch_ts > 0 else 0.0
@@ -347,11 +353,17 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
         if fled_payload:
             self._recent_fled = (fled_payload + self._recent_fled)[:20]
 
-        peer_profiles = [
-            self._profiles[a]
-            for a in peer_result.peer_accounts
-            if a in self._profiles
-        ]
+        peer_profiles: List[CompetitorProfile] = []
+        for acct in peer_result.peer_accounts:
+            prof = self._profiles.get(acct)
+            if prof is None:
+                prof = CompetitorProfile(account=acct)
+                touch = float(touch_by_account.get(acct) or 0.0)
+                if touch > 0:
+                    prof.avg_size_xrp = touch
+                    prof.last_seen_ts = now
+                self._profiles[acct] = prof
+            peer_profiles.append(prof)
         peer_spreads = [p.last_spread_pct for p in peer_profiles if p.last_spread_pct > 0]
         peer_obs = min(peer_spreads) if peer_spreads else snap.observed_market_spread_pct
         peer_cancel_rate = 0.0
@@ -485,7 +497,7 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
             if snap.peer_lane_count > 0 and snap.peer_observed_spread_pct > 0
             else snap.observed_market_spread_pct
         )
-        peer_list = snap.top_peers if snap.top_peers else snap.top_makers
+        peer_list = snap.top_peers or []
 
         def _profile_row(p: CompetitorProfile, *, touch_xrp: float = 0.0) -> Dict[str, Any]:
             tx = touch_xrp or self._last_touch_by_account.get(p.account, 0.0)
@@ -518,7 +530,10 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
             "peer_lane_widened": snap.peer_lane_widened,
             "peer_lane_empty": snap.peer_lane_empty,
             "top_competitors": [_profile_row(p) for p in snap.top_makers[:5]],
-            "top_peers": [_profile_row(p) for p in peer_list[:5]],
+            "top_peers": [
+                _profile_row(p, touch_xrp=float(self._last_touch_by_account.get(p.account) or 0.0))
+                for p in peer_list[:5]
+            ],
         }
 
 

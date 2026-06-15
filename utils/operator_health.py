@@ -55,6 +55,10 @@ def build_operator_health(
     profile = get_profile((profile_name or "safe").strip().lower())
     min_gate_fills = int(getattr(profile, "toxic_min_fills_for_gates", 8))
     toxic_limit = float(profile.toxic_refresh_pause_ratio)
+    is_ws = (
+        runtime.get("as_mode") == "pure"
+        or runtime.get("price_source") == "ws_book_feed"
+    )
 
     fills = int(runtime.get("fills_session") or 0)
     toxic = float(runtime.get("toxic_fill_ratio") or 0)
@@ -74,7 +78,13 @@ def build_operator_health(
     status = "ok"
 
     if engine_running:
-        bullets.append("**Engine running** — metrics update each cycle (~15–60s poll).")
+        if is_ws:
+            cycle_s = int(runtime.get("book_poll_interval_seconds") or 8)
+            bullets.append(
+                f"**ws-engine live** — WS book + pure A-S (~{cycle_s}s cycle, not HTTP poll)."
+            )
+        else:
+            bullets.append("**Engine running** — metrics update each cycle (~15–60s poll).")
     else:
         bullets.append("**Engine stopped** — use ledger sync for balances/offers; session P&L is frozen.")
         if live_offers > 0:
@@ -98,8 +108,13 @@ def build_operator_health(
 
     if not bool(runtime.get("market_edge_met", True)):
         status = "cautious" if status == "ok" else status
-        bullets.append("**Market edge not met** — quotes wider than book pays; few fills expected.")
-        actions.append("Enable Dynamic min edge (Controls) or widen base spread on tight books.")
+        if is_ws:
+            bullets.append(
+                "**No quote this cycle** — A-S reservation outside L1; resting offers are pulled when blocked."
+            )
+        else:
+            bullets.append("**Market edge not met** — quotes wider than book pays; few fills expected.")
+            actions.append("Enable Dynamic min edge (Controls) or widen base spread on tight books.")
 
     if fills < min_gate_fills:
         if fills > 0 and toxic >= 0.5:
@@ -120,14 +135,22 @@ def build_operator_health(
         )
         if toxic >= toxic_limit or refresh_paused:
             status = "defensive"
-            bullets.append("**Refresh paused or defensive** — bot is protecting queue, not failing silently.")
-            actions.append(
-                "Review fills in Logs; restart engine to clear in-memory toxic window after fixing book/inventory."
-            )
+            if is_ws:
+                bullets.append(
+                    "**Adverse fill sample** — monitor markout; ws-engine does not use legacy refresh pause."
+                )
+                actions.append(
+                    "Review fills in Logs; inventory skew may block quoting until A-S reservation re-enters L1."
+                )
+            else:
+                bullets.append("**Refresh paused or defensive** — bot is protecting queue, not failing silently.")
+                actions.append(
+                    "Review fills in Logs; restart engine to clear in-memory toxic window after fixing book/inventory."
+                )
         elif toxic >= 0.18:
             status = "cautious" if status == "ok" else status
 
-    if refresh_paused and engine_running:
+    if refresh_paused and engine_running and not is_ws:
         status = "defensive"
 
     if status == "defensive":

@@ -372,6 +372,7 @@
         </div>
         <div class="section">
             <div class="label">Balances</div>
+            <div class="sidebar-value" id="sidebar-portfolio">Port: —</div>
             <div class="sidebar-value" id="sidebar-xrp">XRP: —</div>
             <div class="sidebar-value" id="sidebar-rlusd">RLUSD: —</div>
         </div>
@@ -383,26 +384,30 @@
         <div class="section">
             <div class="label">Session</div>
             <div class="sidebar-value" id="sidebar-version" style="font-size:0.7rem;">v —</div>
-            <div class="sidebar-value" id="sidebar-samples" style="font-size:0.7rem;">Samples: —</div>
+            <div class="sidebar-value" id="sidebar-samples" style="font-size:0.7rem;">Cycles: —</div>
+            <div class="sidebar-value" id="sidebar-fills" style="font-size:0.7rem;">Fills: —</div>
+            <div class="sidebar-value" id="sidebar-pnl" style="font-size:0.7rem;">Bal Δ: —</div>
+            <div class="sidebar-value" id="sidebar-markout" style="font-size:0.7rem;">Markout@30s: —</div>
             <div class="sidebar-value" id="sidebar-presence" style="font-size:0.7rem;">Presence: —</div>
         </div>
         <div class="section">
             <div class="label">Status</div>
             <div class="sidebar-value" id="sidebar-would-quote">—</div>
+            <div class="sidebar-value" id="sidebar-resting" style="font-size:0.65rem; opacity:0.85;">Resting: —</div>
         </div>
         <div class="section">
-            <div class="label">Engine Controls (demo only)</div>
+            <div class="label" id="engine-controls-label">Engine Controls</div>
             <div style="display:flex; gap:4px;">
                 <button id="btn-start-engine" style="flex:1; font-size:0.65rem; padding:3px 4px; background:#22c55e; color:white; border:none; border-radius:3px;">▶ Start</button>
                 <button id="btn-stop-engine" style="flex:1; font-size:0.65rem; padding:3px 4px; background:#ef4444; color:white; border:none; border-radius:3px;">⏹ Stop</button>
                 <button id="btn-restart-engine" style="flex:1; font-size:0.65rem; padding:3px 4px; background:#14b8a6; color:white; border:none; border-radius:3px;">↻ Restart</button>
             </div>
-            <small style="font-size:0.6rem; opacity:0.7;">Full controls in base Streamlit when loading the runtime JSON from tester.</small>
+            <small id="engine-controls-hint" style="font-size:0.6rem; opacity:0.7;">Loading engine mode...</small>
         </div>
     </div>
 
     <div class="main">
-        <div class="header">WS + Pure A-S — Live Strategy HUD <span id="mode" style="font-size:0.9rem; color:#64748b;"></span> <span id="header-session" style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">v — · samples — · presence —</span></div>
+        <div class="header">WS + Pure A-S — Live Strategy HUD <span id="mode" style="font-size:0.9rem; color:#64748b;"></span> <span id="header-session" style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">v — · cycles — · fills — · presence —</span></div>
 
         <div class="nav">
             <a href="#" data-page="live" class="active">Live</a>
@@ -443,6 +448,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div id="would_quote" class="value" style="margin-top:8px;">—</div>
                         <div id="zero-quote-note" class="note" style="margin-top:6px; font-size:0.68rem; opacity:0.9; display:none;"></div>
                         <small style="display:block; margin-top:4px; font-size:0.65rem; opacity:0.7;">Protected by A-S math (reservation inside live book). No additional hard rules.</small>
+                    </div>
+
+                    <div class="card">
+                        <div class="label">Session Fills <span class="info" title="Fills since engine start (runtime). E1.5 gate: 50 WS-path fills with markout tracking.">?</span></div>
+                        <div class="metric-row"><span class="label">Fills (E1.5 gate)</span> <span id="fills-session" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Bal Δ (session)</span> <span id="session-pnl" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Spread capture</span> <span id="session-capture" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Markout @30s</span> <span id="session-markout" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Toxic ratio @30s</span> <span id="session-toxic" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">G2 scaler</span> <span id="g2-scaler" class="value">—</span></div>
+                        <small id="fill-quality-note" style="display:block; margin-top:6px; font-size:0.65rem; opacity:0.7;">—</small>
                     </div>
 
                     <div class="card">
@@ -535,7 +551,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <select id="intel-ai-provider" style="width:100%; font-size:0.85rem; margin-top:2px;">
                                 <option value="stub">Stub (local heuristic)</option>
                                 <option value="ollama">Ollama (local)</option>
-                                <option value="grok">Grok / xAI</option>
+                                <option value="grok" selected>Grok / xAI (production)</option>
                                 <option value="openai">OpenAI</option>
                                 <option value="claude">Claude</option>
                             </select>
@@ -616,26 +632,54 @@ The A-S strategy itself decides presence via reservation price being inside the 
             </div>
         </div>
 
-        <!-- New Inventory nav tab: funding, QR, send-from-bot (demo) -->
+        <!-- Inventory: on-ledger bot account (Xaman/custody is separate until you send funds) -->
         <div id="inventory" class="page">
             <div class="content">
-                <h3 style="margin-top:0; color:#60a5fa;">Bot Inventory &amp; Wallet Funding</h3>
-                <p style="font-size:0.8rem; color:#94a3b8; margin-bottom:8px;">Manage the bot's XRPL account balances. All actions here are demo-only (in-memory). Real deposits use any XRPL wallet to send to the bot address. Real sends/withdraws would be Payment txs signed by the engine.</p>
+                <h3 style="margin-top:0; color:#60a5fa;">Ledger Inventory (Bot Account)</h3>
+                <p style="font-size:0.8rem; color:#94a3b8; margin-bottom:8px;">
+                    Balances below are <strong>on-ledger for the bot r-address only</strong> (queried each engine cycle).
+                    Your Xaman / custody wallet is separate — nothing appears here until you send XRP or RLUSD <em>to the bot address</em>.
+                    Planned MM capital (<span id="inv-risk-capital-label">11,254 XRP</span>) stays in Xaman until development is finished — nothing to move yet.
+                </p>
 
                 <div class="inventory-cards">
+                    <!-- On-ledger snapshot -->
+                    <div class="card full-width" style="border-left: 3px solid #22c55e;">
+                        <div class="label">On-ledger now (validated account state)</div>
+                        <div id="inv-funding-status" style="font-size:0.78rem; color:#fbbf24; margin:4px 0 8px;">—</div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:0.85rem;">
+                            <div class="metric-row"><span class="label">Portfolio (XRP-equiv)</span> <span id="inv-portfolio-xrp" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">On bot vs plan</span> <span id="inv-funding-pct" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">XRP on ledger</span> <span id="inv-xrp-balance" class="value good">—</span></div>
+                            <div class="metric-row"><span class="label">RLUSD on ledger</span> <span id="inv-rlusd-balance" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">RLUSD → XRP-equiv</span> <span id="inv-rlusd-xrp-equiv" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">Resting offers</span> <span id="inv-open-offers" class="value">—</span></div>
+                        </div>
+                        <div style="margin-top:10px;">
+                            <div style="font-size:0.75rem; color:#94a3b8; margin-bottom:2px;">
+                                XRP share: <span id="inv-xrp-ratio">—</span> (target <span id="inv-xrp-target">55</span>%)
+                            </div>
+                            <div style="height:8px; background:#1e293b; border-radius:4px; overflow:hidden;">
+                                <div id="inv-xrp-ratio-bar" style="height:100%; width:0%; background:#22c55e; transition:width 0.3s;"></div>
+                            </div>
+                            <div style="margin-top:6px; font-size:0.8rem;">A-S posture: <span id="inv-label">—</span></div>
+                        </div>
+                        <small id="inv-ledger-updated" style="display:block; margin-top:6px; opacity:0.65;">Ledger poll: —</small>
+                    </div>
+
                     <!-- Bot address + QR (receive) -->
                     <div class="card">
-                        <div class="label">Bot XRPL Address</div>
+                        <div class="label">Bot XRPL Address (deposit target)</div>
                         <div id="inv-bot-address" class="address-box" style="margin:6px 0; font-size:0.82rem;">r... (from config / tester state)</div>
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
                             <button id="btn-copy-address" style="flex:1; padding:4px 8px; font-size:0.75rem; background:#334155; color:#e2e8f0; border:none; border-radius:3px; cursor:pointer;">📋 Copy Address</button>
                             <button id="btn-show-qr" style="flex:1; padding:4px 8px; font-size:0.75rem; background:#14b8a6; color:white; border:none; border-radius:3px; cursor:pointer;">◻ Show QR Code</button>
                         </div>
-                        <small style="display:block; margin-top:4px;">Scan with Xaman, Ledger Live, or any XRPL wallet to send XRP or RLUSD <strong>to</strong> the bot (bring in funds).</small>
+                        <small style="display:block; margin-top:4px;">Send from <strong>Xaman</strong> (or any XRPL wallet) <strong>to this address</strong> to fund the bot. Custody wallet balance is not shown here.</small>
                     </div>
 
-                    <!-- Current live balances (tied to state) -->
-                    <div class="card">
+                    <!-- Removed duplicate balance card — see on-ledger snapshot above -->
+                    <div class="card" style="display:none;">
                         <div class="label">Current Balances (live)</div>
                         <div class="metric-row" style="margin-top:6px;">
                             <span class="label">XRP</span>
@@ -780,16 +824,20 @@ The A-S strategy itself decides presence via reservation price being inside the 
                                 <input id="intel-analyze-addr" type="text" placeholder="Paste real r-address from the list on the right (or any from the book)" style="flex:1; font-family:monospace; font-size:0.8rem;">
                                 <button id="btn-analyze-addr" style="background:#8b5cf6; color:white; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem; flex-shrink:0;">Analyze with AI</button>
                             </div>
-                            <div id="intel-ai-result" class="hud-scroll-box intel-ai-result-box" tabindex="0" role="region" aria-label="AI competitor analysis result">Paste a real r-address from the Top Scraped Competitors list, then click Analyze. Full Grok output appears here — scroll inside this box (no character limit on display).</div>
+                            <div id="intel-ai-result" class="hud-scroll-box intel-ai-result-box" tabindex="0" role="region" aria-label="AI competitor analysis result">Click a peer in the touch-band list (or paste an r-address), then Analyze. Grok output appears here.</div>
                         </div>
 
-                        <!-- Top Scraped Competitors -->
+                        <!-- Peer lane + book-wide makers (separate lists) -->
                         <div class="card" style="display:flex; flex-direction:column;">
-                            <div class="label">Top Scraped Competitors (by activity)</div>
-                            <div id="intel-top-list" class="hud-scroll-box hud-scroll-box-compact intel-top-list-box" tabindex="0" role="region" aria-label="Top scraped competitors">
-                                <div id="intel-top-list-inner" class="hud-scroll-box-inner">No profiles yet.</div>
+                            <div class="label">Peers in our touch band</div>
+                            <div id="intel-peer-list" class="hud-scroll-box hud-scroll-box-compact intel-top-list-box" tabindex="0" role="region" aria-label="Peer lane makers">
+                                <div id="intel-peer-list-inner" class="hud-scroll-box-inner">Waiting for peer scrape…</div>
                             </div>
-                            <small style="opacity:0.6;">Click any row on the right to instantly fill a real (or demo) r-address into the Analyze box on the left. Real profiles come from the live order book via the connector (accounts are now preserved in scraping).</small>
+                            <div class="label" style="margin-top:8px;">All active makers (book-wide)</div>
+                            <div id="intel-all-makers-list" class="hud-scroll-box hud-scroll-box-compact intel-top-list-box" tabindex="0" role="region" aria-label="All scraped competitors">
+                                <div id="intel-all-makers-inner" class="hud-scroll-box-inner">No profiles yet.</div>
+                            </div>
+                            <small style="opacity:0.6;">Peers = makers at L1 within 0.4×–2.5× your posted touch size. Book-wide list includes whales (e.g. 120k XRP) outside your lane — use peers for queue tactics; use book-wide only when you want to study a specific address.</small>
                             <small>Account prefix (domain if set on-ledger) | last/avg spread | activity | sides (b/a). XRPL has no native "full name" tokens or usernames. Best on-chain ID is the r-address + optional Domain field (set via AccountSet, verifiable via DNS). No standard ledger "identity tokens" for this. <em>Future (optional): internal nicknames — a local-only map (e.g. JSON or in-memory) keyed by r-address so you can label e.g. "Bob the aggressive L1 sniper" purely for your own recall, without any on-chain or shared data changes.</em></small>
                         </div>
                     </div>
@@ -876,6 +924,25 @@ The A-S strategy itself decides presence via reservation price being inside the 
         function setText(id, text) {
             const el = document.getElementById(id);
             if (el) el.textContent = text;
+        }
+
+        async function applyIntelConfigFromForm() {
+            const provEl = document.getElementById('intel-ai-provider');
+            const keyIn = document.getElementById('intel-ai-key');
+            const modelEl = document.getElementById('intel-ai-model');
+            const enEl = document.getElementById('intel-ai-enabled');
+            let provider = provEl ? provEl.value : 'grok';
+            const keyVal = keyIn ? keyIn.value : '';
+            const model = modelEl ? modelEl.value : 'grok-3';
+            const enabled = !!(enEl && enEl.checked);
+            if (keyVal && provider === 'stub') provider = 'grok';
+            if (!keyVal) return { ok: false, had_key: false };
+            await fetch('/set_intel_config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, key: keyVal, model, enabled }),
+            });
+            return { ok: true, had_key: true, provider };
         }
 
         // === Model discovery helpers (for Grok /list_models) ===
@@ -1091,20 +1158,57 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
             // Header mode badge (always present)
             const modeEl = document.getElementById('mode');
-            if (modeEl) modeEl.textContent = s.as_mode ? `(${s.as_mode.toUpperCase()})` : '';
+            if (modeEl) {
+                if (isProductionHud(s)) {
+                    modeEl.textContent = '(PRODUCTION · ws-engine)';
+                } else if (s.as_mode) {
+                    modeEl.textContent = `(LAB · ${String(s.as_mode).toUpperCase()})`;
+                } else {
+                    modeEl.textContent = '';
+                }
+            }
+            updateEngineControlsUi(s);
 
             const sampleCount = (s.sample_count != null)
                 ? s.sample_count
                 : (Array.isArray(s.sample_history) ? s.sample_history.length : null);
             const ver = s.ws_as_version || '—';
             const presence = (s.as_presence_pct != null) ? `${parseFloat(s.as_presence_pct).toFixed(1)}%` : '—';
-            const sessionLine = `v ${ver} · samples ${sampleCount != null ? sampleCount : '—'} · presence ${presence}`;
+            const fillsSession = (s.fills_session != null) ? parseInt(s.fills_session, 10) : 0;
+            const fillsCsv = (s.ws_fills_csv != null) ? parseInt(s.ws_fills_csv, 10) : 0;
+            const fillsE15 = Math.max(fillsSession, fillsCsv);
+            const fillsProcNote = (fillsCsv > fillsSession && fillsSession > 0)
+                ? ` · ${fillsSession} this process`
+                : '';
+            const balPnl = (s.session_pnl_balance_xrp != null) ? parseFloat(s.session_pnl_balance_xrp) : null;
+            const spreadCap = (s.session_spread_capture_xrp != null) ? parseFloat(s.session_spread_capture_xrp) : null;
+            const markout30 = (s.mean_markout_30s_pct != null) ? parseFloat(s.mean_markout_30s_pct) : null;
+            const toxic30 = (s.toxic_fill_ratio_30s != null) ? parseFloat(s.toxic_fill_ratio_30s) : null;
+            const sessionLine = `v ${ver} · cycles ${sampleCount != null ? sampleCount : '—'} · fills ${fillsE15}/50 · presence ${presence}`;
             setText('header-session', sessionLine);
             setText('sidebar-version', `v ${ver}`);
-            setText('sidebar-samples', `Samples: ${sampleCount != null ? sampleCount : '—'}`);
+            setText('sidebar-samples', `Cycles: ${sampleCount != null ? sampleCount : '—'}`);
+            setText('sidebar-fills', `Fills: ${fillsE15} / 50${fillsProcNote}`);
+            if (balPnl != null && !Number.isNaN(balPnl)) {
+                const sign = balPnl >= 0 ? '+' : '';
+                setText('sidebar-pnl', `Bal Δ: ${sign}${balPnl.toFixed(4)} XRP`);
+            } else {
+                setText('sidebar-pnl', 'Bal Δ: —');
+            }
+            if (markout30 != null && !Number.isNaN(markout30)) {
+                const toxicTxt = (toxic30 != null && !Number.isNaN(toxic30))
+                    ? ` · toxic ${(toxic30 * 100).toFixed(0)}%`
+                    : '';
+                setText('sidebar-markout', `Markout@30s: ${markout30.toFixed(3)}%${toxicTxt}`);
+            } else {
+                setText('sidebar-markout', 'Markout@30s: —');
+            }
             setText('sidebar-presence', `Presence: ${presence}`);
 
             // Sidebar (always present) - force update with defaults if missing
+            setText('sidebar-portfolio', s.portfolio_value_xrp != null
+                ? `Port: ${parseFloat(s.portfolio_value_xrp).toFixed(1)} XRP`
+                : 'Port: —');
             setText('sidebar-xrp', s.balance_xrp !== undefined ? `XRP: ${parseFloat(s.balance_xrp).toFixed(2)}` : 'XRP: -');
             setText('sidebar-rlusd', s.balance_rlusd !== undefined ? `RLUSD: ${parseFloat(s.balance_rlusd).toFixed(2)}` : 'RLUSD: -');
             setText('sidebar-inventory', s.inventory_label || '-');
@@ -1121,6 +1225,12 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     triggerAnim(wqSide, 'status-pop', 500);
                 }
             }
+            const restingN = (s.open_offers_count != null) ? parseInt(s.open_offers_count, 10) : 0;
+            const cycleLabel = s.would_quote ? 'quoting' : 'blocked — offers pulled when live';
+            setText(
+                'sidebar-resting',
+                `Resting on ledger: ${restingN} · cycle: ${s.would_quote ? 'WOULD QUOTE' : 'NO QUOTE'}`
+            );
 
             // Live page cards - ALWAYS update the DOM values (visibility is controlled by CSS on #live container only)
             const bookEl = document.getElementById('book');
@@ -1244,6 +1354,42 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     zqn.style.display = 'none';
                     zqn.textContent = '';
                 }
+            }
+
+            setText('fills-session', `${fillsE15} / 50${fillsProcNote}`);
+            if (balPnl != null && !Number.isNaN(balPnl)) {
+                const sign = balPnl >= 0 ? '+' : '';
+                const pnlEl = document.getElementById('session-pnl');
+                if (pnlEl) {
+                    pnlEl.textContent = `${sign}${balPnl.toFixed(4)} XRP`;
+                    pnlEl.className = 'value ' + (balPnl >= 0 ? 'good' : 'warn');
+                }
+            } else {
+                setText('session-pnl', '—');
+            }
+            if (spreadCap != null && !Number.isNaN(spreadCap)) {
+                const sign = spreadCap >= 0 ? '+' : '';
+                setText('session-capture', `${sign}${spreadCap.toFixed(4)} XRP`);
+            } else {
+                setText('session-capture', '—');
+            }
+            if (markout30 != null && !Number.isNaN(markout30)) {
+                setText('session-markout', `${markout30.toFixed(3)}%`);
+            } else {
+                setText('session-markout', '—');
+            }
+            if (toxic30 != null && !Number.isNaN(toxic30)) {
+                setText('session-toxic', `${(toxic30 * 100).toFixed(1)}%`);
+            } else {
+                setText('session-toxic', '—');
+            }
+            setText('fill-quality-note', s.g2_summary || s.fill_quality_summary || '—');
+            if (s.g2_active) {
+                const g2s = s.g2_size_mult != null ? parseFloat(s.g2_size_mult) : 1;
+                const g2p = s.g2_spread_mult != null ? parseFloat(s.g2_spread_mult) : 1;
+                setText('g2-scaler', `${s.g2_grade || 'brake'} size×${g2s.toFixed(2)} spread×${g2p.toFixed(2)}`);
+            } else {
+                setText('g2-scaler', s.g2_grade === 'ok' ? 'neutral (no chase)' : 'neutral');
             }
 
             renderSuggestedLadder(s);
@@ -1374,13 +1520,40 @@ The A-S strategy itself decides presence via reservation price being inside the 
             // === Inventory page (new tab) updates ===
             const invAddr = document.getElementById('inv-bot-address');
             if (invAddr) {
-                const addr = s.bot_address || s.bot_account_address || 'r... (bot wallet from config/tester)';
+                const addr = s.bot_account_address || s.bot_address || 'r... (set bot_account_address in config)';
                 invAddr.textContent = addr;
-                invAddr.dataset.address = addr;  // stash for copy/QR
+                invAddr.dataset.address = addr;
+            }
+            setText('inv-funding-status', s.funding_status_label || '—');
+            const riskCap = s.risk_capital_xrp != null ? parseFloat(s.risk_capital_xrp) : null;
+            if (riskCap != null && !Number.isNaN(riskCap)) {
+                setText('inv-risk-capital-label', `${riskCap.toLocaleString(undefined, {maximumFractionDigits: 0})} XRP`);
+            }
+            const port = s.portfolio_value_xrp != null ? parseFloat(s.portfolio_value_xrp) : null;
+            setText('inv-portfolio-xrp', port != null && !Number.isNaN(port) ? `${port.toFixed(2)} XRP` : '—');
+            if (port != null && riskCap != null && !Number.isNaN(port) && !Number.isNaN(riskCap) && riskCap > 0) {
+                const depPct = s.funding_deployed_pct != null ? parseFloat(s.funding_deployed_pct) : (port / riskCap * 100);
+                setText('inv-funding-pct', `${port.toFixed(0)} / ${riskCap.toFixed(0)} XRP (${depPct.toFixed(1)}%)`);
+            } else {
+                setText('inv-funding-pct', '—');
             }
             setText('inv-xrp-balance', s.balance_xrp !== undefined ? `${parseFloat(s.balance_xrp).toFixed(2)} XRP` : '—');
             setText('inv-rlusd-balance', s.balance_rlusd !== undefined ? `${parseFloat(s.balance_rlusd).toFixed(2)} RLUSD` : '—');
+            setText('inv-rlusd-xrp-equiv', s.rlusd_xrp_equiv != null ? `${parseFloat(s.rlusd_xrp_equiv).toFixed(2)} XRP` : '—');
+            setText('inv-open-offers', s.open_offers_count != null ? String(s.open_offers_count) : '—');
+            const xrpPct = s.inventory_xrp_ratio_pct != null ? parseFloat(s.inventory_xrp_ratio_pct) : null;
+            const tgtPct = s.inventory_target_xrp_pct != null ? parseFloat(s.inventory_target_xrp_pct) : 55;
+            setText('inv-xrp-target', String(tgtPct));
+            if (xrpPct != null && !Number.isNaN(xrpPct)) {
+                setText('inv-xrp-ratio', `${xrpPct.toFixed(1)}%`);
+                const bar = document.getElementById('inv-xrp-ratio-bar');
+                if (bar) bar.style.width = `${Math.min(100, Math.max(0, xrpPct))}%`;
+            } else {
+                setText('inv-xrp-ratio', '—');
+            }
             setText('inv-label', s.inventory_label || '—');
+            const ledUp = s.ledger_updated_utc || s.updated_utc;
+            setText('inv-ledger-updated', ledUp ? `Ledger poll: ${ledUp.replace('T', ' ').slice(0, 19)} UTC` : 'Ledger poll: —');
 
             // Competitor intel (from on-chain scrape in tester)
             setText('comp-observed-spread', s.competitor_observed_spread_pct != null ? `${parseFloat(s.competitor_observed_spread_pct).toFixed(3)}%` : '—');
@@ -1398,43 +1571,55 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setText('intel-pressure', s.competitor_pressure != null ? parseFloat(s.competitor_pressure).toFixed(2) : '—');
             setText('intel-active', s.num_active_mms != null ? s.num_active_mms : '—');
             setText('intel-depth', s.competitor_depth_xrp != null ? `${parseFloat(s.competitor_depth_xrp).toFixed(1)} XRP` : '—');
-            setText('intel-advice', s.competitor_skim_advice || 'No scrape data. Run tester with live WS book.');
+            setText('intel-advice', s.competitor_skim_advice || (isProductionHud(s)
+                ? 'Waiting for competitor scrape (production HUD polls book every ~15s).'
+                : 'No scrape data. Run live_pure_as_tester --serve-hud with live WS book.'));
 
-            const topList = document.getElementById('intel-top-list-inner') || document.getElementById('intel-top-list');
-            const peerRows = (s.top_peers && Array.isArray(s.top_peers) && s.top_peers.length) ? s.top_peers : null;
-            const compRows = (s.top_competitors && Array.isArray(s.top_competitors) && s.top_competitors.length) ? s.top_competitors : null;
-            const listSource = (s.peer_lane_count > 0 && peerRows) ? peerRows : compRows;
-            if (topList && listSource) {
-                const header = (s.peer_lane_count > 0 && peerRows)
-                    ? `<div style="font-size:0.7rem;color:#94a3b8;margin-bottom:4px;">Peer lane (posted touch band)</div>`
-                    : '';
-                topList.innerHTML = header + listSource.map(c => {
+            function _renderIntelMakerList(listEl, rows, emptyMsg) {
+                if (!listEl) return;
+                if (!rows || !rows.length) {
+                    listEl.innerHTML = emptyMsg;
+                    return;
+                }
+                listEl.innerHTML = rows.map(c => {
                     const display = c.domain && c.domain !== 'no-domain' ? `${c.account} (${c.domain})` : c.account;
                     const full = c.account_full || c.account;
                     const touch = c.touch_xrp != null && c.touch_xrp > 0 ? ` | touch:${c.touch_xrp}XRP` : '';
                     const fled = c.cancels != null && c.cancels > 0 ? ` | cancels:${c.cancels}` : '';
                     return `<div data-full="${full}" style="cursor:pointer; padding:2px 0;" title="Click to use this address for Analyze with AI">${display} | ${c.last_spread}% / ${c.avg_spread}% | act:${c.activity} | ${c.sides}${touch}${fled}</div>`;
                 }).join('');
-
-                // Attach click handlers to fill the analyze address input (do this after innerHTML)
-                topList.querySelectorAll('div[data-full]').forEach(row => {
+                listEl.querySelectorAll('div[data-full]').forEach(row => {
                     row.onclick = () => {
                         const input = document.getElementById('intel-analyze-addr');
                         if (input) {
                             input.value = row.getAttribute('data-full');
-                            // optional: auto-trigger the analyze? user can still click the button
                             const analyzeBtn = document.getElementById('btn-analyze-addr');
                             if (analyzeBtn) {
-                                // flash the button to show it's ready
                                 analyzeBtn.style.boxShadow = '0 0 0 3px #8b5cf6';
                                 setTimeout(() => { if (analyzeBtn) analyzeBtn.style.boxShadow = ''; }, 800);
                             }
                         }
                     };
                 });
-            } else if (topList) {
-                topList.innerHTML = 'No competitor profiles yet — start live tester for on-chain scrape. (Real r-addresses will appear in the list on the right and be clickable to auto-fill the Analyze box on the left.)';
             }
+
+            const peerListEl = document.getElementById('intel-peer-list-inner');
+            const allMakersEl = document.getElementById('intel-all-makers-inner');
+            const peerRows = (s.top_peers && Array.isArray(s.top_peers) && s.top_peers.length) ? s.top_peers : null;
+            const compRows = (s.top_competitors && Array.isArray(s.top_competitors) && s.top_competitors.length) ? s.top_competitors : null;
+            const laneTxt = s.our_lane_xrp != null ? `${parseFloat(s.our_lane_xrp).toFixed(1)} XRP` : 'your touch';
+            const bandTxt = (s.peer_lane_low_xrp != null && s.peer_lane_high_xrp != null)
+                ? `${parseFloat(s.peer_lane_low_xrp).toFixed(0)}–${parseFloat(s.peer_lane_high_xrp).toFixed(0)} XRP`
+                : '0.4×–2.5× lane';
+            const peerEmpty = (s.peer_lane_count > 0)
+                ? 'Peer accounts at touch but profiles still loading — retry in ~15s.'
+                : `No peers in touch band (${bandTxt} around ${laneTxt}). Whales in the book-wide list are outside this band.`;
+            _renderIntelMakerList(peerListEl, peerRows, peerEmpty);
+            _renderIntelMakerList(
+                allMakersEl,
+                compRows,
+                'No competitor profiles yet — production HUD scrapes the book every ~15s.'
+            );
 
             // AI fields in Intelligence tab
             setText('intel-ai-quality', s.ai_edge_quality != null ? parseFloat(s.ai_edge_quality).toFixed(2) : '—');
@@ -1556,7 +1741,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             } catch (e) {
                 console.error('[HUD] poll error', e);
                 if (statusEl) {
-                    statusEl.textContent = 'POLL FAILED - cannot reach /state on 8765. Is the tester running with --serve-hud? (only ONE instance can bind the port)';
+                    statusEl.textContent = 'POLL FAILED — keep SSH tunnel open: ssh -L 8765:127.0.0.1:8765 root@VPS (then http://localhost:8765)';
                     statusEl.style.color = '#f87171';
                 }
             }
@@ -1752,27 +1937,65 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setTimeout(() => { if (resEl) resEl.textContent = ''; }, 4500);
         }
 
+        function isProductionHud(s) {
+            return s && s.production_source === 'ws-engine';
+        }
+
+        async function productionEngineAction(action) {
+            try {
+                const r = await fetch('/engine/' + action, { method: 'POST' });
+                const j = await r.json();
+                alert(j.message || (j.ok ? 'OK' : 'Failed'));
+            } catch (e) {
+                alert('Engine control failed: ' + e + '\n\nKeep SSH tunnel open (port 8765).');
+            }
+        }
+
+        function updateEngineControlsUi(s) {
+            const hint = document.getElementById('engine-controls-hint');
+            const label = document.getElementById('engine-controls-label');
+            if (!hint) return;
+            if (isProductionHud(s)) {
+                if (label) label.textContent = 'Engine Controls (production)';
+                hint.textContent = 'Controls systemd xledgermate (ws-engine). Dry-run until you flip config.';
+            } else {
+                if (label) label.textContent = 'Engine Controls (lab demo)';
+                hint.textContent = 'Lab only — run live_pure_as_tester --serve-hud locally.';
+            }
+        }
+
         function attachDemoHandlers() {
-            // Engine control buttons (demo alerts only)
             const startBtn = document.getElementById('btn-start-engine');
             if (startBtn) {
                 startBtn.addEventListener('click', () => {
                     triggerAnim(startBtn, 'btn-press', 150);
-                    alert('Start Engine - demo only. Use main Streamlit GUI + load ws_as_demo_runtime.json for full interactive controls, sidebar, and tickers.');
+                    if (lastState && isProductionHud(lastState)) {
+                        productionEngineAction('start');
+                    } else {
+                        alert('Lab HUD only. On VPS production, use the tunnel to :8765 with ws-engine running.');
+                    }
                 });
             }
             const stopBtn = document.getElementById('btn-stop-engine');
             if (stopBtn) {
                 stopBtn.addEventListener('click', () => {
                     triggerAnim(stopBtn, 'btn-press', 150);
-                    alert('Stop Engine - demo only.');
+                    if (lastState && isProductionHud(lastState)) {
+                        productionEngineAction('stop');
+                    } else {
+                        alert('Lab HUD only.');
+                    }
                 });
             }
             const restartBtn = document.getElementById('btn-restart-engine');
             if (restartBtn) {
                 restartBtn.addEventListener('click', () => {
                     triggerAnim(restartBtn, 'btn-press', 150);
-                    alert('Restart Engine - demo only.');
+                    if (lastState && isProductionHud(lastState)) {
+                        productionEngineAction('restart');
+                    } else {
+                        alert('Lab HUD only.');
+                    }
                 });
             }
 
@@ -2114,27 +2337,27 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     // If empty or placeholder/demo, try to pull first real full r-address.
                     // Prefer data-full attributes on the (now clickable) list items.
                     if (!addrInput || addrInput.includes('Demo') || addrInput.includes('r...') || addrInput.length < 25) {
-                        const listEl = document.getElementById('intel-top-list-inner') || document.getElementById('intel-top-list');
-                        if (listEl) {
-                            const firstFull = listEl.querySelector('div[data-full]');
-                            if (firstFull && firstFull.getAttribute('data-full')) {
-                                addrInput = firstFull.getAttribute('data-full');
-                            } else if (listEl.textContent) {
-                                // fallback crude parse for full r-address (longer than truncated display)
-                                const match = listEl.textContent.match(/r[a-zA-Z0-9]{25,}/);
-                                if (match) addrInput = match[0];
-                            }
+                        const peerEl = document.getElementById('intel-peer-list-inner');
+                        const allEl = document.getElementById('intel-all-makers-inner');
+                        const pickFrom = (el) => {
+                            if (!el) return null;
+                            const row = el.querySelector('div[data-full]');
+                            return row ? row.getAttribute('data-full') : null;
+                        };
+                        addrInput = pickFrom(peerEl) || pickFrom(allEl) || addrInput;
+                        if ((!addrInput || addrInput.length < 25) && allEl && allEl.textContent) {
+                            const match = allEl.textContent.match(/r[a-zA-Z0-9]{25,}/);
+                            if (match) addrInput = match[0];
                         }
                     }
                     const addr = addrInput || 'rDemoCompetitorAddress';
                     const resultEl = document.getElementById('intel-ai-result');
                     if (resultEl) {
                         pinnedIntelAiResult = null;
-                        resultEl.textContent = `Calling ${ (document.getElementById('intel-ai-provider') || {}).value || 'AI' } for ${addr}...`;
+                        resultEl.textContent = `Applying API config, then calling ${ (document.getElementById('intel-ai-provider') || {}).value || 'AI' } for ${addr}...`;
                         resultEl.scrollTop = 0;
                         try {
-                            // Send address + any live intel we have from the last /state poll so the server
-                            // can build the richest possible prompt for the Grok suggestion (pressure, spreads, inventory).
+                            await applyIntelConfigFromForm();
                             const payload = { address: addr };
                             if (lastState) {
                                 if (lastState.competitor_pressure != null) payload.competitor_pressure = lastState.competitor_pressure;

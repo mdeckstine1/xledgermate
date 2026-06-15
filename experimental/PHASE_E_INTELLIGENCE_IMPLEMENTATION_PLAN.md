@@ -96,7 +96,9 @@ Objective, observable signals on **`peer_lane` only**:
 
 Used to identify modest in-lane edges; never to override reservation.
 
-### 3.3 Spread-quality scaler (G2 / E.2 — not a “performance chase”)
+### 3.3 Spread-quality scaler (G2 / E.2 — shipped v2.1.0)
+
+**Status:** **Landed** in `experimental/ws_feed/spread_quality_scaler.py` — wired into `PureQuotePath` + production `ws-engine`.
 
 **Touchy component — strict rules:**
 

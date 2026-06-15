@@ -98,6 +98,11 @@ class RuntimeState:
     toxic_fill_ratio: float = 0.0
     toxic_fill_ratio_30s: float = 0.0
     mean_markout_30s_pct: float = 0.0
+    g2_size_mult: float = 1.0
+    g2_spread_mult: float = 1.0
+    g2_grade: str = "neutral"
+    g2_active: bool = False
+    g2_summary: str = ""
 
     # WS + pure A-S (committed future path) — optional, for compatibility + new views
     as_mode: str = "off"  # "pure" | "hybrid" | "off"
@@ -241,6 +246,11 @@ class RuntimeStateStore:
             toxic_fill_ratio=float(data.get("toxic_fill_ratio", 0.0)),
             toxic_fill_ratio_30s=float(data.get("toxic_fill_ratio_30s", 0.0)),
             mean_markout_30s_pct=float(data.get("mean_markout_30s_pct", 0.0)),
+            g2_size_mult=float(data.get("g2_size_mult", 1.0)),
+            g2_spread_mult=float(data.get("g2_spread_mult", 1.0)),
+            g2_grade=str(data.get("g2_grade", "neutral")),
+            g2_active=bool(data.get("g2_active", False)),
+            g2_summary=str(data.get("g2_summary", "")),
             offers_cancelled_session=int(data.get("offers_cancelled_session", 0)),
             offers_kept_session=int(data.get("offers_kept_session", 0)),
             fills_session=int(data.get("fills_session", 0)),

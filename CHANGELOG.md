@@ -7,6 +7,24 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.0] — 2026-06-15 (`Ashigaru`)
+
+**Theme:** Phase E complete (live ws-engine E1.5 PASS) + **G2 spread-quality scaler** on production path.
+
+### Added
+
+- **G2 spread-quality scaler** — `experimental/ws_feed/spread_quality_scaler.py`; brake-only `size_mult` / `spread_mult` from rolling toxicity + 30s markout; no win-chase, no kill coupling.
+- **HUD inventory tab** — on-ledger bot balances, funding plan vs `risk_capital_xrp`, XRP share bar (Xaman stays separate until operator funds).
+- **HUD E1.5 fill count** — authoritative CSV count for gate display (`ws_fills_csv`).
+
+### Changed
+
+- **`VERSION` / `WS_AS_VERSION` → 2.1.0** — G2 wired in `PureQuotePath`, `ws_pure_engine`, HUD Live tab.
+- **`fill_quality.assess()`** — multipliers delegated to G2 module (single policy source).
+- **Phase E** marked complete in `PURE_AS_CRITICAL_PATH.md`; E3 funding blocked until dev complete.
+
+---
+
 ## [2.0.0] — 2026-05-29 (`Ashigaru`)
 
 **Theme:** WS + pure A-S lab reaches **v2** — soak gates, dry-run offers, peer-lane intel, swap-readiness on the path to live MM.

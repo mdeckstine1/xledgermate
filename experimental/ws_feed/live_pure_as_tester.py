@@ -45,7 +45,7 @@ import time
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
@@ -72,8 +72,19 @@ def _session_fields(runtime: dict) -> dict[str, Any]:
         "presence_by_pressure": runtime.get("presence_by_pressure"),
         "zero_quote_breakdown": runtime.get("zero_quote_breakdown"),
         "soak_evaluation": runtime.get("soak_evaluation"),
-        "last_execution_summary": runtime.get("last_execution_summary"),
         "open_offers_count": runtime.get("open_offers_count"),
+        "last_execution_summary": runtime.get("last_execution_summary"),
+        "fills_session": int(runtime.get("fills_session") or 0),
+        "session_pnl_balance_xrp": runtime.get("session_pnl_balance_xrp"),
+        "session_spread_capture_xrp": runtime.get("session_spread_capture_xrp"),
+        "mean_markout_30s_pct": runtime.get("mean_markout_30s_pct"),
+        "toxic_fill_ratio_30s": runtime.get("toxic_fill_ratio_30s"),
+        "fill_quality_summary": runtime.get("fill_quality_summary"),
+        "g2_size_mult": runtime.get("g2_size_mult"),
+        "g2_spread_mult": runtime.get("g2_spread_mult"),
+        "g2_grade": runtime.get("g2_grade"),
+        "g2_active": runtime.get("g2_active"),
+        "g2_summary": runtime.get("g2_summary"),
     }
 
 
@@ -89,10 +100,31 @@ def _ws_freshness_payload(ws_feed: WsBookFeed) -> dict[str, Any]:
     }
 
 
+def _portfolio_xrp_equiv(runtime: dict) -> Optional[float]:
+    """Portfolio in XRP-equivalent for HUD (runtime field or balance+mid fallback)."""
+    try:
+        port = runtime.get("portfolio_value_xrp")
+        if port is not None and float(port) > 0:
+            return float(port)
+    except (TypeError, ValueError):
+        pass
+    try:
+        mid = float(runtime.get("mid_price") or runtime.get("mid") or 0)
+        bx = float(runtime.get("balance_xrp") or 0)
+        br = float(runtime.get("balance_rlusd") or 0)
+    except (TypeError, ValueError):
+        return None
+    if mid > 0:
+        return bx + br / mid
+    return None
+
+
 def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
     """Shared Live-tab fields: ladder, sizes, A-S, balances."""
+    port = _portfolio_xrp_equiv(runtime)
     return {
         "mid": runtime.get("mid_price"),
+        "mid_price": runtime.get("mid_price"),
         "best_bid": runtime.get("best_bid_rlusd_per_xrp"),
         "best_ask": runtime.get("best_ask_rlusd_per_xrp"),
         "book_spread_pct": runtime.get("book_spread_pct"),
@@ -112,6 +144,7 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         "as_mode": "pure",
         "balance_xrp": runtime.get("balance_xrp"),
         "balance_rlusd": runtime.get("balance_rlusd"),
+        "portfolio_value_xrp": port,
         "inventory_label": runtime.get("inventory_label"),
         "zero_quote_reason": runtime.get("zero_quote_reason"),
         "zero_quote_detail": runtime.get("zero_quote_detail"),
@@ -126,6 +159,22 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         "ai_is_skimmable": runtime.get("ai_is_skimmable", False),
         "ai_rationale": runtime.get("ai_rationale", ""),
         "ai_suggested_posture": runtime.get("ai_suggested_posture", "off"),
+        "competitor_pressure": runtime.get("competitor_pressure"),
+        "competitor_observed_spread_pct": runtime.get("competitor_observed_spread_pct"),
+        "competitor_depth_xrp": runtime.get("competitor_depth_xrp"),
+        "competitor_skim_advice": runtime.get("competitor_skim_advice"),
+        "num_active_mms": runtime.get("num_active_mms"),
+        "our_lane_xrp": runtime.get("our_lane_xrp"),
+        "peer_lane_count": runtime.get("peer_lane_count"),
+        "peer_lane_low_xrp": runtime.get("peer_lane_low_xrp"),
+        "peer_lane_high_xrp": runtime.get("peer_lane_high_xrp"),
+        "peer_fled_touch_count": runtime.get("peer_fled_touch_count"),
+        "top_competitors": runtime.get("top_competitors") or [],
+        "top_peers": runtime.get("top_peers") or [],
+        "intel_ai_provider": runtime.get("intel_ai_provider"),
+        "intel_ai_key": runtime.get("intel_ai_key", ""),
+        "intel_ai_model": runtime.get("intel_ai_model"),
+        "intel_ai_enabled": runtime.get("intel_ai_enabled", True),
         **_session_fields(runtime),
         **extra,
     }

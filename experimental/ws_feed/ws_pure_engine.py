@@ -32,6 +32,7 @@ from monitoring.fill_economics import estimate_spread_capture_xrp
 from monitoring.telegram_alerts import TelegramAlerts
 from risk.drawdown import DrawdownMonitor, portfolio_value_xrp, session_pnl_balance_delta_xrp
 from risk.kill_switch import KillSwitch
+from strategy.fill_quality import FillQualityTracker
 from utils.preflight import evaluate_preflight
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,11 @@ class WsPureTradingEngine:
         self._decision_log_path.parent.mkdir(parents=True, exist_ok=True)
         self._offers_cancelled = 0
         self._offers_kept = 0
+        self._would_quote_cycles = 0
+        self._fill_quality = FillQualityTracker()
+        self._fill_quality.set_toxic_threshold_pct(0.06)
+        self._price_history: list[float] = []
+        self._sample_interval_s = DEFAULT_SAMPLE_INTERVAL_S
 
     def stop(self) -> None:
         self._running = False
@@ -146,6 +152,7 @@ class WsPureTradingEngine:
 
     async def run(self, *, sample_interval_s: float = DEFAULT_SAMPLE_INTERVAL_S) -> None:
         self._running = True
+        self._sample_interval_s = float(sample_interval_s)
         logger.info(
             "WsPureTradingEngine v%s | WS + pure A-S | dry_run=%s",
             WS_AS_VERSION,
@@ -187,8 +194,16 @@ class WsPureTradingEngine:
         mid = (bb + ba) / 2.0 if bb and ba else None
         if not is_trustworthy_rlusd_mid(mid, best_bid=bb, best_ask=ba):
             self.decision_log.add("book", "WS book not trustworthy — skip cycle.")
+            if (
+                config.trading_enabled
+                and not config.dry_run
+                and (config.bot_secret_key or "").strip()
+            ):
+                await self._sync_offers([], best_bid=bb, best_ask=ba)
             return
         self._last_valid_mid = mid
+        if mid:
+            self._fill_quality.note_mid(mid)
 
         balance_xrp = await connector.get_xrp_balance()
         balance_rlusd = await connector.get_rlusd_balance()
@@ -200,6 +215,7 @@ class WsPureTradingEngine:
             await self._persist_cycle(
                 config, mid, bb, ba, balance_xrp, balance_rlusd, portfolio, [], 0,
                 execution=self.kill_switch.reason or "Kill switch active",
+                engine_dec=None,
             )
             return
 
@@ -228,6 +244,12 @@ class WsPureTradingEngine:
         )
         if not preflight.ready:
             self.decision_log.add("preflight", preflight.summary)
+            if (
+                config.trading_enabled
+                and not config.dry_run
+                and (config.bot_secret_key or "").strip()
+            ):
+                await self._sync_offers([], best_bid=bb, best_ask=ba)
             return
 
         engine_dec = await self._adapter.compute_pure_as_decision(
@@ -238,26 +260,37 @@ class WsPureTradingEngine:
             rlusd_bal=balance_rlusd,
             target_ratio=config.inventory_target_xrp_ratio,
             ws_book_age_s=state.age_seconds(),
+            fill_quality=self._fill_quality.assess(),
         )
         would_quote = bool(engine_dec.get("would_quote"))
         intents = pure_intents_to_quote_intents(
             engine_dec.get("quote_intents") or [],
             would_quote=would_quote,
         )
+        if would_quote:
+            self._would_quote_cycles += 1
         self.decision_log.add("as_pure", engine_dec.get("quote_decision_summary", "")[:240])
+        would_sync = len(intents) if would_quote else 0
         placed = 0
+        cancelled = 0
         if (
             config.trading_enabled
-            and would_quote
-            and intents
             and not self.kill_switch.is_active()
+            and not config.dry_run
+            and (config.bot_secret_key or "").strip()
         ):
-            placed = await self._sync_offers(intents, best_bid=bb, best_ask=ba)
+            sync_intents = intents if would_quote else []
+            placed, cancelled = await self._sync_offers(
+                sync_intents, best_bid=bb, best_ask=ba
+            )
 
         await self._detect_fills(config, connector, balance_xrp, balance_rlusd, mid)
         await self._maybe_session_balance_kill(config, balance_xrp, balance_rlusd, mid)
 
-        execution = self._execution_summary(config, placed)
+        execution = self._execution_summary(
+            config, placed, cancelled=cancelled, would_sync=would_sync, would_quote=would_quote
+        )
+        offers_last = would_sync if config.dry_run else placed
         self._cycle_count += 1
         self.balance_logger.log_snapshot(
             cycle=self._cycle_count,
@@ -271,7 +304,8 @@ class WsPureTradingEngine:
         )
         self._append_decision_file(cycle=self._cycle_count, mid=mid, execution=execution)
         await self._persist_cycle(
-            config, mid, bb, ba, balance_xrp, balance_rlusd, portfolio, intents, placed, execution
+            config, mid, bb, ba, balance_xrp, balance_rlusd, portfolio, intents, offers_last,
+            execution, engine_dec=engine_dec,
         )
 
     async def _sync_offers(
@@ -280,7 +314,7 @@ class WsPureTradingEngine:
         *,
         best_bid: Optional[float],
         best_ask: Optional[float],
-    ) -> int:
+    ) -> tuple[int, int]:
         config = self.config
         connector = self.connector
         assert connector is not None
@@ -289,10 +323,10 @@ class WsPureTradingEngine:
                 "execution",
                 f"Dry-run: would sync {len(intents)} pure A-S quote(s).",
             )
-            return 0
+            return 0, 0
         if not (config.bot_secret_key or "").strip():
             self.decision_log.add("execution", "No bot secret — cannot place offers.")
-            return 0
+            return 0, 0
 
         open_offers = await connector.get_open_offers()
         max_worse = float(getattr(config, "max_quote_worse_than_touch_pct", 0.50))
@@ -336,7 +370,12 @@ class WsPureTradingEngine:
                 cycle=self._cycle_count + 1,
                 dry_run=False,
             )
-        return placed
+        return placed, cancelled
+
+    def _cancel_per_fill_ratio(self) -> float:
+        if self._session_fills <= 0:
+            return float(self._offers_cancelled)
+        return self._offers_cancelled / self._session_fills
 
     async def _detect_fills(
         self,
@@ -375,6 +414,14 @@ class WsPureTradingEngine:
         )
         self._session_fills += 1
         self._session_spread_capture += cap
+        if mid:
+            self._fill_quality.note_fill(
+                side=side,
+                xrp_amount=xrp_amount,
+                price=price,
+                mid_at_fill=mid,
+                fill_source="ws_pure_balance_delta",
+            )
         common = dict(
             network=config.network_name(),
             xrp_amount=xrp_amount,
@@ -432,15 +479,31 @@ class WsPureTradingEngine:
         except Exception as exc:
             self.decision_log.add("execution", f"Cancel-all failed: {exc}")
 
-    def _execution_summary(self, config: BotConfig, placed: int) -> str:
+    def _execution_summary(
+        self,
+        config: BotConfig,
+        placed: int,
+        *,
+        cancelled: int = 0,
+        would_sync: int = 0,
+        would_quote: bool = True,
+    ) -> str:
         if self.kill_switch.is_active():
             return f"Kill switch: {self.kill_switch.reason}"
         if config.dry_run:
-            return "Dry-run: no ledger submit (WS pure A-S)."
+            if would_sync:
+                return f"Dry-run: would sync {would_sync} pure A-S quote(s)."
+            return "Dry-run: no quotes (would_quote=false or empty intents)."
         if not config.trading_enabled:
             return "Trading disabled."
+        if cancelled and not placed:
+            return f"Live WS pure: pulled {cancelled} offer(s) — A-S protected (no quote)."
+        if placed and cancelled:
+            return f"Live WS pure: placed {placed}, cancelled {cancelled} offer(s)."
         if placed:
             return f"Live WS pure: placed {placed} offer(s)."
+        if not would_quote:
+            return "Live WS pure: no quote this cycle (A-S protected)."
         return "Live WS pure: no placement this cycle."
 
     def _append_decision_file(self, *, cycle: int, mid: Optional[float], execution: str) -> None:
@@ -450,6 +513,7 @@ class WsPureTradingEngine:
             "execution": execution,
             "as_mode": "pure",
             "ws_as_version": WS_AS_VERSION,
+            "would_quote": "would sync" in execution.lower(),
             "pid": os.getpid(),
             "events": [
                 {"ts_utc": e.ts_utc, "category": e.category, "message": e.message}
@@ -471,6 +535,7 @@ class WsPureTradingEngine:
         intents: List[QuoteIntent],
         placed: int,
         execution: str,
+        engine_dec: Optional[Dict[str, Any]] = None,
     ) -> None:
         drawdown_pct = self.drawdown_monitor.get_drawdown_percent()
         open_offers = []
@@ -480,6 +545,32 @@ class WsPureTradingEngine:
                 open_offers = [o.__dict__ if hasattr(o, "__dict__") else o for o in offers]
             except Exception:
                 open_offers = []
+        ed = engine_dec or {}
+        session_bal_pnl = 0.0
+        if self._session_baseline_xrp is not None and mid:
+            session_bal_pnl = session_pnl_balance_delta_xrp(
+                balance_xrp=balance_xrp,
+                balance_rlusd=balance_rlusd,
+                baseline_xrp=self._session_baseline_xrp,
+                baseline_rlusd=self._session_baseline_rlusd or 0.0,
+                mid_rlusd_per_xrp=mid,
+            )
+        presence_pct = None
+        if self._cycle_count > 0:
+            presence_pct = round(100.0 * self._would_quote_cycles / self._cycle_count, 1)
+        fill_quality = self._fill_quality.assess()
+        bb_spread = ed.get("book_spread_pct")
+        if bb_spread is None and mid and bb and ba:
+            bb_spread = (ba - bb) / mid * 100.0 if mid > 0 else 0.0
+        if mid and mid > 0:
+            self._price_history.append(float(mid))
+            if len(self._price_history) > 200:
+                self._price_history = self._price_history[-200:]
+        decisions = [
+            {"ts_utc": e.ts_utc, "category": e.category, "message": e.message}
+            for e in self.decision_log.recent_newest_first(limit=60)
+        ]
+        cycle_s = int(self._sample_interval_s)
         state = RuntimeState(
             version=VERSION,
             network=config.network_name(),
@@ -503,11 +594,52 @@ class WsPureTradingEngine:
             offers_placed_last_cycle=placed,
             last_execution_summary=execution,
             quote_intents=intents,
+            recent_decisions=decisions,
             price_source="ws_book_feed",
+            price_history=list(self._price_history),
             as_mode="pure",
             as_protected=True,
             ws_book_age_s=self._ws_feed.age_seconds() if self._ws_feed else None,
+            ws_message_count=(
+                int(self._ws_feed.state.message_count)
+                if self._ws_feed and hasattr(self._ws_feed, "state")
+                else 0
+            ),
             fills_session=self._session_fills,
-            market_edge_met=bool(intents),
+            offers_cancelled_session=self._offers_cancelled,
+            offers_kept_session=self._offers_kept,
+            cancel_per_fill=self._cancel_per_fill_ratio(),
+            book_poll_interval_seconds=cycle_s,
+            full_quote_refresh_seconds=cycle_s,
+            last_cycle_full_refresh=True,
+            market_edge_met=bool(ed.get("would_quote", bool(intents))),
+            quote_decision_summary=str(ed.get("quote_decision_summary") or ""),
+            quoting_policy_label=str(ed.get("quoting_policy_label") or "ws_pure_as"),
+            inventory_label=str(ed.get("inventory_label") or ""),
+            as_reservation=ed.get("as_reservation"),
+            as_optimal_spread_pct=ed.get("as_optimal_spread_pct"),
+            as_gamma=ed.get("as_gamma"),
+            as_kappa=ed.get("as_kappa"),
+            as_presence_pct=presence_pct,
+            book_spread_pct=float(bb_spread or 0.0),
+            volatility_pct=float(ed.get("volatility_pct") or ed.get("base_volatility_pct") or 0.0),
+            session_baseline_xrp=self._session_baseline_xrp,
+            session_baseline_rlusd=self._session_baseline_rlusd,
+            session_baseline_mid=self._session_baseline_mid,
+            session_pnl_balance_xrp=session_bal_pnl,
+            session_pnl_xrp_estimate=session_bal_pnl,
+            engine_pid=os.getpid(),
+            inventory_mode=str(config.inventory_mode or "market_make"),
+            edge_resolution_summary=str(ed.get("zero_quote_operator_note") or ed.get("zero_quote_reason") or ""),
+            fill_quality_score=float(fill_quality.score),
+            fill_quality_summary=str(fill_quality.summary),
+            toxic_fill_ratio=float(fill_quality.toxic_ratio),
+            toxic_fill_ratio_30s=float(fill_quality.toxic_ratio_30s),
+            mean_markout_30s_pct=float(fill_quality.mean_markout_30s_pct),
+            g2_size_mult=float(ed.get("g2_size_mult") or 1.0),
+            g2_spread_mult=float(ed.get("g2_spread_mult") or 1.0),
+            g2_grade=str(ed.get("g2_grade") or "neutral"),
+            g2_active=bool(ed.get("g2_active")),
+            g2_summary=str(ed.get("g2_summary") or ""),
         )
         self.state_store.save(state)

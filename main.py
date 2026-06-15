@@ -50,6 +50,7 @@ def parse_args() -> argparse.Namespace:
         choices=[
             "engine",
             "ws-engine",
+            "ws-hud",
             "gui",
             "once",
             "cancel-offers",
@@ -62,6 +63,7 @@ def parse_args() -> argparse.Namespace:
         default="engine",
         help=(
             "engine = HTTP poll (legacy); ws-engine = WS + pure A-S v2; "
+            "ws-hud = real-time WS A-S HUD (:8765, mirrors ws-engine); "
             "gui, once, cancel-offers, clear-kill, setup-trust, "
             "trust-no-ripple, send, rebalance-check"
         ),
@@ -188,6 +190,15 @@ async def run_engine_async(config: BotConfig, mode: str, args: argparse.Namespac
         finally:
             _clear_engine_pid()
         return
+    if mode == "ws-hud":
+        from experimental.ws_feed.ws_hud_production import run_production_hud
+
+        logger.info("WS Pure A-S HUD — production mirror of ws-engine (http://127.0.0.1:8765)")
+        try:
+            await run_production_hud()
+        except KeyboardInterrupt:
+            logger.info("WS HUD stopped by user.")
+        return
     _register_engine_pid_cleanup()
     try:
         await engine.run()
@@ -211,6 +222,7 @@ if __name__ == "__main__":
         elif args.mode in {
             "engine",
             "ws-engine",
+            "ws-hud",
             "once",
             "cancel-offers",
             "clear-kill",

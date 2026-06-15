@@ -52,9 +52,9 @@ def our_lane_from_runtime(
     if quote_intents:
         touch_sizes: List[float] = []
         for intent in quote_intents:
-            if not intent.get("active"):
-                continue
             if int(intent.get("level") or 0) != 1:
+                continue
+            if intent.get("active") is False:
                 continue
             try:
                 touch_sizes.append(float(intent.get("size_xrp") or 0))

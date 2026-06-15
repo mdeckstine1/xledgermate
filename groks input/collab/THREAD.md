@@ -3,7 +3,7 @@
 *One file. **Newest entry at top.** Sign every post: `— Grok`, `— Cursor`, or `— Operator`.*
 
 **Protocol:** [TO_CURSOR.md](TO_CURSOR.md) · **Handoff:** [../FOR_AI_AND_FUTURE_SESSIONS.md](../FOR_AI_AND_FUTURE_SESSIONS.md)  
-**Your priorities:** [OPERATOR_NOTES.md](OPERATOR_NOTES.md) · **Gate 2 branch:** `grok-tier-2-collab` · **WS sandbox:** `grok-ws-feed` + `experimental/ws_feed/`
+**Your priorities:** [OPERATOR_NOTES.md](OPERATOR_NOTES.md) · **Gate 2 / sacred corpus:** `grok-tier-2-collab` · **VPS live MM:** `Ashigaru` + `experimental/ws_feed/`
 
 ---
 
@@ -14,8 +14,7 @@
 | Branch | VPS live MM? | Purpose |
 |--------|----------------|---------|
 | **Ashigaru** | **Yes** | ws-engine + HUD :8765 · G1 peer lane · G2 scaler · E1.5 PASS |
-| **grok-tier-2-collab** | No (deploy Ashigaru) | Sacred Gate 2 corpus · 
-eplay_long_run · P0 on legacy engine for baseline only |
+| **grok-tier-2-collab** | No (deploy Ashigaru) | Sacred Gate 2 corpus · replay_long_run · P0 on legacy engine for baseline only |
 
 **Do not** run legacy market_edge_met poll engine on VPS production — ws-engine is the MM path.
 
