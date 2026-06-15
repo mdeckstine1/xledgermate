@@ -5,6 +5,7 @@ from engine.order_sync import plan_order_sync
 from experimental.ws_feed.ws_pure_engine import (
     WsPureTradingEngine,
     pure_intents_to_quote_intents,
+    resolve_ws_sync_tolerances,
 )
 
 
@@ -44,3 +45,42 @@ def test_pure_intents_empty_when_blocked() -> None:
         {"level": 1, "side": "bid", "price": 1.1, "size_xrp": 12.0, "active": True},
     ]
     assert pure_intents_to_quote_intents(ladder, would_quote=False) == []
+
+
+def test_resolve_ws_sync_tolerances_mid_move_disables_preserve() -> None:
+    tol, preserve = resolve_ws_sync_tolerances(
+        mid=1.2800,
+        last_sync_mid=1.2750,
+        toxic_ratio_30s=0.0,
+        recent_fills=0,
+        g2_active=False,
+        base_price_tolerance_pct=0.08,
+    )
+    assert preserve is False
+    assert tol <= 0.03
+
+
+def test_resolve_ws_sync_tolerances_g2_disables_preserve() -> None:
+    tol, preserve = resolve_ws_sync_tolerances(
+        mid=1.2750,
+        last_sync_mid=1.2750,
+        toxic_ratio_30s=0.40,
+        recent_fills=5,
+        g2_active=True,
+        base_price_tolerance_pct=0.08,
+    )
+    assert preserve is False
+    assert tol <= 0.04
+
+
+def test_resolve_ws_sync_tolerances_calm_keeps_queue() -> None:
+    tol, preserve = resolve_ws_sync_tolerances(
+        mid=1.2751,
+        last_sync_mid=1.2750,
+        toxic_ratio_30s=0.10,
+        recent_fills=2,
+        g2_active=False,
+        base_price_tolerance_pct=0.08,
+    )
+    assert preserve is True
+    assert tol == 0.08

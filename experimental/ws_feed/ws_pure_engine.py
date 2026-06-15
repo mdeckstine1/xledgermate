@@ -41,7 +41,44 @@ logger = logging.getLogger(__name__)
 
 ENGINE_STOP_FILE = Path("logs/engine.stop")
 WS_STALE_REFRESH_S = 12.0
-DEFAULT_SAMPLE_INTERVAL_S = 8.0
+DEFAULT_SAMPLE_INTERVAL_S = 5.0
+WS_MID_MOVE_REFRESH_BPS = 4.0
+WS_TOXIC_PRESERVE_OFF_RATIO = 0.35
+
+
+def resolve_ws_sync_tolerances(
+    *,
+    mid: Optional[float],
+    last_sync_mid: Optional[float],
+    toxic_ratio_30s: float,
+    recent_fills: int,
+    g2_active: bool,
+    base_price_tolerance_pct: float,
+    mid_move_refresh_bps: float = WS_MID_MOVE_REFRESH_BPS,
+) -> tuple[float, bool]:
+    """
+    WS quote-sync policy: faster refresh when mid moves or toxicity is elevated.
+
+    Returns (price_tolerance_pct, preserve_touch_queue).
+    preserve_touch_queue keeps offers that still hug touch even when A-S intent
+    moved — good for queue, bad when mid drifts (stale quotes → toxic fills).
+    """
+    preserve_touch_queue = True
+    price_tol = float(base_price_tolerance_pct)
+
+    if g2_active or (
+        recent_fills >= 3 and toxic_ratio_30s >= WS_TOXIC_PRESERVE_OFF_RATIO
+    ):
+        preserve_touch_queue = False
+        price_tol = min(price_tol, 0.04)
+
+    if mid and last_sync_mid and last_sync_mid > 0:
+        move_bps = abs(mid - last_sync_mid) / last_sync_mid * 10_000.0
+        if move_bps >= mid_move_refresh_bps:
+            preserve_touch_queue = False
+            price_tol = min(price_tol, 0.03)
+
+    return price_tol, preserve_touch_queue
 
 
 def pure_intents_to_quote_intents(
@@ -107,6 +144,7 @@ class WsPureTradingEngine:
         self._fill_quality.set_toxic_threshold_pct(0.06)
         self._price_history: list[float] = []
         self._sample_interval_s = DEFAULT_SAMPLE_INTERVAL_S
+        self._last_sync_mid: Optional[float] = None
 
     def stop(self) -> None:
         self._running = False
@@ -201,7 +239,7 @@ class WsPureTradingEngine:
                 and not config.dry_run
                 and (config.bot_secret_key or "").strip()
             ):
-                await self._sync_offers([], best_bid=bb, best_ask=ba)
+                await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
             return
         self._last_valid_mid = mid
         if mid:
@@ -251,7 +289,7 @@ class WsPureTradingEngine:
                 and not config.dry_run
                 and (config.bot_secret_key or "").strip()
             ):
-                await self._sync_offers([], best_bid=bb, best_ask=ba)
+                await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
             return
 
         engine_dec = await self._adapter.compute_pure_as_decision(
@@ -287,7 +325,7 @@ class WsPureTradingEngine:
         ):
             sync_intents = intents if would_quote else []
             placed, cancelled = await self._sync_offers(
-                sync_intents, best_bid=bb, best_ask=ba
+                sync_intents, mid=mid, best_bid=bb, best_ask=ba
             )
 
         await self._detect_fills(config, connector, balance_xrp, balance_rlusd, mid)
@@ -318,6 +356,7 @@ class WsPureTradingEngine:
         self,
         intents: List[QuoteIntent],
         *,
+        mid: Optional[float],
         best_bid: Optional[float],
         best_ask: Optional[float],
     ) -> tuple[int, int]:
@@ -336,18 +375,37 @@ class WsPureTradingEngine:
 
         open_offers = await connector.get_open_offers()
         max_worse = float(getattr(config, "max_quote_worse_than_touch_pct", 0.50))
+        fq = self._fill_quality.assess()
+        g2_active = fq.size_multiplier < 1.0 or fq.spread_multiplier > 1.0
+        price_tol, preserve_touch = resolve_ws_sync_tolerances(
+            mid=mid,
+            last_sync_mid=self._last_sync_mid,
+            toxic_ratio_30s=float(fq.toxic_ratio_30s),
+            recent_fills=int(fq.recent_fills),
+            g2_active=g2_active,
+            base_price_tolerance_pct=float(
+                getattr(config, "order_price_tolerance_pct", 0.08)
+            ),
+        )
         plan = plan_order_sync(
             intents,
             open_offers,
-            price_tolerance_pct=float(getattr(config, "order_price_tolerance_pct", 0.08)),
+            price_tolerance_pct=price_tol,
             size_tolerance_xrp=float(getattr(config, "order_size_tolerance_xrp", 0.75)),
             best_bid=best_bid,
             best_ask=best_ask,
             max_worse_than_touch_pct=max_worse,
             preserve_queue_max_worse_pct=max_worse,
             max_improve_touch_pct=float(getattr(config, "max_quote_improve_touch_pct", 0.15)),
-            preserve_touch_queue=True,
+            preserve_touch_queue=preserve_touch,
         )
+        if not preserve_touch or price_tol < float(
+            getattr(config, "order_price_tolerance_pct", 0.08)
+        ):
+            self.decision_log.add(
+                "execution",
+                f"WS refresh mode: tol={price_tol:.3f}% preserve_touch={preserve_touch}",
+            )
         cancelled = 0
         for seq in plan.cancel_sequences:
             try:
@@ -376,6 +434,8 @@ class WsPureTradingEngine:
                 cycle=self._cycle_count + 1,
                 dry_run=False,
             )
+        if intents and mid and (placed or cancelled or plan.kept_count):
+            self._last_sync_mid = mid
         return placed, cancelled
 
     def _cancel_per_fill_ratio(self) -> float:
