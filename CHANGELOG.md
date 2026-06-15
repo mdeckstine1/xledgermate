@@ -9,6 +9,17 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.9] — 2026-06-15 (`Ashigaru`)
+
+**Theme:** Fix ws-engine runtime persist after G4 — HUD and intel log live again.
+
+### Fixed
+
+- **`RuntimeState` G4 fields** — `g4_size_mult`, `g4_grade`, `g4_active`, `g4_summary` (fixes `TypeError` blocking `runtime_state.json` saves since 2.1.8).
+- **`RuntimeStateStore.load()`** — restores `as_mode`, reservation, and WS book fields on restart.
+
+---
+
 ## [2.1.8] — 2026-06-15 (`Ashigaru`)
 
 **Theme:** G6 live activation grading — §7 portfolio + capture + structural signals on Metrics tab.
