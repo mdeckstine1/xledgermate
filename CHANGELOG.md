@@ -7,6 +7,17 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.14] — 2026-06-16 (`Ashigaru Kaizen`)
+
+**Theme:** WS feature switches in config — turn Telegram, intel, G2/G4, HUD Grok on/off.
+
+### Added
+
+- **`ws_*` / `telegram_*` feature flags** in `config.yaml` — `WsFeatureFlags` wired through ws-engine, HUD, hourly report.
+- **`tests/test_ws_feature_flags.py`**
+
+---
+
 ## [2.1.13] — 2026-06-16 (`Ashigaru Kaizen`)
 
 **Theme:** Lean ws soak — single competitor scrape, HUD mirror only, VPS profile script.

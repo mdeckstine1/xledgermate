@@ -208,6 +208,19 @@ class BotConfig:
     hud_auth_password: str = ""  # Or XLG_HUD_PASSWORD in .env (gitignored)
     hud_auth_rp_id: str = ""  # WebAuthn rp_id override (default: request Host without port)
 
+    # === WS ENGINE FEATURE SWITCHES (production ws-engine / ws-hud path) ===
+    ws_competitor_intel_enabled: bool = True   # G1 on-chain scrape (~15s RPC) → G4 inputs
+    ws_g2_scaler_enabled: bool = True          # Spread-quality brake on toxic markout
+    ws_g4_peer_lane_enabled: bool = True       # Peer-lane size/side bias (needs intel)
+    ws_drawdown_kill_enabled: bool = True      # Daily portfolio drawdown → kill file
+    ws_intel_log_enabled: bool = True          # Append logs/intel_decisions.jsonl
+    ws_fill_quality_enabled: bool = True       # Markout tracking (feeds G2 when enabled)
+    ws_hud_enabled: bool = True                # Allow --mode ws-hud / systemd HUD unit
+    ws_hud_metrics_enabled: bool = True        # G3/G6 grade panel (CSV walk; throttled in HUD)
+    ws_hud_grok_enabled: bool = True           # HUD /analyze_competitor Grok calls
+    telegram_hourly_report_enabled: bool = True  # Hourly soak script + timer
+    telegram_kill_alerts_enabled: bool = True    # Immediate Telegram on drawdown kill
+
     # === OTHER ===
     testnet: bool = True                    # Start on testnet by default
     send_destination_default: str = ""      # Optional default withdraw / Mangie address

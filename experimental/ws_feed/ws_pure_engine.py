@@ -29,6 +29,7 @@ from experimental.ws_feed.intel_decisions_log import (
     build_peer_scrape_intel_record,
 )
 from experimental.ws_feed.hud_intel_support import fetch_competitor_quoting_intel
+from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
 from experimental.ws_feed.pure_quote_path import current_ws_as_version
 from experimental.ws_feed.pair_books import RlusdXrpPair
 from experimental.ws_feed.network_urls import rpc_url_to_websocket_url
@@ -40,7 +41,7 @@ from monitoring.fill_economics import estimate_spread_capture_xrp
 from monitoring.telegram_alerts import TelegramAlerts
 from risk.drawdown import DrawdownMonitor, portfolio_value_xrp, session_pnl_balance_delta_xrp
 from risk.kill_switch import KillSwitch
-from strategy.fill_quality import FillQualityTracker
+from strategy.fill_quality import FillQualityState, FillQualityTracker
 from utils.preflight import evaluate_preflight
 
 logger = logging.getLogger(__name__)
@@ -212,6 +213,9 @@ class WsPureTradingEngine:
 
     async def _maybe_refresh_competitor_intel(self, config: BotConfig) -> Optional[Dict[str, Any]]:
         """Periodic on-chain peer-lane scrape for G4 quoting (cached ~15s)."""
+        flags = WsFeatureFlags.from_config(config)
+        if not flags.competitor_intel:
+            return self._last_comp_intel or self._comp_intel_cache or None
         if not self._comp_provider or not self._ws_feed:
             return self._comp_intel_cache or None
 
@@ -235,10 +239,11 @@ class WsPureTradingEngine:
                 return self._comp_intel_cache or None
             self._comp_intel_cache = fields
             self._last_comp_scrape = now
-            try:
-                append_intel_record(build_peer_scrape_intel_record(fields))
-            except OSError:
-                pass
+            if flags.intel_log:
+                try:
+                    append_intel_record(build_peer_scrape_intel_record(fields))
+                except OSError:
+                    pass
             self._last_comp_intel = dict(fields)
             return fields
         except Exception:
@@ -249,9 +254,10 @@ class WsPureTradingEngine:
         self._running = True
         self._sample_interval_s = float(sample_interval_s)
         logger.info(
-            "WsPureTradingEngine v%s | WS + pure A-S | dry_run=%s",
+            "WsPureTradingEngine v%s | WS + pure A-S | dry_run=%s | %s",
             current_ws_as_version(),
             self.config.dry_run,
+            WsFeatureFlags.from_config(self.config).summary(),
         )
         self.csv_logger.log_major(
             network=self.config.network_name(),
@@ -280,6 +286,7 @@ class WsPureTradingEngine:
     async def _run_cycle(self) -> None:
         config = BotConfig.load()
         self.config = config
+        flags = WsFeatureFlags.from_config(config)
         self.alerts = TelegramAlerts(
             token=config.telegram_token,
             chat_id=config.telegram_chat_id,
@@ -304,7 +311,7 @@ class WsPureTradingEngine:
                 await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
             return
         self._last_valid_mid = mid
-        if mid:
+        if mid and flags.fill_quality:
             self._fill_quality.note_mid(mid)
 
         balance_xrp = await connector.get_xrp_balance()
@@ -325,10 +332,14 @@ class WsPureTradingEngine:
             balance_xrp, balance_rlusd, mid
         )
         drawdown_pct = self.drawdown_monitor.get_drawdown_percent()
-        if marked and self.drawdown_monitor.is_kill_switch_triggered():
+        if (
+            flags.drawdown_kill
+            and marked
+            and self.drawdown_monitor.is_kill_switch_triggered()
+        ):
             reason = f"Daily portfolio drawdown {drawdown_pct:.2f}%"
             self.kill_switch.activate(reason)
-            if config.telegram_enabled:
+            if config.telegram_enabled and flags.telegram_kill_alerts:
                 self.alerts.send_kill_switch_alert(drawdown_pct, reason)
             return
 
@@ -355,6 +366,7 @@ class WsPureTradingEngine:
             return
 
         comp_intel = await self._maybe_refresh_competitor_intel(config)
+        fill_state = self._fill_quality.assess() if flags.fill_quality else None
 
         engine_dec = await self._adapter.compute_pure_as_decision(
             mid=mid or 0.0,
@@ -364,12 +376,15 @@ class WsPureTradingEngine:
             rlusd_bal=balance_rlusd,
             target_ratio=config.inventory_target_xrp_ratio,
             ws_book_age_s=state.age_seconds(),
-            fill_quality=self._fill_quality.assess(),
+            fill_quality=fill_state,
             inventory_max_deviation=float(config.inventory_max_deviation),
             inventory_mode=str(config.inventory_mode or "market_make"),
             xrp_reserve=float(config.xrp_reserve),
             inventory_overshoot_slack=float(config.inventory_overshoot_slack),
             competitor_intel=comp_intel,
+            g2_enabled=flags.g2_scaler,
+            g4_enabled=flags.g4_peer_lane and flags.competitor_intel,
+            competitor_pressure_enabled=flags.competitor_intel,
         )
         l1_from_dec = float(engine_dec.get("l1_xrp") or 0)
         if l1_from_dec > 0:
@@ -554,7 +569,7 @@ class WsPureTradingEngine:
         mid_at_fill = mid if is_trustworthy_rlusd_mid(mid) else mid_at_quote
         self._session_fills += 1
         self._session_spread_capture += cap
-        if mid_at_fill:
+        if mid_at_fill and WsFeatureFlags.from_config(config).fill_quality:
             self._fill_quality.note_fill(
                 side=side,
                 xrp_amount=xrp_amount,
@@ -651,6 +666,7 @@ class WsPureTradingEngine:
         execution: str,
         engine_dec: Optional[Dict[str, Any]] = None,
     ) -> None:
+        flags = WsFeatureFlags.from_config(config)
         drawdown_pct = self.drawdown_monitor.get_drawdown_percent()
         open_offers = []
         if self.connector:
@@ -672,7 +688,8 @@ class WsPureTradingEngine:
         presence_pct = None
         if self._cycle_count > 0:
             presence_pct = round(100.0 * self._would_quote_cycles / self._cycle_count, 1)
-        fill_quality = self._fill_quality.assess()
+        flags = WsFeatureFlags.from_config(config)
+        fill_quality = self._fill_quality.assess() if flags.fill_quality else FillQualityState()
         bb_spread = ed.get("book_spread_pct")
         if bb_spread is None and mid and bb and ba:
             bb_spread = (ba - bb) / mid * 100.0 if mid > 0 else 0.0
@@ -765,7 +782,7 @@ class WsPureTradingEngine:
             competitor_intel=dict(self._last_comp_intel),
         )
         self.state_store.save(state)
-        if ed:
+        if ed and flags.intel_log:
             try:
                 append_intel_record(
                     build_cycle_intel_record(

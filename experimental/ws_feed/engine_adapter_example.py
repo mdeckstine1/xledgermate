@@ -68,6 +68,9 @@ class WSBookFeedAdapter:
         inventory_mode: str = "market_make",
         xrp_reserve: float = 12.0,
         inventory_overshoot_slack: float = 0.03,
+        g2_enabled: bool = True,
+        g4_enabled: bool = True,
+        competitor_pressure_enabled: bool = True,
     ) -> Dict[str, Any]:
         book_age = ws_book_age_s
         if book_age is None and hasattr(self.book_feed, "age_seconds"):
@@ -90,6 +93,9 @@ class WSBookFeedAdapter:
             inventory_mode=inventory_mode,
             xrp_reserve=xrp_reserve,
             inventory_overshoot_slack=inventory_overshoot_slack,
+            g2_enabled=g2_enabled,
+            g4_enabled=g4_enabled,
+            competitor_pressure_enabled=competitor_pressure_enabled,
         )
         if inventory_skew_override is not None:
             pass  # reserved for future override hook

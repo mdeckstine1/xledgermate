@@ -47,6 +47,7 @@ from experimental.ws_feed.live_pure_as_tester import _hud_market_payload
 
 from experimental.ws_feed.performance_metrics import build_performance_metrics
 from experimental.ws_feed.pure_quote_path import current_ws_as_version
+from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
 
 from experimental.ws_feed.real_time_as_hud import (
 
@@ -200,8 +201,8 @@ class ProductionHudMirror:
         self._last_metrics_at = 0.0
 
     def _seed_intel_config(self) -> None:
-
-        intel = resolve_hud_intel_fields(get_hud_current_state())
+        flags = WsFeatureFlags.from_config(self.config)
+        intel = resolve_hud_intel_fields(get_hud_current_state(), grok_enabled=flags.hud_grok)
 
         hud_update_state(intel)
 
@@ -244,13 +245,18 @@ class ProductionHudMirror:
             )
         )
 
-        intel = resolve_hud_intel_fields(get_hud_current_state())
+        flags = WsFeatureFlags.from_config(self.config)
+        intel = resolve_hud_intel_fields(get_hud_current_state(), grok_enabled=flags.hud_grok)
         enriched.update(intel)
 
         now = time.monotonic()
-        if now - self._last_metrics_at >= METRICS_INTERVAL_S or not self._last_metrics:
+        if flags.hud_metrics and (
+            now - self._last_metrics_at >= METRICS_INTERVAL_S or not self._last_metrics
+        ):
             self._last_metrics = build_performance_metrics(runtime=enriched)
             self._last_metrics_at = now
+        elif not flags.hud_metrics:
+            self._last_metrics = {}
         enriched["performance_metrics"] = self._last_metrics
 
         hud_update_state(
@@ -282,6 +288,10 @@ class ProductionHudMirror:
 async def run_production_hud(*, host: str | None = None, port: int = 8765) -> None:
 
     config = BotConfig.load()
+    flags = WsFeatureFlags.from_config(config)
+    if not flags.hud_enabled:
+        logger.error("ws_hud_enabled is false — exiting HUD process.")
+        return
     bind_host = (host or (config.hud_bind_host or "127.0.0.1")).strip() or "127.0.0.1"
 
     bot_address = (config.bot_account_address or "").strip() or "r... (set bot_account_address)"

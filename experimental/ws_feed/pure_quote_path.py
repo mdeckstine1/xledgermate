@@ -21,7 +21,7 @@ from experimental.ws_feed.pure_inventory_policy import (
     count_active_l1_quotes,
 )
 from experimental.ws_feed.ws_book_age_modulator import apply_ws_book_age_modulator
-from experimental.ws_feed.peer_lane_quoting import compute_g4_adjustments, prepare_quoting_intel
+from experimental.ws_feed.peer_lane_quoting import G4Adjustments, compute_g4_adjustments, prepare_quoting_intel
 from experimental.ws_feed.spread_quality_scaler import G2Adjustments, compute_g2_adjustments
 from strategy.fill_quality import FillQualityState
 from experimental.ws_feed.zero_quote_notes import classify_and_explain_pure_zero_quote
@@ -267,6 +267,9 @@ class PureQuotePath:
         inventory_mode: str = "market_make",
         xrp_reserve: float = 12.0,
         inventory_overshoot_slack: float = 0.03,
+        g2_enabled: bool = True,
+        g4_enabled: bool = True,
+        competitor_pressure_enabled: bool = True,
     ) -> PureQuoteDecision:
         book_spread_pct = (best_ask - best_bid) / mid * 100.0 if mid else 0.0
         raw_vol = (
@@ -284,8 +287,8 @@ class PureQuotePath:
         )
         inv_skew = _inventory_skew_from_label(inv_state.label)
 
-        quoting_intel = prepare_quoting_intel(competitor_intel)
-        pressure_model = from_intel_dict(quoting_intel)
+        quoting_intel = prepare_quoting_intel(competitor_intel if competitor_pressure_enabled else None)
+        pressure_model = from_intel_dict(quoting_intel) if competitor_pressure_enabled else None
         pressure_preview = pressure_model.value if pressure_model else None
         age_adj = apply_ws_book_age_modulator(
             base_volatility_pct=raw_vol,
@@ -318,7 +321,7 @@ class PureQuotePath:
             pressure_size_mult = pressure_adj.size_mult
 
         g2 = G2Adjustments()
-        if fill_quality and fill_quality.recent_fills > 0:
+        if g2_enabled and fill_quality and fill_quality.recent_fills > 0:
             g2 = compute_g2_adjustments(
                 recent_fills=fill_quality.recent_fills,
                 toxic_ratio=fill_quality.toxic_ratio,
@@ -328,13 +331,16 @@ class PureQuotePath:
             effective_vol *= g2.spread_mult
             pressure_size_mult *= g2.size_mult
 
-        g4 = compute_g4_adjustments(
-            quoting_intel,
-            inventory_skew=inv_skew,
-            inventory_label=inv_state.label,
-            g2_size_mult=g2.size_mult,
-        )
-        pressure_size_mult *= g4.size_mult
+        if g4_enabled:
+            g4 = compute_g4_adjustments(
+                quoting_intel,
+                inventory_skew=inv_skew,
+                inventory_label=inv_state.label,
+                g2_size_mult=g2.size_mult,
+            )
+            pressure_size_mult *= g4.size_mult
+        else:
+            g4 = G4Adjustments()
 
         ai_rationale = ""
         ai_edge = 0.0

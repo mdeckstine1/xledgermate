@@ -307,6 +307,9 @@ def main() -> int:
     from config.settings import BotConfig
 
     config = BotConfig.load()
+    if not getattr(config, "telegram_hourly_report_enabled", True):
+        print("Hourly report disabled (telegram_hourly_report_enabled: false).", file=sys.stderr)
+        return 0
     text = build_report(
         window_hours=args.hours,
         hud_url=getattr(config, "telegram_hud_url", "") or "",

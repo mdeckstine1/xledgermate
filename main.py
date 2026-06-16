@@ -191,8 +191,12 @@ async def run_engine_async(config: BotConfig, mode: str, args: argparse.Namespac
             _clear_engine_pid()
         return
     if mode == "ws-hud":
+        from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
         from experimental.ws_feed.ws_hud_production import run_production_hud
 
+        if not WsFeatureFlags.from_config(config).hud_enabled:
+            logger.error("ws_hud_enabled is false in config — HUD not started.")
+            return
         logger.info("WS Pure A-S HUD — production mirror of ws-engine (http://127.0.0.1:8765)")
         try:
             await run_production_hud()

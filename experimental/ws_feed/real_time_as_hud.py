@@ -325,6 +325,17 @@ if app:
         if not address:
             return {"result": "No address provided."}
 
+        try:
+            from config.settings import BotConfig
+            from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
+
+            if not WsFeatureFlags.from_config(BotConfig.load()).hud_grok:
+                return {
+                    "result": "Grok analysis disabled (set ws_hud_grok_enabled: true in config).",
+                }
+        except Exception:
+            pass
+
         provider = _current_state.get("intel_ai_provider", "stub")
         key = _current_state.get("intel_ai_key", "")
         model = _current_state.get("intel_ai_model", "grok-3")

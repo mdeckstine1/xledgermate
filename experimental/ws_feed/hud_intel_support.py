@@ -86,6 +86,8 @@ def build_rlusd_pair(config: BotConfig) -> RlusdXrpPair:
 
 def resolve_hud_intel_fields(
     hud_state: Optional[Dict[str, Any]] = None,
+    *,
+    grok_enabled: bool = True,
 ) -> Dict[str, Any]:
     """
     Merge .env → persisted Config tab save → in-memory HUD state.
@@ -111,6 +113,10 @@ def resolve_hud_intel_fields(
         enabled = bool(persisted.get("intel_ai_enabled", True))
     else:
         enabled = bool(hud_state.get("intel_ai_enabled", True)) if "intel_ai_enabled" in hud_state else True
+
+    if not grok_enabled:
+        key = ""
+        enabled = False
 
     if key and (not prov or prov == "stub"):
         prov = "grok"

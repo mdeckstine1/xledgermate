@@ -74,6 +74,19 @@ hud_auth_username: ""        # Or XLG_HUD_USERNAME in .env
 hud_auth_password: ""         # Or XLG_HUD_PASSWORD in .env — use a strong password
 hud_auth_rp_id: ""            # Optional WebAuthn rp_id (VPS IP or domain, no port)
 
+# --- WS engine feature switches (ignored by legacy --mode engine) ---
+ws_competitor_intel_enabled: true   # G1 scrape → G4; off saves RPC
+ws_g2_scaler_enabled: true          # Toxic markout brake (size/spread)
+ws_g4_peer_lane_enabled: true      # Peer-lane quoting bias (needs intel)
+ws_drawdown_kill_enabled: true      # Daily drawdown → kill switch
+ws_intel_log_enabled: true           # intel_decisions.jsonl
+ws_fill_quality_enabled: true       # Markout tracking (G2 input)
+ws_hud_enabled: true                # Production HUD :8765
+ws_hud_metrics_enabled: true        # Metrics tab grades (off = lighter HUD)
+ws_hud_grok_enabled: true           # HUD Grok /analyze_competitor
+telegram_hourly_report_enabled: true   # Hourly Telegram soak summary
+telegram_kill_alerts_enabled: true    # Telegram on drawdown kill
+
 testnet: true
 send_destination_default: ""
 private_node_url: null
