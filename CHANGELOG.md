@@ -7,6 +7,17 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.12] — 2026-06-16 (`Ashigaru Kaizen`)
+
+**Theme:** Stop legacy session-balance kill on ws-engine soak; quieter Telegram when healthy.
+
+### Fixed
+
+- **ws-engine session balance kill** — removed sacred Gate 1 `session_balance_loss_kill_*` trip on WS path (was halting soak at −0.85 XRP); G6 / drawdown remain.
+- **Hourly Telegram** — no standing “Clear kill” footer; resume hint only when kill file is active; no near-kill band warning on WS reports.
+
+---
+
 ## [2.1.11] — 2026-06-15 (`Ashigaru Kaizen`)
 
 **Theme:** Public HUD login + session-only fill display (E1.5 gate UI retired).

@@ -120,6 +120,24 @@ def test_hourly_report_ws_fill_counts_and_hud_link(tmp_path: Path) -> None:
     assert "G6: pilot_watch" in text
     assert "Presence: 79.0%" in text
     assert "HUD: http://188.245.50.229:8765" in text
+    assert "Clear kill" not in text
+    assert "Resume:" not in text
+
+
+def test_hourly_report_shows_resume_only_when_kill_active(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "runtime_state.json").write_text(
+        '{"as_mode":"pure","ws_as_version":"2.1.11","cycle_count":1}',
+        encoding="utf-8",
+    )
+    (logs / "kill_switch.json").write_text(
+        '{"active": true, "reason": "Daily portfolio drawdown 12.00%"}',
+        encoding="utf-8",
+    )
+    text = build_report(hud_url="", logs_dir=logs)
+    assert "Status: KILL" in text
+    assert "Resume:" in text
 
 
 def test_hourly_report_omits_hud_when_url_empty(tmp_path: Path) -> None:

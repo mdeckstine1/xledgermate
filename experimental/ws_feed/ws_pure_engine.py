@@ -400,7 +400,6 @@ class WsPureTradingEngine:
             )
 
         await self._detect_fills(config, connector, balance_xrp, balance_rlusd, mid)
-        await self._maybe_session_balance_kill(config, balance_xrp, balance_rlusd, mid)
 
         execution = self._execution_summary(
             config, placed, cancelled=cancelled, would_sync=would_sync, would_quote=would_quote
@@ -579,35 +578,6 @@ class WsPureTradingEngine:
             self.csv_logger.log_sell(**common)
         else:
             self.csv_logger.log_buy(**common)
-
-    async def _maybe_session_balance_kill(
-        self,
-        config: BotConfig,
-        balance_xrp: float,
-        balance_rlusd: float,
-        mid: Optional[float],
-    ) -> None:
-        limit = float(getattr(config, "session_balance_loss_kill_xrp", 0.0) or 0.0)
-        min_fills = int(getattr(config, "session_balance_loss_kill_min_fills", 25) or 25)
-        if limit <= 0 or self._session_fills < min_fills:
-            return
-        if self._session_baseline_xrp is None or mid is None:
-            return
-        bal_pnl = session_pnl_balance_delta_xrp(
-            balance_xrp=balance_xrp,
-            balance_rlusd=balance_rlusd,
-            baseline_xrp=self._session_baseline_xrp,
-            baseline_rlusd=self._session_baseline_rlusd or 0.0,
-            mid_rlusd_per_xrp=mid,
-        )
-        if bal_pnl < -limit:
-            reason = (
-                f"Session balance PnL {bal_pnl:.4f} XRP "
-                f"(limit -{limit:.2f} after {self._session_fills} fills)"
-            )
-            self.kill_switch.activate(reason)
-            if config.telegram_enabled:
-                self.alerts.send_kill_switch_alert(0.0, reason)
 
     async def _cancel_if_live(
         self, connector: XRPLConnector, config: BotConfig, reason: str

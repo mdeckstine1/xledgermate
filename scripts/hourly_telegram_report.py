@@ -262,17 +262,19 @@ def build_report(
     )
     if policy:
         lines.append(f"Policy: {policy}")
-    kill_limit = 0.85
-    kill_min_fills = 45
-    if session_fill_count >= kill_min_fills and sess_bal_pnl <= -kill_limit:
-        lines.append("")
-        lines.append(f"⚠ Near session kill band (−{kill_limit} XRP @ {kill_min_fills}+ fills)")
+    if not ws_path:
+        kill_limit = 0.85
+        kill_min_fills = 45
+        if session_fill_count >= kill_min_fills and sess_bal_pnl <= -kill_limit:
+            lines.append("")
+            lines.append(f"⚠ Near session kill band (−{kill_limit} XRP @ {kill_min_fills}+ fills)")
     hud = (hud_url or "").strip()
     if hud:
         lines.append("")
         lines.append(f"HUD: {hud}")
-    lines.append("")
-    lines.append("Clear kill: clear-kill + systemctl restart xledgermate")
+    if kill_active:
+        lines.append("")
+        lines.append("Resume: python main.py --mode clear-kill && systemctl restart xledgermate")
     return "\n".join(lines)
 
 
