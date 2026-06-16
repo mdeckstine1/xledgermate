@@ -4,8 +4,8 @@ Production WS + pure A-S operator HUD (:8765).
 
 
 
-Reads `logs/runtime_state.json` from `WsPureTradingEngine`, competitor intel,
-and Grok config for the Intelligence tab. Shared UI: `hud/index.html`.
+Reads `logs/runtime_state.json` from `WsPureTradingEngine` (single source of truth).
+No duplicate on-chain scrapes — competitor intel comes from the engine. Shared UI: `hud/index.html`.
 
 
 
@@ -38,22 +38,15 @@ from typing import Any, Dict, Optional
 from config.settings import BotConfig
 
 from experimental.ws_feed.hud_intel_support import (
-    CompetitorIntelProvider,
-    build_connector,
-    build_rlusd_pair,
+    competitor_fields_from_runtime,
     enrich_inventory_hud_fields,
-    fetch_competitor_hud_fields,
     resolve_hud_intel_fields,
 )
 
 from experimental.ws_feed.live_pure_as_tester import _hud_market_payload
 
-from experimental.ws_feed.intel_decisions_log import (
-    append_intel_record,
-    build_peer_scrape_intel_record,
-)
 from experimental.ws_feed.performance_metrics import build_performance_metrics
-from experimental.ws_feed.pure_quote_path import WS_AS_VERSION, current_ws_as_version
+from experimental.ws_feed.pure_quote_path import current_ws_as_version
 
 from experimental.ws_feed.real_time_as_hud import (
 
@@ -74,8 +67,7 @@ logger = logging.getLogger(__name__)
 RUNTIME_PATH = Path("logs/runtime_state.json")
 
 POLL_INTERVAL_S = 1.0
-
-COMP_SCRAPE_INTERVAL_S = 15.0
+METRICS_INTERVAL_S = 30.0
 
 
 
@@ -200,98 +192,12 @@ def _load_runtime_snapshot() -> Dict[str, Any]:
 
 
 class ProductionHudMirror:
-
-    """Poll ws-engine runtime + competitor intel → HUD /state."""
-
-
+    """Poll ws-engine runtime → HUD /state (read-only mirror, no RPC scrapes)."""
 
     def __init__(self, config: BotConfig) -> None:
-
         self.config = config
-
-        self._comp_provider: Any = None
-
-        self._last_comp_scrape = 0.0
-
-        self._last_comp_fields: Dict[str, Any] = {}
-
-        self._fallback_l1 = float(config.order_sizes[0]) if config.order_sizes else 15.0
-
-
-
-    async def _ensure_competitor_provider(self) -> bool:
-
-        if self._comp_provider is not None:
-
-            return True
-
-        if CompetitorIntelProvider is None:
-
-            logger.warning("CompetitorIntelProvider unavailable — Intelligence scrape disabled")
-
-            return False
-
-        try:
-
-            connector = build_connector(self.config)
-
-            pair = build_rlusd_pair(self.config)
-
-            self._comp_provider = CompetitorIntelProvider(connector, pair)
-
-            logger.info("Production HUD: CompetitorIntelProvider active (on-chain scrape)")
-
-            return True
-
-        except Exception:
-
-            logger.exception("Production HUD: failed to init CompetitorIntelProvider")
-
-            return False
-
-
-
-    async def _maybe_competitor_fields(self, enriched: Dict[str, Any]) -> Dict[str, Any]:
-
-        now = time.monotonic()
-
-        if now - self._last_comp_scrape < COMP_SCRAPE_INTERVAL_S and self._last_comp_fields:
-
-            return dict(self._last_comp_fields)
-
-        if not await self._ensure_competitor_provider():
-
-            return {}
-
-        try:
-
-            fields = await fetch_competitor_hud_fields(
-
-                self._comp_provider,
-
-                enriched,
-
-                fallback_l1_xrp=self._fallback_l1,
-
-            )
-
-            if fields.get("competitor_error"):
-
-                return self._last_comp_fields
-
-            self._last_comp_scrape = now
-
-            self._last_comp_fields = fields
-
-            return fields
-
-        except Exception:
-
-            logger.exception("Production HUD: competitor scrape failed")
-
-            return self._last_comp_fields
-
-
+        self._last_metrics: Dict[str, Any] = {}
+        self._last_metrics_at = 0.0
 
     def _seed_intel_config(self) -> None:
 
@@ -324,27 +230,12 @@ class ProductionHudMirror:
 
 
     async def push_cycle(self, *, bot_address: str) -> None:
-
         runtime = _load_runtime_snapshot()
-
         if not runtime:
-
             return
 
-
-
         enriched = _enrich_runtime_for_hud(runtime)
-
-        comp_fields = await self._maybe_competitor_fields(enriched)
-
-        if comp_fields and not comp_fields.get("competitor_error"):
-            try:
-                append_intel_record(build_peer_scrape_intel_record(comp_fields))
-            except OSError:
-                pass
-
-        enriched.update(comp_fields)
-
+        enriched.update(competitor_fields_from_runtime(enriched))
         enriched.update(
             enrich_inventory_hud_fields(
                 enriched,
@@ -354,10 +245,13 @@ class ProductionHudMirror:
         )
 
         intel = resolve_hud_intel_fields(get_hud_current_state())
-
         enriched.update(intel)
 
-        enriched["performance_metrics"] = build_performance_metrics(runtime=enriched)
+        now = time.monotonic()
+        if now - self._last_metrics_at >= METRICS_INTERVAL_S or not self._last_metrics:
+            self._last_metrics = build_performance_metrics(runtime=enriched)
+            self._last_metrics_at = now
+        enriched["performance_metrics"] = self._last_metrics
 
         hud_update_state(
 
@@ -412,7 +306,7 @@ async def run_production_hud(*, host: str | None = None, port: int = 8765) -> No
 
     logger.info(
 
-        "WS Pure A-S production HUD on http://%s:%s (ws-engine + competitor intel + Grok)",
+        "WS Pure A-S production HUD on http://%s:%s (mirrors ws-engine runtime; no duplicate scrapes)",
 
         bind_host,
 

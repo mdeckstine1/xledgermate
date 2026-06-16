@@ -7,6 +7,19 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.13] — 2026-06-16 (`Ashigaru Kaizen`)
+
+**Theme:** Lean ws soak — single competitor scrape, HUD mirror only, VPS profile script.
+
+### Changed
+
+- **HUD** — reads `competitor_intel` from `runtime_state.json`; no duplicate on-chain scrape or intel JSONL append.
+- **ws-engine** — persists competitor scrape blob for HUD.
+- **HUD metrics** — G3/G6 grade rebuild throttled to 30s (was every 1s CSV walk).
+- **`scripts/vps_lean_mm.sh`** — stop/disable Streamlit `:8501`/`:8502`; keep ws-engine + ws-hud only.
+
+---
+
 ## [2.1.12] — 2026-06-16 (`Ashigaru Kaizen`)
 
 **Theme:** Stop legacy session-balance kill on ws-engine soak; quieter Telegram when healthy.

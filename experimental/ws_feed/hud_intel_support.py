@@ -184,30 +184,12 @@ async def fetch_competitor_quoting_intel(
     return provider.to_hud_state(snap)
 
 
-async def fetch_competitor_hud_fields(
-    provider: Any,
-    runtime: Dict[str, Any],
-    *,
-    fallback_l1_xrp: float,
-) -> Dict[str, Any]:
-    """On-chain competitor scrape → HUD Intelligence tab fields."""
-    bb = runtime.get("best_bid_rlusd_per_xrp") or runtime.get("best_bid")
-    ba = runtime.get("best_ask_rlusd_per_xrp") or runtime.get("best_ask")
-    try:
-        bb_f = float(bb) if bb is not None else None
-        ba_f = float(ba) if ba is not None else None
-    except (TypeError, ValueError):
-        bb_f, ba_f = None, None
-
-    our_lane = our_lane_xrp_from_runtime(runtime, fallback_l1=fallback_l1_xrp)
-    snap = await provider.fetch_snapshot(
-        our_lane_xrp=our_lane,
-        best_bid=bb_f,
-        best_ask=ba_f,
-        ws_bids=None,
-        ws_asks=None,
-    )
-    return provider.to_hud_state(snap)
+def competitor_fields_from_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
+    """Intelligence tab fields from ws-engine scrape (no duplicate HUD RPC)."""
+    blob = runtime.get("competitor_intel")
+    if isinstance(blob, dict) and blob:
+        return dict(blob)
+    return {}
 
 
 def enrich_inventory_hud_fields(

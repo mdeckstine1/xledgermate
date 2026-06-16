@@ -107,6 +107,7 @@ class RuntimeState:
     g4_grade: str = "neutral"
     g4_active: bool = False
     g4_summary: str = ""
+    competitor_intel: Dict[str, Any] = field(default_factory=dict)
 
     # WS + pure A-S (committed future path) — optional, for compatibility + new views
     ws_as_version: str = ""
@@ -260,6 +261,7 @@ class RuntimeStateStore:
             g4_grade=str(data.get("g4_grade", "neutral")),
             g4_active=bool(data.get("g4_active", False)),
             g4_summary=str(data.get("g4_summary", "")),
+            competitor_intel=dict(data.get("competitor_intel") or {}),
             ws_as_version=str(data.get("ws_as_version", "")),
             as_mode=str(data.get("as_mode", "off")),
             as_reservation=data.get("as_reservation"),

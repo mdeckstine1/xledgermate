@@ -154,6 +154,7 @@ class WsPureTradingEngine:
         self._last_sync_mid: Optional[float] = None
         self._comp_provider: Any = None
         self._last_comp_scrape: float = 0.0
+        self._last_comp_intel: Dict[str, Any] = {}
         self._comp_intel_cache: Dict[str, Any] = {}
         self._last_our_lane_xrp: float = 0.0
 
@@ -238,6 +239,7 @@ class WsPureTradingEngine:
                 append_intel_record(build_peer_scrape_intel_record(fields))
             except OSError:
                 pass
+            self._last_comp_intel = dict(fields)
             return fields
         except Exception:
             logger.warning("G4 competitor scrape failed", exc_info=True)
@@ -760,6 +762,7 @@ class WsPureTradingEngine:
             g4_grade=str(ed.get("g4_grade") or "neutral"),
             g4_active=bool(ed.get("g4_active")),
             g4_summary=str(ed.get("g4_summary") or ""),
+            competitor_intel=dict(self._last_comp_intel),
         )
         self.state_store.save(state)
         if ed:
