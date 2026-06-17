@@ -289,6 +289,18 @@ Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sy
 - **Future-proofing**: Keep modular. Add `experimental/liquidity/amm_provider.py` later with config flag. Integrate inventory tracking but never touch reservation price.
 - **When to consider**: After bag >30k XRP and stable order-book performance; after **H1** monitor proves pool vs CLOB linkage.
 
+**New: Self-Diagnostic & Trap Building (Long-term Evolution)**
+
+- **Self-Evaluation Mode**: Extend Peer Band + Structural Signals to periodically run the same on-chain analysis on our own address. Output an “Exploitability Score” and specific patterns (e.g., slow bid replacement, one-sided ask cancels, size clustering) in the Performance Metrics tab.
+- **Trap Building**: Once self-diagnostics are mature, add intentional misdirection tactics:
+  - Randomized cancel/refresh cadence
+  - Temporary fake skew to lure aggressive takers
+  - Size randomization within peer bands
+  - Honey-pot offers + fast counter-posting
+- **Goal**: Reduce our own predictable defensive patterns while creating exploitable holes for competitors — turning defense into offense.
+- **Status**: Future extension (after Peer Band + Phase E core is stable). Advisory-only initially.
+- **Trigger**: Implement after consistent live performance and bag growth beyond current ~11k XRP.
+
 **Decision rule before any option ships:**
 
 - [x] C2 soak pass + D2 dry-run offers on WS path
