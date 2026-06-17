@@ -548,6 +548,7 @@
                     <div class="card">
                         <div class="label">Quote posture <span style="font-size:0.6rem; color:#4ade80;">(pure A-S · live)</span></div>
                         <div class="metric-row"><span class="label">Reservation (inside book = protected)</span> <span id="reservation" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Res → BBO Δ <span class="info" title="Signed distance to nearest touch this cycle. Positive = inside L1. Negative = outside.">?</span></span> <span id="res-bbo-delta" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Optimal Spread</span> <span id="as_spread" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Gamma / Kappa <span class="info" title="Pure A-S parameters (no hard gate on top).
 
@@ -564,6 +565,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     <div class="card">
                         <div class="label">Session fills &amp; G2 <span class="info" title="Detail view — headline health KPIs are pinned under the header.">?</span></div>
                         <div class="metric-row"><span class="label">Fills (session)</span> <span id="fills-session" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Quote age @ detected fill <span class="info" title="Age when fill was inferred from balance change (engine). Not ledger fill time. Requires ws-engine deploy.">?</span></span> <span id="fill-quote-age" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Bal Δ (session)</span> <span id="session-pnl" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Spread capture</span> <span id="session-capture" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Markout @30s</span> <span id="session-markout" class="value">—</span></div>
@@ -1671,6 +1673,23 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 setText('as_spread', newAs);
                 if (asChanged) triggerAnim(asSpreadEl, 'value-updated', 400);
             }
+
+            const deltaBps = s.reservation_to_bbo_delta_bps;
+            const insideL1 = s.inside_l1;
+            const deltaEl = document.getElementById('res-bbo-delta');
+            if (deltaEl) {
+                if (deltaBps != null && !Number.isNaN(parseFloat(deltaBps))) {
+                    const bps = parseFloat(deltaBps);
+                    const sign = bps >= 0 ? '+' : '';
+                    const side = insideL1 === true ? 'inside ' : (insideL1 === false ? 'outside ' : '');
+                    deltaEl.textContent = `${side}${sign}${bps.toFixed(1)} bps`;
+                    deltaEl.className = 'value ' + (insideL1 ? 'good' : 'warn');
+                } else {
+                    deltaEl.textContent = '—';
+                    deltaEl.className = 'value';
+                }
+            }
+
             const paramsEl = document.getElementById('params');
             if (paramsEl) {
                 const newP = (s.as_gamma != null && s.as_kappa != null) ? `${s.as_gamma} / ${s.as_kappa}` : '-';
@@ -1714,6 +1733,15 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
 
             setText('fills-session', `${fillsCount}${fillsProcNote}`);
+            const fillAgeEl = document.getElementById('fill-quote-age');
+            if (fillAgeEl) {
+                const fillAge = s.effective_quote_age_at_fill_seconds;
+                if (fillAge != null && !Number.isNaN(parseFloat(fillAge))) {
+                    fillAgeEl.textContent = `${parseFloat(fillAge).toFixed(1)}s`;
+                } else {
+                    fillAgeEl.textContent = '—';
+                }
+            }
             if (balPnl != null && !Number.isNaN(balPnl)) {
                 const sign = balPnl >= 0 ? '+' : '';
                 const pnlEl = document.getElementById('session-pnl');

@@ -46,6 +46,7 @@ from experimental.ws_feed.hud_intel_support import (
 from experimental.ws_feed.live_pure_as_tester import _hud_market_payload
 
 from experimental.ws_feed.performance_metrics import build_performance_metrics
+from experimental.ws_feed.reservation_metrics import enrich_runtime_reservation_metrics
 from experimental.ws_feed.pure_quote_path import current_ws_as_version
 from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
 
@@ -167,6 +168,8 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
         rt["ws_fills_csv"] = count_ws_fills_csv()
     except Exception:
         rt.setdefault("ws_fills_csv", int(rt.get("fills_session") or 0))
+
+    rt = enrich_runtime_reservation_metrics(rt)
 
     return rt
 

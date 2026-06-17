@@ -209,6 +209,8 @@ def compact_sample_from_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
             pause_bids=pause_bids,
             pause_asks=pause_asks,
         ),
+        "inside_l1": runtime.get("inside_l1"),
+        "reservation_to_bbo_delta_bps": runtime.get("reservation_to_bbo_delta_bps"),
     }
 
 

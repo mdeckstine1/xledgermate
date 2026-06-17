@@ -3,9 +3,22 @@
 **Status:** Active — **WS + pure Avellaneda-Stoikov** is the production MM quoting model on VPS.  
 **Version:** **v2.1.14** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru-Kaizen` (VPS live MM)  
 **Sacred corpus:** `grok-tier-2-collab` (Gate 2 replay + economics) · **E2 merged** 2026-06-15  
-**Last updated:** 2026-06-17 (grounded Grok analyze; intelligence boost backlog for regime / empty peer lane)
+**Last updated:** 2026-06-17 (Phase M execution measurement — reservation BBO delta HUD; M2–M4 deferred to engine window)
 
 This is the **single checklist** for WS + pure A-S work. Other docs point here; do not duplicate task lists elsewhere.
+
+---
+
+## Soak deploy discipline
+
+| Change type | Restart | Safe during live soak? |
+|-------------|---------|----------------------|
+| HUD HTML / `ws_hud_production.py` / `reservation_metrics.py` | `xledgermate-ws-hud` only | **Yes** |
+| `pure_quote_path.py` / `as_safety.py` (lab + CI) | — until engine pull | **Yes** (VPS ws-engine unchanged) |
+| `ws_pure_engine.py` logging / fill age / stale-cross | `xledgermate` | **No** — plan segment boundary |
+| `vps_deploy_ashigaru.sh` full deploy | ws-engine + HUD | **No** unless intended |
+
+**Sacred rule:** reservation inside live BBO = `would_quote` gate. Measurement and HUD never override A-S math.
 
 ---
 
@@ -144,6 +157,23 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 - [x] **G5 (E.5)** Replay validation — `peer_lane_replay_validation.py`; peer coverage % + neutral-fallback rate on `intel_decisions.jsonl` + WS samples; sacred eligibility baseline
 - [x] **G6 (E.6)** Live activation graded by §7 — `live_activation_grading.py` (portfolio XRP-equiv, capture, toxicity, G2/G4 rates); HUD Metrics tab; `python -m experimental.ws_feed.live_activation_grading --gate`
 
+### Phase M — Execution measurement (active soak)
+
+*Instrumentation only — **no change** to reservation/optimal spread math in `avellaneda_strategy.py`. Advisory paths remain inputs. Fill age is **detected** (balance-delta), not ledger fill time.*
+
+**Philosophy:** Measure before automating (sync policy, async submit P7, regime I1–I4). HUD-first where possible.
+
+- [x] **M1** **Reservation → BBO delta (soak-safe)** — `reservation_metrics.py`; signed bps + `inside_l1`; HUD Live card via `ws_hud_production._enrich_runtime_for_hud`; `pure_quote_path` + tester `sample_history` (lab); **ws-hud restart only** on VPS
+- [ ] **M2** **Quote age @ detected fill** — `effective_quote_age_at_fill_seconds` on decision/runtime; populate in `ws_pure_engine._detect_fills` (last side place timestamp v1); label honestly in HUD + CSV
+- [ ] **M3** **Stale-cross flag** — `reservation_crossed_after_ws_sample` in `ws_pure_engine` (frozen reservation vs pre/post-scrape BBO); `zero_quote_notes.py` operator string; `ws_runtime_analysis` bucket — **engine restart**
+- [ ] **M4** **Production `sample_history`** — parity with tester `append_runtime_sample`; enables soak breakdowns on VPS — **engine restart**
+- [x] **M5** **Advisory guard (narrow)** — `as_safety.py` enforces reservation-inside-L1 only; wired in `pure_quote_path`; production when engine deploys
+- [ ] **M6** **Per-sequence quote age** — `_offer_placed_utc[sequence]` after M2 data reviewed — post-soak
+
+**HUD during current soak (M1):** Res → BBO Δ each cycle (derived). Fill age / stale-cross show `—` until M2/M3 engine deploy.
+
+**Limitations (document in ops):** balance-delta fills ≥1 cycle late; kept offers understate age until M6; stale-cross = intel scrape window only.
+
 ### Phase H — On-ledger arbitrage & multi-pair (separate product line)
 
 *Deferred until **G6 soak** + live activation gate pass. **Not** a tweak to ws-engine MM — a **second stack** (taker / path / AMM), optionally on a **second wallet**. Reuses sensors (WS book, competitor intel, fill economics); different execution (`Payment` + path, `AMMSwap`, not standing `OfferCreate`). Advisory intel today: HUD “Active Makers” = RLUSD/XRP CLOB accounts seen in ~5 min (not whole-ledger census).*
@@ -169,6 +199,8 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 | **B — Arb** (optional) | path payments, AMM swaps | Snipe dislocations without canceling MM quotes |
 
 Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sync and arb `Payment` on one account at high frequency.
+
+**Operator UI (decided — not built):** One HUD (`:8765`), separate `ws-engine` + `ws-arb` processes; nested `state.arb` in `/state`; **Arb** tab — see Phase H checklist.
 
 **Gate before any Phase H live tx:**
 
@@ -223,7 +255,12 @@ Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sy
 
 **Ledger execution (scale)**
 
-- [ ] **P7** L1–L4 from operator note — instrument tx rate, async submit path, RPC latency (see § Ledger cadence below)
+- [ ] **P7** L1–L4 from operator note — instrument tx rate, async submit path, RPC latency (see § Ledger cadence below; **Phase M** data gates timing)
+
+**Execution measurement (links Phase M)**
+
+- [ ] **M2–M4** engine window — fill age, stale-cross, `sample_history` (see Phase M)
+- [ ] Correlate M2/M3 with markout before changing `resolve_ws_sync_tolerances` or P7 async submit
 
 **Gates before promoting post-soak intel to automation**
 
@@ -289,17 +326,9 @@ Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sy
 - **Future-proofing**: Keep modular. Add `experimental/liquidity/amm_provider.py` later with config flag. Integrate inventory tracking but never touch reservation price.
 - **When to consider**: After bag >30k XRP and stable order-book performance; after **H1** monitor proves pool vs CLOB linkage.
 
-**New: Self-Diagnostic & Trap Building (Long-term Evolution)**
+**New: Self-Diagnostic & Trap Building (long-term)**
 
-- **Self-Evaluation Mode**: Extend Peer Band + Structural Signals to periodically run the same on-chain analysis on our own address. Output an “Exploitability Score” and specific patterns (e.g., slow bid replacement, one-sided ask cancels, size clustering) in the Performance Metrics tab.
-- **Trap Building**: Once self-diagnostics are mature, add intentional misdirection tactics:
-  - Randomized cancel/refresh cadence
-  - Temporary fake skew to lure aggressive takers
-  - Size randomization within peer bands
-  - Honey-pot offers + fast counter-posting
-- **Goal**: Reduce our own predictable defensive patterns while creating exploitable holes for competitors — turning defense into offense.
-- **Status**: Future extension (after Peer Band + Phase E core is stable). Advisory-only initially.
-- **Trigger**: Implement after consistent live performance and bag growth beyond current ~11k XRP.
+- Self-evaluation on own address + optional trap tactics — **after** Phase M measurement + peer band stable. Advisory-only initially.
 
 **Decision rule before any option ships:**
 
@@ -382,6 +411,8 @@ experimental/ws_feed/live_activation_grading.py       # G6 §7 live activation t
 experimental/ws_feed/peer_lane_quoting.py          # G4; I1 regime channel will extend prepare_quoting_intel
 experimental/ws_feed/hud_intel_support.py          # grounded analyze briefing + lane HUD fields
 experimental/ws_feed/real_time_as_hud.py           # /analyze_competitor
+experimental/ws_feed/reservation_metrics.py      # M1 signed BBO delta + inside_l1
+experimental/ws_feed/as_safety.py                # M5 reservation gate guard
 experimental/ws_feed/replay_long_run.py
 # Phase H (planned — not shipped)
 experimental/liquidity/amm_provider.py              # H2 pool quotes + H1 monitor

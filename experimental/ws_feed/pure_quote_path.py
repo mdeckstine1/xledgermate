@@ -24,6 +24,8 @@ from experimental.ws_feed.ws_book_age_modulator import apply_ws_book_age_modulat
 from experimental.ws_feed.peer_lane_quoting import G4Adjustments, compute_g4_adjustments, prepare_quoting_intel
 from experimental.ws_feed.spread_quality_scaler import G2Adjustments, compute_g2_adjustments
 from strategy.fill_quality import FillQualityState
+from experimental.ws_feed.as_safety import enforce_reservation_gate
+from experimental.ws_feed.reservation_metrics import reservation_bbo_metrics
 from experimental.ws_feed.zero_quote_notes import classify_and_explain_pure_zero_quote
 from strategy.avellaneda_strategy import AvellanedaStrategy, AvellanedaQuote
 from strategy.quote_decision import assess_inventory
@@ -113,6 +115,9 @@ class PureQuoteDecision:
     pause_bids: bool = False
     pause_asks: bool = False
     inventory_limits_summary: str = ""
+    inside_l1: bool = False
+    reservation_to_bbo_delta_bps: Optional[float] = None
+    effective_quote_age_at_fill_seconds: Optional[float] = None
 
     def to_runtime_dict(self, *, competitor_intel: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -146,6 +151,9 @@ class PureQuoteDecision:
             "suggested_bid": self.suggested_bid,
             "suggested_ask": self.suggested_ask,
             "quote_intents": list(self.quote_intents),
+            "inside_l1": self.inside_l1,
+            "reservation_to_bbo_delta_bps": self.reservation_to_bbo_delta_bps,
+            "effective_quote_age_at_fill_seconds": self.effective_quote_age_at_fill_seconds,
         }
         if competitor_intel:
             out.update({k: v for k, v in competitor_intel.items() if k != "top_competitors"})
@@ -386,9 +394,23 @@ class PureQuotePath:
         finally:
             self.as_strat.gamma = base_gamma
 
-        would_quote = best_bid < as_quote.reservation_price < best_ask
+        would_quote_reservation = best_bid < as_quote.reservation_price < best_ask
+        would_quote_reservation = enforce_reservation_gate(
+            would_quote_reservation=would_quote_reservation,
+            reservation=as_quote.reservation_price,
+            best_bid=best_bid,
+            best_ask=best_ask,
+        )
+        bbo_metrics = reservation_bbo_metrics(
+            reservation=as_quote.reservation_price,
+            best_bid=best_bid,
+            best_ask=best_ask,
+            mid=mid,
+        ) or {}
+        inside_l1 = bool(bbo_metrics.get("inside_l1", False))
+        reservation_delta_bps = bbo_metrics.get("reservation_to_bbo_delta_bps")
         zero_reason, zero_detail, operator_note = classify_and_explain_pure_zero_quote(
-            would_quote=would_quote,
+            would_quote=would_quote_reservation,
             best_bid=best_bid,
             best_ask=best_ask,
             reservation=as_quote.reservation_price,
@@ -396,8 +418,8 @@ class PureQuotePath:
             optimal_spread_pct=as_quote.optimal_spread_pct,
             min_spread_floor_pct=self.min_spread_floor_pct,
         )
-        tight_note = operator_note if would_quote else ""
-        blocked_note = operator_note if not would_quote else ""
+        tight_note = operator_note if would_quote_reservation else ""
+        blocked_note = operator_note if not would_quote_reservation else ""
 
         sizes = compute_pure_l1_sizes(
             xrp_balance=xrp_bal,
@@ -439,7 +461,7 @@ class PureQuotePath:
             order_levels=self.order_levels,
             min_order_size_xrp=self.min_order_size_xrp,
             configured_level_sizes=self.configured_order_sizes,
-            active=would_quote,
+            active=would_quote_reservation,
         )
         ladder = apply_pause_to_ladder(
             ladder,
@@ -450,8 +472,8 @@ class PureQuotePath:
         active_quotes = count_active_l1_quotes(ladder)
 
         decision = PureQuoteDecision(
-            would_quote=would_quote and active_quotes > 0,
-            quote_count=active_quotes if would_quote else 0,
+            would_quote=would_quote_reservation and active_quotes > 0,
+            quote_count=active_quotes if would_quote_reservation else 0,
             mid=mid,
             best_bid=best_bid,
             best_ask=best_ask,
@@ -471,15 +493,15 @@ class PureQuotePath:
             zero_quote_operator_note=blocked_note,
             tight_book_note=tight_note,
             quote_decision_summary="",
-            quoting_policy_label="PURE A-S (inside L1)" if would_quote else "PURE A-S (math blocked)",
+            quoting_policy_label="PURE A-S (inside L1)" if would_quote_reservation else "PURE A-S (math blocked)",
             competitor_pressure=competitor_pressure,
             pressure_rationale=pressure_rationale,
             ai_edge_quality=ai_edge,
             ai_is_skimmable=ai_skimmable,
             ai_rationale=ai_rationale,
             ai_suggested_posture=ai_posture,
-            suggested_bid=as_quote.bid_price if would_quote and not inv_policy.pause_bids else None,
-            suggested_ask=as_quote.ask_price if would_quote and not inv_policy.pause_asks else None,
+            suggested_bid=as_quote.bid_price if would_quote_reservation and not inv_policy.pause_bids else None,
+            suggested_ask=as_quote.ask_price if would_quote_reservation and not inv_policy.pause_asks else None,
             bid_size=inv_policy.bid_size_xrp,
             ask_size=inv_policy.ask_size_xrp,
             l1_xrp=sizes.l1_xrp,
@@ -501,6 +523,8 @@ class PureQuotePath:
             g4_summary=g4.summary,
             g4_peer_lane_count=g4.peer_lane_count,
             g4_peer_pressure=g4.peer_pressure,
+            inside_l1=inside_l1,
+            reservation_to_bbo_delta_bps=reservation_delta_bps,
         )
         skim = (competitor_intel or {}).get("competitor_skim_advice", "") or ""
         decision.quote_decision_summary = _build_summary(

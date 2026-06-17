@@ -433,6 +433,8 @@ async def _sample_and_decide(
                 "ws_book_age_s": state.age_seconds(),
                 "inventory_label": engine_dec.get("inventory_label"),
                 "zero_quote_reason": engine_dec.get("zero_quote_reason"),
+                "inside_l1": engine_dec.get("inside_l1"),
+                "reservation_to_bbo_delta_bps": engine_dec.get("reservation_to_bbo_delta_bps"),
             },
         )
 

@@ -155,6 +155,9 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "g4_summary": decision.g4_summary,
         "g4_peer_lane_count": decision.g4_peer_lane_count,
         "g4_peer_pressure": decision.g4_peer_pressure,
+        "inside_l1": decision.inside_l1,
+        "reservation_to_bbo_delta_bps": decision.reservation_to_bbo_delta_bps,
+        "effective_quote_age_at_fill_seconds": decision.effective_quote_age_at_fill_seconds,
     }
 
 
