@@ -172,7 +172,7 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 **HUD during current soak (M1):** Res → BBO Δ each cycle (derived). Fill age / stale-cross show `—` until M2/M3 engine deploy.
 
-**Soak-safe batch (2026-06-17, no ws-engine restart):** `scripts/fill_quote_age_report.py` (offline M2 prep); hourly Telegram Res→BBO; I6 HUD labels; F1 nicknames; M3 analysis bucket in `ws_runtime_analysis` + `zero_quote_notes`.
+**Soak-safe batch (2026-06-17, no ws-engine restart):** `scripts/fill_quote_age_report.py` (offline M2 prep); hourly Telegram Res→BBO; I6 HUD labels; F1 nicknames; M3 analysis bucket in `ws_runtime_analysis` + `zero_quote_notes`; **HUD Reports tab** (`hud_reports_support.py`, `/reports/catalog`, `/report/{id}`).
 
 **Limitations (document in ops):** balance-delta fills ≥1 cycle late; kept offers understate age until M6; stale-cross = intel scrape window only.
 

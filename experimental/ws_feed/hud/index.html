@@ -523,6 +523,7 @@
             <a href="#" data-page="live" class="active">Live</a>
             <a href="#" data-page="intelligence">Intelligence</a>
             <a href="#" data-page="metrics">Metrics</a>
+            <a href="#" data-page="reports">Reports</a>
             <a href="#" data-page="credentials">Credentials</a>
             <a href="#" data-page="config">Config</a>
         </div>
@@ -768,6 +769,30 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
                 <div class="marquee-container" style="margin-top:12px;">
                     <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="reports" class="page">
+            <div class="content">
+                <h3 style="margin-top:0; color:#60a5fa;">Reports — soak-safe operator reference</h3>
+                <p style="font-size:0.82rem; color:#94a3b8; margin-top:0;">
+                    Read-only reports from <code>logs/</code> on this host. All listed reports are
+                    <strong style="color:#86efac;">soak-safe</strong> — they do not restart or change <code>ws-engine</code>.
+                    Click <strong>Open in new tab</strong> for a printable view; use <strong>Refresh</strong> on the report page for latest data.
+                </p>
+                <div id="reports-catalog-status" style="font-size:0.75rem; color:#64748b; margin-bottom:10px;">Loading report catalog…</div>
+                <div id="reports-catalog" class="inventory-cards" style="margin-top:8px;"></div>
+                <div class="card full-width" style="margin-top:14px; border-left:3px solid #334155;">
+                    <div class="label">Report ID reference</div>
+                    <div style="font-size:0.75rem; color:#94a3b8; line-height:1.5;">
+                        Each report has a stable <code>report_id</code> used in URLs:
+                        <code>/report/{report_id}</code> (HTML) or <code>/report/{report_id}.txt</code> (plain text).
+                        CLI equivalents are shown on each card and on the report page footer.
+                    </div>
+                </div>
+                <div class="marquee-container" style="margin-top:12px;">
+                    <div class="marquee market-ticker" style="animation-duration: 90s;">Reports read logs only — MM quoting unchanged</div>
                 </div>
             </div>
         </div>
@@ -2263,6 +2288,87 @@ The A-S strategy itself decides presence via reservation price being inside the 
             if (page === 'config') {
                 loadTelegramConfig();
             }
+            if (page === 'reports') {
+                loadReportsCatalog();
+            }
+        }
+
+        async function loadReportsCatalog() {
+            const statusEl = document.getElementById('reports-catalog-status');
+            const container = document.getElementById('reports-catalog');
+            if (!container) return;
+            if (statusEl) statusEl.textContent = 'Loading report catalog…';
+            try {
+                const resp = await fetch('/reports/catalog');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+                renderReportsCatalog(data.reports || []);
+                if (statusEl) {
+                    statusEl.textContent = `${(data.reports || []).length} reports available · opens read-only from logs/`;
+                }
+            } catch (e) {
+                if (statusEl) statusEl.textContent = 'Could not load reports catalog.';
+                container.innerHTML = '<div style="color:#f87171;font-size:0.85rem;">Failed to fetch /reports/catalog — is ws-hud running?</div>';
+            }
+        }
+
+        function renderReportsCatalog(reports) {
+            const container = document.getElementById('reports-catalog');
+            if (!container) return;
+            if (!reports.length) {
+                container.innerHTML = '<div style="color:#64748b;">No reports configured.</div>';
+                return;
+            }
+            const byCategory = {};
+            reports.forEach(r => {
+                const cat = r.category || 'Other';
+                if (!byCategory[cat]) byCategory[cat] = [];
+                byCategory[cat].push(r);
+            });
+            const order = ['Operator', 'Gates', 'Soak analysis', 'Other'];
+            let html = '';
+            order.forEach(cat => {
+                const rows = byCategory[cat];
+                if (!rows || !rows.length) return;
+                html += `<div class="card full-width" style="margin-bottom:10px;"><div class="label">${cat}</div>`;
+                rows.forEach(r => {
+                    const soak = r.soak_safe
+                        ? '<span style="background:#14532d;color:#86efac;font-size:0.65rem;padding:2px 6px;border-radius:3px;margin-right:6px;">Soak-safe</span>'
+                        : '<span style="background:#7f1d1d;color:#fca5a5;font-size:0.65rem;padding:2px 6px;border-radius:3px;margin-right:6px;">Engine change</span>';
+                    const restart = r.engine_restart
+                        ? '<span style="color:#fbbf24;font-size:0.68rem;">Requires ws-engine restart</span>'
+                        : '<span style="color:#93c5fd;font-size:0.68rem;">No ws-engine restart</span>';
+                    html += `<div style="border-top:1px solid #334155;padding:10px 0;">
+                        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between;">
+                            <div>
+                                <strong style="color:#f1f5f9;">${r.title}</strong>
+                                <span style="font-size:0.7rem;color:#64748b;margin-left:8px;">ID: <code>${r.id}</code></span>
+                                <div style="font-size:0.75rem;color:#94a3b8;margin-top:2px;">${r.subtitle}</div>
+                            </div>
+                            <button type="button" class="report-open-btn" data-report-id="${r.id}"
+                                style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 12px;font-size:0.75rem;cursor:pointer;white-space:nowrap;">
+                                Open in new tab ↗
+                            </button>
+                        </div>
+                        <div style="margin-top:6px;">${soak} ${restart}</div>
+                        <div style="font-size:0.78rem;color:#cbd5e1;margin-top:6px;">${r.description}</div>
+                        <div style="font-size:0.68rem;color:#64748b;margin-top:4px;">${r.phase_ref ? r.phase_ref + ' · ' : ''}CLI: <code>${r.cli_command}</code></div>
+                    </div>`;
+                });
+                html += '</div>';
+            });
+            container.innerHTML = html;
+            container.querySelectorAll('.report-open-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const id = btn.getAttribute('data-report-id');
+                    if (id) openReportInNewTab(id);
+                });
+            });
+        }
+
+        function openReportInNewTab(reportId) {
+            const url = '/report/' + encodeURIComponent(reportId) + '?t=' + Date.now();
+            window.open(url, '_blank', 'noopener,noreferrer');
         }
 
         function _populateHourSelect(selectId) {

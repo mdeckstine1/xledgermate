@@ -34,13 +34,20 @@ def hour_key(dt: datetime) -> str:
     return h.strftime("%Y-%m-%d %H:00")
 
 
-def main() -> int:
-    now = datetime.now(tz=timezone.utc)
-    since = now - timedelta(hours=HOURS)
+def format_hourly_soak_trend(
+    *,
+    logs_dir: Path | None = None,
+    hours: int = HOURS,
+    now: datetime | None = None,
+) -> str:
+    """Build hourly soak trend report text (HUD Reports + CLI)."""
+    logs = logs_dir or LOGS
+    now = now or datetime.now(tz=timezone.utc)
+    since = now - timedelta(hours=hours)
 
     # --- fills from CSV ---
     fill_buckets: dict[str, list[dict]] = defaultdict(list)
-    for path in sorted(LOGS.glob("trades_*.csv")):
+    for path in sorted(logs.glob("trades_*.csv")):
         with path.open(encoding="utf-8", newline="") as handle:
             for row in csv.DictReader(handle):
                 if WS_MARKER not in (row.get("notes") or ""):
@@ -56,7 +63,7 @@ def main() -> int:
     markout_buckets: dict[str, list[float]] = defaultdict(list)
     book_age_buckets: dict[str, list[float]] = defaultdict(list)
 
-    intel_path = LOGS / "intel_decisions.jsonl"
+    intel_path = logs / "intel_decisions.jsonl"
     if intel_path.exists():
         with intel_path.open(encoding="utf-8", errors="replace") as handle:
             for line in handle:
@@ -84,7 +91,7 @@ def main() -> int:
                     markout_buckets[hk].append(float(mo))
 
     # ws_book_age may be in decisions.jsonl
-    dec_path = LOGS / "decisions.jsonl"
+    dec_path = logs / "decisions.jsonl"
     if dec_path.exists():
         with dec_path.open(encoding="utf-8", errors="replace") as handle:
             for line in handle:
@@ -131,15 +138,17 @@ def main() -> int:
         bps = (cap / vol * 10000.0) if vol else 0.0
         return n, cap, bps
 
-    print(f"=== Hourly soak trend (last {HOURS}h UTC) ===")
-    print(f"now: {now.strftime('%Y-%m-%d %H:%M UTC')}")
-    print()
+    lines: list[str] = [
+        f"=== Hourly soak trend (last {hours}h UTC) ===",
+        f"now: {now.strftime('%Y-%m-%d %H:%M UTC')}",
+        "",
+    ]
     hdr = (
         f"{'Hour UTC':<17} {'Fills':>5} {'Capture':>9} {'bps':>5} "
         f"{'Tox%':>6} {'Tox30':>6} {'Mk30':>7} {'BookP90':>8}"
     )
-    print(hdr)
-    print("-" * len(hdr))
+    lines.append(hdr)
+    lines.append("-" * len(hdr))
 
     total_fills = 0
     total_cap = 0.0
@@ -161,22 +170,28 @@ def main() -> int:
         mk_s = fmt(mk, 7, "%") if mk is not None else "—".rjust(7)
         ba_s = fmt(bage, 7, "s") if bage is not None else "—".rjust(8)
 
-        print(
+        lines.append(
             f"{hk:<17} {n:5d} {cap:+9.4f} {bps:5.1f} "
             f"{fmt(tox, 5, '%')} {fmt(tox30, 5, '%')} {mk_s} {ba_s}"
         )
 
-    print("-" * len(hdr))
-    print(f"{'TOTAL':<17} {total_fills:5d} {total_cap:+9.4f}")
-    print()
-    print("Legend: Tox/Tox30 = avg from cycle intel log | Mk30 = mean markout @30s | BookP90 = p90 ws_book_age_s")
+    lines.append("-" * len(hdr))
+    lines.append(f"{'TOTAL':<17} {total_fills:5d} {total_cap:+9.4f}")
+    lines.extend(
+        [
+            "",
+            "Legend: Tox/Tox30 = avg from cycle intel log | Mk30 = mean markout @30s | BookP90 = p90 ws_book_age_s",
+            "",
+            "=== Notes ===",
+            "- Fills with +0.0000 capture still count; balance PnL may lag per-fill column",
+            "- Book age from intel_decisions.jsonl cycle rows when present",
+        ]
+    )
+    return "\n".join(lines)
 
-    # annotate known events
-    print()
-    print("=== Notes ===")
-    print("- Book freshness fix deployed ~Jun 17 (expect BookP90 drop after restart ~10:23 UTC)")
-    print("- Fills with +0.0000 capture still count; balance PnL may lag per-fill column")
 
+def main() -> int:
+    print(format_hourly_soak_trend())
     return 0
 
 

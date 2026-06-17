@@ -26,6 +26,7 @@ Requires: fastapi, uvicorn (pip install fastapi uvicorn)
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import subprocess
 import threading
@@ -323,6 +324,52 @@ if app:
                 mapping = remove_nickname(address)
         _current_state["competitor_nicknames"] = mapping
         return {"ok": True, "nicknames": mapping}
+
+    @app.get("/reports/catalog")
+    async def reports_catalog():
+        """Soak-safe report list for HUD Reports tab."""
+        from experimental.ws_feed.hud_reports_support import list_reports
+
+        return {"reports": list_reports()}
+
+    @app.get("/report/{report_id}", response_class=HTMLResponse)
+    async def report_view_html(report_id: str):
+        """Standalone report page (open in new browser tab)."""
+        from experimental.ws_feed.hud_reports_support import (
+            generate_report_text,
+            get_report_spec,
+            wrap_report_html,
+        )
+
+        spec = get_report_spec(report_id)
+        if spec is None:
+            return HTMLResponse(
+                f"<h1>Unknown report: {html.escape(report_id)}</h1>"
+                f"<p><a href='/'>Back to HUD</a></p>",
+                status_code=404,
+            )
+        body = generate_report_text(report_id)
+        page = wrap_report_html(
+            report_id=report_id,
+            title=spec.title,
+            subtitle=spec.subtitle,
+            body_text=body,
+            spec=spec,
+        )
+        resp = HTMLResponse(page)
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return resp
+
+    @app.get("/report/{report_id}.txt")
+    async def report_view_text(report_id: str):
+        """Plain-text report (curl / automation)."""
+        from fastapi.responses import PlainTextResponse
+
+        from experimental.ws_feed.hud_reports_support import generate_report_text, get_report_spec
+
+        if get_report_spec(report_id) is None:
+            return PlainTextResponse(f"Unknown report: {report_id}\n", status_code=404)
+        return PlainTextResponse(generate_report_text(report_id))
 
     @app.get("/list_models")
     async def list_models():
