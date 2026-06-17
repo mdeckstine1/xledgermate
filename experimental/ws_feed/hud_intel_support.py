@@ -287,6 +287,127 @@ def _float_or_none(value: Any) -> Optional[float]:
         return None
 
 
+def _parse_sides_string(sides: Any) -> tuple[int, int]:
+    """Parse profile sides like 'b10/a5' into (bid_count, ask_count)."""
+    text = str(sides or "").strip().lower()
+    if not text:
+        return 0, 0
+    bid, ask = 0, 0
+    for part in text.replace(" ", "").split("/"):
+        if part.startswith("b") and part[1:].isdigit():
+            bid += int(part[1:])
+        elif part.startswith("a") and part[1:].isdigit():
+            ask += int(part[1:])
+    return bid, ask
+
+
+def _rollup_sides_from_runtime(merged: Mapping[str, Any]) -> Dict[str, Any]:
+    """Soak-safe fallback: roll up top_competitors sides when engine lacks I5 fields."""
+    bid = int(merged.get("book_bid_offers") or 0)
+    ask = int(merged.get("book_ask_offers") or 0)
+    if bid or ask:
+        return {}
+    rows = list(merged.get("top_competitors") or []) + list(merged.get("top_peers") or [])
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("account_full") or row.get("account") or "")
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        b, a = _parse_sides_string(row.get("sides"))
+        bid += b
+        ask += a
+    if not (bid or ask):
+        return {}
+    from experimental.market_analysis.competitor_intel import aggregate_book_side_skew, CompetitorProfile
+
+    pseudo = [
+        CompetitorProfile(account="_rollup", sides_quoted={"bid": bid, "ask": ask}),
+    ]
+    return aggregate_book_side_skew(pseudo)
+
+
+def book_side_skew_hud_fields(runtime: Dict[str, Any]) -> Dict[str, Any]:
+    """I5 — book-wide bid/ask offer skew from competitor scrape (HUD pill only)."""
+    ci = competitor_fields_from_runtime(runtime)
+    merged = {**runtime, **ci}
+    rollup = _rollup_sides_from_runtime(merged)
+    if rollup:
+        merged = {**merged, **rollup}
+    bid = int(merged.get("book_bid_offers") or 0)
+    ask = int(merged.get("book_ask_offers") or 0)
+    label = str(merged.get("book_side_skew_label") or "unknown")
+    skew = _float_or_none(merged.get("book_side_skew"))
+    ratio = _float_or_none(merged.get("book_side_skew_ratio"))
+    display = "—"
+    if bid or ask:
+        display = f"b{bid}/a{ask}"
+        if label != "unknown":
+            display += f" · {label.replace('_', ' ')}"
+    return {
+        "book_bid_offers": bid or None,
+        "book_ask_offers": ask or None,
+        "book_side_skew": skew,
+        "book_side_skew_ratio": ratio,
+        "book_side_skew_label": label if (bid or ask) else None,
+        "book_side_skew_display": display if (bid or ask) else "—",
+    }
+
+
+def structured_peer_briefing(
+    ctx: Mapping[str, Any],
+    *,
+    address: str,
+    state: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """F3b — formal JSON briefing schema for Grok prompts and outcome tracking."""
+    profile = ctx.get("profile")
+    state = state or {}
+    ci = competitor_fields_from_runtime(dict(state)) if state else {}
+    merged = {**dict(state), **ci}
+    prof_payload: Optional[Dict[str, Any]] = None
+    if isinstance(profile, dict):
+        prof_payload = {
+            "account": profile.get("account_full") or profile.get("account"),
+            "touch_xrp": profile.get("touch_xrp"),
+            "last_spread_pct": profile.get("last_spread"),
+            "avg_spread_pct": profile.get("avg_spread"),
+            "offers_seen": profile.get("activity"),
+            "cancels_seen": profile.get("cancels"),
+            "sides": profile.get("sides"),
+            "domain": profile.get("domain"),
+        }
+    return {
+        "schema_version": 1,
+        "address": address,
+        "scrape_source": ctx.get("source"),
+        "in_peer_lane": bool(ctx.get("in_peer_lane")),
+        "touch_xrp": ctx.get("touch_xrp"),
+        "our_lane_xrp": ctx.get("our_lane_xrp"),
+        "peer_band": {
+            "low_xrp": ctx.get("peer_band_low_xrp"),
+            "high_xrp": ctx.get("peer_band_high_xrp"),
+        },
+        "profile": prof_payload,
+        "macro": {
+            "competitor_pressure": merged.get("competitor_pressure"),
+            "book_regime_pressure": merged.get("book_regime_pressure") or merged.get("pressure_score"),
+            "peer_pressure_score": merged.get("peer_pressure_score"),
+            "peer_lane_count": merged.get("peer_lane_count"),
+            "book_spread_pct": merged.get("book_spread_pct"),
+            "book_side_skew": merged.get("book_side_skew"),
+            "book_side_skew_label": merged.get("book_side_skew_label"),
+            "inventory_label": merged.get("inventory_label"),
+        },
+        "fled_events": list(ctx.get("fled_events") or []),
+        "evidence_lines": list(ctx.get("evidence_lines") or []),
+        "lane_note": ctx.get("lane_note"),
+    }
+
+
 def regime_intel_hud_fields(runtime: Dict[str, Any]) -> Dict[str, Any]:
     """
     I6 display split — peer lane pressure vs book-wide regime (HUD-only until JSONL ships).
@@ -317,6 +438,7 @@ def regime_intel_hud_fields(runtime: Dict[str, Any]) -> Dict[str, Any]:
         "book_regime_pressure": book_ps,
         "spread_regime_gap_bps": spread_regime_gap_bps,
         "regime_channel_active": bool(merged.get("regime_channel_active", False)),
+        **book_side_skew_hud_fields(runtime),
     }
 
 
@@ -484,6 +606,23 @@ def build_competitor_analysis_context(
             "── Grok analysis (advisory) ──\n"
         )
 
+    structured = structured_peer_briefing(
+        {
+            "profile": profile,
+            "source": source,
+            "in_peer_lane": in_peer_lane,
+            "touch_xrp": touch_xrp,
+            "our_lane_xrp": our_lane,
+            "peer_band_low_xrp": band_low,
+            "peer_band_high_xrp": band_high,
+            "fled_events": fled_for_target,
+            "evidence_lines": evidence_lines,
+            "lane_note": lane_note,
+        },
+        address=address,
+        state=merged,
+    )
+
     return {
         "profile": profile,
         "source": source,
@@ -497,6 +636,7 @@ def build_competitor_analysis_context(
         "prompt_block": prompt_block,
         "evidence_header": header,
         "lane_note": lane_note,
+        "structured_briefing": structured,
     }
 
 

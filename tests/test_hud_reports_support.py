@@ -12,10 +12,12 @@ from experimental.ws_feed.hud_reports_support import (
 
 def test_list_reports_has_soak_safe_entries() -> None:
     reports = list_reports()
-    assert len(reports) >= 5
+    assert len(reports) >= 7
     ids = {r["id"] for r in reports}
     assert "hourly_telegram" in ids
     assert "fill_quote_age" in ids
+    assert "grok_suggestions" in ids
+    assert "clob_amm_monitor" in ids
     assert all(r["soak_safe"] for r in reports)
 
 

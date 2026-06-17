@@ -124,4 +124,56 @@ def build_peer_scrape_intel_record(comp_fields: Dict[str, Any]) -> Dict[str, Any
         "peer_lane_widened": cf.get("peer_lane_widened"),
         "peer_fled_touch_count": cf.get("peer_fled_touch_count"),
         "num_active_mms": cf.get("num_active_mms"),
+        "book_bid_offers": cf.get("book_bid_offers"),
+        "book_ask_offers": cf.get("book_ask_offers"),
+        "book_side_skew": cf.get("book_side_skew"),
+        "book_side_skew_label": cf.get("book_side_skew_label"),
+    }
+
+
+def build_grok_suggestion_intel_record(
+    *,
+    address: str,
+    model: str,
+    briefing: Dict[str, Any],
+    result_text: str,
+    context_snapshot: Optional[Dict[str, Any]] = None,
+    outcome_status: str = "pending",
+) -> Dict[str, Any]:
+    """F4 — log Grok analyze_competitor call for later outcome correlation."""
+    ctx = context_snapshot or {}
+    structured = briefing.get("structured_briefing") if isinstance(briefing.get("structured_briefing"), dict) else {}
+    excerpt = (result_text or "").strip()[:500]
+    return {
+        "kind": "grok_suggestion",
+        "address": address,
+        "model": model,
+        "in_peer_lane": bool(briefing.get("in_peer_lane")),
+        "scrape_source": briefing.get("source"),
+        "touch_xrp": briefing.get("touch_xrp"),
+        "structured_briefing": structured or None,
+        "result_chars": len(result_text or ""),
+        "result_excerpt": excerpt,
+        "outcome_status": outcome_status,
+        "competitor_pressure": ctx.get("competitor_pressure"),
+        "book_regime_pressure": ctx.get("book_regime_pressure"),
+        "book_side_skew_label": ctx.get("book_side_skew_label"),
+        "inventory_label": ctx.get("inventory_label"),
+        "our_lane_xrp": ctx.get("our_lane_xrp") or briefing.get("our_lane_xrp"),
+        "peer_lane_count": ctx.get("peer_lane_count"),
+    }
+
+
+def build_advisory_signal_intel_record(fields: Dict[str, Any]) -> Dict[str, Any]:
+    """F2 HUD advisory stub — rate-limited JSONL row."""
+    return {
+        "kind": "advisory_signal",
+        "source": fields.get("ai_advisory_source"),
+        "vol_mult": fields.get("ai_advisory_vol_mult"),
+        "size_mult": fields.get("ai_advisory_size_mult"),
+        "skim_harder": fields.get("ai_advisory_skim_harder"),
+        "confidence": fields.get("ai_advisory_confidence"),
+        "rationale": fields.get("ai_advisory_rationale"),
+        "competitor_pressure": fields.get("competitor_pressure"),
+        "book_side_skew_label": fields.get("book_side_skew_label"),
     }

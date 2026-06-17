@@ -81,6 +81,37 @@ def test_build_performance_metrics_from_trades(tmp_path: Path) -> None:
 
 
 def test_build_peer_scrape_intel_record() -> None:
-    row = build_peer_scrape_intel_record({"our_lane_xrp": 8.0, "peer_lane_count": 3})
+    row = build_peer_scrape_intel_record(
+        {
+            "our_lane_xrp": 8.0,
+            "peer_lane_count": 3,
+            "book_bid_offers": 20,
+            "book_ask_offers": 10,
+            "book_side_skew": 0.333,
+            "book_side_skew_label": "bid_heavy",
+        }
+    )
     assert row["kind"] == "peer_scrape"
     assert row["peer_lane_count"] == 3
+    assert row["book_side_skew_label"] == "bid_heavy"
+
+
+def test_build_grok_suggestion_intel_record() -> None:
+    from experimental.ws_feed.intel_decisions_log import build_grok_suggestion_intel_record
+
+    row = build_grok_suggestion_intel_record(
+        address="rTest",
+        model="grok-3",
+        briefing={
+            "in_peer_lane": True,
+            "source": "peer_lane",
+            "touch_xrp": 9.0,
+            "structured_briefing": {"schema_version": 1, "address": "rTest"},
+        },
+        result_text="Skim harder on asks when pressure is low.",
+        context_snapshot={"competitor_pressure": 0.25, "inventory_label": "neutral"},
+    )
+    assert row["kind"] == "grok_suggestion"
+    assert row["outcome_status"] == "pending"
+    assert row["structured_briefing"]["schema_version"] == 1
+    assert "Skim harder" in row["result_excerpt"]

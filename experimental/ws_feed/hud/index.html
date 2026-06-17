@@ -283,6 +283,30 @@
             word-break: break-word;
             overflow-wrap: break-word;
         }
+        .intel-briefing-details {
+            margin-top: 8px;
+            font-size: 0.72rem;
+            color: #94a3b8;
+            flex-shrink: 0;
+        }
+        .intel-briefing-details summary {
+            cursor: pointer;
+            color: #a78bfa;
+            user-select: none;
+        }
+        .intel-briefing-json {
+            margin-top: 6px;
+            max-height: 160px;
+            overflow: auto;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            padding: 8px;
+            font-family: ui-monospace, monospace;
+            font-size: 0.68rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
         .intel-top-list-box {
             font-size: 0.75rem;
         }
@@ -757,6 +781,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <div class="metric-row"><span class="label">Peer pressure</span> <span id="metrics-peer-pressure" class="value">—</span></div>
                             <div class="metric-row"><span class="label">Book regime pressure</span> <span id="metrics-book-regime-pressure" class="value">—</span></div>
                             <div class="metric-row"><span class="label">Spread regime gap</span> <span id="metrics-spread-regime-gap" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">Book side skew</span> <span id="metrics-book-side-skew" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">CLOB vs AMM (H1)</span> <span id="metrics-clob-amm" class="value">—</span></div>
                             <div class="metric-row"><span class="label">Active makers</span> <span id="metrics-active-makers" class="value">—</span></div>
                         </div>
                     </div>
@@ -978,6 +1004,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="metric-row"><span class="label">Peer pressure (in-band)</span> <span id="intel-peer-pressure" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Book regime pressure</span> <span id="intel-book-regime-pressure" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Spread regime gap</span> <span id="intel-spread-regime-gap" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Book side skew (b/a offers)</span> <span id="intel-book-side-skew" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Active Makers</span> <span id="intel-active" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Competitor Depth (XRP)</span> <span id="intel-depth" class="value">—</span></div>
                     </div>
@@ -997,6 +1024,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <button id="btn-analyze-addr" style="background:#8b5cf6; color:white; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem; flex-shrink:0;">Analyze with AI</button>
                         </div>
                         <div id="intel-ai-result" class="hud-scroll-box intel-ai-result-box" tabindex="0" role="region" aria-label="AI competitor analysis result">Click a peer in the touch-band list (or paste an r-address), then Analyze. Grok output appears here.</div>
+                        <details id="intel-briefing-details" class="intel-briefing-details" style="display:none;">
+                            <summary>Input briefing (structured JSON sent to Grok)</summary>
+                            <pre id="intel-briefing-json" class="intel-briefing-json"></pre>
+                        </details>
                     </div>
 
                     <div class="card" style="display:flex; flex-direction:column; grid-row: span 3;">
@@ -1035,6 +1066,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="label">AI advisory (Grok)</div>
                         <div class="metric-row"><span class="label">Edge Quality</span> <span id="intel-ai-quality" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Skimmable per AI</span> <span id="intel-ai-skimmable" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Advisory vol× / size×</span> <span id="intel-ai-advisory-mults" class="value">—</span></div>
+                        <div id="intel-ai-rationale" style="font-size:0.75rem; color:#94a3b8; margin-top:4px; white-space:pre-wrap;">F2 rate-limited HUD stub from scrape pressure (advisory only).</div>
                         <div style="font-size:0.75rem; margin-top:4px;">Rationale: <span id="intel-ai-rationale" style="white-space:pre-wrap;">—</span></div>
                         <div class="metric-row" style="margin-top:4px;"><span class="label">Suggested posture</span> <span id="intel-ai-posture" class="value">—</span></div>
                         <small>Advisory only — quoting guard remains reservation inside the live book.</small>
@@ -2020,6 +2053,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 'intel-spread-regime-gap',
                 s.spread_regime_gap_bps != null ? `${parseFloat(s.spread_regime_gap_bps).toFixed(1)} bps` : '—'
             );
+            setText('intel-book-side-skew', s.book_side_skew_display || '—');
             setText('intel-active', s.num_active_mms != null ? s.num_active_mms : '—');
             setText('intel-depth', s.competitor_depth_xrp != null ? `${parseFloat(s.competitor_depth_xrp).toFixed(1)} XRP` : '—');
             setText('intel-advice', s.competitor_skim_advice || (isProductionHud(s)
@@ -2085,6 +2119,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
             // AI fields in Intelligence tab
             setText('intel-ai-quality', s.ai_edge_quality != null ? parseFloat(s.ai_edge_quality).toFixed(2) : '—');
             setText('intel-ai-skimmable', s.ai_is_skimmable != null ? (s.ai_is_skimmable ? 'YES' : 'NO') : '—');
+            const volM = s.ai_advisory_vol_mult != null ? parseFloat(s.ai_advisory_vol_mult).toFixed(2) : null;
+            const szM = s.ai_advisory_size_mult != null ? parseFloat(s.ai_advisory_size_mult).toFixed(2) : null;
+            setText('intel-ai-advisory-mults', (volM && szM) ? `${volM} / ${szM}` : '—');
+            const ratEl = document.getElementById('intel-ai-rationale');
+            if (ratEl) ratEl.textContent = s.ai_advisory_rationale || s.ai_rationale || 'F2 rate-limited HUD stub from scrape pressure (advisory only).';
             setText('intel-ai-rationale', s.ai_rationale || '—');
             setText('intel-ai-posture', s.ai_suggested_posture || '—');
 
@@ -2213,6 +2252,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 'metrics-spread-regime-gap',
                 s.spread_regime_gap_bps != null ? `${parseFloat(s.spread_regime_gap_bps).toFixed(1)} bps` : '—'
             );
+            setText('metrics-book-side-skew', s.book_side_skew_display || '—');
+            setText('metrics-clob-amm', s.clob_amm_monitor_display || '—');
             setText('metrics-active-makers', s.num_active_mms != null ? String(s.num_active_mms) : '—');
             const tailEl = document.getElementById('metrics-intel-tail');
             if (tailEl) {
@@ -2224,7 +2265,15 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         const k = r.kind || '?';
                         const ts = (r.ts_utc || '').slice(11, 19) || '—';
                         if (k === 'peer_scrape') {
-                            return `<div class="intel-log-line">[${ts}] peer peers=${r.peer_lane_count} lane=${r.our_lane_xrp} pressure=${r.peer_pressure_score}</div>`;
+                            const skew = r.book_side_skew_label ? ` skew=${r.book_side_skew_label}` : '';
+                            return `<div class="intel-log-line">[${ts}] peer peers=${r.peer_lane_count} lane=${r.our_lane_xrp} pressure=${r.peer_pressure_score}${skew}</div>`;
+                        }
+                        if (k === 'grok_suggestion') {
+                            const addr = (r.address || '?').slice(0, 12);
+                            return `<div class="intel-log-line">[${ts}] grok ${addr}… lane=${r.in_peer_lane ? 'in' : 'out'} status=${r.outcome_status || 'pending'}</div>`;
+                        }
+                        if (k === 'advisory_signal') {
+                            return `<div class="intel-log-line">[${ts}] advisory vol×=${r.vol_mult} size×=${r.size_mult} skim=${r.skim_harder}</div>`;
                         }
                         return `<div class="intel-log-line">[${ts}] cycle ${r.cycle} inv=${r.inventory_label} pause_a=${r.pause_asks} g2=${r.g2_grade}</div>`;
                     }).join('');
@@ -3129,6 +3178,15 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             const data = await resp.json();
                             pinnedIntelAiResult = data.result || 'No result from analysis.';
                             if (data.debug) console.log('[HUD analyze]', data.debug);
+                            const briefingDetails = document.getElementById('intel-briefing-details');
+                            const briefingJson = document.getElementById('intel-briefing-json');
+                            const sb = data.briefing && data.briefing.structured_briefing;
+                            if (briefingDetails && briefingJson && sb) {
+                                briefingDetails.style.display = 'block';
+                                briefingJson.textContent = JSON.stringify(sb, null, 2);
+                            } else if (briefingDetails) {
+                                briefingDetails.style.display = 'none';
+                            }
                             resultEl.textContent = pinnedIntelAiResult;
                             resultEl.scrollTop = 0;
                             resultEl.classList.add('new-decision');

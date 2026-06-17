@@ -1,11 +1,61 @@
 # Pure A-S Critical Path
 
 **Status:** Active — **WS + pure Avellaneda-Stoikov** is the production MM quoting model on VPS.  
-**Version:** **v2.1.14** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru-Kaizen` (VPS live MM)  
+**Version:** **v2.1.14** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru-Kaizen-II` (VPS live MM soak)  
 **Sacred corpus:** `grok-tier-2-collab` (Gate 2 replay + economics) · **E2 merged** 2026-06-15  
-**Last updated:** 2026-06-17 (soak-safe batch: fill-age report, I6 HUD, F1 nicknames, stale-cross analysis, Telegram Res→BBO)
+**Last updated:** 2026-06-17 (soak-safe complete: I5/F3b/F4 polish, F2 advisory, H1 monitor, 9 Reports)
 
 This is the **single checklist** for WS + pure A-S work. Other docs point here; do not duplicate task lists elsewhere.
+
+**Soak = timed test run.** The live VPS segment exists to collect fills, toxicity, markout, and G6 grades under real quoting — not to accumulate more operator reports. Soak-safe HUD/tooling is **complete**; let the engine run until segment end, then deploy the **engine-window bundle** (M2–M5). Continuity gaps (e.g. restarts) are noted from `intel_decisions.jsonl` cycle timestamps — no separate continuity report.
+
+---
+
+## Soak-safe status (2026-06-17)
+
+**Core soak-safe batch — complete.** No further `ws-engine` work required until segment end.
+
+| Item | Status |
+|------|--------|
+| M1 Res→BBO HUD | [x] |
+| M2 prep (`fill_quote_age_report`, `offer_age_tracker` lab) | [x] |
+| M3 analysis schema (`ws_runtime_analysis`, `zero_quote_notes`) | [x] |
+| I5 book side skew pill | [x] |
+| I6 peer vs regime HUD | [x] |
+| F1 nicknames | [x] |
+| F3a/F3b grounded Grok + structured briefing | [x] |
+| F4 `grok_suggestion` JSONL | [x] |
+| HUD Reports tab (9 reports) | [x] |
+| Hourly Telegram Res→BBO | [x] |
+
+### Optional soak-safe polish
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Grok suggestions report (`grok_suggestions`) | [x] | `scripts/grok_suggestions_report.py` + Reports tab |
+| HUD collapsible input briefing JSON | [x] | Intelligence → Analyze result |
+| F2 rate-limited `AIAdvisorySignal` HUD stub | [x] | `ai_advisory_hud.py`; `kind=advisory_signal` JSONL |
+| M3 lab `stale_cross.py` helper + tests | [x] | Engine wires at segment end |
+| M4 lab `append_runtime_sample` tests | [x] | `test_ws_runtime_analysis.py` |
+| H1 read-only CLOB vs AMM monitor | [x] | `clob_amm_monitor.py`; ws-hud polls ~60s; Metrics pill |
+| H2 `amm_provider.py` (pool quote fetch) | [x] | Used by H1 monitor; no trades |
+| H3+ paper/live arb | [ ] | Post-soak; separate wallet |
+| F4 outcome correlation (markout vs suggestion) | [ ] | Post-segment; needs fill attribution |
+
+### Still requires `ws-engine` restart (segment end bundle)
+
+| Item | Status |
+|------|--------|
+| M2 fill age live in engine + HUD field | [ ] |
+| M3 `reservation_crossed_after_ws_sample` live flag | [ ] |
+| M4 production `sample_history` | [ ] |
+| M5 `as_safety` on production path | [ ] code ready |
+| M6 per-sequence quote age | [ ] after M2 review |
+| I1–I4 regime channel in quoting | [ ] |
+| P1–P7 post-soak intel automation | [ ] |
+| I5 side skew in engine `peer_scrape` rows | [ ] optional with engine deploy |
+
+**Engine-window order:** M2 → M3 → M4 → M5 confirm → post-deploy reports + G6 `--gate`.
 
 ---
 
@@ -172,7 +222,16 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 **HUD during current soak (M1):** Res → BBO Δ each cycle (derived). Fill age / stale-cross show `—` until M2/M3 engine deploy.
 
-**Soak-safe batch (2026-06-17, no ws-engine restart):** `scripts/fill_quote_age_report.py` (offline M2 prep); hourly Telegram Res→BBO; I6 HUD labels; F1 nicknames; M3 analysis bucket in `ws_runtime_analysis` + `zero_quote_notes`; **HUD Reports tab** (`hud_reports_support.py`, `/reports/catalog`, `/report/{id}`).
+**Soak-safe batch (2026-06-17, no ws-engine restart):** `scripts/fill_quote_age_report.py` (offline M2 prep); hourly Telegram Res→BBO; I6 HUD labels; F1 nicknames; M3 analysis bucket in `ws_runtime_analysis` + `zero_quote_notes`; **HUD Reports tab** (9 reports incl. `grok_suggestions`, `clob_amm_monitor`); **I5** book side skew pill; **F3b/F4** structured Grok briefing + `grok_suggestion` JSONL; **F2** HUD advisory stub; **M2/M3 lab** (`offer_age_tracker.py`, `stale_cross.py`); **H1/H2** CLOB vs AMM read-only monitor.
+
+**Engine-window bundle (deploy together at soak segment end — single `ws-engine` restart):**
+
+1. **M2** — wire `OfferAgeTracker` in `ws_pure_engine._detect_fills`; HUD fill-age field live
+2. **M3** — `reservation_crossed_after_ws_sample` flag in `_run_cycle`
+3. **M4** — production `sample_history` in `_persist_cycle`
+4. **M5** — confirm `as_safety` on production path (code ready in `pure_quote_path`)
+5. Extend `build_peer_scrape_intel_record` + cycle rows with I5 side skew (engine already logs peer_scrape)
+6. Post-deploy: run `fill_quote_age_report.py`, `ws_runtime_analysis`, G6 `--gate`
 
 **Limitations (document in ops):** balance-delta fills ≥1 cycle late; kept offers understate age until M6; stale-cross = intel scrape window only.
 
@@ -213,8 +272,8 @@ Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sy
 
 **Phase H checklist (future dev):**
 
-- [ ] **H1** Read-only **CLOB vs AMM monitor** — log each cycle: CLOB mid (WS), AMM implied XRP/RLUSD price, spread bps, fees; artifact `logs/clob_amm_spread.jsonl`; HUD or Metrics tab pill; **no trades**
-- [ ] **H2** `experimental/liquidity/amm_provider.py` — fetch pool state (XRP/RLUSD), normalize to RLUSD/XRP; config flag `amm_monitor_enabled`
+- [x] **H1** Read-only **CLOB vs AMM monitor** — `experimental/arb/clob_amm_monitor.py`; `logs/clob_amm_spread.jsonl`; ws-hud ~60s poll; Metrics pill + Reports tab (**no trades**, 2026-06-17)
+- [x] **H2** `experimental/liquidity/amm_provider.py` — `amm_info` implied mid for H1 monitor (**read-only**, 2026-06-17)
 - [ ] **H3** CLOB↔AMM **paper executor** — simulate round-trip PnL after pool fee + ledger fee; gate on min edge (e.g. 8–15 bps net)
 - [ ] **H4** Live **arb wallet** + `AMMSwap` / two-leg path prototype (XRP/RLUSD CLOB vs AMM only)
 - [ ] **H5** USDC trust line + dual-book scrape (RLUSD + USDC vs XRP); stable-basis monitor (read-only first)
@@ -234,10 +293,10 @@ Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sy
 *Advisory only — never overrides reservation. **During soak:** HUD-only changes (`ws-hud` restart OK; do **not** restart `ws-engine`).*
 
 - [x] **F1** Competitor nicknames (local JSON map; HUD display/edit) — `competitor_nicknames.py`, Intelligence tab, `/competitor_nicknames` API
-- [ ] **F2** Grok exploitation output → optional `AIAdvisorySignal` (rate-limited; not every cycle)
+- [ ] **F2** Grok exploitation output → optional `AIAdvisorySignal` (rate-limited; not every cycle) — **HUD stub shipped** (`ai_advisory_hud.py`); engine hook deferred to P6
 - [x] **F3a** Grounded `/analyze_competitor` — scrape profile + peer-band context in prompt; evidence header in HUD (`hud_intel_support.py` + `real_time_as_hud.py`; **ws-hud only**, 2026-06-17)
-- [ ] **F3b** Structured JSON peer briefing + prompt iteration from validated analyses
-- [ ] **F4** Track "Grok suggestion → outcome" in runtime export / `intel_decisions.jsonl`
+- [x] **F3b** Structured JSON peer briefing + prompt iteration — `structured_peer_briefing()` schema v1; embedded in Grok prompt + API response (`hud_intel_support.py`; **ws-hud only**, 2026-06-17)
+- [x] **F4** Track "Grok suggestion → outcome" in runtime export / `intel_decisions.jsonl` — `kind=grok_suggestion` rows from `/analyze_competitor`; `outcome_status=pending` until markout correlation (**ws-hud only**, 2026-06-17)
 
 ### Post-soak work (requires `ws-engine` restart — defer until soak ends)
 
@@ -283,7 +342,7 @@ Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sy
 
 **Regime context (measurement + operator)**
 
-- [ ] **I5** **Book-wide side skew aggregate** — Roll up scrape `sides` (bid vs ask offer counts) for macro inventory context; log + HUD pill only until validated against own markout (do not override `dynamic_sizing` inventory policy without data).
+- [x] **I5 (HUD)** **Book-wide side skew aggregate** — `aggregate_book_side_skew()` in `competitor_intel.py`; HUD + Metrics pills; JSONL on peer_scrape — does not override `dynamic_sizing` (**ws-hud + engine scrape export**, 2026-06-17)
 - [x] **I6 (HUD)** **Regime vs peer split** — `regime_intel_hud_fields()`; Intelligence + Metrics tabs; `book_regime_pressure` in scrape export — JSONL logging deferred to engine window
 
 **When in-band peers appear (touch competition — builds on G4)**
@@ -417,8 +476,12 @@ experimental/ws_feed/reservation_metrics.py      # M1 signed BBO delta + inside_
 experimental/ws_feed/as_safety.py                # M5 reservation gate guard
 experimental/ws_feed/replay_long_run.py
 # Phase H (planned — not shipped)
-experimental/liquidity/amm_provider.py              # H2 pool quotes + H1 monitor
-experimental/arb/clob_amm_monitor.py              # H1 read-only CLOB vs AMM log
+experimental/liquidity/amm_provider.py              # H2 pool quotes (shipped read-only)
+experimental/arb/clob_amm_monitor.py              # H1 read-only CLOB vs AMM log (shipped)
+experimental/ws_feed/stale_cross.py               # M3 lab helper
+experimental/ws_feed/ai_advisory_hud.py           # F2 HUD advisory stub
+experimental/ws_feed/offer_age_tracker.py         # M2 lab
+scripts/grok_suggestions_report.py                # F4 report
 scripts/vps_deploy_ashigaru.sh              # VPS pull + restart (version + HUD)
 experimental/ai_analysis/grok_analyzer.py
 strategy/avellaneda_strategy.py

@@ -578,12 +578,23 @@ if app:
 
             context_str = (" Current live WS book context: " + "; ".join(context_lines) + ".") if context_lines else ""
 
+            import json as _json
+
+            structured_json = ""
+            sb = briefing.get("structured_briefing")
+            if isinstance(sb, dict) and sb:
+                structured_json = (
+                    "\n\n**Structured briefing (machine-readable — align your analysis to these fields):**\n"
+                    f"```json\n{_json.dumps(sb, indent=2)}\n```\n"
+                )
+
             current_prompt = (
                 f"You are an expert on XRPL market making and on-chain competitor analysis.\n"
                 f"Analyze the ledger address {address} for its likely market-making strategy on the RLUSD/XRP order book.\n\n"
                 f"**Primary goal:** Identify the holes and repeatable patterns in this competitor's behavior that we can exploit to win the best queue positions, "
                 f"increase our realized skim (spread capture), and compound our bag more effectively over time.\n\n"
-                f"{briefing.get('prompt_block', '')}\n\n"
+                f"{briefing.get('prompt_block', '')}\n"
+                f"{structured_json}\n"
                 f"Focus areas:\n"
                 f"- Posted spreads and sizes from recent activity (use scraped facts first)\n"
                 f"- Aggressiveness vs defensiveness, inventory skew signals\n"
@@ -618,6 +629,30 @@ if app:
             if finish == "length":
                 result += "\n\n---\n(Response hit the token limit and may be cut off mid-thought.)"
             header = str(briefing.get("evidence_header") or "")
+            try:
+                from experimental.ws_feed.intel_decisions_log import (
+                    append_intel_record,
+                    build_grok_suggestion_intel_record,
+                )
+
+                append_intel_record(
+                    build_grok_suggestion_intel_record(
+                        address=address,
+                        model=model,
+                        briefing=briefing,
+                        result_text=result,
+                        context_snapshot={
+                            "competitor_pressure": live_pressure,
+                            "book_regime_pressure": _current_state.get("book_regime_pressure"),
+                            "book_side_skew_label": _current_state.get("book_side_skew_label"),
+                            "inventory_label": inv_label,
+                            "our_lane_xrp": our_lane,
+                            "peer_lane_count": peer_count,
+                        },
+                    )
+                )
+            except Exception as log_exc:
+                print(f"[HUD /analyze] grok_suggestion log failed: {log_exc}")
             return {
                 "result": header + result,
                 "truncated": finish == "length",
@@ -628,6 +663,7 @@ if app:
                     "source": briefing.get("source"),
                     "touch_xrp": briefing.get("touch_xrp"),
                     "evidence_lines": briefing.get("evidence_lines"),
+                    "structured_briefing": briefing.get("structured_briefing"),
                 },
             }
         except Exception as e:

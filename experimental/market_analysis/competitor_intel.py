@@ -71,6 +71,38 @@ from experimental.market_analysis.peer_lane import (
 
 logger = logging.getLogger(__name__)
 
+# I5 — bid vs ask offer-count skew across active makers (HUD / JSONL only until markout validated).
+_SIDE_SKEW_BALANCED = 0.15
+
+
+def aggregate_book_side_skew(profiles: List["CompetitorProfile"]) -> Dict[str, Any]:
+    """Roll up scrape sides_quoted for macro inventory context (display-only)."""
+    bid = sum(int(p.sides_quoted.get("bid", 0) or 0) for p in profiles)
+    ask = sum(int(p.sides_quoted.get("ask", 0) or 0) for p in profiles)
+    total = bid + ask
+    if total <= 0:
+        return {
+            "book_bid_offers": 0,
+            "book_ask_offers": 0,
+            "book_side_skew": None,
+            "book_side_skew_ratio": None,
+            "book_side_skew_label": "unknown",
+        }
+    skew = (bid - ask) / total
+    if skew > _SIDE_SKEW_BALANCED:
+        label = "bid_heavy"
+    elif skew < -_SIDE_SKEW_BALANCED:
+        label = "ask_heavy"
+    else:
+        label = "balanced"
+    return {
+        "book_bid_offers": bid,
+        "book_ask_offers": ask,
+        "book_side_skew": round(skew, 3),
+        "book_side_skew_ratio": round(bid / total, 3),
+        "book_side_skew_label": label,
+    }
+
 
 @dataclass
 class CompetitorProfile:
@@ -117,6 +149,12 @@ class CompetitorSnapshot:
     top_peers: List[CompetitorProfile] = field(default_factory=list)
     peer_lane_widened: bool = False
     peer_lane_empty: bool = False
+    # I5 book-wide side skew (offer counts, not size-weighted)
+    book_bid_offers: int = 0
+    book_ask_offers: int = 0
+    book_side_skew: Optional[float] = None
+    book_side_skew_ratio: Optional[float] = None
+    book_side_skew_label: str = "unknown"
 
 
 class CompetitorIntelProvider(ExternalMarketDataProvider):
@@ -257,6 +295,7 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
             # Pressure: if observed spreads are wide + high cancel rate → competitors defensive → good for us to scrape harder
             pressure = min(1.0, (obs_spread / 0.20) * 0.6 + cancel_rate * 0.4) if obs_spread else 0.5
 
+            side_skew = aggregate_book_side_skew(active)
             snap = CompetitorSnapshot(
                 top_makers=sorted(active, key=lambda p: p.total_offers_seen, reverse=True)[:5],
                 observed_market_spread_pct=obs_spread,
@@ -266,6 +305,11 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
                 pressure_score=round(pressure, 3),
                 source="onchain-competitor",
                 age_seconds=0.0,
+                book_bid_offers=int(side_skew["book_bid_offers"]),
+                book_ask_offers=int(side_skew["book_ask_offers"]),
+                book_side_skew=side_skew["book_side_skew"],
+                book_side_skew_ratio=side_skew["book_side_skew_ratio"],
+                book_side_skew_label=str(side_skew["book_side_skew_label"]),
             )
 
         snap = self._apply_peer_lane(
@@ -535,6 +579,11 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
                 _profile_row(p, touch_xrp=float(self._last_touch_by_account.get(p.account) or 0.0))
                 for p in peer_list[:5]
             ],
+            "book_bid_offers": snap.book_bid_offers,
+            "book_ask_offers": snap.book_ask_offers,
+            "book_side_skew": snap.book_side_skew,
+            "book_side_skew_ratio": snap.book_side_skew_ratio,
+            "book_side_skew_label": snap.book_side_skew_label,
         }
 
 

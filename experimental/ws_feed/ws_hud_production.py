@@ -206,6 +206,8 @@ class ProductionHudMirror:
         self.config = config
         self._last_metrics: Dict[str, Any] = {}
         self._last_metrics_at = 0.0
+        self._last_amm_at = 0.0
+        self._last_advisory_log_at = 0.0
 
     def _seed_intel_config(self) -> None:
         flags = WsFeatureFlags.from_config(self.config)
@@ -245,6 +247,10 @@ class ProductionHudMirror:
         enriched = _enrich_runtime_for_hud(runtime)
         enriched.update(competitor_fields_from_runtime(enriched))
         enriched.update(regime_intel_hud_fields(enriched))
+        from experimental.ws_feed.ai_advisory_hud import advisory_hud_fields, HUD_ADVISORY_MIN_INTERVAL_S
+
+        advisory = advisory_hud_fields(enriched)
+        enriched.update(advisory)
         nicknames = load_nicknames()
         enriched["competitor_nicknames"] = nicknames
         for key in ("top_peers", "top_competitors"):
@@ -271,6 +277,42 @@ class ProductionHudMirror:
         elif not flags.hud_metrics:
             self._last_metrics = {}
         enriched["performance_metrics"] = self._last_metrics
+
+        now_amm = time.monotonic()
+        if now_amm - self._last_amm_at >= 60.0:
+            try:
+                from experimental.arb.clob_amm_monitor import record_clob_amm_snapshot, latest_hud_fields
+
+                clob_mid = enriched.get("mid_price") or enriched.get("mid")
+                record_clob_amm_snapshot(
+                    clob_mid=float(clob_mid) if clob_mid else None,
+                    rpc_url=self.config.resolved_rpc_url(),
+                    rlusd_issuer=self.config.resolved_rlusd_issuer(),
+                    rlusd_currency=self.config.resolved_rlusd_currency_code(),
+                )
+                self._last_amm_at = now_amm
+            except Exception as exc:
+                logger.debug("CLOB/AMM monitor tick failed: %s", exc)
+        try:
+            from experimental.arb.clob_amm_monitor import latest_hud_fields
+
+            enriched.update(latest_hud_fields())
+        except Exception:
+            pass
+
+        if advisory and (now - self._last_advisory_log_at) >= HUD_ADVISORY_MIN_INTERVAL_S:
+            try:
+                from experimental.ws_feed.intel_decisions_log import (
+                    append_intel_record,
+                    build_advisory_signal_intel_record,
+                )
+
+                append_intel_record(
+                    build_advisory_signal_intel_record({**enriched, **advisory})
+                )
+                self._last_advisory_log_at = now
+            except Exception as exc:
+                logger.debug("advisory_signal log failed: %s", exc)
 
         cfg = BotConfig.load()
         enriched["send_destination_default"] = (cfg.send_destination_default or "").strip()

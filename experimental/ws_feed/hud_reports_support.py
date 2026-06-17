@@ -99,6 +99,21 @@ def _gen_hourly_soak_trend(logs: Path) -> str:
     return format_hourly_soak_trend(logs_dir=logs)
 
 
+def _gen_grok_suggestions(logs: Path) -> str:
+    from scripts.grok_suggestions_report import (
+        build_grok_suggestions_report,
+        format_grok_suggestions_report,
+    )
+
+    return format_grok_suggestions_report(build_grok_suggestions_report(logs_dir=logs))
+
+
+def _gen_clob_amm_monitor(logs: Path) -> str:
+    from experimental.arb.clob_amm_monitor import format_clob_amm_report
+
+    return format_clob_amm_report(logs_dir=logs)
+
+
 def _gen_reservation_snapshot(logs: Path) -> str:
     from experimental.ws_feed.reservation_metrics import (
         enrich_runtime_reservation_metrics,
@@ -214,6 +229,28 @@ REPORT_SPECS: List[ReportSpec] = [
         cli_command="python scripts/hourly_soak_trend.py",
         phase_ref="Soak ops",
     ),
+    ReportSpec(
+        id="grok_suggestions",
+        title="Grok suggestions",
+        subtitle="Analyze_competitor log tail",
+        category="Intelligence",
+        description="Recent grok_suggestion rows from intel_decisions.jsonl (F4 outcome tracking prep).",
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="python scripts/grok_suggestions_report.py",
+        phase_ref="Phase F4",
+    ),
+    ReportSpec(
+        id="clob_amm_monitor",
+        title="CLOB vs AMM monitor",
+        subtitle="H1 read-only dislocation log",
+        category="Phase H",
+        description="Tail logs/clob_amm_spread.jsonl — CLOB mid vs AMM implied price; no trades.",
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="(ws-hud polls ~60s; report view only)",
+        phase_ref="Phase H1",
+    ),
 ]
 
 _GENERATORS: Dict[str, ReportGenerator] = {
@@ -224,6 +261,8 @@ _GENERATORS: Dict[str, ReportGenerator] = {
     "fill_quote_age": _gen_fill_quote_age,
     "ws_runtime_analysis": _gen_ws_runtime_analysis,
     "hourly_soak_trend": _gen_hourly_soak_trend,
+    "grok_suggestions": _gen_grok_suggestions,
+    "clob_amm_monitor": _gen_clob_amm_monitor,
 }
 
 
