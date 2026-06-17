@@ -150,3 +150,27 @@ def test_hourly_report_omits_hud_when_url_empty(tmp_path: Path) -> None:
     text = build_report(hud_url="", logs_dir=logs)
     assert "HUD:" not in text
     assert "XLedgerMate hourly report" in text
+
+
+def test_hourly_main_skips_during_quiet_hours(tmp_path: Path, monkeypatch) -> None:
+    from config.settings import BotConfig
+    from scripts import hourly_telegram_report as mod
+
+    class _Cfg:
+        telegram_hourly_report_enabled = True
+        telegram_enabled = True
+        telegram_token = "t"
+        telegram_chat_id = "1"
+        telegram_hud_url = ""
+        telegram_quiet_hours_enabled = True
+        telegram_quiet_start_hour = 22
+        telegram_quiet_end_hour = 7
+
+    monkeypatch.setattr(BotConfig, "load", lambda: _Cfg())
+    monkeypatch.setattr(
+        "monitoring.telegram_schedule.hourly_report_allowed_now",
+        lambda **_: False,
+    )
+    monkeypatch.setattr(mod.sys, "argv", ["hourly_telegram_report.py"])
+    assert mod.main() == 0
+

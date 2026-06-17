@@ -68,6 +68,9 @@ telegram_token: ""          # Bot token from @BotFather
 telegram_chat_id: ""        # Your numeric chat ID (message @userinfobot or /getUpdates)
 telegram_notify_each_cycle: false
 telegram_hud_url: ""          # Optional — public WS HUD for hourly report (e.g. http://YOUR_VPS:8765)
+telegram_quiet_hours_enabled: false   # Skip hourly Telegram during window (UTC hours)
+telegram_quiet_start_hour: 22         # Inclusive start (22 = 10pm UTC)
+telegram_quiet_end_hour: 7            # Exclusive end (7 = 7am UTC)
 hud_bind_host: "127.0.0.1"    # Set 0.0.0.0 on VPS when telegram_hud_url is public
 hud_auth_enabled: false       # Auto-enables when bind is public and username+password are set
 hud_auth_username: ""        # Or XLG_HUD_USERNAME in .env

@@ -120,8 +120,10 @@ def _portfolio_xrp_equiv(runtime: dict) -> Optional[float]:
 
 def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
     """Shared Live-tab fields: ladder, sizes, A-S, balances."""
+    from experimental.ws_feed.hud_intel_support import lane_ladder_hud_fields
+
     port = _portfolio_xrp_equiv(runtime)
-    return {
+    payload = {
         "mid": runtime.get("mid_price"),
         "mid_price": runtime.get("mid_price"),
         "best_bid": runtime.get("best_bid_rlusd_per_xrp"),
@@ -179,6 +181,8 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         **_session_fields(runtime),
         **extra,
     }
+    payload.update(lane_ladder_hud_fields(runtime))
+    return payload
 
 from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig

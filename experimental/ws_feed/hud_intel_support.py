@@ -6,10 +6,11 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig
+from experimental.ws_feed.dynamic_sizing import DEFAULT_LADDER_SIZE_FRACS
 from experimental.ws_feed.pair_books import RlusdXrpPair
 from utils.env_secrets import resolve_intel_ai_config
 
@@ -168,6 +169,85 @@ def our_lane_xrp_from_runtime(runtime: Dict[str, Any], *, fallback_l1: float) ->
     return float(fallback_l1)
 
 
+def _normalize_quote_intents(runtime: Dict[str, Any]) -> list[dict[str, Any]]:
+    intents = runtime.get("quote_intents") or []
+    normalized: list[dict[str, Any]] = []
+    for row in intents:
+        if hasattr(row, "__dict__"):
+            row = row.__dict__
+        if isinstance(row, dict):
+            normalized.append(row)
+    return normalized
+
+
+def lane_touch_xrp_from_intents(
+    quote_intents: Optional[Sequence[Mapping[str, Any]]],
+    level: int,
+) -> float:
+    """Max bid/ask size at ladder level (touch lane size for peer matching)."""
+    if not quote_intents:
+        return 0.0
+    touch_sizes: list[float] = []
+    for intent in quote_intents:
+        if int(intent.get("level") or 0) != level:
+            continue
+        try:
+            sz = float(intent.get("size_xrp") or 0)
+        except (TypeError, ValueError):
+            continue
+        if sz > 0:
+            touch_sizes.append(sz)
+    return max(touch_sizes) if touch_sizes else 0.0
+
+
+def _l1_touch_for_ladder(runtime: Dict[str, Any], *, fallback_l1: float = 0.0) -> float:
+    lane = our_lane_xrp_from_runtime(runtime, fallback_l1=fallback_l1)
+    if lane > 0:
+        return lane
+    for key in ("our_lane_xrp", "l1_xrp", "bid_size_xrp", "ask_size_xrp"):
+        try:
+            v = float(runtime.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if v > 0:
+            return v
+    return 0.0
+
+
+def planned_lane_touch_xrp(runtime: Dict[str, Any], level: int) -> float:
+    """Derive planned L2/L3 touch from L1 when runtime only has active L1 intents."""
+    if level <= 1:
+        return 0.0
+    l1 = _l1_touch_for_ladder(runtime)
+    if l1 <= 0:
+        return 0.0
+    idx = level - 1
+    configured = runtime.get("configured_order_sizes") or runtime.get("order_sizes")
+    if configured and len(configured) >= level:
+        try:
+            raw = float(configured[idx])
+        except (TypeError, ValueError):
+            raw = 0.0
+        if raw > 0:
+            return raw
+    if idx < len(DEFAULT_LADDER_SIZE_FRACS):
+        return l1 * DEFAULT_LADDER_SIZE_FRACS[idx]
+    return 0.0
+
+
+def lane_ladder_hud_fields(runtime: Dict[str, Any]) -> Dict[str, Any]:
+    """Planned L2/L3 touch sizes from quote ladder (L1 stays on our_lane_xrp from scrape)."""
+    intents = _normalize_quote_intents(runtime)
+    fields: Dict[str, Any] = {}
+    for level, key in ((2, "our_lane_l2_xrp"), (3, "our_lane_l3_xrp")):
+        touch = lane_touch_xrp_from_intents(intents, level)
+        if touch <= 0:
+            touch = planned_lane_touch_xrp(runtime, level)
+        if touch > 0:
+            fields[key] = round(touch, 2)
+    return fields
+
+
 async def fetch_competitor_quoting_intel(
     provider: Any,
     ws_feed: Any,
@@ -196,6 +276,186 @@ def competitor_fields_from_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(blob, dict) and blob:
         return dict(blob)
     return {}
+
+
+def _accounts_match(query: str, row: Mapping[str, Any]) -> bool:
+    """Match full or truncated r-address from scrape row."""
+    q = (query or "").strip()
+    if not q or len(q) < 8:
+        return False
+    full = str(row.get("account_full") or "").strip()
+    short = str(row.get("account") or "").strip().replace("...", "")
+    q_lower = q.lower()
+    if full and (full.lower() == q_lower or full.lower().startswith(q_lower) or q_lower.startswith(full.lower())):
+        return True
+    if short and len(short) >= 8 and (q_lower.startswith(short.lower()) or short.lower().startswith(q_lower[:12])):
+        return True
+    return False
+
+
+def find_competitor_profile(
+    state: Mapping[str, Any],
+    address: str,
+) -> tuple[Optional[Dict[str, Any]], str]:
+    """Return (profile row, source) where source is peer_lane | book_wide | none."""
+    for row in state.get("top_peers") or []:
+        if isinstance(row, dict) and _accounts_match(address, row):
+            return dict(row), "peer_lane"
+    for row in state.get("top_competitors") or []:
+        if isinstance(row, dict) and _accounts_match(address, row):
+            return dict(row), "book_wide"
+    return None, "none"
+
+
+def build_competitor_analysis_context(
+    state: Mapping[str, Any],
+    address: str,
+    *,
+    extra: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Assemble scrape-backed briefing for /analyze_competitor (HUD-only; no engine restart).
+
+    Merges HUD _current_state with optional POST body fields from the browser.
+    """
+    from experimental.market_analysis.peer_lane import touch_in_peer_band
+
+    merged: Dict[str, Any] = dict(state)
+    if extra:
+        for key, val in extra.items():
+            if val is not None and val != "":
+                merged[key] = val
+
+    profile, source = find_competitor_profile(merged, address)
+    if profile is None and isinstance(extra, Mapping):
+        posted = extra.get("target_profile")
+        if isinstance(posted, dict) and posted:
+            profile = dict(posted)
+            source = "peer_lane" if posted in list(merged.get("top_peers") or []) else "book_wide"
+            if source == "book_wide" and any(
+                _accounts_match(address, row) for row in (merged.get("top_peers") or []) if isinstance(row, dict)
+            ):
+                source = "peer_lane"
+    try:
+        our_lane = float(merged.get("our_lane_xrp") or 0)
+    except (TypeError, ValueError):
+        our_lane = 0.0
+    try:
+        band_low = float(merged.get("peer_lane_low_xrp") or (our_lane * 0.4 if our_lane > 0 else 0))
+        band_high = float(merged.get("peer_lane_high_xrp") or (our_lane * 2.5 if our_lane > 0 else 0))
+    except (TypeError, ValueError):
+        band_low, band_high = 0.0, 0.0
+
+    touch_xrp = 0.0
+    if profile:
+        try:
+            touch_xrp = float(profile.get("touch_xrp") or 0)
+        except (TypeError, ValueError):
+            touch_xrp = 0.0
+
+    in_peer_lane = source == "peer_lane"
+    if profile and our_lane > 0 and touch_xrp > 0:
+        in_peer_lane = touch_in_peer_band(touch_xrp, our_lane, allow_widen=True)
+
+    fled_for_target: list[Dict[str, Any]] = []
+    for ev in merged.get("peer_fled_events") or []:
+        if not isinstance(ev, dict):
+            continue
+        if _accounts_match(address, ev):
+            fled_for_target.append(ev)
+
+    evidence_lines: list[str] = []
+    if profile:
+        evidence_lines.append(f"scrape_source={source}")
+        evidence_lines.append(f"touch_xrp={touch_xrp:.2f}" if touch_xrp > 0 else "touch_xrp=unknown")
+        evidence_lines.append(f"in_peer_lane={in_peer_lane}")
+        if our_lane > 0:
+            evidence_lines.append(f"our_lane_xrp={our_lane:.2f}")
+            evidence_lines.append(f"peer_band={band_low:.1f}–{band_high:.1f} XRP")
+        if profile.get("last_spread") is not None:
+            evidence_lines.append(f"last_spread_pct={profile.get('last_spread')}")
+        if profile.get("avg_spread") is not None:
+            evidence_lines.append(f"avg_spread_pct={profile.get('avg_spread')}")
+        if profile.get("activity") is not None:
+            evidence_lines.append(f"offers_seen={profile.get('activity')}")
+        if profile.get("cancels") is not None:
+            evidence_lines.append(f"cancels_seen={profile.get('cancels')}")
+        if profile.get("sides"):
+            evidence_lines.append(f"sides={profile.get('sides')}")
+        if profile.get("domain") and profile.get("domain") != "no-domain":
+            evidence_lines.append(f"domain={profile.get('domain')}")
+    else:
+        evidence_lines.append("scrape_source=none (address not in last top_peers/top_competitors snapshot)")
+
+    if fled_for_target:
+        evidence_lines.append(f"fled_touch_events={len(fled_for_target)} recent")
+        for ev in fled_for_target[:3]:
+            evidence_lines.append(
+                f"  fled: was {ev.get('previous_touch_xrp')} XRP at touch, {ev.get('age_s')}s ago"
+            )
+
+    # Live book / our posture
+    for key, label, fmt in (
+        ("competitor_pressure", "aggregate_pressure", lambda v: f"{float(v):.2f}"),
+        ("competitor_observed_spread_pct", "observed_spread_pct", lambda v: f"{float(v):.3f}%"),
+        ("competitor_depth_xrp", "book_depth_xrp", lambda v: f"{float(v):.1f}"),
+        ("peer_lane_count", "peer_lane_count", str),
+        ("inventory_label", "our_inventory", str),
+        ("as_reservation", "our_as_reservation", lambda v: f"{float(v):.6f}"),
+        ("as_optimal_spread_pct", "our_optimal_spread_pct", lambda v: f"{float(v):.3f}%"),
+    ):
+        val = merged.get(key)
+        if val is not None and val != "":
+            try:
+                evidence_lines.append(f"{label}={fmt(val)}")
+            except (TypeError, ValueError):
+                evidence_lines.append(f"{label}={val}")
+
+    if in_peer_lane:
+        lane_note = "IN peer touch band — tactics may apply at our posted size."
+    elif touch_xrp > 0 and our_lane > 0:
+        lane_note = "OUT of peer touch band — macro/book context only; do not size tactics vs this touch."
+    elif not profile:
+        lane_note = "No scrape row — analysis must be explicitly speculative."
+    else:
+        lane_note = "Band status unknown — prefer aggregate peer-lane signals only."
+
+    evidence_block = "\n".join(f"- {line}" for line in evidence_lines)
+    prompt_block = (
+        f"**Scraped on-chain facts for {address} (use as primary evidence; do not invent numbers):**\n"
+        f"{evidence_block}\n\n"
+        f"**Lane note:** {lane_note}\n\n"
+        "If a behavior is not supported by the facts above, label it HYPOTHESIS and say what scrape field would confirm it."
+    )
+
+    if profile:
+        header = (
+            f"── Scrape evidence ({source.replace('_', ' ')}) ──\n"
+            f"touch {touch_xrp:.1f} XRP · {'IN peer band' if in_peer_lane else 'OUT of band'} · "
+            f"spread {profile.get('last_spread', '?')}% / avg {profile.get('avg_spread', '?')}% · "
+            f"cancels {profile.get('cancels', '?')}\n"
+            f"── Grok analysis (advisory) ──\n"
+        )
+    else:
+        header = (
+            "── No scrape row for this address (last ~15s snapshot) — Grok may speculate ──\n"
+            "── Grok analysis (advisory) ──\n"
+        )
+
+    return {
+        "profile": profile,
+        "source": source,
+        "in_peer_lane": in_peer_lane,
+        "touch_xrp": touch_xrp,
+        "our_lane_xrp": our_lane,
+        "peer_band_low_xrp": band_low,
+        "peer_band_high_xrp": band_high,
+        "fled_events": fled_for_target,
+        "evidence_lines": evidence_lines,
+        "prompt_block": prompt_block,
+        "evidence_header": header,
+        "lane_note": lane_note,
+    }
 
 
 def enrich_inventory_hud_fields(

@@ -21,9 +21,15 @@ sleep 3
 systemctl is-active xledgermate
 systemctl is-active xledgermate-ws-hud
 
+echo "=== Hourly Telegram report timer ==="
+ROOT="${XLEDGERMATE_ROOT:-/root/xledgermate}"
+if [ -f "${ROOT}/scripts/ensure_hourly_telegram_timer.sh" ]; then
+  bash "${ROOT}/scripts/ensure_hourly_telegram_timer.sh" || echo "WARN: hourly timer setup failed (check telegram config)"
+else
+  echo "WARN: ensure_hourly_telegram_timer.sh not found — pull latest Ashigaru-Kaizen"
+fi
+
 echo ""
-echo "Lean profile active. Optional: hourly Telegram timer:"
-echo "  bash groks\\ input/vps/install_hourly_telegram_timer.sh"
-echo ""
+echo "Lean profile active."
 echo "Active Python MM processes should be ws-engine + ws-hud only:"
 pgrep -af 'main.py --mode (ws-engine|ws-hud)' || true

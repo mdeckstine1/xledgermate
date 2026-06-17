@@ -121,7 +121,9 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
 
                 "size_xrp": size,
 
-                "active": level == 1 and price > 0 and size > 0,
+                "active": bool(row.get("active", level == 1 and price > 0 and size > 0)),
+
+                "planned": bool(row.get("planned", level > 1)),
 
             }
 
@@ -258,6 +260,9 @@ class ProductionHudMirror:
         elif not flags.hud_metrics:
             self._last_metrics = {}
         enriched["performance_metrics"] = self._last_metrics
+
+        cfg = BotConfig.load()
+        enriched["send_destination_default"] = (cfg.send_destination_default or "").strip()
 
         hud_update_state(
 

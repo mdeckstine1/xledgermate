@@ -271,6 +271,25 @@ if app:
             "had_key": bool(key.strip()),
         }
 
+    @app.get("/get_telegram_config")
+    async def get_telegram_config():
+        """Telegram reporting settings from config.yaml (no secrets)."""
+        from experimental.ws_feed.hud_telegram_support import telegram_config_snapshot
+
+        snap = telegram_config_snapshot()
+        _current_state.update(snap)
+        return snap
+
+    @app.post("/set_telegram_config")
+    async def set_telegram_config(request: Request):
+        """Update Telegram report settings from HUD Config tab; persists to config.yaml."""
+        from experimental.ws_feed.hud_telegram_support import apply_telegram_config_from_hud
+
+        data = await request.json()
+        snap = apply_telegram_config_from_hud(data)
+        _current_state.update(snap)
+        return {"ok": True, **snap}
+
     @app.get("/list_models")
     async def list_models():
         """Query xAI (or compatible) /v1/models using the key currently in Config.
@@ -306,6 +325,73 @@ if app:
                 except Exception:
                     api_body = " | " + (resp.text[:300] if getattr(resp, 'text', None) else "")
             return {"models": [], "error": f"{type(e).__name__}: {e}{api_body}"}
+
+    @app.post("/send_funds")
+    async def send_funds(request: Request):
+        """Live withdraw: XRP or RLUSD from bot account to destination (signed on ledger)."""
+        data = await request.json()
+        destination = str(data.get("destination") or "").strip()
+        asset = str(data.get("asset") or "XRP").strip().upper()
+        try:
+            amount = float(data.get("amount") or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        confirm_running = bool(data.get("confirm_engine_running"))
+
+        from config.settings import BotConfig, patch_config_file
+
+        config = BotConfig.load()
+        if not config.bot_account_address.strip():
+            return {"ok": False, "message": "bot_account_address is not configured."}
+        if not (config.bot_secret_key or "").strip():
+            return {
+                "ok": False,
+                "message": "bot_secret_key required — set in config/credentials.local.yaml.",
+            }
+        if not destination.startswith("r"):
+            return {"ok": False, "message": "Destination must be a classic XRPL address (r...)."}
+        if amount <= 0:
+            return {"ok": False, "message": "Amount must be greater than zero."}
+        if asset not in ("XRP", "RLUSD"):
+            return {"ok": False, "message": "Asset must be XRP or RLUSD."}
+
+        typed = str(data.get("confirm_text") or "").strip().upper()
+        if typed != "SEND":
+            return {
+                "ok": False,
+                "message": 'Type SEND in the confirmation box to authorize a live withdrawal.',
+            }
+
+        try:
+            from gui.engine_control import is_engine_running
+
+            engine_up = bool(is_engine_running())
+        except Exception:
+            engine_up = False
+        if engine_up and not confirm_running:
+            return {
+                "ok": False,
+                "message": "Engine is running — stop ws-engine first, or check the confirmation box.",
+                "engine_running": True,
+            }
+
+        try:
+            from utils.send_funds import send_from_bot_account
+
+            tx_hash = await send_from_bot_account(
+                destination=destination,
+                amount=amount,
+                asset=asset,
+            )
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)[:500]}
+
+        patch_config_file({"send_destination_default": destination})
+        return {
+            "ok": True,
+            "message": f"Sent {amount:g} {asset} to {destination}",
+            "tx_hash": tx_hash,
+        }
 
     @app.post("/analyze_competitor")
     async def analyze_competitor(request: Request):
@@ -346,10 +432,16 @@ if app:
         # Prefer values sent in this POST body (from the UI's lastState) as they are the freshest the browser saw.
         live_pressure = data.get("competitor_pressure") or _current_state.get("competitor_pressure")
         live_obs_spread = data.get("observed_spread_pct") or _current_state.get("competitor_observed_spread_pct")
-        live_depth = _current_state.get("competitor_depth_xrp")
+        live_depth = data.get("competitor_depth_xrp") or _current_state.get("competitor_depth_xrp")
         inv_label = data.get("inventory_label") or _current_state.get("inventory_label")
+
+        from experimental.ws_feed.hud_intel_support import build_competitor_analysis_context
+
+        briefing = build_competitor_analysis_context(_current_state, address, extra=data)
+        profile = briefing.get("profile")
+        in_peer_lane = bool(briefing.get("in_peer_lane"))
         peer_count = int(_current_state.get("peer_lane_count") or 0)
-        our_lane = _current_state.get("our_lane_xrp")
+        our_lane = briefing.get("our_lane_xrp") or _current_state.get("our_lane_xrp")
         if peer_count > 0 and _current_state.get("top_peers"):
             top_comps = _current_state.get("top_peers", [])[:3]
             comp_source = "peer_lane"
@@ -357,7 +449,11 @@ if app:
             top_comps = _current_state.get("top_competitors", [])[:3] if _current_state.get("top_competitors") else []
             comp_source = "book_wide"
 
-        debug_note = f"[HUD /analyze] provider={provider} had_key={bool(key)} (len={len(key) if key else 0}) enabled={enabled} model={model}"
+        debug_note = (
+            f"[HUD /analyze] provider={provider} had_key={bool(key)} (len={len(key) if key else 0}) "
+            f"enabled={enabled} model={model} profile_found={profile is not None} "
+            f"in_peer_lane={in_peer_lane} source={briefing.get('source')}"
+        )
 
         if not enabled or not key:
             sim = (f"{debug_note}\n"
@@ -401,32 +497,27 @@ if app:
 
             context_str = (" Current live WS book context: " + "; ".join(context_lines) + ".") if context_lines else ""
 
-            # Current on-demand prompt (for specific competitor address analysis)
             current_prompt = (
                 f"You are an expert on XRPL market making and on-chain competitor analysis.\n"
                 f"Analyze the ledger address {address} for its likely market-making strategy on the RLUSD/XRP order book.\n\n"
                 f"**Primary goal:** Identify the holes and repeatable patterns in this competitor's behavior that we can exploit to win the best queue positions, "
                 f"increase our realized skim (spread capture), and compound our bag more effectively over time.\n\n"
+                f"{briefing.get('prompt_block', '')}\n\n"
                 f"Focus areas:\n"
-                f"- Posted spreads and sizes from recent activity\n"
+                f"- Posted spreads and sizes from recent activity (use scraped facts first)\n"
                 f"- Aggressiveness vs defensiveness, inventory skew signals\n"
-                f"- Reaction to fills or price moves (e.g. cancel patterns)\n"
+                f"- Reaction to fills or price moves (e.g. cancel patterns, fled-touch events if listed)\n"
                 f"- Any 'trending' behavior (increasing/decreasing presence)\n"
-                f"- Specific exploitable weaknesses (e.g. they cancel one side too aggressively after a fill, they step away predictably on volatility, they are weak on one side during rebalances, etc.)\n\n"
-                f"Then give **concrete, actionable exploitative tactics** our pure A-S bot can use right now: better positioning ideas, when to step inside their levels, queue-jumping opportunities, sizing/timing suggestions, when to be patient vs aggressive, etc.\n\n"
-                f"Base your reasoning only on public on-chain patterns; do not speculate on off-chain identity.\n"
+                f"- Specific exploitable weaknesses supported by the scrape evidence\n\n"
+                f"Then give **concrete, actionable exploitative tactics** our pure A-S bot can use right now: better positioning ideas, when to step inside their levels, queue-jumping opportunities, sizing/timing suggestions, when to be patient vs aggressive, etc.\n"
+                f"If the maker is OUT of our peer touch band, say so up front and limit tactics to regime/macro context.\n\n"
+                f"Base your reasoning on the scraped facts above; do not speculate on off-chain identity.\n"
                 f"{context_str}"
             )
 
             prompt = current_prompt
 
-            # TODO (future - once we start live MM with this bot):
-            # Make this prompt significantly richer by feeding:
-            #   - Full recent book history / our own recent fills + markouts on this book
-            #   - More complete top-of-book levels from the scraped competitors
-            #   - What our current pure A-S math is outputting (reservation price, optimal spread)
-            #   - Recent periods where low pressure + good fills occurred
-            # Goal: Turn the response into high-signal "how to beat this specific maker right now and win the best positions to maximize long-term skim" advice.
+            # Post-soak (ws-engine): per-peer event history, fill-correlated cancels, structured JSON output → G4 hook.
 
             payload = {
                 "model": model,
@@ -445,7 +536,19 @@ if app:
             result = content.strip()
             if finish == "length":
                 result += "\n\n---\n(Response hit the token limit and may be cut off mid-thought.)"
-            return {"result": result, "truncated": finish == "length", "debug": debug_note}
+            header = str(briefing.get("evidence_header") or "")
+            return {
+                "result": header + result,
+                "truncated": finish == "length",
+                "debug": debug_note,
+                "briefing": {
+                    "profile_found": profile is not None,
+                    "in_peer_lane": in_peer_lane,
+                    "source": briefing.get("source"),
+                    "touch_xrp": briefing.get("touch_xrp"),
+                    "evidence_lines": briefing.get("evidence_lines"),
+                },
+            }
         except Exception as e:
             # Surface the actual API error body for 4xx/5xx so we can debug model names, auth, etc.
             api_error = ""

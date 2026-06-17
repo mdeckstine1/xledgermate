@@ -1,9 +1,9 @@
 # Pure A-S Critical Path
 
 **Status:** Active — **WS + pure Avellaneda-Stoikov** is the production MM quoting model on VPS.  
-**Version:** **v2.1.10** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru-Kaizen` (VPS live MM)  
+**Version:** **v2.1.14** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru-Kaizen` (VPS live MM)  
 **Sacred corpus:** `grok-tier-2-collab` (Gate 2 replay + economics) · **E2 merged** 2026-06-15  
-**Last updated:** 2026-06-15 (Phase H on-ledger arb roadmap; G5 peer-lane replay validation)
+**Last updated:** 2026-06-17 (grounded Grok analyze; intelligence boost backlog for regime / empty peer lane)
 
 This is the **single checklist** for WS + pure A-S work. Other docs point here; do not duplicate task lists elsewhere.
 
@@ -195,16 +195,67 @@ Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sy
 
 **Relation to AMM LP extension:** Passive LP (fee earning) stays under “Optional AMM Liquidity” below — complementary, not arb. Phase H **H1–H4** is **active dislocation capture**; LP is **passive**.
 
-### Phase F — Grok exploitation & operator UX (after path solid)
+### Phase F — Grok exploitation & operator UX
 
-*Hold until Phases B–D are running solid (fresh WS book, stable presence, D2 dry-run). Items stay on the critical path but are **not** in scope for current sprint. Advisory only — never overrides reservation.*
+*Advisory only — never overrides reservation. **During soak:** HUD-only changes (`ws-hud` restart OK; do **not** restart `ws-engine`).*
 
-- [ ] **F1** Competitor nicknames (local JSON map; HUD display/edit) — *was C1*
-- [ ] **F2** Grok exploitation output → optional `AIAdvisorySignal` (rate-limited; not every cycle) — *was C2*
-- [ ] **F3** Prompt iteration from real analyses (one-sided bidder + defensive refresh patterns) — *was C3*
-- [ ] **F4** Track "Grok suggestion → outcome" in runtime export — *was part of C4*
+- [ ] **F1** Competitor nicknames (local JSON map; HUD display/edit)
+- [ ] **F2** Grok exploitation output → optional `AIAdvisorySignal` (rate-limited; not every cycle)
+- [x] **F3a** Grounded `/analyze_competitor` — scrape profile + peer-band context in prompt; evidence header in HUD (`hud_intel_support.py` + `real_time_as_hud.py`; **ws-hud only**, 2026-06-17)
+- [ ] **F3b** Structured JSON peer briefing + prompt iteration from validated analyses
+- [ ] **F4** Track "Grok suggestion → outcome" in runtime export / `intel_decisions.jsonl`
 
-### Future strategy options (capture only — not in scope)
+### Post-soak work (requires `ws-engine` restart — defer until soak ends)
+
+*Do not interrupt live MM soak for these. Peer band scales automatically with `our_lane_xrp` — no separate whale/peer mode.*
+
+**Intel measurement (engine)**
+
+- [ ] **P1** Per-peer event history in `competitor_intel.py` — touch changes, fled-touch series, cancel-after-fill timing (not snapshot-only)
+- [ ] **P2** WS tx stream correlation — cancel-after-fill, reaction to our fills → adverse-selection proxy (was Future §8)
+- [ ] **P3** Persist full L1–L3 ladder in `runtime_state.json` for HUD (planned depth visible without fraction fallback)
+
+**Intel → action (engine + optional G4)**
+
+- [ ] **P4** Structured `PeerBriefing` schema from Grok (holes, posture, confidence) — log + HUD badges
+- [ ] **P5** Optional G4 hook: per-peer posture nudges when briefing + fled-touch align (still advisory inputs only)
+- [ ] **P6** F2 + F4: rate-limited `AIAdvisorySignal` + suggestion outcome tracking
+
+**Ledger execution (scale)**
+
+- [ ] **P7** L1–L4 from operator note — instrument tx rate, async submit path, RPC latency (see § Ledger cadence below)
+
+**Gates before promoting post-soak intel to automation**
+
+- [ ] Current G6 soak / activation gate pass
+- [ ] In-band peer analyze shows scrape evidence header (not “No scrape row”)
+- [ ] ≥N analyzed peers with logged outcomes vs markout
+
+### Intelligence boost (post-soak — regime + empty peer lane)
+
+*Future development. **Soak validation (2026-06-17):** With `peer_lane_count=0`, grounded Grok analyze on book-wide passive makers (touch 0 at BBO, ~0 cancels on 3k+ offers, ~190k XRP depth, aggregate pressure ~0.24, L1 ~0.08% vs maker avg ~0.20%) produces useful **regime/macro** briefings. HUD + skim advice use book-wide pressure; quoting path currently **neutralizes** to 0.5 via `prepare_quoting_intel()` when peer lane is empty (Phase G — whales must not steer touch competition). These items add a **separate, damped regime channel** so defensive macro conditions can nudge A-S inputs without conflating back-book liquidity with in-band peers. Full G4 aggression stays for real touch-band peers as `our_lane_xrp` scales.*
+
+**Regime inputs (engine — advisory to A-S only)**
+
+- [ ] **I1** **Book regime channel** — When `peer_lane_empty`, expose `book_regime_pressure` (from aggregate scrape, e.g. 0.24) with **capped** influence on vol / `size_mult` / spread inputs (e.g. 50% of peer-lane effect). Do **not** treat book-wide makers as touch peers; keep `prepare_quoting_intel()` peer-lane purity for G4.
+- [ ] **I2** **Spread regime gap** — Metric: `observed_L1_spread − avg_competitor_spread` (tight touch vs wide passive depth). Large gap + low book cancel rate → mild confidence to hold `as_optimal_spread_pct` (avoid unnecessary widening when back-book is static).
+- [ ] **I3** **Passive-depth sync policy** — Book-wide `avg_competitor_cancel_rate` or share of makers with zero cancels. When very passive → `resolve_ws_sync_tolerances`: preserve queue longer, fewer cancel/replace cycles (sequence + fee savings; matches “don’t cancel-race static ladders”).
+- [ ] **I4** **Depth-buffer size nudge** — High `competitor_depth_xrp` + empty peer lane → small capped `size_mult` bump (passive depth absorbs flow; less pickoff panic). Hard cap; G2 markout brake still wins.
+
+**Regime context (measurement + operator)**
+
+- [ ] **I5** **Book-wide side skew aggregate** — Roll up scrape `sides` (bid vs ask offer counts) for macro inventory context; log + HUD pill only until validated against own markout (do not override `dynamic_sizing` inventory policy without data).
+- [ ] **I6** **Regime vs peer split in HUD / JSONL** — Log and display: `peer_pressure` (in-band only), `book_regime_pressure`, `peer_lane_count`, `spread_regime_gap_bps` so operator and replay can A/B regime channel on/off.
+
+**When in-band peers appear (touch competition — builds on G4)**
+
+- [ ] **I7** In-band grounded analyze + fled-touch + G4 skim grade as the **primary** automation path; regime channel (I1–I4) remains background modulation, not a substitute for peer-lane signals.
+
+**Explicitly defer / validate before automating**
+
+- Do not wire Grok prose tactics (fixed bps inside, 1.2–1.5× size rules) directly — use structured briefing (P4) + markout gates.
+- Do not use book-wide whale profiles for queue-jump or touch-lane sizing; `touch_xrp=0` means back-book only.
+
 
 *WS + pure A-S remains the committed core. These are **enhancements and adjacent layers**, not replacements. Promote an item only after D2 live fills + markout on the WS path. Sacred/VPS data = calibration baselines, not WS PnL targets.*
 
@@ -215,9 +266,9 @@ Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sy
 3. **11k rebalance execution layer** — Scheduled ask-heavy rebalance (XRP-only → ~55% target); A-S for steady-state after balance (Almgren–Chriss–style scheduling, not continuous MM).
 4. **Queue / level heuristics** — L1 vs L2 vs behind large walls; fill probability vs pickoff; refresh when BBO moves (matters more as L1 scales with capital).
 5. **GLFT / refined AS family** — Explicit fill-intensity curves λ(δ); same role as A-S when λ is estimable from ledger fills.
-6. **Regime-conditioned parameters** — Calm / toxic / skimmable regimes from pressure + vol + markout; formalize current hand-tuned multipliers.
+6. **Regime-conditioned parameters** — Calm / toxic / skimmable regimes from pressure + vol + markout; formalize current hand-tuned multipliers. **See Intelligence boost I1–I6** (empty peer lane + book-wide regime).
 7. **Contextual bandit / light RL on posture** — Discrete {tight, normal, wide, one-sided off} as **inputs to A-S only**; after hundreds of labeled WS fills (Phase F–adjacent).
-8. **Competitor cancel/fill correlation** — WS tx stream: cancel-after-fill, reaction to our fills → adverse-selection proxy.
+8. ~~**Competitor cancel/fill correlation**~~ → **Post-soak P2** (WS tx stream; engine restart required)
 
 **Explicitly deferred / separate products:**
 
@@ -240,9 +291,9 @@ Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sy
 
 **Decision rule before any option ships:**
 
-- [ ] C2 soak pass + D2 dry-run offers on WS path
-- [ ] ≥50 WS-path fills with ledger-accurate markout
-- [ ] Economics show extra presence does not destroy mean markout
+- [x] C2 soak pass + D2 dry-run offers on WS path
+- [x] ≥50 WS-path fills with ledger-accurate markout (E1.5)
+- [ ] Economics show extra presence does not destroy mean markout (ongoing soak / G6)
 - [ ] Change is **inputs to A-S** or **execution schedule** — never override reservation-inside-L1
 
 **Offense vs defense (tuning note):** WS trades gated “sit out” for “quote if inside book.” Offense wins on **presence**; defense wins on **size/tightness** at high pressure. Future options should sharpen **when to lean in** (low pressure, good markout history), not reintroduce binary hard gates.
@@ -272,7 +323,7 @@ XRPL has **no dedicated “quotes per second” rate limit** for market makers. 
 
 **Implication:** Faster WS book + shorter cycle improves *intent* freshness; **ledger confirm latency** can still leave resting offers stale until cancel/replace lands. Toxicity from stale quotes (pre-2.1.3) was a software refresh issue, not ledger rate limits. At ~234 XRP / ~7 XRP L1, current tx volume is far below network capacity.
 
-**Promote to implementation when:** heavy churn cycles routinely exceed one loop interval, or `terQUEUED` / failed submits appear in logs.
+**Promote to implementation when:** heavy churn cycles routinely exceed one loop interval, or `terQUEUED` / failed submits appear in logs. **Tracked as Post-soak P7.**
 
 - [ ] **L1** Instrument ledger tx rate (`OFFER_REFRESH` CSV + `decisions.jsonl` cancel/place counts per hour).
 - [ ] **L2** Async submit path (submit without blocking full ledger close on every leg; poll `tx` / sequence) so 5s loop is not extended by 4× `submit_and_wait`.
@@ -316,7 +367,9 @@ experimental/swap_readiness_report.py
 experimental/PHASE_E_INTELLIGENCE_IMPLEMENTATION_PLAN.md
 experimental/ws_feed/peer_lane_replay_validation.py   # G5 peer coverage + neutral-fallback gate
 experimental/ws_feed/live_activation_grading.py       # G6 §7 live activation tier + gate
-experimental/ws_feed/peer_lane_quoting.py
+experimental/ws_feed/peer_lane_quoting.py          # G4; I1 regime channel will extend prepare_quoting_intel
+experimental/ws_feed/hud_intel_support.py          # grounded analyze briefing + lane HUD fields
+experimental/ws_feed/real_time_as_hud.py           # /analyze_competitor
 experimental/ws_feed/replay_long_run.py
 # Phase H (planned — not shipped)
 experimental/liquidity/amm_provider.py              # H2 pool quotes + H1 monitor

@@ -15,7 +15,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig, is_trustworthy_rlusd_mid
@@ -89,6 +89,18 @@ def resolve_ws_sync_tolerances(
     return price_tol, preserve_touch_queue
 
 
+def _ladder_row_to_quote_intent(row: Mapping[str, Any]) -> Optional[QuoteIntent]:
+    side = str(row.get("side") or "").lower()
+    if side not in ("bid", "ask"):
+        return None
+    price = float(row.get("price") or 0)
+    size = float(row.get("size_xrp") or 0)
+    level = int(row.get("level") or 1)
+    if price <= 0 or size <= 0:
+        return None
+    return QuoteIntent(level=level, side=side, price=price, size_xrp=size)
+
+
 def pure_intents_to_quote_intents(
     quote_intents: Sequence[Dict[str, Any]],
     *,
@@ -101,15 +113,21 @@ def pure_intents_to_quote_intents(
     for row in quote_intents:
         if not row.get("active"):
             continue
-        side = str(row.get("side") or "").lower()
-        if side not in ("bid", "ask"):
-            continue
-        price = float(row.get("price") or 0)
-        size = float(row.get("size_xrp") or 0)
-        level = int(row.get("level") or 1)
-        if price <= 0 or size <= 0:
-            continue
-        out.append(QuoteIntent(level=level, side=side, price=price, size_xrp=size))
+        intent = _ladder_row_to_quote_intent(row)
+        if intent is not None:
+            out.append(intent)
+    return out
+
+
+def ladder_intents_for_hud(
+    quote_intents: Sequence[Dict[str, Any]],
+) -> List[QuoteIntent]:
+    """Full L1–L3 ladder for runtime/HUD (includes planned depth levels)."""
+    out: List[QuoteIntent] = []
+    for row in quote_intents:
+        intent = _ladder_row_to_quote_intent(row)
+        if intent is not None:
+            out.append(intent)
     return out
 
 
@@ -158,6 +176,7 @@ class WsPureTradingEngine:
         self._last_comp_intel: Dict[str, Any] = {}
         self._comp_intel_cache: Dict[str, Any] = {}
         self._last_our_lane_xrp: float = 0.0
+        self._last_ws_book_age_s: Optional[float] = None
 
     def stop(self) -> None:
         self._running = False
@@ -210,6 +229,15 @@ class WsPureTradingEngine:
             self._comp_provider = None
         self._last_our_lane_xrp = l1
         await asyncio.sleep(2.0)
+
+    async def _refresh_book_state(self) -> tuple[Any, Optional[float], Optional[float], Optional[float]]:
+        """Re-seed WS book when stale; return (state, best_bid, best_ask, mid)."""
+        assert self._ws_feed is not None
+        await self._ws_feed.refresh_if_stale(WS_STALE_REFRESH_S)
+        state = self._ws_feed.state
+        bb, ba = state.best_prices()
+        mid = (bb + ba) / 2.0 if bb and ba else None
+        return state, bb, ba, mid
 
     async def _maybe_refresh_competitor_intel(self, config: BotConfig) -> Optional[Dict[str, Any]]:
         """Periodic on-chain peer-lane scrape for G4 quoting (cached ~15s)."""
@@ -297,10 +325,7 @@ class WsPureTradingEngine:
         connector = self.connector
         assert connector is not None
 
-        await self._ws_feed.refresh_if_stale(WS_STALE_REFRESH_S)
-        state = self._ws_feed.state
-        bb, ba = state.best_prices()
-        mid = (bb + ba) / 2.0 if bb and ba else None
+        state, bb, ba, mid = await self._refresh_book_state()
         if not is_trustworthy_rlusd_mid(mid, best_bid=bb, best_ask=ba):
             self.decision_log.add("book", "WS book not trustworthy — skip cycle.")
             if (
@@ -368,6 +393,22 @@ class WsPureTradingEngine:
         comp_intel = await self._maybe_refresh_competitor_intel(config)
         fill_state = self._fill_quality.assess() if flags.fill_quality else None
 
+        # Intel scrape + ledger RPC can take 30s+; refresh book again before quoting.
+        state, bb, ba, mid = await self._refresh_book_state()
+        if not is_trustworthy_rlusd_mid(mid, best_bid=bb, best_ask=ba):
+            self.decision_log.add("book", "WS book not trustworthy before quote — skip cycle.")
+            if (
+                config.trading_enabled
+                and not config.dry_run
+                and (config.bot_secret_key or "").strip()
+            ):
+                await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
+            return
+        self._last_valid_mid = mid
+        if mid and flags.fill_quality:
+            self._fill_quality.note_mid(mid)
+        self._last_ws_book_age_s = state.age_seconds()
+
         engine_dec = await self._adapter.compute_pure_as_decision(
             mid=mid or 0.0,
             best_bid=bb or 0.0,
@@ -434,9 +475,10 @@ class WsPureTradingEngine:
             dry_run=config.dry_run,
         )
         self._append_decision_file(cycle=self._cycle_count, mid=mid, execution=execution)
+        hud_ladder = ladder_intents_for_hud(engine_dec.get("quote_intents") or [])
         await self._persist_cycle(
             config, mid, bb, ba, balance_xrp, balance_rlusd, portfolio, intents, offers_last,
-            execution, engine_dec=engine_dec,
+            execution, engine_dec=engine_dec, hud_ladder_intents=hud_ladder,
         )
 
     async def _sync_offers(
@@ -665,6 +707,7 @@ class WsPureTradingEngine:
         placed: int,
         execution: str,
         engine_dec: Optional[Dict[str, Any]] = None,
+        hud_ladder_intents: Optional[List[QuoteIntent]] = None,
     ) -> None:
         flags = WsFeatureFlags.from_config(config)
         drawdown_pct = self.drawdown_monitor.get_drawdown_percent()
@@ -724,14 +767,18 @@ class WsPureTradingEngine:
             cycle_count=self._cycle_count,
             offers_placed_last_cycle=placed,
             last_execution_summary=execution,
-            quote_intents=intents,
+            quote_intents=hud_ladder_intents if hud_ladder_intents else intents,
             recent_decisions=decisions,
             price_source="ws_book_feed",
             price_history=list(self._price_history),
             as_mode="pure",
             ws_as_version=current_ws_as_version(),
             as_protected=True,
-            ws_book_age_s=self._ws_feed.age_seconds() if self._ws_feed else None,
+            ws_book_age_s=(
+                self._last_ws_book_age_s
+                if self._last_ws_book_age_s is not None
+                else (self._ws_feed.age_seconds() if self._ws_feed else None)
+            ),
             ws_message_count=(
                 int(self._ws_feed.state.message_count)
                 if self._ws_feed and hasattr(self._ws_feed, "state")

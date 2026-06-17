@@ -51,4 +51,9 @@ if [ -f logs/runtime_state.json ]; then
   $PY -c "import json; d=json.load(open('logs/runtime_state.json')); print('updated_utc:', d.get('updated_utc'), 'cycle:', d.get('cycle_count'), 'ws:', d.get('ws_as_version'))"
 fi
 
+echo "=== hourly Telegram report timer ==="
+if [ -f scripts/ensure_hourly_telegram_timer.sh ]; then
+  bash scripts/ensure_hourly_telegram_timer.sh || echo "WARN: hourly timer setup failed"
+fi
+
 echo "=== deploy complete ==="

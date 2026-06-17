@@ -310,6 +310,21 @@ def main() -> int:
     if not getattr(config, "telegram_hourly_report_enabled", True):
         print("Hourly report disabled (telegram_hourly_report_enabled: false).", file=sys.stderr)
         return 0
+
+    from monitoring.telegram_schedule import hourly_report_allowed_now, quiet_hours_label
+
+    quiet_enabled = bool(getattr(config, "telegram_quiet_hours_enabled", False))
+    quiet_start = int(getattr(config, "telegram_quiet_start_hour", 22))
+    quiet_end = int(getattr(config, "telegram_quiet_end_hour", 7))
+    if not hourly_report_allowed_now(
+        quiet_hours_enabled=quiet_enabled,
+        quiet_start_hour=quiet_start,
+        quiet_end_hour=quiet_end,
+    ):
+        label = quiet_hours_label(quiet_start, quiet_end)
+        print(f"Hourly report skipped — quiet hours ({label}).", file=sys.stderr)
+        return 0
+
     text = build_report(
         window_hours=args.hours,
         hud_url=getattr(config, "telegram_hud_url", "") or "",
