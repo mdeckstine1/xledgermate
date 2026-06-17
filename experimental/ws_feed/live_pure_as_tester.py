@@ -128,6 +128,8 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         "mid_price": runtime.get("mid_price"),
         "best_bid": runtime.get("best_bid_rlusd_per_xrp"),
         "best_ask": runtime.get("best_ask_rlusd_per_xrp"),
+        "best_bid_rlusd_per_xrp": runtime.get("best_bid_rlusd_per_xrp"),
+        "best_ask_rlusd_per_xrp": runtime.get("best_ask_rlusd_per_xrp"),
         "book_spread_pct": runtime.get("book_spread_pct"),
         "ws_age_s": runtime.get("ws_book_age_s"),
         "ws_message_count": runtime.get("ws_message_count"),
@@ -135,6 +137,11 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         "ws_book_last_update_utc": runtime.get("ws_book_last_update_utc"),
         "volatility_pct": runtime.get("volatility_pct"),
         "as_reservation": runtime.get("as_reservation"),
+        "inside_l1": runtime.get("inside_l1"),
+        "reservation_to_bbo_delta_bps": runtime.get("reservation_to_bbo_delta_bps"),
+        "effective_quote_age_at_fill_seconds": runtime.get(
+            "effective_quote_age_at_fill_seconds"
+        ),
         "as_optimal_spread_pct": runtime.get("as_optimal_spread_pct"),
         "as_gamma": runtime.get("as_gamma"),
         "as_kappa": runtime.get("as_kappa"),
