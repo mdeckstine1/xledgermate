@@ -278,6 +278,48 @@ def competitor_fields_from_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
     return {}
 
 
+def _float_or_none(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def regime_intel_hud_fields(runtime: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    I6 display split — peer lane pressure vs book-wide regime (HUD-only until JSONL ships).
+
+    Does not change quoting inputs (`prepare_quoting_intel` neutralizes empty peer lane).
+    """
+    ci = competitor_fields_from_runtime(runtime)
+    merged = {**runtime, **ci}
+    peer_count = int(merged.get("peer_lane_count") or 0)
+    peer_ps = _float_or_none(merged.get("peer_pressure_score"))
+    book_ps = _float_or_none(
+        merged.get("book_regime_pressure") or merged.get("pressure_score")
+    )
+    if book_ps is None and peer_count <= 0:
+        book_ps = _float_or_none(merged.get("competitor_pressure"))
+    peer_display = peer_ps if peer_count > 0 else None
+    book_spread = _float_or_none(merged.get("book_spread_pct"))
+    regime_spread = None
+    if peer_count > 0:
+        regime_spread = _float_or_none(merged.get("peer_observed_spread_pct"))
+    if regime_spread is None:
+        regime_spread = _float_or_none(merged.get("competitor_observed_spread_pct"))
+    spread_regime_gap_bps = None
+    if book_spread is not None and regime_spread is not None:
+        spread_regime_gap_bps = round((regime_spread - book_spread) * 100.0, 1)
+    return {
+        "peer_pressure": peer_display,
+        "book_regime_pressure": book_ps,
+        "spread_regime_gap_bps": spread_regime_gap_bps,
+        "regime_channel_active": bool(merged.get("regime_channel_active", False)),
+    }
+
+
 def _accounts_match(query: str, row: Mapping[str, Any]) -> bool:
     """Match full or truncated r-address from scrape row."""
     q = (query or "").strip()

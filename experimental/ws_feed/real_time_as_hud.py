@@ -290,6 +290,40 @@ if app:
         _current_state.update(snap)
         return {"ok": True, **snap}
 
+    @app.get("/competitor_nicknames")
+    async def get_competitor_nicknames():
+        """F1 — local operator nicknames keyed by r-address (logs/competitor_nicknames.json)."""
+        from experimental.ws_feed.competitor_nicknames import load_nicknames
+
+        mapping = load_nicknames()
+        _current_state["competitor_nicknames"] = mapping
+        return {"nicknames": mapping}
+
+    @app.post("/competitor_nicknames")
+    async def post_competitor_nicknames(request: Request):
+        """Set or remove one nickname, or replace the full map."""
+        from experimental.ws_feed.competitor_nicknames import (
+            load_nicknames,
+            remove_nickname,
+            save_nicknames,
+            set_nickname,
+        )
+
+        data = await request.json()
+        if isinstance(data.get("nicknames"), dict):
+            mapping = save_nicknames(data["nicknames"])
+        else:
+            address = str(data.get("address") or "").strip()
+            nickname = str(data.get("nickname") or "").strip()
+            if not address:
+                return {"ok": False, "error": "address required"}
+            if nickname:
+                mapping = set_nickname(address, nickname)
+            else:
+                mapping = remove_nickname(address)
+        _current_state["competitor_nicknames"] = mapping
+        return {"ok": True, "nicknames": mapping}
+
     @app.get("/list_models")
     async def list_models():
         """Query xAI (or compatible) /v1/models using the key currently in Config.

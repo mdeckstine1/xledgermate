@@ -138,6 +138,21 @@ def test_analyze_samples_zero_quote_breakdown() -> None:
     assert a.zero_quote_reasons["other"] == 1
 
 
+def test_stale_cross_zero_quote_bucket() -> None:
+    from experimental.ws_runtime_analysis import STALE_CROSS_ZERO_REASON, compute_c1_metrics
+
+    samples = [
+        {
+            "would_quote": False,
+            "reservation_crossed_after_ws_sample": True,
+            "competitor_pressure": 0.4,
+        },
+        {"would_quote": True, "zero_quote_reason": "quoted", "competitor_pressure": 0.4},
+    ]
+    c1 = compute_c1_metrics(samples)
+    assert c1["zero_quote_breakdown"][STALE_CROSS_ZERO_REASON]["count"] == 1
+
+
 def test_soak_gate_fails_short_session() -> None:
     samples = [
         {

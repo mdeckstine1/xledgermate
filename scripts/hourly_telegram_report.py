@@ -233,6 +233,18 @@ def build_report(
         if g2:
             extra += f" | G2: {g2}"
         lines.append(extra)
+        from experimental.ws_feed.reservation_metrics import (
+            enrich_runtime_reservation_metrics,
+            format_reservation_bbo_delta,
+        )
+
+        rs = enrich_runtime_reservation_metrics(rs)
+        delta = rs.get("reservation_to_bbo_delta_bps")
+        if delta is not None:
+            inside = rs.get("inside_l1")
+            lines.append(
+                f"Res→BBO: {format_reservation_bbo_delta(delta, inside_l1=inside)}"
+            )
     if kill_active and kill_reason:
         lines.append(f"Kill: {kill_reason[:200]}")
     lines.extend(

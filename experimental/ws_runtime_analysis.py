@@ -37,6 +37,9 @@ PRESSURE_BUCKETS: Dict[str, Tuple[float, float]] = {
 # C2 — soak gate defaults (pre-D2); aligned with B3 stale threshold
 DEFAULT_STALE_AGE_S = 12.0
 
+# M3 — reservation vs BBO moved during intel scrape window (engine sets flag; analysis buckets now)
+STALE_CROSS_ZERO_REASON = "reservation_crossed_after_ws_sample"
+
 
 @dataclass(frozen=True)
 class SoakCriteria:
@@ -107,6 +110,8 @@ def _sample_zero_quote_reason(sample: Dict[str, Any]) -> str:
     existing = sample.get("zero_quote_reason")
     if existing:
         return str(existing)
+    if sample.get("reservation_crossed_after_ws_sample"):
+        return STALE_CROSS_ZERO_REASON
     would_quote = bool(sample.get("would_quote"))
     return classify_zero_quote_reason(
         would_quote=would_quote,
@@ -211,6 +216,7 @@ def compact_sample_from_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
         ),
         "inside_l1": runtime.get("inside_l1"),
         "reservation_to_bbo_delta_bps": runtime.get("reservation_to_bbo_delta_bps"),
+        "reservation_crossed_after_ws_sample": runtime.get("reservation_crossed_after_ws_sample"),
     }
 
 

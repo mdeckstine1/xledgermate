@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-from experimental.ws_runtime_analysis import classify_zero_quote_reason
+from experimental.ws_runtime_analysis import (
+    STALE_CROSS_ZERO_REASON,
+    classify_zero_quote_reason,
+)
 
 
 def spread_floor_binding(
@@ -67,6 +70,12 @@ def build_tight_book_advisory(
 
     if zero_quote_reason == "quoted":
         return ""
+
+    if zero_quote_reason == STALE_CROSS_ZERO_REASON:
+        return (
+            "STALE-CROSS — reservation was inside L1 at WS sample but outside after "
+            "competitor/intel scrape refresh. Advisory only until M3 engine flag ships."
+        )
 
     return f"BLOCKED — {zero_quote_reason} ({gap:.3f}% optimal−book gap).{floor_note}"
 
@@ -150,4 +159,6 @@ def _detail_for_reason(
         if gap > 0.01:
             return f"reservation inside L1; optimal wider than book by {gap:.3f}%"
         return "reservation inside L1"
+    if reason == STALE_CROSS_ZERO_REASON:
+        return "reservation crossed BBO during intel scrape window"
     return reason

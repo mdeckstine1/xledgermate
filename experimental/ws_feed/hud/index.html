@@ -753,6 +753,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div style="margin-top:8px; border-top:1px solid #334155; padding-top:6px;">
                             <div class="metric-row"><span class="label">Observed spread</span> <span id="metrics-obs-spread" class="value">—</span></div>
                             <div class="metric-row"><span class="label">Competitor pressure</span> <span id="metrics-comp-pressure" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">Peer pressure</span> <span id="metrics-peer-pressure" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">Book regime pressure</span> <span id="metrics-book-regime-pressure" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">Spread regime gap</span> <span id="metrics-spread-regime-gap" class="value">—</span></div>
                             <div class="metric-row"><span class="label">Active makers</span> <span id="metrics-active-makers" class="value">—</span></div>
                         </div>
                     </div>
@@ -947,6 +950,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="metric-row"><span class="label">Peers in Lane</span> <span id="intel-peer-count" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Fled Touch (peers)</span> <span id="intel-fled" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Pressure (0=defensive, scrape harder)</span> <span id="intel-pressure" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Peer pressure (in-band)</span> <span id="intel-peer-pressure" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Book regime pressure</span> <span id="intel-book-regime-pressure" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Spread regime gap</span> <span id="intel-spread-regime-gap" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Active Makers</span> <span id="intel-active" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Competitor Depth (XRP)</span> <span id="intel-depth" class="value">—</span></div>
                     </div>
@@ -978,7 +984,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <div id="intel-all-makers-inner" class="hud-scroll-box-inner">No profiles yet.</div>
                         </div>
                         <small style="opacity:0.6;">Peers = makers at L1 within 0.4×–2.5× your posted touch size. Book-wide list includes whales (e.g. 120k XRP) outside your lane — use peers for queue tactics; use book-wide only when you want to study a specific address.</small>
-                        <small>Account prefix (domain if set on-ledger) | last/avg spread | activity | sides (b/a). XRPL has no native "full name" tokens or usernames. Best on-chain ID is the r-address + optional Domain field (set via AccountSet, verifiable via DNS). No standard ledger "identity tokens" for this. <em>Future (optional): internal nicknames — a local-only map (e.g. JSON or in-memory) keyed by r-address so you can label e.g. "Bob the aggressive L1 sniper" purely for your own recall, without any on-chain or shared data changes.</em></small>
+                        <small>Account prefix (domain if set on-ledger) | last/avg spread | activity | sides (b/a). Operator nicknames are local-only (logs/competitor_nicknames.json) — set below.</small>
                     </div>
 
                     <!-- Controls (left column, under AI address analysis) -->
@@ -987,6 +993,16 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <button id="btn-force-comp-scrape" style="background:#f59e0b; color:#0f172a; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem;">Force peer-lane scrape</button>
                         <button id="btn-sim-historical" style="margin-left:8px; background:#14b8a6; color:white; border:none; border-radius:3px; padding:5px 10px; font-size:0.8rem;">Refresh historical context</button>
                         <div id="intel-scrape-log" style="margin-top:6px; font-size:0.7rem; color:#64748b;">Production engine scrapes on-chain offers every ~15s for peer-lane intel.</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="label">Operator nicknames (local)</div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                            <input id="nick-address" type="text" placeholder="r-address (click a peer to fill)" style="flex:2; min-width:140px; font-family:monospace; font-size:0.75rem;">
+                            <input id="nick-label" type="text" placeholder="Nickname" style="flex:1; min-width:80px; font-size:0.75rem;">
+                            <button id="btn-save-nickname" type="button" style="background:#334155; color:#e2e8f0; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem;">Save</button>
+                        </div>
+                        <div id="nick-status" style="font-size:0.7rem; color:#64748b; margin-top:4px;">Saved to logs/competitor_nicknames.json on this host.</div>
                     </div>
 
                     <!-- AI advisory + How We Skim (swapped, under AI competitor row) -->
@@ -1033,6 +1049,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
     <script>
         let lastState = null;
         let pinnedIntelAiResult = null;  // keep full Grok analysis across /state polls
+        let competitorNicknames = {};
         const HUD_BUILD = '__HUD_BUILD__';
 
         function ensureCacheBustUrl() {
@@ -1515,6 +1532,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
         function renderLive(s) {
             if (!s) return;
+            if (s.competitor_nicknames && typeof s.competitor_nicknames === 'object') {
+                competitorNicknames = s.competitor_nicknames;
+            }
 
             // Apply any demo inventory movements (deposits/withdraws) so balances stay consistent across polls
             applyDemoBalancePatchToState(s);
@@ -1961,6 +1981,20 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setText('intel-peer-count', s.peer_lane_count != null ? `${s.peer_lane_count}${peerBand}` : '—');
             setText('intel-fled', s.peer_fled_touch_count != null ? s.peer_fled_touch_count : '—');
             setText('intel-pressure', s.competitor_pressure != null ? parseFloat(s.competitor_pressure).toFixed(2) : '—');
+            setText(
+                'intel-peer-pressure',
+                s.peer_pressure != null
+                    ? parseFloat(s.peer_pressure).toFixed(2)
+                    : (s.peer_lane_count > 0 ? '—' : 'n/a (empty lane)')
+            );
+            setText(
+                'intel-book-regime-pressure',
+                s.book_regime_pressure != null ? parseFloat(s.book_regime_pressure).toFixed(2) : '—'
+            );
+            setText(
+                'intel-spread-regime-gap',
+                s.spread_regime_gap_bps != null ? `${parseFloat(s.spread_regime_gap_bps).toFixed(1)} bps` : '—'
+            );
             setText('intel-active', s.num_active_mms != null ? s.num_active_mms : '—');
             setText('intel-depth', s.competitor_depth_xrp != null ? `${parseFloat(s.competitor_depth_xrp).toFixed(1)} XRP` : '—');
             setText('intel-advice', s.competitor_skim_advice || (isProductionHud(s)
@@ -1973,9 +2007,14 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     listEl.innerHTML = emptyMsg;
                     return;
                 }
+                const nicks = (s.competitor_nicknames && typeof s.competitor_nicknames === 'object')
+                    ? s.competitor_nicknames
+                    : competitorNicknames;
                 listEl.innerHTML = rows.map(c => {
-                    const display = c.domain && c.domain !== 'no-domain' ? `${c.account} (${c.domain})` : c.account;
                     const full = c.account_full || c.account;
+                    const nick = c.nickname || nicks[full] || '';
+                    const base = c.domain && c.domain !== 'no-domain' ? `${c.account} (${c.domain})` : c.account;
+                    const display = nick ? `${nick} · ${base}` : base;
                     const touch = c.touch_xrp != null && c.touch_xrp > 0 ? ` | touch:${c.touch_xrp}XRP` : '';
                     const fled = c.cancels != null && c.cancels > 0 ? ` | cancels:${c.cancels}` : '';
                     return `<div data-full="${full}" style="cursor:pointer; padding:2px 0;" title="Click to use this address for Analyze with AI">${display} | ${c.last_spread}% / ${c.avg_spread}% | act:${c.activity} | ${c.sides}${touch}${fled}</div>`;
@@ -1983,13 +2022,18 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 listEl.querySelectorAll('div[data-full]').forEach(row => {
                     row.onclick = () => {
                         const input = document.getElementById('intel-analyze-addr');
+                        const nickAddr = document.getElementById('nick-address');
+                        const fullAddr = row.getAttribute('data-full') || '';
                         if (input) {
-                            input.value = row.getAttribute('data-full');
-                            const analyzeBtn = document.getElementById('btn-analyze-addr');
-                            if (analyzeBtn) {
-                                analyzeBtn.style.boxShadow = '0 0 0 3px #8b5cf6';
-                                setTimeout(() => { if (analyzeBtn) analyzeBtn.style.boxShadow = ''; }, 800);
-                            }
+                            input.value = fullAddr;
+                        }
+                        if (nickAddr) {
+                            nickAddr.value = fullAddr;
+                        }
+                        const analyzeBtn = document.getElementById('btn-analyze-addr');
+                        if (analyzeBtn) {
+                            analyzeBtn.style.boxShadow = '0 0 0 3px #8b5cf6';
+                            setTimeout(() => { if (analyzeBtn) analyzeBtn.style.boxShadow = ''; }, 800);
                         }
                     };
                 });
@@ -2130,6 +2174,20 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 'metrics-comp-pressure',
                 s.competitor_pressure != null ? parseFloat(s.competitor_pressure).toFixed(2) : '—'
             );
+            setText(
+                'metrics-peer-pressure',
+                s.peer_pressure != null
+                    ? parseFloat(s.peer_pressure).toFixed(2)
+                    : (s.peer_lane_count > 0 ? '—' : 'n/a')
+            );
+            setText(
+                'metrics-book-regime-pressure',
+                s.book_regime_pressure != null ? parseFloat(s.book_regime_pressure).toFixed(2) : '—'
+            );
+            setText(
+                'metrics-spread-regime-gap',
+                s.spread_regime_gap_bps != null ? `${parseFloat(s.spread_regime_gap_bps).toFixed(1)} bps` : '—'
+            );
             setText('metrics-active-makers', s.num_active_mms != null ? String(s.num_active_mms) : '—');
             const tailEl = document.getElementById('metrics-intel-tail');
             if (tailEl) {
@@ -2261,6 +2319,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
             } catch (e) {
                 const el = document.getElementById('tg-schedule-status');
                 if (el) el.textContent = 'Could not load Telegram settings.';
+            }
+        }
+
+        async function loadCompetitorNicknames() {
+            try {
+                const resp = await fetch('/competitor_nicknames');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                competitorNicknames = data.nicknames || {};
+            } catch (e) {
+                /* optional — /state may include nicknames on next poll */
             }
         }
 
@@ -2966,6 +3035,46 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     }
                 });
             }
+
+            const nickBtn = document.getElementById('btn-save-nickname');
+            if (nickBtn) {
+                nickBtn.addEventListener('click', async () => {
+                    const addrEl = document.getElementById('nick-address');
+                    const labelEl = document.getElementById('nick-label');
+                    const statusEl = document.getElementById('nick-status');
+                    const address = addrEl ? addrEl.value.trim() : '';
+                    const nickname = labelEl ? labelEl.value.trim() : '';
+                    if (!address) {
+                        if (statusEl) statusEl.textContent = 'Enter an r-address first.';
+                        return;
+                    }
+                    if (statusEl) statusEl.textContent = 'Saving…';
+                    try {
+                        const resp = await fetch('/competitor_nicknames', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ address, nickname }),
+                        });
+                        const data = await resp.json();
+                        if (!data.ok) {
+                            if (statusEl) statusEl.textContent = data.error || 'Save failed.';
+                            return;
+                        }
+                        competitorNicknames = data.nicknames || {};
+                        if (statusEl) {
+                            statusEl.textContent = nickname
+                                ? `Saved "${nickname}" for ${address.slice(0, 12)}…`
+                                : `Removed nickname for ${address.slice(0, 12)}…`;
+                        }
+                        if (lastState) {
+                            lastState.competitor_nicknames = competitorNicknames;
+                            renderLive(lastState);
+                        }
+                    } catch (e) {
+                        if (statusEl) statusEl.textContent = `Save failed: ${e}`;
+                    }
+                });
+            }
         }
 
         function initCollapsibles() {
@@ -3015,6 +3124,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             // Attach the remaining demo-only button / select handlers (removes inline onclick/onchange)
             attachDemoHandlers();
             loadTelegramConfig();
+            loadCompetitorNicknames();
 
             // Initialize collapsible sections (Last Decision Note + Recent Decisions)
             initCollapsibles();

@@ -37,9 +37,11 @@ from typing import Any, Dict, Optional
 
 from config.settings import BotConfig
 
+from experimental.ws_feed.competitor_nicknames import apply_nicknames_to_profiles, load_nicknames
 from experimental.ws_feed.hud_intel_support import (
     competitor_fields_from_runtime,
     enrich_inventory_hud_fields,
+    regime_intel_hud_fields,
     resolve_hud_intel_fields,
 )
 
@@ -242,6 +244,12 @@ class ProductionHudMirror:
 
         enriched = _enrich_runtime_for_hud(runtime)
         enriched.update(competitor_fields_from_runtime(enriched))
+        enriched.update(regime_intel_hud_fields(enriched))
+        nicknames = load_nicknames()
+        enriched["competitor_nicknames"] = nicknames
+        for key in ("top_peers", "top_competitors"):
+            if enriched.get(key):
+                enriched[key] = apply_nicknames_to_profiles(enriched.get(key), nicknames)
         enriched.update(
             enrich_inventory_hud_fields(
                 enriched,

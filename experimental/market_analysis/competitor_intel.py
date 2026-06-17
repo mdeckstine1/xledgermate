@@ -524,6 +524,7 @@ class CompetitorIntelProvider(ExternalMarketDataProvider):
             "peer_lane_low_xrp": snap.peer_lane_low_xrp,
             "peer_lane_high_xrp": snap.peer_lane_high_xrp,
             "peer_pressure_score": snap.peer_pressure_score,
+            "book_regime_pressure": snap.pressure_score,
             "peer_observed_spread_pct": snap.peer_observed_spread_pct,
             "peer_fled_touch_count": snap.peer_fled_touch_count,
             "peer_fled_events": snap.peer_fled_events or self._recent_fled[:5],

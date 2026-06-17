@@ -3,7 +3,7 @@
 **Status:** Active — **WS + pure Avellaneda-Stoikov** is the production MM quoting model on VPS.  
 **Version:** **v2.1.14** (`VERSION` + `experimental/ws_feed/WS_AS_VERSION`) · **Branch:** `Ashigaru-Kaizen` (VPS live MM)  
 **Sacred corpus:** `grok-tier-2-collab` (Gate 2 replay + economics) · **E2 merged** 2026-06-15  
-**Last updated:** 2026-06-17 (Phase M execution measurement — reservation BBO delta HUD; M2–M4 deferred to engine window)
+**Last updated:** 2026-06-17 (soak-safe batch: fill-age report, I6 HUD, F1 nicknames, stale-cross analysis, Telegram Res→BBO)
 
 This is the **single checklist** for WS + pure A-S work. Other docs point here; do not duplicate task lists elsewhere.
 
@@ -165,12 +165,14 @@ Update checkboxes when items ship. Mark **FOR_AI § Milestones** + **THREAD** on
 
 - [x] **M1** **Reservation → BBO delta (soak-safe)** — `reservation_metrics.py`; signed bps + `inside_l1`; HUD Live card via `ws_hud_production._enrich_runtime_for_hud`; `pure_quote_path` + tester `sample_history` (lab); **ws-hud restart only** on VPS
 - [ ] **M2** **Quote age @ detected fill** — `effective_quote_age_at_fill_seconds` on decision/runtime; populate in `ws_pure_engine._detect_fills` (last side place timestamp v1); label honestly in HUD + CSV
-- [ ] **M3** **Stale-cross flag** — `reservation_crossed_after_ws_sample` in `ws_pure_engine` (frozen reservation vs pre/post-scrape BBO); `zero_quote_notes.py` operator string; `ws_runtime_analysis` bucket — **engine restart**
+- [ ] **M3** **Stale-cross flag** — `reservation_crossed_after_ws_sample` in `ws_pure_engine` (frozen reservation vs pre/post-scrape BBO); `zero_quote_notes.py` operator string; `ws_runtime_analysis` bucket — **engine restart** (analysis schema + operator string **shipped** soak-safe)
 - [ ] **M4** **Production `sample_history`** — parity with tester `append_runtime_sample`; enables soak breakdowns on VPS — **engine restart**
 - [x] **M5** **Advisory guard (narrow)** — `as_safety.py` enforces reservation-inside-L1 only; wired in `pure_quote_path`; production when engine deploys
 - [ ] **M6** **Per-sequence quote age** — `_offer_placed_utc[sequence]` after M2 data reviewed — post-soak
 
 **HUD during current soak (M1):** Res → BBO Δ each cycle (derived). Fill age / stale-cross show `—` until M2/M3 engine deploy.
+
+**Soak-safe batch (2026-06-17, no ws-engine restart):** `scripts/fill_quote_age_report.py` (offline M2 prep); hourly Telegram Res→BBO; I6 HUD labels; F1 nicknames; M3 analysis bucket in `ws_runtime_analysis` + `zero_quote_notes`.
 
 **Limitations (document in ops):** balance-delta fills ≥1 cycle late; kept offers understate age until M6; stale-cross = intel scrape window only.
 
@@ -231,7 +233,7 @@ Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sy
 
 *Advisory only — never overrides reservation. **During soak:** HUD-only changes (`ws-hud` restart OK; do **not** restart `ws-engine`).*
 
-- [ ] **F1** Competitor nicknames (local JSON map; HUD display/edit)
+- [x] **F1** Competitor nicknames (local JSON map; HUD display/edit) — `competitor_nicknames.py`, Intelligence tab, `/competitor_nicknames` API
 - [ ] **F2** Grok exploitation output → optional `AIAdvisorySignal` (rate-limited; not every cycle)
 - [x] **F3a** Grounded `/analyze_competitor` — scrape profile + peer-band context in prompt; evidence header in HUD (`hud_intel_support.py` + `real_time_as_hud.py`; **ws-hud only**, 2026-06-17)
 - [ ] **F3b** Structured JSON peer briefing + prompt iteration from validated analyses
@@ -282,7 +284,7 @@ Shared: RPC, WS feeds, HUD/intel scrape, CSV logging. **Do not** mix MM offer sy
 **Regime context (measurement + operator)**
 
 - [ ] **I5** **Book-wide side skew aggregate** — Roll up scrape `sides` (bid vs ask offer counts) for macro inventory context; log + HUD pill only until validated against own markout (do not override `dynamic_sizing` inventory policy without data).
-- [ ] **I6** **Regime vs peer split in HUD / JSONL** — Log and display: `peer_pressure` (in-band only), `book_regime_pressure`, `peer_lane_count`, `spread_regime_gap_bps` so operator and replay can A/B regime channel on/off.
+- [x] **I6 (HUD)** **Regime vs peer split** — `regime_intel_hud_fields()`; Intelligence + Metrics tabs; `book_regime_pressure` in scrape export — JSONL logging deferred to engine window
 
 **When in-band peers appear (touch competition — builds on G4)**
 
