@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional
+import re
+from typing import Any, Mapping, Optional
 
 
 def estimate_spread_capture_xrp(
@@ -33,3 +34,50 @@ def estimate_spread_capture_xrp(
         edge_rlusd = (mid - fill) * amt
 
     return edge_rlusd / mid
+
+
+def mid_from_fill_notes(row: Mapping[str, Any]) -> Optional[float]:
+    notes = str(row.get("notes") or "")
+    match = re.search(r"@ mid ([0-9.]+)", notes)
+    if match:
+        try:
+            return float(match.group(1))
+        except (TypeError, ValueError):
+            return None
+    try:
+        price = float(row.get("price_rlusd_per_xrp") or 0)
+    except (TypeError, ValueError):
+        return None
+    return price if price > 0 else None
+
+
+def spread_capture_from_fill_row(
+    row: Mapping[str, Any],
+    *,
+    default_half_spread_bps: float = 5.0,
+    price_tolerance_bps: float = 0.5,
+) -> float:
+    """
+    Spread capture for one trades-CSV fill row.
+
+    Uses stored profit when present. Balance-delta rows often record fill@mid
+    (profit=0); estimate skim as volume × half-spread (typical MM edge at touch).
+    """
+    del price_tolerance_bps  # reserved for future ledger-priced fills
+    try:
+        stored = float(row.get("profit_xrp_equiv") or 0)
+    except (TypeError, ValueError):
+        stored = 0.0
+    if stored != 0:
+        return stored
+
+    side = str(row.get("side") or row.get("event_type") or "").upper()
+    if side not in ("BUY", "SELL"):
+        return 0.0
+    try:
+        xrp = float(row.get("xrp_amount") or 0)
+    except (TypeError, ValueError):
+        xrp = 0.0
+    if xrp <= 0:
+        return 0.0
+    return xrp * default_half_spread_bps / 10_000.0

@@ -534,7 +534,7 @@
             <div class="soak-strip">
                 <div class="soak-pill neutral" id="soak-toxic-pill"><div class="soak-label">Toxic @30s</div><div class="soak-value" id="soak-toxic">—</div></div>
                 <div class="soak-pill neutral" id="soak-markout-pill"><div class="soak-label">Markout @30s</div><div class="soak-value" id="soak-markout">—</div></div>
-                <div class="soak-pill neutral" id="soak-pnl-pill"><div class="soak-label">Bal Δ</div><div class="soak-value" id="soak-pnl">—</div></div>
+                <div class="soak-pill neutral" id="soak-pnl-pill"><div class="soak-label">Skim Δ</div><div class="soak-value" id="soak-pnl">—</div></div>
                 <div class="soak-pill neutral" id="soak-fills-pill"><div class="soak-label">Fills</div><div class="soak-value" id="soak-fills">—</div></div>
                 <div class="soak-pill neutral" id="soak-presence-pill"><div class="soak-label">Presence</div><div class="soak-value" id="soak-presence">—</div></div>
                 <div class="soak-pill neutral" id="soak-book-pill"><div class="soak-label">Book age</div><div class="soak-value" id="soak-book">—</div></div>
@@ -592,7 +592,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="label">Session fills &amp; G2 <span class="info" title="Detail view — headline health KPIs are pinned under the header.">?</span></div>
                         <div class="metric-row"><span class="label">Fills (session)</span> <span id="fills-session" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Quote age @ detected fill <span class="info" title="Age when fill was inferred from balance change (engine). Not ledger fill time. Requires ws-engine deploy.">?</span></span> <span id="fill-quote-age" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">Bal Δ (session)</span> <span id="session-pnl" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Skim Δ (session) <span class="info" title="Estimated spread capture from WS fills this session. Uses stored capture when present; otherwise volume × half book spread (balance-delta fills often store profit=0). Excludes deposits.">?</span></span> <span id="session-pnl" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Spread capture</span> <span id="session-capture" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Markout @30s</span> <span id="session-markout" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Toxic ratio @30s</span> <span id="session-toxic" class="value">—</span></div>
@@ -898,6 +898,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <div class="metric-row"><span class="label">RLUSD on ledger</span> <span id="inv-rlusd-balance" class="value">—</span></div>
                             <div class="metric-row"><span class="label">RLUSD → XRP-equiv</span> <span id="inv-rlusd-xrp-equiv" class="value">—</span></div>
                             <div class="metric-row"><span class="label">Resting offers</span> <span id="inv-open-offers" class="value">—</span></div>
+                            <div class="metric-row"><span class="label">Wallet Δ (session) <span class="info" title="Portfolio change since session start at current mid — includes deposits, withdrawals, and trading.">?</span></span> <span id="inv-wallet-delta" class="value">—</span></div>
                         </div>
                         <div style="margin-top:10px;">
                             <div style="font-size:0.75rem; color:#94a3b8; margin-bottom:2px;">
@@ -1499,6 +1500,31 @@ The A-S strategy itself decides presence via reservation price being inside the 
             el.classList.add(kind || 'neutral');
         }
 
+        function sessionSkimDeltaXrp(s) {
+            if (s.session_spread_capture_xrp != null && !Number.isNaN(parseFloat(s.session_spread_capture_xrp))) {
+                return parseFloat(s.session_spread_capture_xrp);
+            }
+            const cap = (s.performance_metrics || {}).capture;
+            if (cap && cap.total_capture_xrp != null && !Number.isNaN(parseFloat(cap.total_capture_xrp))) {
+                return parseFloat(cap.total_capture_xrp);
+            }
+            return null;
+        }
+
+        function sessionWalletDeltaXrp(s) {
+            const v = s.session_wallet_delta_xrp != null ? s.session_wallet_delta_xrp : s.session_pnl_balance_xrp;
+            if (v != null && !Number.isNaN(parseFloat(v))) {
+                return parseFloat(v);
+            }
+            return null;
+        }
+
+        function formatSignedXrp(v, digits) {
+            if (v == null || Number.isNaN(v)) return '—';
+            const sign = v >= 0 ? '+' : '';
+            return `${sign}${v.toFixed(digits)} XRP`;
+        }
+
         function toxicSoakClass(ratio) {
             if (ratio == null || Number.isNaN(ratio)) return 'neutral';
             const pct = ratio * 100;
@@ -1524,7 +1550,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
         function renderSoakStrip(s) {
             const toxic30 = (s.toxic_fill_ratio_30s != null) ? parseFloat(s.toxic_fill_ratio_30s) : null;
             const markout30 = (s.mean_markout_30s_pct != null) ? parseFloat(s.mean_markout_30s_pct) : null;
-            const balPnl = (s.session_pnl_balance_xrp != null) ? parseFloat(s.session_pnl_balance_xrp) : null;
+            const skimDelta = sessionSkimDeltaXrp(s);
             const fillsSession = (s.fills_session != null) ? parseInt(s.fills_session, 10) : 0;
             const fillsCsv = (s.ws_fills_csv != null) ? parseInt(s.ws_fills_csv, 10) : 0;
             const fillsCount = Math.max(fillsSession, fillsCsv);
@@ -1552,10 +1578,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 soakPillClass(document.getElementById('soak-markout-pill'), 'neutral');
             }
 
-            if (balPnl != null && !Number.isNaN(balPnl)) {
-                const sign = balPnl >= 0 ? '+' : '';
-                setText('soak-pnl', `${sign}${balPnl.toFixed(3)}`);
-                soakPillClass(document.getElementById('soak-pnl-pill'), balPnl >= 0 ? 'good' : 'warn');
+            if (skimDelta != null && !Number.isNaN(skimDelta)) {
+                const sign = skimDelta >= 0 ? '+' : '';
+                setText('soak-pnl', `${sign}${skimDelta.toFixed(3)}`);
+                soakPillClass(document.getElementById('soak-pnl-pill'), skimDelta >= 0 ? 'good' : 'warn');
             } else {
                 setText('soak-pnl', '—');
                 soakPillClass(document.getElementById('soak-pnl-pill'), 'neutral');
@@ -1629,8 +1655,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const fillsProcNote = (fillsCsv > fillsSession && fillsSession > 0)
                 ? ` · ${fillsSession} this process`
                 : '';
-            const balPnl = (s.session_pnl_balance_xrp != null) ? parseFloat(s.session_pnl_balance_xrp) : null;
-            const spreadCap = (s.session_spread_capture_xrp != null) ? parseFloat(s.session_spread_capture_xrp) : null;
+            const skimDelta = sessionSkimDeltaXrp(s);
+            const spreadCap = skimDelta;
             const markout30 = (s.mean_markout_30s_pct != null) ? parseFloat(s.mean_markout_30s_pct) : null;
             const toxic30 = (s.toxic_fill_ratio_30s != null) ? parseFloat(s.toxic_fill_ratio_30s) : null;
             const sessionLine = `v ${ver} · cycles ${sampleCount != null ? sampleCount : '—'}`;
@@ -1821,19 +1847,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     fillAgeEl.textContent = '—';
                 }
             }
-            if (balPnl != null && !Number.isNaN(balPnl)) {
-                const sign = balPnl >= 0 ? '+' : '';
+            if (skimDelta != null && !Number.isNaN(skimDelta)) {
                 const pnlEl = document.getElementById('session-pnl');
                 if (pnlEl) {
-                    pnlEl.textContent = `${sign}${balPnl.toFixed(4)} XRP`;
-                    pnlEl.className = 'value ' + (balPnl >= 0 ? 'good' : 'warn');
+                    pnlEl.textContent = formatSignedXrp(skimDelta, 4);
+                    pnlEl.className = 'value ' + (skimDelta >= 0 ? 'good' : 'warn');
                 }
             } else {
                 setText('session-pnl', '—');
             }
             if (spreadCap != null && !Number.isNaN(spreadCap)) {
-                const sign = spreadCap >= 0 ? '+' : '';
-                setText('session-capture', `${sign}${spreadCap.toFixed(4)} XRP`);
+                setText('session-capture', formatSignedXrp(spreadCap, 4));
             } else {
                 setText('session-capture', '—');
             }
@@ -2015,6 +2039,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setText('inv-rlusd-balance', s.balance_rlusd !== undefined ? `${parseFloat(s.balance_rlusd).toFixed(2)} RLUSD` : '—');
             setText('inv-rlusd-xrp-equiv', s.rlusd_xrp_equiv != null ? `${parseFloat(s.rlusd_xrp_equiv).toFixed(2)} XRP` : '—');
             setText('inv-open-offers', s.open_offers_count != null ? String(s.open_offers_count) : '—');
+            const walletDelta = sessionWalletDeltaXrp(s);
+            const walletEl = document.getElementById('inv-wallet-delta');
+            if (walletEl) {
+                if (walletDelta != null && !Number.isNaN(walletDelta)) {
+                    walletEl.textContent = formatSignedXrp(walletDelta, 2);
+                    walletEl.className = 'value ' + (walletDelta >= 0 ? 'good' : 'warn');
+                } else {
+                    walletEl.textContent = '—';
+                    walletEl.className = 'value';
+                }
+            }
             const xrpPct = s.inventory_xrp_ratio_pct != null ? parseFloat(s.inventory_xrp_ratio_pct) : null;
             const tgtPct = s.inventory_target_xrp_pct != null ? parseFloat(s.inventory_target_xrp_pct) : 55;
             setText('inv-xrp-target', String(tgtPct));

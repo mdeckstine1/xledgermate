@@ -30,8 +30,12 @@ def detect_fill_from_balance_delta(
 
     # RLUSD received → sold XRP (ask fill or similar).
     if dr > MIN_RLUSD_DELTA:
-        xrp_amount = abs(dx) if abs(dx) >= MIN_XRP_DELTA else (dr / price if price > 0 else 0.0)
-        eff_price = price if price > 0 else (dr / xrp_amount if xrp_amount > 0 else 0.0)
+        if abs(dx) >= MIN_XRP_DELTA:
+            xrp_amount = abs(dx)
+            eff_price = dr / xrp_amount
+        else:
+            xrp_amount = dr / price if price > 0 else 0.0
+            eff_price = price if price > 0 else (dr / xrp_amount if xrp_amount > 0 else 0.0)
         return {
             "side": "SELL",
             "xrp_amount": xrp_amount,
@@ -42,12 +46,14 @@ def detect_fill_from_balance_delta(
     # RLUSD spent → bought XRP (bid fill).
     if dr < -MIN_RLUSD_DELTA:
         rlusd_spent = abs(dr)
-        xrp_amount = abs(dx) if abs(dx) >= MIN_XRP_DELTA else (
-            rlusd_spent / price if price > 0 else 0.0
-        )
-        eff_price = price if price > 0 else (
-            rlusd_spent / xrp_amount if xrp_amount > 0 else 0.0
-        )
+        if abs(dx) >= MIN_XRP_DELTA:
+            xrp_amount = abs(dx)
+            eff_price = rlusd_spent / xrp_amount
+        else:
+            xrp_amount = rlusd_spent / price if price > 0 else 0.0
+            eff_price = price if price > 0 else (
+                rlusd_spent / xrp_amount if xrp_amount > 0 else 0.0
+            )
         return {
             "side": "BUY",
             "xrp_amount": xrp_amount,

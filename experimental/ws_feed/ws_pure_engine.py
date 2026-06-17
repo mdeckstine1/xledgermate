@@ -808,6 +808,7 @@ class WsPureTradingEngine:
             session_baseline_rlusd=self._session_baseline_rlusd,
             session_baseline_mid=self._session_baseline_mid,
             session_pnl_balance_xrp=session_bal_pnl,
+            session_spread_capture_xrp=float(self._session_spread_capture),
             session_pnl_xrp_estimate=session_bal_pnl,
             engine_pid=os.getpid(),
             inventory_mode=str(config.inventory_mode or "market_make"),

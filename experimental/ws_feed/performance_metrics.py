@@ -134,6 +134,14 @@ def build_performance_metrics(
     xrp_share = rt.get("inventory_xrp_ratio_pct")
     if xrp_share is None and rt.get("xrp_ratio_pct") is not None:
         xrp_share = rt.get("xrp_ratio_pct")
+    if xrp_share is None:
+        try:
+            bal = float(rt.get("balance_xrp") or 0)
+            port = float(rt.get("portfolio_value_xrp") or 0)
+            if bal > 0 and port > 0:
+                xrp_share = bal / port * 100.0
+        except (TypeError, ValueError):
+            pass
     dev = None
     if xrp_share is not None:
         dev = abs(float(xrp_share) - target_pct)
@@ -146,7 +154,7 @@ def build_performance_metrics(
     except (TypeError, ValueError):
         toxic_30_f = None
     tox_good = toxic_30_f is not None and n_fills >= 8 and toxic_30_f <= 0.20
-    tox_attention = toxic_30_f is not None and n_fills >= 8 and toxic_30_f > 0.25
+    tox_attention = toxic_30_f is not None and n_fills >= 8 and toxic_30_f > 0.20
 
     drawdown = rt.get("drawdown_pct")
     try:
@@ -188,7 +196,11 @@ def build_performance_metrics(
             value=(
                 f"{neg_pct}% neg · toxic@30s {toxic_30_f:.0%}"
                 if neg_pct is not None and toxic_30_f is not None
-                else (f"{neg_pct}% neg" if neg_pct is not None else "—")
+                else (
+                    f"toxic@30s {toxic_30_f:.0%}"
+                    if toxic_30_f is not None
+                    else (f"{neg_pct}% neg" if neg_pct is not None else "—")
+                )
             ),
             grade=_grade(tox_good, unknown=not tox_good and not tox_attention),
             detail="Good: toxic@30s ≤20%",

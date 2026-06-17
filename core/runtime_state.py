@@ -51,6 +51,7 @@ class RuntimeState:
     session_baseline_portfolio_xrp: Optional[float] = None
     session_pnl_mtm_xrp: float = 0.0
     session_pnl_balance_xrp: float = 0.0
+    session_spread_capture_xrp: float = 0.0
     session_pnl_xrp_estimate: float = 0.0
     quote_intents: List[QuoteIntent] = field(default_factory=list)
     recent_decisions: List[Dict[str, str]] = field(default_factory=list)
@@ -206,6 +207,7 @@ class RuntimeStateStore:
                     data.get("session_pnl_xrp_estimate", 0.0),
                 )
             ),
+            session_spread_capture_xrp=float(data.get("session_spread_capture_xrp", 0.0)),
             session_pnl_xrp_estimate=float(
                 data.get("session_pnl_xrp_estimate", _load_session_pnl_mtm(data))
             ),

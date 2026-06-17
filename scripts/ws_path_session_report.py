@@ -58,6 +58,28 @@ def count_ws_fills_csv(repo: Optional[Path] = None, *, since: Optional[str] = No
     return len(_ws_fills_from_trades(repo or _REPO, since=since))
 
 
+def session_spread_capture_xrp(
+    repo: Optional[Path] = None,
+    *,
+    fills_session: int = 0,
+    since: Optional[str] = None,
+    half_spread_bps: float = 5.0,
+) -> float:
+    """Sum spread capture for the current engine session (last N WS fills in CSV)."""
+    from monitoring.fill_economics import spread_capture_from_fill_row
+
+    fills = _ws_fills_from_trades(repo or _REPO, since=since)
+    if fills_session > 0 and len(fills) > fills_session:
+        fills = fills[-fills_session:]
+    total = 0.0
+    for row in fills:
+        total += spread_capture_from_fill_row(
+            row,
+            default_half_spread_bps=half_spread_bps,
+        )
+    return round(total, 6)
+
+
 def _ws_fills_from_trades(repo: Path, *, since: Optional[str] = None) -> List[Dict[str, str]]:
     logs = repo / "logs"
     rows: List[Dict[str, str]] = []
