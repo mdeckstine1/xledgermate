@@ -119,6 +119,7 @@ Balance-delta fills often store fill@mid → `profit_xrp_equiv ≈ 0` until M2/e
 | File | Use |
 |------|-----|
 | **This file** | Critical path + TODO |
+| [`PURE_AS_DEVELOPMENT_LOG.md`](PURE_AS_DEVELOPMENT_LOG.md) | **Posterity** — how we got here, soak learnings, decisions |
 | [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) | Tester + HUD + Grok |
 | [`PHASE_E_VPS_RUNBOOK.md`](PHASE_E_VPS_RUNBOOK.md) | VPS swap ladder |
 | [`E2_BRANCH_DISCIPLINE.md`](E2_BRANCH_DISCIPLINE.md) | Branch roles |
@@ -169,4 +170,4 @@ scripts/vps_deploy_ashigaru.sh             # VPS deploy (plan segment end)
 
 ## Maintenance
 
-When a checkbox ships: update this file + FOR_AI milestone + THREAD. Do not commit `.env` / secrets.
+When a checkbox ships: update this file + [`PURE_AS_DEVELOPMENT_LOG.md`](PURE_AS_DEVELOPMENT_LOG.md) (narrative) + FOR_AI milestone + THREAD. Do not commit `.env` / secrets.
