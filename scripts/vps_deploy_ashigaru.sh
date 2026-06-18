@@ -26,13 +26,30 @@ systemctl is-active xledgermate
 systemctl is-active xledgermate-ws-hud
 
 echo "=== HUD /state version ==="
-python3 - <<'PY'
+.venv/bin/python - <<'PY' || true
 import json
+import os
 import urllib.request
+from pathlib import Path
 
-with urllib.request.urlopen("http://127.0.0.1:8765/state", timeout=10) as resp:
-    state = json.load(resp)
-print("ws_as_version:", state.get("ws_as_version"))
+url = "http://127.0.0.1:8765/state"
+req = urllib.request.Request(url)
+user = os.environ.get("XLG_HUD_AUTH_USERNAME", "").strip()
+pw = os.environ.get("XLG_HUD_AUTH_PASSWORD", "").strip()
+if user and pw:
+    import base64
+    token = base64.b64encode(f"{user}:{pw}".encode()).decode()
+    req.add_header("Authorization", f"Basic {token}")
+try:
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        state = json.load(resp)
+    print("ws_as_version (HUD):", state.get("ws_as_version"))
+except Exception as exc:
+    print("HUD /state skipped:", exc)
+    p = Path("logs/runtime_state.json")
+    if p.exists():
+        d = json.loads(p.read_text(encoding="utf-8"))
+        print("ws_as_version (runtime_state):", d.get("ws_as_version"))
 PY
 
 echo "=== engine log (version line) ==="

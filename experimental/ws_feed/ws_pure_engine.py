@@ -23,6 +23,7 @@ from core import DecisionLog, VERSION
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_sync import find_offer_sequence_for_intent, plan_order_sync
 from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter
+from experimental.ws_feed.hud_intel_support import fetch_competitor_quoting_intel
 from experimental.ws_feed.intel_decisions_log import (
     append_intel_record,
     build_cycle_intel_record,
