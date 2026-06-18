@@ -439,8 +439,6 @@ async def run_production_hud(*, host: str | None = None, port: int = 8765) -> No
         return
     bind_host = (host or (config.hud_bind_host or "127.0.0.1")).strip() or "127.0.0.1"
 
-    bot_address = (config.bot_account_address or "").strip() or "r... (set bot_account_address)"
-
     from experimental.ws_feed.hud_auth import resolve_hud_auth
 
     hud_auth = resolve_hud_auth(config, bind_host=bind_host)
@@ -450,6 +448,8 @@ async def run_production_hud(*, host: str | None = None, port: int = 8765) -> No
             "Set hud_auth_username and hud_auth_password (or XLG_HUD_USERNAME/XLG_HUD_PASSWORD), "
             "or bind hud_bind_host to 127.0.0.1."
         )
+
+    bot_address = (config.bot_account_address or "").strip() or "r... (set bot_account_address)"
 
     server = run_hud(host=bind_host, port=port, background=True, auth=hud_auth)
 
