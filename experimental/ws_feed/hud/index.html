@@ -1067,7 +1067,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <input id="intel-analyze-addr" type="text" placeholder="Paste real r-address from the list on the right (or any from the book)" style="flex:1; font-family:monospace; font-size:0.8rem;">
                             <button id="btn-analyze-addr" style="background:#8b5cf6; color:white; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem; flex-shrink:0;">Analyze with AI</button>
                         </div>
-                        <div id="intel-ai-result" class="hud-scroll-box intel-ai-result-box" tabindex="0" role="region" aria-label="AI competitor analysis result">Click a peer in the touch-band list (or paste an r-address), then Analyze. Grok output appears here.</div>
+                        <div id="intel-ai-result" class="hud-scroll-box intel-ai-result-box" tabindex="0" role="region" aria-label="AI competitor analysis result">Click a peer, paste an r-address, or use <strong>Analyze our bot</strong> on the touch-band card. Grok output appears here.</div>
                         <details id="intel-briefing-details" class="intel-briefing-details" style="display:none;">
                             <summary>Input briefing (structured JSON sent to Grok)</summary>
                             <pre id="intel-briefing-json" class="intel-briefing-json"></pre>
@@ -1075,7 +1075,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     </div>
 
                     <div class="card" style="display:flex; flex-direction:column; grid-row: span 3;">
-                        <div class="label">Peers in our touch band</div>
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; margin-bottom:4px;">
+                            <div class="label" style="margin:0;">Peers in our touch band</div>
+                            <button type="button" id="btn-analyze-self" title="Grok self-audit: visibility, vs-touch, G7 posture" style="background:#0ea5e9; color:#0f172a; border:none; border-radius:3px; padding:3px 8px; font-size:0.65rem; flex-shrink:0; cursor:pointer; white-space:nowrap;">Analyze our bot</button>
+                        </div>
                         <div id="intel-peer-list" class="hud-scroll-box hud-scroll-box-compact intel-top-list-box" tabindex="0" role="region" aria-label="Peer lane makers">
                             <div id="intel-peer-list-inner" class="hud-scroll-box-inner">Waiting for peer scrape…</div>
                         </div>
@@ -1429,6 +1432,20 @@ The A-S strategy itself decides presence via reservation price being inside the 
             if (!state || !addr) return null;
             const q = String(addr).trim().toLowerCase();
             if (q.length < 8) return null;
+            const bot = String(state.bot_account_address || state.bot_address || '').trim().toLowerCase();
+            if (bot.length >= 25 && (bot === q || bot.startsWith(q) || q.startsWith(bot))) {
+                const lane = state.our_lane_xrp != null ? parseFloat(state.our_lane_xrp) : 0;
+                return {
+                    account: bot.slice(0, 12) + '...',
+                    account_full: state.bot_account_address || state.bot_address,
+                    touch_xrp: lane,
+                    last_spread: state.book_spread_pct != null ? state.book_spread_pct : state.as_optimal_spread_pct,
+                    activity: state.open_offers_count,
+                    cancels: state.cancel_per_fill,
+                    domain: 'our-bot',
+                    is_self: true,
+                };
+            }
             for (const list of [state.top_peers, state.top_competitors]) {
                 if (!list || !Array.isArray(list)) continue;
                 for (const row of list) {
@@ -2212,6 +2229,18 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 compRows,
                 'No competitor profiles yet — production HUD scrapes the book every ~15s.'
             );
+
+            const selfAnalyzeBtn = document.getElementById('btn-analyze-self');
+            if (selfAnalyzeBtn) {
+                const botAddr = String(s.bot_account_address || s.bot_address || '').trim();
+                const hasBot = botAddr.length >= 25;
+                selfAnalyzeBtn.disabled = !hasBot;
+                selfAnalyzeBtn.style.opacity = hasBot ? '1' : '0.45';
+                selfAnalyzeBtn.style.cursor = hasBot ? 'pointer' : 'not-allowed';
+                selfAnalyzeBtn.title = hasBot
+                    ? `Grok self-audit for ${botAddr.slice(0, 12)}… (visibility, vs-touch, inventory)`
+                    : 'bot_account_address not in HUD state yet';
+            }
 
             // AI fields in Intelligence tab
             setText('intel-ai-quality', s.ai_edge_quality != null ? parseFloat(s.ai_edge_quality).toFixed(2) : '—');
@@ -3222,10 +3251,84 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
 
             // Intelligence API: analyze a specific competitor address using Config tab settings (real Grok if configured)
+            async function runIntelAnalyze(addr, options = {}) {
+                const resultEl = document.getElementById('intel-ai-result');
+                const addrInput = document.getElementById('intel-analyze-addr');
+                if (options.triggerBtn) {
+                    triggerAnim(options.triggerBtn, 'btn-press', 120);
+                }
+                if (addrInput && addr) {
+                    addrInput.value = addr;
+                }
+                if (!addr || addr.length < 25) {
+                    if (resultEl) {
+                        resultEl.textContent = 'No valid r-address — set bot_account_address in config or pick a peer from the list.';
+                    }
+                    return;
+                }
+                if (resultEl) {
+                    pinnedIntelAiResult = null;
+                    const prov = (document.getElementById('intel-ai-provider') || {}).value || 'AI';
+                    const mode = options.selfAudit ? 'self-audit' : 'competitor';
+                    resultEl.textContent = `Applying API config, then calling ${prov} (${mode}) for ${addr}...`;
+                    resultEl.scrollTop = 0;
+                    try {
+                        await applyIntelConfigFromForm();
+                        const payload = { address: addr };
+                        if (lastState) {
+                            if (lastState.competitor_pressure != null) payload.competitor_pressure = lastState.competitor_pressure;
+                            if (lastState.competitor_observed_spread_pct != null) payload.observed_spread_pct = lastState.competitor_observed_spread_pct;
+                            if (lastState.competitor_depth_xrp != null) payload.competitor_depth_xrp = lastState.competitor_depth_xrp;
+                            if (lastState.inventory_label) payload.inventory_label = lastState.inventory_label;
+                            if (lastState.our_lane_xrp != null) payload.our_lane_xrp = lastState.our_lane_xrp;
+                            if (lastState.peer_lane_low_xrp != null) payload.peer_lane_low_xrp = lastState.peer_lane_low_xrp;
+                            if (lastState.peer_lane_high_xrp != null) payload.peer_lane_high_xrp = lastState.peer_lane_high_xrp;
+                            if (lastState.peer_lane_count != null) payload.peer_lane_count = lastState.peer_lane_count;
+                            if (lastState.as_reservation != null) payload.as_reservation = lastState.as_reservation;
+                            if (lastState.as_optimal_spread_pct != null) payload.as_optimal_spread_pct = lastState.as_optimal_spread_pct;
+                            if (lastState.peer_fled_events) payload.peer_fled_events = lastState.peer_fled_events;
+                            if (lastState.bot_account_address) payload.bot_account_address = lastState.bot_account_address;
+                            if (lastState.bot_address) payload.bot_address = lastState.bot_address;
+                            if (lastState.g7_summary) payload.g7_summary = lastState.g7_summary;
+                            if (lastState.worst_vs_touch_bps != null) payload.worst_vs_touch_bps = lastState.worst_vs_touch_bps;
+                            if (lastState.quote_visibility_summary) payload.quote_visibility_summary = lastState.quote_visibility_summary;
+                            if (lastState.cancel_per_fill != null) payload.cancel_per_fill = lastState.cancel_per_fill;
+                            if (lastState.open_offers_count != null) payload.open_offers_count = lastState.open_offers_count;
+                            const prof = _findIntelProfile(addr, lastState);
+                            if (prof) payload.target_profile = prof;
+                        }
+                        const resp = await fetch('/analyze_competitor', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await resp.json();
+                        pinnedIntelAiResult = data.result || 'No result from analysis.';
+                        if (data.debug) console.log('[HUD analyze]', data.debug);
+                        const briefingDetails = document.getElementById('intel-briefing-details');
+                        const briefingJson = document.getElementById('intel-briefing-json');
+                        const sb = data.briefing && data.briefing.structured_briefing;
+                        if (briefingDetails && briefingJson && sb) {
+                            briefingDetails.style.display = 'block';
+                            briefingJson.textContent = JSON.stringify(sb, null, 2);
+                        } else if (briefingDetails) {
+                            briefingDetails.style.display = 'none';
+                        }
+                        resultEl.textContent = pinnedIntelAiResult;
+                        resultEl.scrollTop = 0;
+                        resultEl.classList.add('new-decision');
+                        setTimeout(() => resultEl.classList.remove('new-decision'), 400);
+                    } catch (e) {
+                        pinnedIntelAiResult = `Error calling /analyze_competitor: ${e}. (Tester must be running with --serve-hud and the address must be valid.)`;
+                        resultEl.textContent = pinnedIntelAiResult;
+                        resultEl.scrollTop = 0;
+                    }
+                }
+            }
+
             const analyzeBtn = document.getElementById('btn-analyze-addr');
             if (analyzeBtn) {
                 analyzeBtn.addEventListener('click', async () => {
-                    triggerAnim(analyzeBtn, 'btn-press', 120);
                     let addrInput = (document.getElementById('intel-analyze-addr') || {}).value || '';
                     // If empty or placeholder/demo, try to pull first real full r-address.
                     // Prefer data-full attributes on the (now clickable) list items.
@@ -3243,57 +3346,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             if (match) addrInput = match[0];
                         }
                     }
-                    const addr = addrInput || 'rDemoCompetitorAddress';
-                    const resultEl = document.getElementById('intel-ai-result');
-                    if (resultEl) {
-                        pinnedIntelAiResult = null;
-                        resultEl.textContent = `Applying API config, then calling ${ (document.getElementById('intel-ai-provider') || {}).value || 'AI' } for ${addr}...`;
-                        resultEl.scrollTop = 0;
-                        try {
-                            await applyIntelConfigFromForm();
-                            const payload = { address: addr };
-                            if (lastState) {
-                                if (lastState.competitor_pressure != null) payload.competitor_pressure = lastState.competitor_pressure;
-                                if (lastState.competitor_observed_spread_pct != null) payload.observed_spread_pct = lastState.competitor_observed_spread_pct;
-                                if (lastState.competitor_depth_xrp != null) payload.competitor_depth_xrp = lastState.competitor_depth_xrp;
-                                if (lastState.inventory_label) payload.inventory_label = lastState.inventory_label;
-                                if (lastState.our_lane_xrp != null) payload.our_lane_xrp = lastState.our_lane_xrp;
-                                if (lastState.peer_lane_low_xrp != null) payload.peer_lane_low_xrp = lastState.peer_lane_low_xrp;
-                                if (lastState.peer_lane_high_xrp != null) payload.peer_lane_high_xrp = lastState.peer_lane_high_xrp;
-                                if (lastState.peer_lane_count != null) payload.peer_lane_count = lastState.peer_lane_count;
-                                if (lastState.as_reservation != null) payload.as_reservation = lastState.as_reservation;
-                                if (lastState.as_optimal_spread_pct != null) payload.as_optimal_spread_pct = lastState.as_optimal_spread_pct;
-                                if (lastState.peer_fled_events) payload.peer_fled_events = lastState.peer_fled_events;
-                                const prof = _findIntelProfile(addr, lastState);
-                                if (prof) payload.target_profile = prof;
-                            }
-                            const resp = await fetch('/analyze_competitor', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(payload)
-                            });
-                            const data = await resp.json();
-                            pinnedIntelAiResult = data.result || 'No result from analysis.';
-                            if (data.debug) console.log('[HUD analyze]', data.debug);
-                            const briefingDetails = document.getElementById('intel-briefing-details');
-                            const briefingJson = document.getElementById('intel-briefing-json');
-                            const sb = data.briefing && data.briefing.structured_briefing;
-                            if (briefingDetails && briefingJson && sb) {
-                                briefingDetails.style.display = 'block';
-                                briefingJson.textContent = JSON.stringify(sb, null, 2);
-                            } else if (briefingDetails) {
-                                briefingDetails.style.display = 'none';
-                            }
-                            resultEl.textContent = pinnedIntelAiResult;
-                            resultEl.scrollTop = 0;
-                            resultEl.classList.add('new-decision');
-                            setTimeout(() => resultEl.classList.remove('new-decision'), 400);
-                        } catch (e) {
-                            pinnedIntelAiResult = `Error calling /analyze_competitor: ${e}. (Tester must be running with --serve-hud and the address must be valid.)`;
-                            resultEl.textContent = pinnedIntelAiResult;
-                            resultEl.scrollTop = 0;
-                        }
-                    }
+                    await runIntelAnalyze(addrInput || 'rDemoCompetitorAddress', { triggerBtn: analyzeBtn });
+                });
+            }
+
+            const selfAnalyzeBtn = document.getElementById('btn-analyze-self');
+            if (selfAnalyzeBtn) {
+                selfAnalyzeBtn.addEventListener('click', async () => {
+                    const botAddr = lastState
+                        ? String(lastState.bot_account_address || lastState.bot_address || '').trim()
+                        : '';
+                    await runIntelAnalyze(botAddr, { triggerBtn: selfAnalyzeBtn, selfAudit: true });
                 });
             }
 

@@ -405,6 +405,7 @@ def structured_peer_briefing(
         "fled_events": list(ctx.get("fled_events") or []),
         "evidence_lines": list(ctx.get("evidence_lines") or []),
         "lane_note": ctx.get("lane_note"),
+        "is_our_bot": bool(ctx.get("is_our_bot")),
     }
 
 
@@ -447,7 +448,7 @@ def _accounts_match(query: str, row: Mapping[str, Any]) -> bool:
     q = (query or "").strip()
     if not q or len(q) < 8:
         return False
-    full = str(row.get("account_full") or "").strip()
+    full = str(row.get("account_full") or row.get("account") or "").strip()
     short = str(row.get("account") or "").strip().replace("...", "")
     q_lower = q.lower()
     if full and (full.lower() == q_lower or full.lower().startswith(q_lower) or q_lower.startswith(full.lower())):
@@ -455,6 +456,68 @@ def _accounts_match(query: str, row: Mapping[str, Any]) -> bool:
     if short and len(short) >= 8 and (q_lower.startswith(short.lower()) or short.lower().startswith(q_lower[:12])):
         return True
     return False
+
+
+def bot_address_from_state(state: Mapping[str, Any]) -> str:
+    """Configured bot ledger address on HUD runtime (if any)."""
+    for key in ("bot_account_address", "bot_address"):
+        val = str(state.get(key) or "").strip()
+        if val.startswith("r") and len(val) >= 25:
+            return val
+    return ""
+
+
+def is_own_bot_address(state: Mapping[str, Any], address: str) -> bool:
+    bot = bot_address_from_state(state)
+    if not bot:
+        return False
+    return _accounts_match(address, {"account_full": bot, "account": bot})
+
+
+def build_self_bot_profile(state: Mapping[str, Any], address: str) -> Dict[str, Any]:
+    """
+    Synthetic scrape row for our own MM ledger.
+
+    CompetitorIntelProvider excludes bot offers from top_peers/top_competitors by design.
+    """
+    try:
+        our_lane = float(state.get("our_lane_xrp") or 0)
+    except (TypeError, ValueError):
+        our_lane = 0.0
+    open_offers = int(state.get("open_offers_count") or 0)
+    book_spread = state.get("book_spread_pct")
+    if book_spread is None:
+        book_spread = state.get("as_optimal_spread_pct")
+    intents = state.get("quote_intents") or []
+    bid_n = sum(1 for i in intents if isinstance(i, dict) and i.get("side") == "bid")
+    ask_n = sum(1 for i in intents if isinstance(i, dict) and i.get("side") == "ask")
+    if bid_n or ask_n:
+        sides = f"b{bid_n}/a{ask_n}"
+    elif state.get("pause_bids") or state.get("pause_asks"):
+        parts = []
+        if state.get("pause_bids"):
+            parts.append("bid paused")
+        if state.get("pause_asks"):
+            parts.append("ask paused")
+        sides = ", ".join(parts)
+    else:
+        sides = f"live×{open_offers}" if open_offers else "—"
+    short = address[:12] + "..." if len(address) > 15 else address
+    return {
+        "account": short,
+        "account_full": address,
+        "touch_xrp": our_lane,
+        "last_spread": book_spread,
+        "avg_spread": state.get("as_optimal_spread_pct"),
+        "activity": open_offers,
+        "cancels": state.get("cancel_per_fill"),
+        "sides": sides,
+        "domain": "our-bot",
+        "is_self": True,
+        "g7_summary": state.get("g7_summary"),
+        "worst_vs_touch_bps": state.get("worst_vs_touch_bps"),
+        "quote_visibility_summary": state.get("quote_visibility_summary"),
+    }
 
 
 def find_competitor_profile(
@@ -491,6 +554,12 @@ def build_competitor_analysis_context(
                 merged[key] = val
 
     profile, source = find_competitor_profile(merged, address)
+    is_our_bot = False
+    if profile is None and is_own_bot_address(merged, address):
+        bot = bot_address_from_state(merged) or address
+        profile = build_self_bot_profile(merged, bot)
+        source = "our_bot"
+        is_our_bot = True
     if profile is None and isinstance(extra, Mapping):
         posted = extra.get("target_profile")
         if isinstance(posted, dict) and posted:
@@ -517,8 +586,8 @@ def build_competitor_analysis_context(
         except (TypeError, ValueError):
             touch_xrp = 0.0
 
-    in_peer_lane = source == "peer_lane"
-    if profile and our_lane > 0 and touch_xrp > 0:
+    in_peer_lane = source in ("peer_lane", "our_bot")
+    if profile and our_lane > 0 and touch_xrp > 0 and source != "our_bot":
         in_peer_lane = touch_in_peer_band(touch_xrp, our_lane, allow_widen=True)
 
     fled_for_target: list[Dict[str, Any]] = []
@@ -531,6 +600,8 @@ def build_competitor_analysis_context(
     evidence_lines: list[str] = []
     if profile:
         evidence_lines.append(f"scrape_source={source}")
+        if is_our_bot:
+            evidence_lines.append("target_role=our_bot (excluded from competitor scrape by design)")
         evidence_lines.append(f"touch_xrp={touch_xrp:.2f}" if touch_xrp > 0 else "touch_xrp=unknown")
         evidence_lines.append(f"in_peer_lane={in_peer_lane}")
         if our_lane > 0:
@@ -548,6 +619,12 @@ def build_competitor_analysis_context(
             evidence_lines.append(f"sides={profile.get('sides')}")
         if profile.get("domain") and profile.get("domain") != "no-domain":
             evidence_lines.append(f"domain={profile.get('domain')}")
+        if profile.get("g7_summary"):
+            evidence_lines.append(f"g7_summary={profile.get('g7_summary')}")
+        if profile.get("worst_vs_touch_bps") is not None:
+            evidence_lines.append(f"worst_vs_touch_bps={profile.get('worst_vs_touch_bps')}")
+        if profile.get("quote_visibility_summary"):
+            evidence_lines.append(f"quote_visibility={profile.get('quote_visibility_summary')}")
     else:
         evidence_lines.append("scrape_source=none (address not in last top_peers/top_competitors snapshot)")
 
@@ -575,7 +652,12 @@ def build_competitor_analysis_context(
             except (TypeError, ValueError):
                 evidence_lines.append(f"{label}={val}")
 
-    if in_peer_lane:
+    if is_our_bot:
+        lane_note = (
+            "OUR bot ledger — self-audit only (queue visibility, vs-touch, inventory). "
+            "Not a competitor; do not recommend tactics to trade against ourselves."
+        )
+    elif in_peer_lane:
         lane_note = "IN peer touch band — tactics may apply at our posted size."
     elif touch_xrp > 0 and our_lane > 0:
         lane_note = "OUT of peer touch band — macro/book context only; do not size tactics vs this touch."
@@ -585,16 +667,25 @@ def build_competitor_analysis_context(
         lane_note = "Band status unknown — prefer aggregate peer-lane signals only."
 
     evidence_block = "\n".join(f"- {line}" for line in evidence_lines)
-    prompt_block = (
-        f"**Scraped on-chain facts for {address} (use as primary evidence; do not invent numbers):**\n"
-        f"{evidence_block}\n\n"
-        f"**Lane note:** {lane_note}\n\n"
-        "If a behavior is not supported by the facts above, label it HYPOTHESIS and say what scrape field would confirm it."
-    )
+    if is_our_bot:
+        prompt_block = (
+            f"**Target is OUR market-making bot** ({address}). Runtime facts (not competitor scrape):\n"
+            f"{evidence_block}\n\n"
+            f"**Lane note:** {lane_note}\n\n"
+            "Advise on quote posture, touch distance, visibility, and inventory alignment — not exploitative tactics vs this address."
+        )
+    else:
+        prompt_block = (
+            f"**Scraped on-chain facts for {address} (use as primary evidence; do not invent numbers):**\n"
+            f"{evidence_block}\n\n"
+            f"**Lane note:** {lane_note}\n\n"
+            "If a behavior is not supported by the facts above, label it HYPOTHESIS and say what scrape field would confirm it."
+        )
 
     if profile:
+        label = "our bot (self-audit)" if is_our_bot else source.replace("_", " ")
         header = (
-            f"── Scrape evidence ({source.replace('_', ' ')}) ──\n"
+            f"── Scrape evidence ({label}) ──\n"
             f"touch {touch_xrp:.1f} XRP · {'IN peer band' if in_peer_lane else 'OUT of band'} · "
             f"spread {profile.get('last_spread', '?')}% / avg {profile.get('avg_spread', '?')}% · "
             f"cancels {profile.get('cancels', '?')}\n"
@@ -618,6 +709,7 @@ def build_competitor_analysis_context(
             "fled_events": fled_for_target,
             "evidence_lines": evidence_lines,
             "lane_note": lane_note,
+            "is_our_bot": is_our_bot,
         },
         address=address,
         state=merged,
@@ -627,6 +719,7 @@ def build_competitor_analysis_context(
         "profile": profile,
         "source": source,
         "in_peer_lane": in_peer_lane,
+        "is_our_bot": is_our_bot,
         "touch_xrp": touch_xrp,
         "our_lane_xrp": our_lane,
         "peer_band_low_xrp": band_low,

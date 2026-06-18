@@ -127,3 +127,35 @@ def test_find_competitor_profile_peer_first() -> None:
     assert whale["in_peer_lane"] is False
     assert "OUT of peer touch band" in whale["lane_note"]
     assert "Scrape evidence" in whale["evidence_header"]
+
+
+def test_own_bot_address_gets_self_profile() -> None:
+    from experimental.ws_feed.hud_intel_support import build_competitor_analysis_context
+
+    bot = "rsLnfMsP5LzdLyR2Ume7fgyjwNfgwMjp8g"
+    state = {
+        "bot_account_address": bot,
+        "our_lane_xrp": 13.44,
+        "peer_lane_low_xrp": 5.38,
+        "peer_lane_high_xrp": 33.6,
+        "open_offers_count": 2,
+        "book_spread_pct": 0.018,
+        "as_optimal_spread_pct": 0.025,
+        "inventory_label": "balanced",
+        "g7_summary": "G7 balanced: bid 8.0bps ask 8.0bps",
+        "worst_vs_touch_bps": 8.0,
+        "quote_visibility_summary": "Off the storefront",
+        "cancel_per_fill": 1.5,
+        "top_peers": [],
+        "top_competitors": [],
+    }
+    briefing = build_competitor_analysis_context(state, bot)
+    assert briefing["source"] == "our_bot"
+    assert briefing["is_our_bot"] is True
+    assert briefing["in_peer_lane"] is True
+    assert briefing["profile"] is not None
+    assert briefing["profile"]["touch_xrp"] == 13.44
+    assert "OUR bot ledger" in briefing["lane_note"]
+    assert "our bot (self-audit)" in briefing["evidence_header"]
+    assert briefing["structured_briefing"]["scrape_source"] == "our_bot"
+    assert briefing["structured_briefing"]["is_our_bot"] is True

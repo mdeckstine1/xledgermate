@@ -588,24 +588,46 @@ if app:
                     f"```json\n{_json.dumps(sb, indent=2)}\n```\n"
                 )
 
-            current_prompt = (
-                f"You are an expert on XRPL market making and on-chain competitor analysis.\n"
-                f"Analyze the ledger address {address} for its likely market-making strategy on the RLUSD/XRP order book.\n\n"
-                f"**Primary goal:** Identify the holes and repeatable patterns in this competitor's behavior that we can exploit to win the best queue positions, "
-                f"increase our realized skim (spread capture), and compound our bag more effectively over time.\n\n"
-                f"{briefing.get('prompt_block', '')}\n"
-                f"{structured_json}\n"
-                f"Focus areas:\n"
-                f"- Posted spreads and sizes from recent activity (use scraped facts first)\n"
-                f"- Aggressiveness vs defensiveness, inventory skew signals\n"
-                f"- Reaction to fills or price moves (e.g. cancel patterns, fled-touch events if listed)\n"
-                f"- Any 'trending' behavior (increasing/decreasing presence)\n"
-                f"- Specific exploitable weaknesses supported by the scrape evidence\n\n"
-                f"Then give **concrete, actionable exploitative tactics** our pure A-S bot can use right now: better positioning ideas, when to step inside their levels, queue-jumping opportunities, sizing/timing suggestions, when to be patient vs aggressive, etc.\n"
-                f"If the maker is OUT of our peer touch band, say so up front and limit tactics to regime/macro context.\n\n"
-                f"Base your reasoning on the scraped facts above; do not speculate on off-chain identity.\n"
-                f"{context_str}"
-            )
+            structured_json = (
+                    "\n\n**Structured briefing (machine-readable — align your analysis to these fields):**\n"
+                    f"```json\n{_json.dumps(sb, indent=2)}\n```\n"
+                )
+
+            is_our_bot = bool(briefing.get("is_our_bot"))
+            if is_our_bot:
+                current_prompt = (
+                    f"You are an expert XRPL market-making operator reviewing OUR OWN bot ledger {address}.\n\n"
+                    f"**Primary goal:** Self-audit — quote visibility, touch distance vs BBO, inventory alignment, "
+                    f"cancel/fill hygiene, and whether G7 envelope settings match current regime. "
+                    f"Do NOT recommend exploitative tactics against this address (it is us).\n\n"
+                    f"{briefing.get('prompt_block', '')}\n"
+                    f"{structured_json}\n"
+                    f"Focus areas:\n"
+                    f"- Are we visible at touch or too far back (worst_vs_touch_bps, quote_visibility)?\n"
+                    f"- Does inventory_label match our bid/ask backoff (G7 summary)?\n"
+                    f"- Session cancel_per_fill and fill age vs peer_lane_count=0 regime\n"
+                    f"- Concrete tuning suggestions for our pure A-S bot only\n\n"
+                    f"{context_str}"
+                )
+            else:
+                current_prompt = (
+                    f"You are an expert on XRPL market making and on-chain competitor analysis.\n"
+                    f"Analyze the ledger address {address} for its likely market-making strategy on the RLUSD/XRP order book.\n\n"
+                    f"**Primary goal:** Identify the holes and repeatable patterns in this competitor's behavior that we can exploit to win the best queue positions, "
+                    f"increase our realized skim (spread capture), and compound our bag more effectively over time.\n\n"
+                    f"{briefing.get('prompt_block', '')}\n"
+                    f"{structured_json}\n"
+                    f"Focus areas:\n"
+                    f"- Posted spreads and sizes from recent activity (use scraped facts first)\n"
+                    f"- Aggressiveness vs defensiveness, inventory skew signals\n"
+                    f"- Reaction to fills or price moves (e.g. cancel patterns, fled-touch events if listed)\n"
+                    f"- Any 'trending' behavior (increasing/decreasing presence)\n"
+                    f"- Specific exploitable weaknesses supported by the scrape evidence\n\n"
+                    f"Then give **concrete, actionable exploitative tactics** our pure A-S bot can use right now: better positioning ideas, when to step inside their levels, queue-jumping opportunities, sizing/timing suggestions, when to be patient vs aggressive, etc.\n"
+                    f"If the maker is OUT of our peer touch band, say so up front and limit tactics to regime/macro context.\n\n"
+                    f"Base your reasoning on the scraped facts above; do not speculate on off-chain identity.\n"
+                    f"{context_str}"
+                )
 
             prompt = current_prompt
 
