@@ -16,10 +16,12 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 
 | # | Task | Status |
 |---|------|--------|
-| — | Post-deploy gates: `fill_quote_age_report.py`, `ws_runtime_analysis`, `live_activation_grading --gate` | **done** 2026-06-18 — see baseline below |
+| — | Post-deploy gates + 60-fill checkpoint | [x] done 2026-06-18 |
+| — | G7 v1 soak A/B validation | [x] Good enough for current scale (operator call 2026-06-18). Keep eye on live data. Run until next engine restart needed. |
 | — | Watch G6 tier, toxic@30s, markout@30s (v2.1.17 soak) | ongoing |
-| — | **Queue review** — vs-touch bps, cancel/fill, fill age (G7 A/B) | **baseline captured** — monitor vs v2.1.15 |
-| — | **Skim Δ** vs wallet Δ | **improved** — coherence guard + HUD no longer overwrites engine session skim |
+| — | **Queue review** — vs-touch bps, cancel/fill, fill age (G7 A/B) | [x] baseline captured + 61-fill data in intel JSONL |
+| — | **Skim Δ** vs wallet Δ | [x] improved — coherence guard + HUD no longer overwrites |
+| — | HUD: G7 queue + "Queue vs touch" visible in Session fills card | [ ] pending HUD service restart + hard refresh (fields wired) |
 
 **G7 soak checkpoint (2026-06-18, ~61 session fills on v2.1.17):** C2 sample_history gate now **PASS** (123 min, 86.8% presence, flip 0.141). G6 still `pilot_watch` (toxicity + empty peer lane) but gate PASS. Session Skim slipped to −0.106 XRP during xrp_heavy leg (adverse flow on the join-ask side) then inventory normalized. Markout@30s recovered to ~0. See A/B below. Full snapshot in `logs/post_deploy_snapshot.txt`. Hard-refresh HUD to see G7 queue / visibility in Session fills card (g7-scaler + queue-visibility).
 
@@ -33,7 +35,8 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 | 4 | Visibility + debug | `worst_vs_touch_bps`, `quote_visibility_summary`, `g7_summary` on runtime |
 | 5 | Validation | Soak A/B vs v2.1.15 — **in progress** (baseline 2026-06-18) |
 
-**Blocker:** accumulate v2.1.16+ session hours + fills for A/B vs v2.1.15 intel slice (`ws_as_version` in JSONL).
+**Blocker:** [x] accumulate v2.1.16+ data — done at 61 fills.  
+**Status:** [x] G7 v1 — Good enough (see verdict below). Keep monitoring live data. No engine restart until necessary.
 
 **Order:** monitor markout/toxic/cancel vs baseline → sign off or tune envelope.
 
@@ -53,7 +56,27 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 
 **Design note:** Pure A-S reservation math (would_quote only when inside live BBO, optimal spread from γ/κ/vol) remains the sacred core. G7 is a thin execution envelope (posted-price backoff only) + G2 as dynamic brake on size/spread. Other knobs (pressure, book age, G4) influence inputs only — never override the inside-book guard. This run demonstrated the intended behavior and cost during inventory skew.
 
-**Checkpoint verdict (operator to confirm):** G7 v1 delivered the asymmetric queue behavior as specified. Visibility and A/B data now logged. Session recovered as inventory balanced. Good enough for current scale; future windows can test rlusd_heavy mirror and/or longer stats.
+**G7 v1 Checkpoint Verdict (2026-06-18):**  
+[x] Good enough for current pilot scale.  
+
+The envelope behaved as designed: wider passive side while xrp_heavy produced the expected visibility cost (~9 bps) and temporary session Skim drag on adverse flow. Inventory self-corrected without manual action. Markout recovered. C2 gate now passes. A-S core (reservation + inside-BBO `would_quote`) remained untouched throughout.  
+
+Live data will continue to be watched. No engine restart until needed. Future windows can explore the rlusd_heavy mirror or longer-horizon stats if desired.
+
+### Metrics to watch (next 24–48 hours, while this run continues)
+
+Focus on consistency rather than perfection at pilot size:
+
+- **Session Skim Δ** — direction and stability (look for flattening or positive drift as inventory stays near target).
+- **mean_markout_30s_pct** — trend (ideally staying > −0.02% or improving).
+- **toxic_ratio_30s** — staying ≤ 28–30% or trending down.
+- **cancel_per_fill** — flat or slowly improving (currently ~1.77).
+- **G7 posture vs inventory** — when inventory_label is "balanced", both sides should be symmetric (~8–9 bps). Confirm via HUD + runtime.
+- **Queue vs touch / worst_vs_touch_bps** — visible in Session fills card after HUD restart + hard refresh.
+- **Fills per hour** — rough consistency (thin book → 1–3/hr is normal).
+- **Wallet balance PnL (session_pnl_balance_delta_xrp)** — the real "warm fuzzy" metric for E3.
+
+Re-run `scripts/post_deploy_snapshot.py` and `live_activation_grading` periodically. Save dated outputs.
 
 <details>
 <summary><strong>G7 draft — execution envelope</strong> (spec v1 — minimal moving parts)</summary>
@@ -164,13 +187,13 @@ Single line operator can read:
 
 | # | Item | Blocker |
 |---|------|---------|
-| **G7** | **Execution envelope** — shipped v2.1.16; soak A/B validation | VPS monitor post-deploy |
+| **G7** | **Execution envelope** — shipped v2.1.16 | [x] soak A/B data at 61 fills; [x] Good enough for current scale (keep watching live data) |
 | P1–P3 | Per-peer history, tx correlation, full L1–L3 in runtime | Engine + soak data |
 | P4–P6 | Structured `PeerBriefing`, G4 nudges, F2 engine hook | P1 + markout |
 | P7 | Async submit / tx rate instrumentation (L1–L4) | M2/M3 review |
 | I1–I4 | Regime channel (book-wide pressure, damped) | Empty peer lane validated |
 | I7 | In-band peer automation path | Real touch-band peers |
-| E3 | 11k funding + rebalance execution | Operator / dev complete |
+| E3 | 11k funding + rebalance execution | [ ] waiting for consistent gain + warm fuzzy on the bot (on operator timeline) |
 | H3–H7 | Arb paper/live, USDC, path scanner | G6 pass + H1 monitor data |
 | F4 | Grok suggestion → outcome correlation | Fill attribution |
 | M6 | Per-sequence quote age | After M2 soak review |
@@ -307,7 +330,7 @@ scripts/vps_deploy_ashigaru.sh             # VPS deploy (plan segment end)
 2. HUD + long runs — done  
 3. Dry-run WS offers — done  
 4. E1 live ws-engine — done (2026-06-15)  
-5. **Current:** v2.1.17 live → G7 soak A/B → E3 / post-soak intel
+5. **Current:** v2.1.17 live → [x] G7 v1 good enough (61 fills) → continue soak + watch metrics → E3 when consistent gain + warm fuzzy (operator timeline)
 
 ---
 
