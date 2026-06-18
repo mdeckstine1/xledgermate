@@ -49,3 +49,24 @@ def test_toxicity_good_at_20pct(tmp_path: Path) -> None:
     )
     tox = next(g for g in pm["grades"] if g["id"] == "toxicity")
     assert tox["grade"] == "good"
+
+
+def test_capture_grade_excludes_incoherent_artifact_rows(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    rows = [
+        "timestamp_utc,side,xrp_amount,rlusd_amount,price_rlusd_per_xrp,profit_xrp_equiv,notes",
+        "2026-06-18T13:00:00+00:00,SELL,10.0,11.6,1.16,0.01,WS pure fill @ mid 1.160000",
+        "2026-06-18T14:00:00+00:00,SELL,1.0,27.8,27.85,23.0,WS pure fill @ mid 1.160000",
+    ]
+    rows.extend(
+        f"2026-06-18T12:00:0{i}+00:00,SELL,10.0,11.6,1.16,0.01,WS pure fill @ mid 1.160000"
+        for i in range(8)
+    )
+    (logs / "trades_2026-06.csv").write_text("\n".join(rows), encoding="utf-8")
+    pm = build_performance_metrics(runtime={"toxic_fill_ratio_30s": 0.1}, logs_dir=logs)
+    cap = pm["capture"]
+    assert cap["ws_fills"] == 9
+    assert cap["total_capture_xrp"] == 0.09
+    spread = next(g for g in pm["grades"] if g["id"] == "spread_capture")
+    assert spread["grade"] == "good"

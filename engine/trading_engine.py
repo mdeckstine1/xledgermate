@@ -27,7 +27,10 @@ from engine.order_manager import OrderManager
 from engine.order_sync import offers_off_touch, plan_order_sync
 from monitoring.balance_logger import BalanceLogger
 from monitoring.csv_logger import CSVLogger
-from monitoring.fill_detection import detect_fill_from_balance_delta
+from monitoring.fill_detection import (
+    balance_delta_fill_reject_reason,
+    detect_fill_from_balance_delta,
+)
 from monitoring.fill_economics import estimate_spread_capture_xrp
 from monitoring.ledger_fills import LedgerFill, LedgerFillScanner
 from monitoring.telegram_alerts import TelegramAlerts
@@ -391,6 +394,8 @@ class TradingEngine:
                     balance_xrp=balance_xrp,
                     rlusd_balance=rlusd_balance,
                     mid_price=mid_price,
+                    best_bid=best_bid,
+                    best_ask=best_ask,
                 )
             drawdown_pct = self.drawdown_monitor.get_drawdown_percent()
             if (
@@ -1190,6 +1195,8 @@ class TradingEngine:
         balance_xrp: float,
         rlusd_balance: float,
         mid_price: Optional[float],
+        best_bid: Optional[float] = None,
+        best_ask: Optional[float] = None,
     ) -> None:
         if self._last_cycle_balances is None:
             return
@@ -1202,6 +1209,20 @@ class TradingEngine:
             mid_price=mid_price,
         )
         if not fill:
+            return
+        mid_at_quote = self._trustworthy_mid(
+            self._last_quote_mid or mid_price,
+            best_bid=best_bid or self._last_best_bid,
+            best_ask=best_ask or self._last_best_ask,
+        )
+        reject = balance_delta_fill_reject_reason(
+            fill,
+            mid_at_quote,
+            best_bid=best_bid or self._last_best_bid,
+            best_ask=best_ask or self._last_best_ask,
+        )
+        if reject:
+            self.decision_log.add("fill", reject)
             return
         self._log_fill(
             config=config,

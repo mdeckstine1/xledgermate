@@ -35,6 +35,20 @@ def test_spread_capture_uses_stored_when_present() -> None:
     assert cap == 0.042
 
 
+def test_spread_capture_skips_incoherent_artifact_row() -> None:
+    cap = spread_capture_from_fill_row(
+        {
+            "side": "SELL",
+            "xrp_amount": "0.999970",
+            "rlusd_amount": "27.856938",
+            "price_rlusd_per_xrp": "27.857774",
+            "profit_xrp_equiv": "23.018669",
+            "notes": "WS pure fill (balance delta); capture ~+23.0187 XRP @ mid 1.159805",
+        }
+    )
+    assert cap == 0.0
+
+
 def test_detect_fill_uses_implied_price_when_both_legs_move() -> None:
     fill = detect_fill_from_balance_delta(
         prev_xrp=100.0,

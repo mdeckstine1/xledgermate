@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping, Optional
 
+from monitoring.fill_detection import is_coherent_fill_price
+
 
 def estimate_spread_capture_xrp(
     *,
@@ -62,8 +64,20 @@ def spread_capture_from_fill_row(
 
     Uses stored profit when present. Balance-delta rows often record fill@mid
     (profit=0); estimate skim as volume × half-spread (typical MM edge at touch).
+    Skips incoherent implied prices vs mid in notes (composite balance deltas).
     """
     del price_tolerance_bps  # reserved for future ledger-priced fills
+    mid_ref = mid_from_fill_notes(row)
+    try:
+        implied = float(row.get("price_rlusd_per_xrp") or 0)
+    except (TypeError, ValueError):
+        implied = 0.0
+    if (
+        mid_ref is not None
+        and implied > 0
+        and not is_coherent_fill_price(implied, mid_ref)
+    ):
+        return 0.0
     try:
         stored = float(row.get("profit_xrp_equiv") or 0)
     except (TypeError, ValueError):

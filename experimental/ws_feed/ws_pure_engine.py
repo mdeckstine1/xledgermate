@@ -39,7 +39,10 @@ from experimental.ws_feed.network_urls import rpc_url_to_websocket_url
 from experimental.ws_feed.ws_book_feed import WsBookFeed
 from monitoring.balance_logger import BalanceLogger
 from monitoring.csv_logger import CSVLogger
-from monitoring.fill_detection import detect_fill_from_balance_delta
+from monitoring.fill_detection import (
+    balance_delta_fill_reject_reason,
+    detect_fill_from_balance_delta,
+)
 from monitoring.fill_economics import estimate_spread_capture_xrp
 from monitoring.telegram_alerts import TelegramAlerts
 from utils.book_visibility import enrich_open_offers, quote_visibility
@@ -498,7 +501,9 @@ class WsPureTradingEngine:
                 sync_intents, mid=mid, best_bid=bb, best_ask=ba
             )
 
-        await self._detect_fills(config, connector, balance_xrp, balance_rlusd, mid)
+        await self._detect_fills(
+            config, connector, balance_xrp, balance_rlusd, mid, best_bid=bb, best_ask=ba
+        )
 
         execution = self._execution_summary(
             config, placed, cancelled=cancelled, would_sync=would_sync, would_quote=would_quote
@@ -621,6 +626,9 @@ class WsPureTradingEngine:
         balance_xrp: float,
         balance_rlusd: float,
         mid: Optional[float],
+        *,
+        best_bid: Optional[float] = None,
+        best_ask: Optional[float] = None,
     ) -> None:
         if self._session_baseline_xrp is None and mid:
             self._session_baseline_xrp = balance_xrp
@@ -639,6 +647,16 @@ class WsPureTradingEngine:
         )
         if not fill:
             return
+        mid_at_quote = self._last_sync_mid or self._last_valid_mid or mid
+        reject = balance_delta_fill_reject_reason(
+            fill,
+            mid_at_quote,
+            best_bid=best_bid,
+            best_ask=best_ask,
+        )
+        if reject:
+            self.decision_log.add("fill", reject)
+            return
         side = str(fill["side"])
         fill_detected_utc = datetime.now(tz=timezone.utc)
         tracker_side = fill_side_to_offer_age_side(side)
@@ -652,7 +670,6 @@ class WsPureTradingEngine:
         xrp_amount = float(fill["xrp_amount"])
         rlusd_amount = float(fill["rlusd_amount"])
         price = float(fill["price_rlusd_per_xrp"])
-        mid_at_quote = self._last_sync_mid or self._last_valid_mid or mid
         cap = estimate_spread_capture_xrp(
             side=side,
             xrp_amount=xrp_amount,
