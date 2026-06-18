@@ -195,6 +195,28 @@ C2 `sample_history` soak gate still **FAIL** on short window (13 min, flip rate)
 
 ---
 
+## 60-fill G7 checkpoint (2026-06-18, this run)
+
+**Reached ~61 session fills.** 
+
+- C2 gate **PASS** (123 min, flip rate 0.141 under the bar).
+- Inventory moved xrp_heavy (asymmetric G7: wider passive bid, tighter join ask) → balanced (G7 symmetric 9/9 × G2 1.12).
+- Session Skim slipped to −0.106 during the heavy leg on adverse ask flow (as designed for rebalance-side posting), then recovered.
+- Markout@30s improved from more negative to ~0.
+- Toxic@30s peaked ~26-27% → G2 cautious/brakes active.
+- No peer lane entire window.
+- G6 `pilot_watch` (toxicity + empty lane) but gate PASS on cumulative metrics (spread capture 95.7% pos, 8.5 bps avg).
+
+**HUD note:** G7 queue (`g7-scaler`) and visibility (`queue-visibility`) are now explicitly wired through the production HUD payload so they appear in the Session fills card. Hard refresh the page.
+
+**Design philosophy reminder (sacred core):** Pure A-S decides `would_quote` and reservation inside live BBO. G7 (and G2, pressure, age, G4) are **dynamic knobs** that influence vol, size, and posted prices only. Never override the inside-book guard.
+
+**A/B verdict (preliminary — more hours welcome):** G7 v1 behaved as specified. The visibility cost and temporary Skim slip while heavy were the expected price of the asymmetric envelope. Data is now in intel JSONL tagged by `ws_as_version`. Ready to call "good enough for current pilot scale" or schedule a follow-up window for the mirror (rlusd_heavy) case.
+
+Full numbers and table in `PURE_AS_CRITICAL_PATH.md`.
+
+---
+
 ## Post-soak backlog (condensed)
 
 | Track | Items |

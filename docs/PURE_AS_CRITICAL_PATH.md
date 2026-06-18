@@ -21,7 +21,7 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 | — | **Queue review** — vs-touch bps, cancel/fill, fill age (G7 A/B) | **baseline captured** — monitor vs v2.1.15 |
 | — | **Skim Δ** vs wallet Δ | **improved** — coherence guard + HUD no longer overwrites engine session skim |
 
-**G7 soak baseline (2026-06-18T14:44Z, VPS):** v2.1.17 · session fills ~8 · Skim Δ ~0.005 XRP · cancel/fill **1.5** · markout@30s **−0.013%** · toxic@30s **14%** · G7 **balanced 8/8 bps** · worst_vs_touch **8.0 bps** · last fill age **~11.7s** · G6 **scale_ready** (cumulative CSV; session still early). C2 sample_history gate **FAIL** (13 min window, high flip rate — expected until longer soak). Full JSON: `logs/post_deploy_snapshot.txt` on VPS.
+**G7 soak checkpoint (2026-06-18, ~61 session fills on v2.1.17):** C2 sample_history gate now **PASS** (123 min, 86.8% presence, flip 0.141). G6 still `pilot_watch` (toxicity + empty peer lane) but gate PASS. Session Skim slipped to −0.106 XRP during xrp_heavy leg (adverse flow on the join-ask side) then inventory normalized. Markout@30s recovered to ~0. See A/B below. Full snapshot in `logs/post_deploy_snapshot.txt`. Hard-refresh HUD to see G7 queue / visibility in Session fills card (g7-scaler + queue-visibility).
 
 ### Next engine window — G7 execution envelope
 
@@ -36,6 +36,24 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 **Blocker:** accumulate v2.1.16+ session hours + fills for A/B vs v2.1.15 intel slice (`ws_as_version` in JSONL).
 
 **Order:** monitor markout/toxic/cancel vs baseline → sign off or tune envelope.
+
+### G7 A/B at 61-fill checkpoint (this run)
+
+| Metric                  | v2.1.15 / early baseline (from initial soak data) | v2.1.17 this run (~61 session fills) | Notes |
+|-------------------------|---------------------------------------------------|--------------------------------------|-------|
+| cancel/fill             | ~1.5                                              | 1.77                                 | Slightly higher churn under G2 brakes |
+| worst_vs_touch_bps      | ~8.0                                              | ~9.0 (during xrp_heavy; symmetric 9/9 when balanced) | G7 widens passive side as designed |
+| markout@30s             | −0.013%                                           | −0.001% (recovered)                  | Adverse during heavy leg, improved as inventory normalized |
+| toxic@30s               | ~14% (early)                                      | 26% (peak during skew)               | G2 correctly cautious (size×0.75, spread×1.12) |
+| G7 posture              | balanced 8/8                                      | xrp_heavy asymmetric (bid passive 9, ask join ~3.4 ×G2) → balanced 9/9 | Execution knob reacting to inventory; A-S reservation untouched |
+| Skim Δ (session)        | small positive early                              | −0.106 (slipped on adverse ask hits while heavy) | Expected cost of "join rebalance side" during one-sided flow |
+| C2 gate                 | FAIL (short window, high flips)                   | PASS (123 min)                       | Longer stable run met flip-rate bar |
+| Peer lane               | 0                                                 | 0                                    | No competitors at pilot size |
+| Inventory behavior      | —                                                 | xrp_heavy → balanced without manual rebalance | G7 + G2 + natural flow handled it |
+
+**Design note:** Pure A-S reservation math (would_quote only when inside live BBO, optimal spread from γ/κ/vol) remains the sacred core. G7 is a thin execution envelope (posted-price backoff only) + G2 as dynamic brake on size/spread. Other knobs (pressure, book age, G4) influence inputs only — never override the inside-book guard. This run demonstrated the intended behavior and cost during inventory skew.
+
+**Checkpoint verdict (operator to confirm):** G7 v1 delivered the asymmetric queue behavior as specified. Visibility and A/B data now logged. Session recovered as inventory balanced. Good enough for current scale; future windows can test rlusd_heavy mirror and/or longer stats.
 
 <details>
 <summary><strong>G7 draft — execution envelope</strong> (spec v1 — minimal moving parts)</summary>
@@ -204,8 +222,9 @@ Balance-delta fills use implied price when coherent (±25% of mid, BBO band, min
 | `2fb597d` | Balance-delta coherence guard — reject nonsense implied prices before fill log |
 | `b463887` | HUD Skim Δ fix — stop CSV overwrite; strict `@ mid` for economics; session fills display |
 | `4c38c65` / `b420437` | USD portfolio in sidebar; metric row alignment |
+| `5b85263` + follow-ups | HUD "Analyze our bot" self-audit + prose reports (no JSON echo); G7 fields now explicitly in HUD payload for session fills card |
 
-Post-deploy: `scripts/post_deploy_snapshot.py` — gates + G7 queue review in one shot on VPS.
+Post-deploy + 60-fill checkpoint: `scripts/post_deploy_snapshot.py` + `live_activation_grading --gate`. G7 A/B data logged via `ws_as_version` in intel JSONL. G7 queue/visibility now visible in HUD Session fills card (hard refresh recommended).
 
 ---
 
