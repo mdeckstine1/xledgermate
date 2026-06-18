@@ -122,6 +122,8 @@ def compute_baseline_economics(trades_rows: Sequence[Dict[str, str]], trades_pat
 
 
 def load_decision_lines(path: Path, max_lines: Optional[int] = None) -> List[str]:
+    if not path.exists():
+        return []
     lines = [ln for ln in path.read_text(encoding="utf-8", errors="ignore").splitlines() if ln.strip()]
     if max_lines is not None and max_lines > 0:
         lines = lines[-max_lines:]
