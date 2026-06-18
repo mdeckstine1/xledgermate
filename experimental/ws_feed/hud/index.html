@@ -530,6 +530,7 @@
         </div>
         <div class="section">
             <div class="label">Balances</div>
+            <div class="sidebar-value" id="sidebar-portfolio-usd">Port: — USD</div>
             <div class="sidebar-value" id="sidebar-portfolio-rlusd">Port: — RLUSD</div>
             <div class="sidebar-value" id="sidebar-portfolio">Port: — XRP</div>
             <div class="sidebar-value" id="sidebar-xrp">XRP: —</div>
@@ -1230,6 +1231,16 @@ The A-S strategy itself decides presence via reservation price being inside the 
             return null;
         }
 
+        function formatPortfolioUsd(rlusdTotal) {
+            if (rlusdTotal == null || Number.isNaN(rlusdTotal)) return null;
+            return rlusdTotal.toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            });
+        }
+
         async function applyIntelConfigFromForm() {
             const provEl = document.getElementById('intel-ai-provider');
             const keyIn = document.getElementById('intel-ai-key');
@@ -1707,6 +1718,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
             // Sidebar (always present) - force update with defaults if missing
             const portRlusd = portfolioValueRlusd(s);
+            const portUsd = formatPortfolioUsd(portRlusd);
+            setText(
+                'sidebar-portfolio-usd',
+                portUsd != null ? `Port: ${portUsd}` : 'Port: — USD'
+            );
             setText(
                 'sidebar-portfolio-rlusd',
                 portRlusd != null ? `Port: ${portRlusd.toFixed(2)} RLUSD` : 'Port: — RLUSD'
