@@ -183,13 +183,20 @@ def test_format_intel_analysis_report_self() -> None:
                 "cancels": 1.5,
                 "sides": "b1/a1",
             },
-            "evidence_lines": ["inventory_label=balanced", "worst_vs_touch_bps=8.0"],
+            "evidence_lines": [
+                "our_inventory=balanced",
+                "aggregate_pressure=0.15",
+                "peer_lane_count=0",
+            ],
+            "peer_lane_count": 0,
             "lane_note": "OUR bot ledger — self-audit only",
         }
     )
     assert "=== Our bot — self-audit report ===" in text
     assert "G7 balanced" in text
-    assert "IN peer touch band" in text
+    assert "OUR quotes in lane" in text
+    assert "touch_xrp=" not in text
+    assert "Regime" in text
     assert "{" not in text
 
 

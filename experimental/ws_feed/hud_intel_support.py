@@ -730,6 +730,7 @@ def build_competitor_analysis_context(
         "evidence_header": header,
         "lane_note": lane_note,
         "structured_briefing": structured,
+        "peer_lane_count": int(merged.get("peer_lane_count") or 0),
     }
 
 
@@ -751,6 +752,13 @@ def strip_grok_json_echo(text: str) -> str:
     return cleaned
 
 
+def _fmt_pct(val: Any, places: int = 3) -> str:
+    try:
+        return f"{float(val):.{places}f}%"
+    except (TypeError, ValueError):
+        return str(val)
+
+
 def format_intel_analysis_report(briefing: Mapping[str, Any]) -> str:
     """Operator-facing prose report from briefing facts (always shown above Grok commentary)."""
     is_our_bot = bool(briefing.get("is_our_bot"))
@@ -761,6 +769,16 @@ def format_intel_analysis_report(briefing: Mapping[str, Any]) -> str:
     band_lo = briefing.get("peer_band_low_xrp")
     band_hi = briefing.get("peer_band_high_xrp")
     in_lane = briefing.get("in_peer_lane")
+    peer_count = int(briefing.get("peer_lane_count") or 0)
+
+    # Parse evidence key=value pairs once (macro fields not duplicated in header).
+    macro: Dict[str, str] = {}
+    for ev in briefing.get("evidence_lines") or []:
+        text = str(ev)
+        if "=" not in text:
+            continue
+        key, _, val = text.partition("=")
+        macro[key.strip()] = val.strip()
 
     lines: List[str] = []
     if is_our_bot:
@@ -774,23 +792,31 @@ def format_intel_analysis_report(briefing: Mapping[str, Any]) -> str:
         lines.append(f"Address: {acct}")
         lines.append(f"Source: {source.replace('_', ' ')}")
         if touch is not None:
-            lines.append(f"Touch size: {float(touch):.2f} XRP")
+            lines.append(f"Posted touch: {float(touch):.2f} XRP")
         if our_lane is not None:
-            lines.append(f"Our lane: {float(our_lane):.2f} XRP")
+            lines.append(f"Our lane (L1 size): {float(our_lane):.2f} XRP")
         if band_lo is not None and band_hi is not None:
             lines.append(f"Peer band: {float(band_lo):.1f}–{float(band_hi):.1f} XRP")
-        lane_txt = "IN peer touch band" if in_lane else "OUT of peer touch band"
-        lines.append(f"Band status: {lane_txt}")
+        if is_our_bot:
+            if peer_count <= 0:
+                lines.append("Band status: OUR quotes in lane · no peer makers at touch right now")
+            elif in_lane:
+                lines.append(f"Band status: IN peer touch band · {peer_count} peer(s) at touch")
+            else:
+                lines.append("Band status: OUT of peer touch band")
+        else:
+            lane_txt = "IN peer touch band" if in_lane else "OUT of peer touch band"
+            lines.append(f"Band status: {lane_txt}")
         if profile.get("last_spread") is not None:
-            lines.append(
-                f"Spread: last {profile.get('last_spread')}% · avg {profile.get('avg_spread', '—')}%"
-            )
+            avg = profile.get("avg_spread")
+            avg_txt = _fmt_pct(avg) if avg is not None else "—"
+            lines.append(f"Book spread: {_fmt_pct(profile.get('last_spread'))} · our optimal: {avg_txt}")
         if profile.get("activity") is not None:
-            lines.append(f"Open offers / activity: {profile.get('activity')}")
+            lines.append(f"Open offers on ledger: {profile.get('activity')}")
+        if profile.get("sides"):
+            lines.append(f"Quote intents (levels): {profile.get('sides')}")
         if profile.get("cancels") is not None:
             lines.append(f"Cancel/fill (session): {profile.get('cancels')}")
-        if profile.get("sides"):
-            lines.append(f"Sides: {profile.get('sides')}")
         if profile.get("g7_summary"):
             lines.append(f"G7: {profile.get('g7_summary')}")
         if profile.get("worst_vs_touch_bps") is not None:
@@ -800,12 +826,23 @@ def format_intel_analysis_report(briefing: Mapping[str, Any]) -> str:
     else:
         lines.append("No scrape profile — address absent from last peer/book snapshot.")
 
-    lines.append("")
-    lines.append("Live context")
-    for ev in briefing.get("evidence_lines") or []:
-        if str(ev).startswith("scrape_source=") or str(ev).startswith("target_role="):
-            continue
-        lines.append(f"  · {ev}")
+    macro_keys = (
+        ("our_inventory", "Inventory"),
+        ("aggregate_pressure", "Book pressure"),
+        ("observed_spread_pct", "Observed L1 spread"),
+        ("book_depth_xrp", "Book depth"),
+        ("peer_lane_count", "Peers at touch"),
+        ("our_as_reservation", "A-S reservation"),
+        ("our_optimal_spread_pct", "A-S optimal spread"),
+    )
+    macro_lines: List[str] = []
+    for key, label in macro_keys:
+        if key in macro and macro[key]:
+            macro_lines.append(f"  · {label}: {macro[key]}")
+    if macro_lines:
+        lines.append("")
+        lines.append("Regime")
+        lines.extend(macro_lines)
 
     fled = briefing.get("fled_events") or []
     if fled:
