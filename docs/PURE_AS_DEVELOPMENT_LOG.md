@@ -160,6 +160,41 @@ Single `xledgermate` restart deployed M2–M5 on VPS. Post-deploy: gates + queue
 
 ---
 
+## Balance-delta coherence + HUD Skim fix (2026-06-18 — v2.1.17)
+
+**Problem:** Composite balance deltas in one cycle produced nonsense implied prices (e.g. BUY @ 7.74 vs mid ~1.16). Engine logged artifacts; HUD **overwrote** `session_spread_capture_xrp` with a CSV sum and fell back to all-time capture — Skim Δ showed −14.9 / +28 swings while soak was fine.
+
+**Shipped (`2fb597d`, `b463887`):**
+
+- `balance_delta_fill_reject_reason` / `is_coherent_fill_price` — reject before fill log (±25% mid, BBO band, min 0.01 XRP).
+- HUD stops overwriting engine Skim Δ; no all-time fallback in `sessionSkimDeltaXrp()`.
+- `mid_at_quote_from_fill_notes` strict `@ mid` for economics; G6 grading skips incoherent rows.
+
+**Post-fix soak:** Skim Δ ~0.005 XRP, session fills ~8, G6 `pilot_watch` → `scale_ready` on cumulative CSV as fill count grew.
+
+---
+
+## Post-deploy gates + G7 baseline (2026-06-18)
+
+Ran `scripts/post_deploy_snapshot.py` on VPS (`.venv/bin/python`). Snapshot written to `logs/post_deploy_snapshot.txt`.
+
+| Metric | Value |
+|--------|-------|
+| Version | 2.1.17 |
+| Session fills | ~8 |
+| Skim Δ (engine) | ~0.005 XRP |
+| cancel/fill | 1.5 |
+| markout@30s | −0.013% |
+| toxic@30s | 14% |
+| G7 (balanced) | bid/ask 8 bps · worst_vs_touch 8.0 bps |
+| Last fill quote age | ~11.7 s |
+| Intel would_quote | 92.2% (922 cycles) |
+| G6 gate | PASS (`scale_ready` on cumulative fills) |
+
+C2 `sample_history` soak gate still **FAIL** on short window (13 min, flip rate) — expected until longer post-restart run.
+
+---
+
 ## Post-soak backlog (condensed)
 
 | Track | Items |
@@ -188,6 +223,7 @@ Full IDs and blockers: critical path **After segment** table.
 | G6 grades | `experimental/ws_feed/live_activation_grading.py` |
 | G7 envelope | `experimental/ws_feed/execution_envelope.py` |
 | Session fills gate | `scripts/ws_path_session_report.py` |
+| Post-deploy gates | `scripts/post_deploy_snapshot.py` |
 | Intel JSONL | `experimental/ws_feed/intel_decisions_log.py` |
 
 ---

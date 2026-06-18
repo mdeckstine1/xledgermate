@@ -1,12 +1,12 @@
 # Pure A-S Critical Path
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
-**Version:** v2.1.16 · **Branch:** `Ashigaru-Kaizen-II`  
+**Version:** v2.1.17 · **Branch:** `Ashigaru-Kaizen-II`  
 **Last updated:** 2026-06-18
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
-**Soak = timed test run.** Collect fills, toxicity, markout, G6 grades under real quoting. **M2–M5 shipped v2.1.15** (2026-06-18). Next engine window: **G7 execution envelope** (per-side touch × G2).
+**Soak = timed test run.** Collect fills, toxicity, markout, G6 grades under real quoting. **M2–M5 shipped v2.1.15** (2026-06-18). **G7 execution envelope shipped v2.1.16+.** Post-deploy gates + baseline snapshot **2026-06-18** (`scripts/post_deploy_snapshot.py` on VPS).
 
 ---
 
@@ -16,10 +16,12 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 
 | # | Task | Status |
 |---|------|--------|
-| — | Post-deploy gates: `fill_quote_age_report.py`, `ws_runtime_analysis`, `live_activation_grading --gate` | pending |
-| — | Watch G6 tier, toxic@30s, markout@30s on v2.1.15 | ongoing |
-| — | **Queue review** — vs-touch bps, cancel/fill, fill age (inputs for **G7**) | ongoing |
-| — | **Skim Δ** vs wallet Δ on new implied-price fills | ongoing |
+| — | Post-deploy gates: `fill_quote_age_report.py`, `ws_runtime_analysis`, `live_activation_grading --gate` | **done** 2026-06-18 — see baseline below |
+| — | Watch G6 tier, toxic@30s, markout@30s (v2.1.17 soak) | ongoing |
+| — | **Queue review** — vs-touch bps, cancel/fill, fill age (G7 A/B) | **baseline captured** — monitor vs v2.1.15 |
+| — | **Skim Δ** vs wallet Δ | **improved** — coherence guard + HUD no longer overwrites engine session skim |
+
+**G7 soak baseline (2026-06-18T14:44Z, VPS):** v2.1.17 · session fills ~8 · Skim Δ ~0.005 XRP · cancel/fill **1.5** · markout@30s **−0.013%** · toxic@30s **14%** · G7 **balanced 8/8 bps** · worst_vs_touch **8.0 bps** · last fill age **~11.7s** · G6 **scale_ready** (cumulative CSV; session still early). C2 sample_history gate **FAIL** (13 min window, high flip rate — expected until longer soak). Full JSON: `logs/post_deploy_snapshot.txt` on VPS.
 
 ### Next engine window — G7 execution envelope
 
@@ -29,11 +31,11 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 | 2 | Per-side touch | xrp-heavy → ask 3 bps / bid 8 bps; rlusd-heavy → opposite |
 | 3 | G2 coupling | `backoff × max(1, g2.spread_mult)` |
 | 4 | Visibility + debug | `worst_vs_touch_bps`, `quote_visibility_summary`, `g7_summary` on runtime |
-| 5 | Validation | Soak A/B vs v2.1.15 — fills, markout@30s, cancel/fill |
+| 5 | Validation | Soak A/B vs v2.1.15 — **in progress** (baseline 2026-06-18) |
 
-**Blocker:** soak A/B on VPS after v2.1.16 deploy.
+**Blocker:** accumulate v2.1.16+ session hours + fills for A/B vs v2.1.15 intel slice (`ws_as_version` in JSONL).
 
-**Order:** deploy v2.1.16 → monitor markout/toxic vs v2.1.15 baseline.
+**Order:** monitor markout/toxic/cancel vs baseline → sign off or tune envelope.
 
 <details>
 <summary><strong>G7 draft — execution envelope</strong> (spec v1 — minimal moving parts)</summary>
@@ -175,7 +177,7 @@ HUD-only deploys (`xledgermate-ws-hud` restart OK). No further soak-safe code re
 | Change | Restart | During soak? |
 |--------|---------|--------------|
 | HUD / `ws_hud_production.py` / reports / `performance_metrics.py` | `xledgermate-ws-hud` | Yes |
-| `fill_detection.py` / `fill_economics.py` (HUD CSV skim) | ws-hud only until engine pull | Yes |
+| `fill_detection.py` / `fill_economics.py` / balance-delta coherence guard | `xledgermate` (engine) + `xledgermate-ws-hud` for CSV skim display | Yes (HUD-only until engine pull) |
 | `ws_pure_engine.py` (M2–M5, fill age, `session_spread_capture_xrp`) | `xledgermate` | **No** — segment end |
 | `vps_deploy_ashigaru.sh` full | ws-engine + HUD | **No** unless planned |
 
@@ -187,11 +189,23 @@ HUD-only deploys (`xledgermate-ws-hud` restart OK). No further soak-safe code re
 
 | HUD field | Meaning |
 |-----------|---------|
-| **Skim Δ** | Session spread capture estimate from WS fills (volume × half spread when `profit_xrp_equiv` is 0) |
+| **Skim Δ** | Session spread capture from **engine** `session_spread_capture_xrp` (incoherent balance-delta fills rejected; HUD does not overwrite with CSV sum) |
 | **Wallet Δ** (Inventory) | Portfolio change since session start — **includes deposits** |
 | **Metrics → Total capture** | CSV sum (all-time in month file); grades use toxic@30s |
 
-Balance-delta fills often store fill@mid → `profit_xrp_equiv ≈ 0` until M2/engine implied-price fix lands. Treat Skim Δ as **directional** during soak; reconcile after segment end.
+Balance-delta fills use implied price when coherent (±25% of mid, BBO band, min 0.01 XRP). Bogus composite deltas are rejected at detect time and excluded from G6 skim grading. Historical CSV rows may remain; session HUD uses engine counters only.
+
+---
+
+## Recent ships (2026-06-18)
+
+| Commit | What |
+|--------|------|
+| `2fb597d` | Balance-delta coherence guard — reject nonsense implied prices before fill log |
+| `b463887` | HUD Skim Δ fix — stop CSV overwrite; strict `@ mid` for economics; session fills display |
+| `4c38c65` / `b420437` | USD portfolio in sidebar; metric row alignment |
+
+Post-deploy: `scripts/post_deploy_snapshot.py` — gates + G7 queue review in one shot on VPS.
 
 ---
 
@@ -262,6 +276,7 @@ experimental/ws_feed/execution_envelope.py   # G7 per-side touch × G2
 experimental/ws_feed/reservation_metrics.py  # M1
 experimental/ws_feed/as_safety.py          # M5 (deploy at segment end)
 experimental/arb/clob_amm_monitor.py       # H1 read-only
+scripts/post_deploy_snapshot.py          # VPS gates + G7 baseline (one shot)
 scripts/vps_deploy_ashigaru.sh             # VPS deploy (plan segment end)
 ```
 
@@ -273,7 +288,7 @@ scripts/vps_deploy_ashigaru.sh             # VPS deploy (plan segment end)
 2. HUD + long runs — done  
 3. Dry-run WS offers — done  
 4. E1 live ws-engine — done (2026-06-15)  
-5. **Current:** v2.1.15 live → post-deploy gates → **G7 envelope** → E3 / post-soak intel
+5. **Current:** v2.1.17 live → G7 soak A/B → E3 / post-soak intel
 
 ---
 
