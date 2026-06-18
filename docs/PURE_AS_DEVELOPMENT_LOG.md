@@ -3,7 +3,7 @@
 **Purpose:** Posterity — how we got here, what we learned, and why decisions were made.  
 **Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live TODO; this file is the narrative + archaeology.
 
-**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.14  
+**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.15  
 **Last updated:** 2026-06-17
 
 ---
@@ -146,16 +146,16 @@ VPS intel: ~122 min gap 2026-06-16 (cycle reset); brief Jun 17 restarts ~1–2 m
 
 ---
 
-## Engine-window bundle (next planned deploy)
+## Engine-window bundle (2026-06-18 — coded, pending VPS deploy)
 
-Single `xledgermate` restart at soak segment end:
+Single `xledgermate` restart deploys:
 
-1. **M2** — `OfferAgeTracker` live; HUD fill age field  
-2. **M3** — `reservation_crossed_after_ws_sample`  
-3. **M4** — production `sample_history`  
-4. **M5** — `as_safety` on production path  
-5. **Fill economics** — implied price in `_detect_fills`  
-6. Gates — `fill_quote_age_report`, `ws_runtime_analysis`, `live_activation_grading --gate`
+1. **M2** — `OfferAgeTracker` records place times in `_sync_offers`; fill age in `_detect_fills` → `effective_quote_age_at_fill_seconds` on runtime/HUD  
+2. **M3** — `detect_stale_cross` compares BBO before vs after competitor-intel scrape → `reservation_crossed_after_ws_sample`  
+3. **M4** — `append_runtime_sample` each cycle in `_persist_cycle`; `sample_history`, C1 presence, zero-quote breakdown, soak gate on `runtime_state.json`  
+4. **M5** — confirmed: `enforce_reservation_gate` already on `PureQuotePath` production path  
+5. **Fill economics** — implied price in `fill_detection.py` (ships with same engine restart)  
+6. **Post-deploy** — `fill_quote_age_report`, `ws_runtime_analysis`, `live_activation_grading --gate`
 
 ---
 

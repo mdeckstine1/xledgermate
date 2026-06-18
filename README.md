@@ -125,7 +125,7 @@ Before **live** testnet (`dry_run: false`): run `setup-trust`, fund RLUSD, set n
 
 ## Versioning
 
-- Current version: see [`VERSION`](VERSION) (**2.1.12** Ashigaru Kaizen · WS path `experimental/ws_feed/WS_AS_VERSION`)
+- Current version: see [`VERSION`](VERSION) (**2.1.15** Ashigaru Kaizen II · WS path `experimental/ws_feed/WS_AS_VERSION`)
 - Release notes: [`CHANGELOG.md`](CHANGELOG.md)
 - Operator guide: [`docs/OPERATOR_MANUAL.md`](docs/OPERATOR_MANUAL.md)
 - Strategy + gates: [`docs/STRATEGY_MANUAL.md`](docs/STRATEGY_MANUAL.md), [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)

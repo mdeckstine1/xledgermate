@@ -7,6 +7,23 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.15] — 2026-06-18 (`Ashigaru Kaizen II`)
+
+**Theme:** Engine-window bundle M2–M5 — fill age, stale-cross, production soak samples.
+
+### Added
+
+- **M2** — `OfferAgeTracker` in ws-engine (`_sync_offers` + `_detect_fills`); `effective_quote_age_at_fill_seconds` on runtime/HUD.
+- **M3** — `reservation_crossed_after_ws_sample` when BBO moves during competitor-intel scrape.
+- **M4** — `append_runtime_sample` each cycle; `sample_history`, C1 presence, zero-quote breakdown, soak gate on `runtime_state.json`.
+- **RuntimeState** — `sample_history`, fill age, stale-cross, inside-L1 / res→BBO fields.
+
+### Confirmed
+
+- **M5** — `enforce_reservation_gate` already on `PureQuotePath` production path.
+
+---
+
 ## [2.1.14] — 2026-06-16 (`Ashigaru Kaizen`)
 
 **Theme:** WS feature switches in config — turn Telegram, intel, G2/G4, HUD Grok on/off.

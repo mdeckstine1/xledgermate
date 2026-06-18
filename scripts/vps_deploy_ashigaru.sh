@@ -3,7 +3,7 @@
 set -euo pipefail
 cd /root/xledgermate
 
-BRANCH="Ashigaru-Kaizen"
+BRANCH="Ashigaru-Kaizen-II"
 
 echo "=== git pull ${BRANCH} ==="
 git fetch origin "${BRANCH}"

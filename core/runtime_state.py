@@ -132,6 +132,16 @@ class RuntimeState:
     quotes_at_touch: bool = True
     worst_vs_touch_bps: float = 0.0
     quote_visibility_summary: str = ""
+    inside_l1: Optional[bool] = None
+    reservation_to_bbo_delta_bps: Optional[float] = None
+    effective_quote_age_at_fill_seconds: Optional[float] = None
+    reservation_crossed_after_ws_sample: bool = False
+    zero_quote_reason: str = ""
+    sample_history: List[Dict[str, Any]] = field(default_factory=list)
+    sample_count: int = 0
+    presence_by_pressure: Dict[str, Any] = field(default_factory=dict)
+    zero_quote_breakdown: Dict[str, Any] = field(default_factory=dict)
+    soak_evaluation: Dict[str, Any] = field(default_factory=dict)
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -285,4 +295,16 @@ class RuntimeStateStore:
             quotes_at_touch=bool(data.get("quotes_at_touch", True)),
             worst_vs_touch_bps=float(data.get("worst_vs_touch_bps", 0.0)),
             quote_visibility_summary=str(data.get("quote_visibility_summary", "")),
+            inside_l1=data.get("inside_l1"),
+            reservation_to_bbo_delta_bps=data.get("reservation_to_bbo_delta_bps"),
+            effective_quote_age_at_fill_seconds=data.get("effective_quote_age_at_fill_seconds"),
+            reservation_crossed_after_ws_sample=bool(
+                data.get("reservation_crossed_after_ws_sample", False)
+            ),
+            zero_quote_reason=str(data.get("zero_quote_reason", "")),
+            sample_history=list(data.get("sample_history", [])),
+            sample_count=int(data.get("sample_count", 0)),
+            presence_by_pressure=dict(data.get("presence_by_pressure") or {}),
+            zero_quote_breakdown=dict(data.get("zero_quote_breakdown") or {}),
+            soak_evaluation=dict(data.get("soak_evaluation") or {}),
         )

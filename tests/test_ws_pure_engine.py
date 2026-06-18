@@ -4,6 +4,7 @@ from connectors.xrpl_connector import OpenOffer
 from engine.order_sync import plan_order_sync
 from experimental.ws_feed.ws_pure_engine import (
     WsPureTradingEngine,
+    fill_side_to_offer_age_side,
     pure_intents_to_quote_intents,
     resolve_ws_sync_tolerances,
 )
@@ -84,3 +85,28 @@ def test_resolve_ws_sync_tolerances_calm_keeps_queue() -> None:
     )
     assert preserve is True
     assert tol == 0.08
+
+
+def test_fill_side_to_offer_age_side() -> None:
+    assert fill_side_to_offer_age_side("BUY") == "bid"
+    assert fill_side_to_offer_age_side("SELL") == "ask"
+    assert fill_side_to_offer_age_side("") is None
+
+
+def test_engine_offer_age_tracker_on_fill() -> None:
+    from config.settings import BotConfig
+    from datetime import datetime, timedelta, timezone
+
+    eng = WsPureTradingEngine(BotConfig.load())
+    placed = datetime(2026, 6, 17, 12, 0, 0, tzinfo=timezone.utc)
+    eng._offer_age.record_place("bid", placed_utc=placed)
+    detected = placed + timedelta(seconds=3.0)
+    age = eng._offer_age.effective_quote_age_at_fill_seconds("bid", fill_detected_utc=detected)
+    assert age == 3.0
+
+
+def test_engine_analysis_bundle_starts_empty() -> None:
+    from config.settings import BotConfig
+
+    eng = WsPureTradingEngine(BotConfig.load())
+    assert eng._analysis_bundle["sample_history"] == []

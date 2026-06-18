@@ -1,8 +1,8 @@
 # Pure A-S Critical Path
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
-**Version:** v2.1.14 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-17
+**Version:** v2.1.15 · **Branch:** `Ashigaru-Kaizen-II`  
+**Last updated:** 2026-06-18
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
@@ -12,26 +12,27 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 
 ## Active TODO
 
-### Now (operator — no engine restart)
+### Now (operator — engine restart when ready)
 
 | # | Task | Status |
 |---|------|--------|
-| — | Let soak run; watch G6 tier, toxic@30s, markout@30s | **in progress** |
-| — | Use **Skim Δ** as directional estimate until segment end (balance-delta fills; see HUD notes) | **in progress** |
-| — | Fund via Inventory → bot address; **Wallet Δ** shows deposits; **Skim Δ** excludes them | done |
+| — | **Deploy M2–M5 bundle** — `git pull` on VPS → `systemctl restart xledgermate` (brief quoting gap) | **ready** |
+| — | Post-deploy: `fill_quote_age_report.py`, `ws_runtime_analysis`, `live_activation_grading --gate` | pending restart |
+| — | Watch G6 tier, toxic@30s, markout@30s after restart | ongoing |
+| — | **Skim Δ** directional until new fills get implied-price `profit_xrp_equiv` | ongoing |
 
 ### Segment end — one `ws-engine` restart (deploy together)
 
 | # | Item | Notes |
 |---|------|--------|
-| 1 | **M2** Fill age live | Wire `OfferAgeTracker` in `ws_pure_engine._detect_fills`; HUD `effective_quote_age_at_fill_seconds` |
-| 2 | **M3** Stale-cross flag | `reservation_crossed_after_ws_sample` in `_run_cycle`; lab `stale_cross.py` ready |
-| 3 | **M4** Production `sample_history` | Parity with tester; enables VPS soak breakdowns |
-| 4 | **M5** `as_safety` on production path | Code in `pure_quote_path.py`; confirm on deploy |
-| 5 | **Fill economics** | `fill_detection.py` implied price when both legs move → real `profit_xrp_equiv` on new fills |
+| 1 | **M2** Fill age live | **shipped** — `OfferAgeTracker` in `_sync_offers` + `_detect_fills`; HUD `effective_quote_age_at_fill_seconds` |
+| 2 | **M3** Stale-cross flag | **shipped** — `reservation_crossed_after_ws_sample` pre/post intel BBO in `_run_cycle` |
+| 3 | **M4** Production `sample_history` | **shipped** — `append_runtime_sample` in `_persist_cycle`; C1 soak metrics on runtime export |
+| 4 | **M5** `as_safety` on production path | **confirmed** — `enforce_reservation_gate` in `pure_quote_path.py` (no engine change) |
+| 5 | **Fill economics** | `fill_detection.py` implied price — **deploy with engine restart** |
 | 6 | Post-deploy gates | `fill_quote_age_report.py`, `ws_runtime_analysis`, `live_activation_grading --gate` |
 
-**Order:** M2 → M3 → M4 → M5 → post-deploy reports + G6 `--gate`.
+**Order:** deploy M2–M5 bundle → engine restart → post-deploy reports + G6 `--gate`.
 
 ### After segment (engine or separate windows)
 

@@ -30,7 +30,10 @@ from experimental.ws_feed.intel_decisions_log import (
 )
 from experimental.ws_feed.hud_intel_support import fetch_competitor_quoting_intel
 from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
+from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
 from experimental.ws_feed.pure_quote_path import current_ws_as_version
+from experimental.ws_feed.stale_cross import detect_stale_cross
+from experimental.ws_runtime_analysis import append_runtime_sample
 from experimental.ws_feed.pair_books import RlusdXrpPair
 from experimental.ws_feed.network_urls import rpc_url_to_websocket_url
 from experimental.ws_feed.ws_book_feed import WsBookFeed
@@ -52,6 +55,16 @@ DEFAULT_SAMPLE_INTERVAL_S = 5.0
 COMP_SCRAPE_INTERVAL_S = 15.0
 WS_MID_MOVE_REFRESH_BPS = 4.0
 WS_TOXIC_PRESERVE_OFF_RATIO = 0.35
+
+
+def fill_side_to_offer_age_side(side: str) -> Optional[str]:
+    """Map balance-delta fill side (BUY/SELL) to offer-age tracker side (bid/ask)."""
+    normalized = (side or "").strip().upper()
+    if normalized == "BUY":
+        return "bid"
+    if normalized == "SELL":
+        return "ask"
+    return None
 
 
 def resolve_ws_sync_tolerances(
@@ -177,6 +190,10 @@ class WsPureTradingEngine:
         self._comp_intel_cache: Dict[str, Any] = {}
         self._last_our_lane_xrp: float = 0.0
         self._last_ws_book_age_s: Optional[float] = None
+        self._offer_age = OfferAgeTracker()
+        self._last_fill_quote_age_seconds: Optional[float] = None
+        self._reservation_crossed_after_ws_sample = False
+        self._analysis_bundle: Dict[str, Any] = {"sample_history": []}
 
     def stop(self) -> None:
         self._running = False
@@ -390,6 +407,7 @@ class WsPureTradingEngine:
                 await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
             return
 
+        bb_before_intel, ba_before_intel = bb, ba
         comp_intel = await self._maybe_refresh_competitor_intel(config)
         fill_state = self._fill_quality.assess() if flags.fill_quality else None
 
@@ -427,6 +445,19 @@ class WsPureTradingEngine:
             g4_enabled=flags.g4_peer_lane and flags.competitor_intel,
             competitor_pressure_enabled=flags.competitor_intel,
         )
+        reservation = engine_dec.get("as_reservation")
+        self._reservation_crossed_after_ws_sample = detect_stale_cross(
+            reservation=reservation,
+            best_bid_before=bb_before_intel,
+            best_ask_before=ba_before_intel,
+            best_bid_after=bb,
+            best_ask_after=ba,
+        )
+        if self._reservation_crossed_after_ws_sample:
+            self.decision_log.add(
+                "book",
+                "M3 stale-cross: reservation inside BBO pre-intel, outside post-refresh",
+            )
         l1_from_dec = float(engine_dec.get("l1_xrp") or 0)
         if l1_from_dec > 0:
             self._last_our_lane_xrp = l1_from_dec
@@ -547,6 +578,7 @@ class WsPureTradingEngine:
             try:
                 await connector.place_quote(intent)
                 placed += 1
+                self._offer_age.record_place(intent.side)
             except Exception as exc:
                 self.decision_log.add("execution", f"Place {intent.side} failed: {exc}")
         self._offers_cancelled += cancelled
@@ -598,6 +630,15 @@ class WsPureTradingEngine:
         if not fill:
             return
         side = str(fill["side"])
+        fill_detected_utc = datetime.now(tz=timezone.utc)
+        tracker_side = fill_side_to_offer_age_side(side)
+        if tracker_side:
+            age = self._offer_age.effective_quote_age_at_fill_seconds(
+                tracker_side,
+                fill_detected_utc=fill_detected_utc,
+            )
+            if age is not None:
+                self._last_fill_quote_age_seconds = age
         xrp_amount = float(fill["xrp_amount"])
         rlusd_amount = float(fill["rlusd_amount"])
         price = float(fill["price_rlusd_per_xrp"])
@@ -728,9 +769,9 @@ class WsPureTradingEngine:
                 baseline_rlusd=self._session_baseline_rlusd or 0.0,
                 mid_rlusd_per_xrp=mid,
             )
-        presence_pct = None
+        cycle_presence_pct = None
         if self._cycle_count > 0:
-            presence_pct = round(100.0 * self._would_quote_cycles / self._cycle_count, 1)
+            cycle_presence_pct = round(100.0 * self._would_quote_cycles / self._cycle_count, 1)
         flags = WsFeatureFlags.from_config(config)
         fill_quality = self._fill_quality.assess() if flags.fill_quality else FillQualityState()
         bb_spread = ed.get("book_spread_pct")
@@ -745,6 +786,39 @@ class WsPureTradingEngine:
             for e in self.decision_log.recent_newest_first(limit=60)
         ]
         cycle_s = int(self._sample_interval_s)
+        comp_intel = self._last_comp_intel or {}
+        append_runtime_sample(
+            self._analysis_bundle,
+            {
+                "ts_utc": datetime.now(tz=timezone.utc).isoformat(),
+                "mid": mid,
+                "best_bid": bb,
+                "best_ask": ba,
+                "book_spread_pct": float(bb_spread or 0.0),
+                "as_optimal_spread_pct": ed.get("as_optimal_spread_pct"),
+                "spread_gap_pct": (
+                    float(bb_spread or 0.0) - float(ed.get("as_optimal_spread_pct") or 0.0)
+                    if bb_spread is not None and ed.get("as_optimal_spread_pct") is not None
+                    else None
+                ),
+                "as_reservation": ed.get("as_reservation"),
+                "would_quote": bool(ed.get("would_quote", bool(intents))),
+                "competitor_pressure": ed.get("competitor_pressure"),
+                "competitor_observed_spread_pct": comp_intel.get("competitor_observed_spread_pct"),
+                "volatility_pct": ed.get("volatility_pct"),
+                "ws_book_age_s": (
+                    self._last_ws_book_age_s
+                    if self._last_ws_book_age_s is not None
+                    else (self._ws_feed.age_seconds() if self._ws_feed else None)
+                ),
+                "inventory_label": ed.get("inventory_label"),
+                "zero_quote_reason": ed.get("zero_quote_reason"),
+                "inside_l1": ed.get("inside_l1"),
+                "reservation_to_bbo_delta_bps": ed.get("reservation_to_bbo_delta_bps"),
+                "reservation_crossed_after_ws_sample": self._reservation_crossed_after_ws_sample,
+            },
+        )
+        presence_pct = self._analysis_bundle.get("as_presence_pct", cycle_presence_pct)
         state = RuntimeState(
             version=VERSION,
             network=config.network_name(),
@@ -802,6 +876,16 @@ class WsPureTradingEngine:
             as_gamma=ed.get("as_gamma"),
             as_kappa=ed.get("as_kappa"),
             as_presence_pct=presence_pct,
+            inside_l1=ed.get("inside_l1"),
+            reservation_to_bbo_delta_bps=ed.get("reservation_to_bbo_delta_bps"),
+            effective_quote_age_at_fill_seconds=self._last_fill_quote_age_seconds,
+            reservation_crossed_after_ws_sample=self._reservation_crossed_after_ws_sample,
+            zero_quote_reason=str(ed.get("zero_quote_reason") or ""),
+            sample_history=list(self._analysis_bundle.get("sample_history") or []),
+            sample_count=int(self._analysis_bundle.get("sample_count") or 0),
+            presence_by_pressure=dict(self._analysis_bundle.get("presence_by_pressure") or {}),
+            zero_quote_breakdown=dict(self._analysis_bundle.get("zero_quote_breakdown") or {}),
+            soak_evaluation=dict(self._analysis_bundle.get("soak_evaluation") or {}),
             book_spread_pct=float(bb_spread or 0.0),
             volatility_pct=float(ed.get("volatility_pct") or ed.get("base_volatility_pct") or 0.0),
             session_baseline_xrp=self._session_baseline_xrp,
