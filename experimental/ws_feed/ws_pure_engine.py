@@ -373,6 +373,9 @@ class WsPureTradingEngine:
         balance_rlusd = await connector.get_rlusd_balance()
         trust = await connector.get_rlusd_trust_line()
         portfolio = portfolio_value_xrp(balance_xrp, balance_rlusd, mid or 0.0)
+        await self._detect_fills(
+            config, connector, balance_xrp, balance_rlusd, mid, best_bid=bb, best_ask=ba
+        )
 
         if self.kill_switch.is_active():
             await self._cancel_if_live(connector, config, "Kill switch active")
@@ -500,10 +503,6 @@ class WsPureTradingEngine:
             placed, cancelled = await self._sync_offers(
                 sync_intents, mid=mid, best_bid=bb, best_ask=ba
             )
-
-        await self._detect_fills(
-            config, connector, balance_xrp, balance_rlusd, mid, best_bid=bb, best_ask=ba
-        )
 
         execution = self._execution_summary(
             config, placed, cancelled=cancelled, would_sync=would_sync, would_quote=would_quote

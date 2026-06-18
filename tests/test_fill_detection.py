@@ -49,6 +49,22 @@ def test_coherent_fill_near_mid() -> None:
     assert is_coherent_fill_price(1.157425, mid, best_bid=1.156, best_ask=1.158)
 
 
+def test_coherent_fill_allows_adverse_toxic_price_inside_mid_guard() -> None:
+    mid = 1.157
+    assert is_coherent_fill_price(1.26, mid, best_bid=1.156, best_ask=1.158)
+    assert balance_delta_fill_reject_reason(
+        {
+            "side": "BUY",
+            "xrp_amount": 1.0,
+            "rlusd_amount": 1.26,
+            "price_rlusd_per_xrp": 1.26,
+        },
+        mid,
+        best_bid=1.156,
+        best_ask=1.158,
+    ) is None
+
+
 def test_rejects_vps_negative_artifact() -> None:
     mid = 1.1567796348962887
     fill = detect_fill_from_balance_delta(

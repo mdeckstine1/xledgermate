@@ -13,8 +13,6 @@ MIN_COHERENT_FILL_XRP = 0.01
 
 # Reject composite balance deltas whose implied price is far from mid (deposits, multi-event cycles).
 DEFAULT_FILL_PRICE_MAX_REL_DEV = 0.25
-_BBO_COHERENCE_LOW = 0.92
-_BBO_COHERENCE_HIGH = 1.08
 
 
 def is_coherent_fill_price(
@@ -49,7 +47,11 @@ def is_coherent_fill_price(
         and best_ask > 0
     ):
         lo, hi = min(best_bid, best_ask), max(best_bid, best_ask)
-        if not (lo * _BBO_COHERENCE_LOW <= implied <= hi * _BBO_COHERENCE_HIGH):
+        # Keep the BBO sanity check aligned with the mid guard. A narrower band
+        # drops the stale/adverse fills that toxicity tracking most needs to see.
+        bbo_low = max(0.0, 1.0 - max_relative_deviation)
+        bbo_high = 1.0 + max_relative_deviation
+        if not (lo * bbo_low <= implied <= hi * bbo_high):
             return False
     return True
 

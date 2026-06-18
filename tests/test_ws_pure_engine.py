@@ -1,5 +1,9 @@
 """Tests for WS pure production engine helpers."""
 
+import asyncio
+from types import SimpleNamespace
+
+from config.settings import BotConfig
 from connectors.xrpl_connector import OpenOffer
 from engine.order_sync import plan_order_sync
 from experimental.ws_feed.ws_pure_engine import (
@@ -110,3 +114,62 @@ def test_engine_analysis_bundle_starts_empty() -> None:
 
     eng = WsPureTradingEngine(BotConfig.load())
     assert eng._analysis_bundle["sample_history"] == []
+
+
+class _FillCsvRecorder:
+    def __init__(self) -> None:
+        self.buys = []
+        self.sells = []
+
+    def log_buy(self, **kwargs) -> None:
+        self.buys.append(kwargs)
+
+    def log_sell(self, **kwargs) -> None:
+        self.sells.append(kwargs)
+
+
+class _BalanceConnector:
+    async def get_xrp_balance(self) -> float:
+        return 101.0
+
+    async def get_rlusd_balance(self) -> float:
+        return 198.8
+
+    async def get_rlusd_trust_line(self):
+        return SimpleNamespace(exists=True, limit=1000.0, no_ripple=True)
+
+
+def test_run_cycle_detects_fills_before_preflight_return(monkeypatch) -> None:
+    async def run_cycle() -> tuple[WsPureTradingEngine, _FillCsvRecorder]:
+        config = BotConfig()
+        config.ws_fill_quality_enabled = False
+        monkeypatch.setattr(
+            BotConfig,
+            "load",
+            classmethod(lambda cls, filepath=None: config),
+        )
+        eng = WsPureTradingEngine(config)
+        csv = _FillCsvRecorder()
+        eng.csv_logger = csv
+        eng.connector = _BalanceConnector()
+        eng._ws_feed = object()
+        eng._adapter = object()
+        eng._prev_balances = (100.0, 200.0)
+
+        async def ensure_ws_stack() -> None:
+            return None
+
+        async def refresh_book_state():
+            return SimpleNamespace(age_seconds=lambda: 0.0), 1.19, 1.21, 1.20
+
+        eng._ensure_ws_stack = ensure_ws_stack
+        eng._refresh_book_state = refresh_book_state
+
+        await eng._run_cycle()
+        return eng, csv
+
+    eng, csv = asyncio.run(run_cycle())
+
+    assert eng._prev_balances == (101.0, 198.8)
+    assert eng._session_fills == 1
+    assert len(csv.buys) == 1
