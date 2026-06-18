@@ -86,8 +86,8 @@ def test_session_spread_capture_uses_last_n_fills(tmp_path: Path) -> None:
                     "BUY",
                     "1",
                     str(cap),
-                    WS_FILL_MARKER,
+                    f"{WS_FILL_MARKER} @ mid 1.280000",
                 ]
             )
     assert session_spread_capture_xrp(tmp_path, fills_session=2) == 0.07
-    assert session_spread_capture_xrp(tmp_path, fills_session=0) == 0.1
+    assert session_spread_capture_xrp(tmp_path, fills_session=0) == 0.0

@@ -38,14 +38,23 @@ def estimate_spread_capture_xrp(
     return edge_rlusd / mid
 
 
-def mid_from_fill_notes(row: Mapping[str, Any]) -> Optional[float]:
+def mid_at_quote_from_fill_notes(row: Mapping[str, Any]) -> Optional[float]:
+    """Mid anchor from fill notes only (strict — no price fallback)."""
     notes = str(row.get("notes") or "")
     match = re.search(r"@ mid ([0-9.]+)", notes)
-    if match:
-        try:
-            return float(match.group(1))
-        except (TypeError, ValueError):
-            return None
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def mid_from_fill_notes(row: Mapping[str, Any]) -> Optional[float]:
+    """Mid for display; falls back to recorded fill price when notes lack @ mid."""
+    mid = mid_at_quote_from_fill_notes(row)
+    if mid is not None:
+        return mid
     try:
         price = float(row.get("price_rlusd_per_xrp") or 0)
     except (TypeError, ValueError):
@@ -67,21 +76,20 @@ def spread_capture_from_fill_row(
     Skips incoherent implied prices vs mid in notes (composite balance deltas).
     """
     del price_tolerance_bps  # reserved for future ledger-priced fills
-    mid_ref = mid_from_fill_notes(row)
+    mid_ref = mid_at_quote_from_fill_notes(row)
     try:
         implied = float(row.get("price_rlusd_per_xrp") or 0)
     except (TypeError, ValueError):
         implied = 0.0
-    if (
-        mid_ref is not None
-        and implied > 0
-        and not is_coherent_fill_price(implied, mid_ref)
-    ):
-        return 0.0
     try:
         stored = float(row.get("profit_xrp_equiv") or 0)
     except (TypeError, ValueError):
         stored = 0.0
+    if mid_ref is None:
+        if stored != 0:
+            return stored
+    elif implied > 0 and not is_coherent_fill_price(implied, mid_ref):
+        return 0.0
     if stored != 0:
         return stored
 

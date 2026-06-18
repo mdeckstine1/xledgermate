@@ -93,3 +93,14 @@ def test_rejects_vps_positive_artifact_large_sell() -> None:
     assert fill["side"] == "SELL"
     assert abs(fill["price_rlusd_per_xrp"] - 2.319601) < 0.01
     assert not is_coherent_fill_price(fill["price_rlusd_per_xrp"], mid)
+
+
+def test_rejects_tiny_xrp_dust_fill() -> None:
+    mid = 1.1578512480495369
+    fill = {
+        "side": "BUY",
+        "xrp_amount": 0.00004,
+        "rlusd_amount": 1.0,
+        "price_rlusd_per_xrp": 25000.0,
+    }
+    assert balance_delta_fill_reject_reason(fill, mid) is not None

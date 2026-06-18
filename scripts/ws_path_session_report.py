@@ -69,7 +69,9 @@ def session_spread_capture_xrp(
     from monitoring.fill_economics import spread_capture_from_fill_row
 
     fills = _ws_fills_from_trades(repo or _REPO, since=since)
-    if fills_session > 0 and len(fills) > fills_session:
+    if fills_session <= 0:
+        return 0.0
+    if len(fills) > fills_session:
         fills = fills[-fills_session:]
     total = 0.0
     for row in fills:

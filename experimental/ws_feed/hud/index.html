@@ -1556,10 +1556,6 @@ The A-S strategy itself decides presence via reservation price being inside the 
             if (s.session_spread_capture_xrp != null && !Number.isNaN(parseFloat(s.session_spread_capture_xrp))) {
                 return parseFloat(s.session_spread_capture_xrp);
             }
-            const cap = (s.performance_metrics || {}).capture;
-            if (cap && cap.total_capture_xrp != null && !Number.isNaN(parseFloat(cap.total_capture_xrp))) {
-                return parseFloat(cap.total_capture_xrp);
-            }
             return null;
         }
 
@@ -1605,7 +1601,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const skimDelta = sessionSkimDeltaXrp(s);
             const fillsSession = (s.fills_session != null) ? parseInt(s.fills_session, 10) : 0;
             const fillsCsv = (s.ws_fills_csv != null) ? parseInt(s.ws_fills_csv, 10) : 0;
-            const fillsCount = Math.max(fillsSession, fillsCsv);
+            const fillsCount = fillsSession;
             const presence = (s.as_presence_pct != null) ? parseFloat(s.as_presence_pct) : null;
             const liveAge = computeLiveWsAge(s);
             const pm = s.performance_metrics || {};
@@ -1703,9 +1699,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const presence = (s.as_presence_pct != null) ? `${parseFloat(s.as_presence_pct).toFixed(1)}%` : '—';
             const fillsSession = (s.fills_session != null) ? parseInt(s.fills_session, 10) : 0;
             const fillsCsv = (s.ws_fills_csv != null) ? parseInt(s.ws_fills_csv, 10) : 0;
-            const fillsCount = Math.max(fillsSession, fillsCsv);
-            const fillsProcNote = (fillsCsv > fillsSession && fillsSession > 0)
-                ? ` · ${fillsSession} this process`
+            const fillsCount = fillsSession;
+            const fillsProcNote = (fillsCsv > fillsSession && fillsCsv > 0)
+                ? ` · ${fillsCsv} all-time CSV`
                 : '';
             const skimDelta = sessionSkimDeltaXrp(s);
             const spreadCap = skimDelta;

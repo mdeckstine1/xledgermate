@@ -8,6 +8,8 @@ from connectors.xrpl_connector import is_plausible_rlusd_per_xrp
 
 MIN_RLUSD_DELTA = 0.0001
 MIN_XRP_DELTA = 0.00001
+# Balance-delta rows below this XRP size with RLUSD movement are usually dust/composite.
+MIN_COHERENT_FILL_XRP = 0.01
 
 # Reject composite balance deltas whose implied price is far from mid (deposits, multi-event cycles).
 DEFAULT_FILL_PRICE_MAX_REL_DEV = 0.25
@@ -61,6 +63,14 @@ def balance_delta_fill_reject_reason(
     max_relative_deviation: float = DEFAULT_FILL_PRICE_MAX_REL_DEV,
 ) -> Optional[str]:
     """None if fill is coherent; otherwise a short operator-facing reason."""
+    try:
+        xrp_amt = float(fill.get("xrp_amount") or 0)
+    except (TypeError, ValueError):
+        xrp_amt = 0.0
+    if 0 < xrp_amt < MIN_COHERENT_FILL_XRP:
+        return (
+            f"tiny XRP delta ({xrp_amt:.6f}) with RLUSD move — skip fill log"
+        )
     try:
         implied = float(fill.get("price_rlusd_per_xrp") or 0)
     except (TypeError, ValueError):

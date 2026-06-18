@@ -49,6 +49,21 @@ def test_spread_capture_skips_incoherent_artifact_row() -> None:
     assert cap == 0.0
 
 
+def test_spread_capture_skips_legacy_row_without_mid_anchor() -> None:
+    """Rows without @ mid still use stored profit (legacy); grading filters separately."""
+    cap = spread_capture_from_fill_row(
+        {
+            "side": "SELL",
+            "xrp_amount": "10.0",
+            "rlusd_amount": "12.0",
+            "price_rlusd_per_xrp": "1.2",
+            "profit_xrp_equiv": "0.042",
+            "notes": "WS pure fill (balance delta); capture ~+0.0420 XRP",
+        }
+    )
+    assert cap == 0.042
+
+
 def test_detect_fill_uses_implied_price_when_both_legs_move() -> None:
     fill = detect_fill_from_balance_delta(
         prev_xrp=100.0,

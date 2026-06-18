@@ -165,18 +165,11 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
         rt["zero_quote_operator_note"] = note
 
     try:
-        from scripts.ws_path_session_report import count_ws_fills_csv, session_spread_capture_xrp
+        from scripts.ws_path_session_report import count_ws_fills_csv
 
         rt["ws_fills_csv"] = count_ws_fills_csv()
-        fs = int(rt.get("fills_session") or 0)
-        book_pct = float(rt.get("book_spread_pct") or 0.1)
-        half_bps = max(3.0, (book_pct / 100.0) * 10_000.0 / 2.0)
-        skim = session_spread_capture_xrp(fills_session=fs, half_spread_bps=half_bps)
-        rt["session_spread_capture_xrp"] = skim
-        rt["session_skim_half_spread_bps"] = round(half_bps, 2)
     except Exception:
         rt.setdefault("ws_fills_csv", int(rt.get("fills_session") or 0))
-        rt.setdefault("session_spread_capture_xrp", rt.get("session_spread_capture_xrp"))
 
     if rt.get("session_pnl_balance_xrp") is not None:
         rt["session_wallet_delta_xrp"] = rt.get("session_pnl_balance_xrp")

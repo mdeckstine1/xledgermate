@@ -47,7 +47,7 @@ def _ws_fills_from_trades(logs_dir: Path) -> List[Dict[str, str]]:
 
 
 def _fill_capture_stats(fills: List[Dict[str, str]]) -> Dict[str, Any]:
-    from monitoring.fill_economics import mid_from_fill_notes
+    from monitoring.fill_economics import mid_at_quote_from_fill_notes
     from monitoring.fill_detection import is_coherent_fill_price
 
     if not fills:
@@ -69,18 +69,14 @@ def _fill_capture_stats(fills: List[Dict[str, str]]) -> Dict[str, Any]:
             implied = float(row.get("price_rlusd_per_xrp") or 0)
         except (TypeError, ValueError):
             implied = 0.0
-        mid_ref = mid_from_fill_notes(row)
-        if (
-            mid_ref is not None
-            and implied > 0
-            and not is_coherent_fill_price(implied, mid_ref)
-        ):
-            continue
-        graded_n += 1
+        mid_ref = mid_at_quote_from_fill_notes(row)
         try:
             cap = float(row.get("profit_xrp_equiv") or 0)
         except (TypeError, ValueError):
             cap = 0.0
+        if mid_ref is not None and implied > 0 and not is_coherent_fill_price(implied, mid_ref):
+            continue
+        graded_n += 1
         total_cap += cap
         if cap >= 0:
             pos += 1
