@@ -211,6 +211,8 @@ C2 `sample_history` soak gate still **FAIL** on short window (13 min, flip rate)
 
 **Design philosophy reminder (sacred core):** Pure A-S decides `would_quote` and reservation inside live BBO. G7 (and G2, pressure, age, G4) are **dynamic knobs** that influence vol, size, and posted prices only. Never override the inside-book guard.
 
+**Discipline rule (operator):** A-S is what we do. We will win by discipline. The self-audit and HUD cards are mirrors to confirm the bot is running the designed behavior, not sources for mid-soak overrides.
+
 **A/B verdict (preliminary — more hours welcome):** G7 v1 behaved as specified. The visibility cost and temporary Skim slip while heavy were the expected price of the asymmetric envelope. Data is now in intel JSONL tagged by `ws_as_version`. Ready to call "good enough for current pilot scale" or schedule a follow-up window for the mirror (rlusd_heavy) case.
 
 **Operator call (2026-06-18):** G7 v1 — good enough. Keep an eye on live data. Run this instance until the next required engine restart. E3 is deferred until consistent gain and a warm fuzzy on the bot. HUD G7 fields (queue + queue vs touch) are wired; restart HUD service (soak-safe) + hard refresh to surface them in Session fills card.

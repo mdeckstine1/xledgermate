@@ -57,7 +57,9 @@ Full authoritative G7 + on-ledger visibility numbers will flow after the next en
 | Peer lane               | 0                                                 | 0                                    | No competitors at pilot size |
 | Inventory behavior      | —                                                 | xrp_heavy → balanced without manual rebalance | G7 + G2 + natural flow handled it |
 
-**Design note:** Pure A-S reservation math (would_quote only when inside live BBO, optimal spread from γ/κ/vol) remains the sacred core. G7 is a thin execution envelope (posted-price backoff only) + G2 as dynamic brake on size/spread. Other knobs (pressure, book age, G4) influence inputs only — never override the inside-book guard. This run demonstrated the intended behavior and cost during inventory skew.
+**Design note:** Pure A-S reservation math (would_quote only when inside live BBO, optimal spread from γ/κ/vol) remains the sacred core. G7 is a thin execution envelope (posted-price backoff only) + G2 as dynamic brake on size/spread. Other knobs (pressure, book age, G4) influence inputs only — never override the inside-book guard.
+
+**Discipline rule:** A-S is what we do. G7 + G2 are execution only. The HUD self-audit and intel exist to verify the bot is executing the design (inventory-driven asymmetry, G2 coupling, reservation untouched). Visibility costs and regime signals are observed, not used for reactive overrides. We win by discipline.
 
 **G7 v1 Checkpoint Verdict (2026-06-18):**  
 [x] Good enough for current pilot scale.  
