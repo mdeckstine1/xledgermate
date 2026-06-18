@@ -171,3 +171,27 @@ def test_g4_peer_lane_in_quote_path() -> None:
         assert skim.ask_size > empty.ask_size
 
     asyncio.run(run())
+
+
+def test_g7_xrp_heavy_ask_tighter_touch() -> None:
+    path = PureQuotePath(gamma=0.35, kappa=3.5)
+
+    async def run() -> None:
+        d = await path.compute_decision(
+            mid=1.10,
+            best_bid=1.099,
+            best_ask=1.101,
+            xrp_bal=200.0,
+            rlusd_bal=80.0,
+            target_ratio=0.55,
+        )
+        assert d.ask_touch_backoff_bps == 3.0
+        assert d.bid_touch_backoff_bps == 8.0
+        assert d.g7_summary.startswith("G7 xrp_heavy")
+        assert d.suggested_ask is not None
+        assert d.suggested_ask >= d.best_ask
+        if not d.pause_bids:
+            assert d.suggested_bid is not None
+            assert d.suggested_bid <= d.best_bid
+
+    asyncio.run(run())

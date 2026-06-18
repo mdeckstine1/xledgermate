@@ -142,6 +142,9 @@ class RuntimeState:
     presence_by_pressure: Dict[str, Any] = field(default_factory=dict)
     zero_quote_breakdown: Dict[str, Any] = field(default_factory=dict)
     soak_evaluation: Dict[str, Any] = field(default_factory=dict)
+    g7_summary: str = ""
+    bid_touch_backoff_bps: float = 0.0
+    ask_touch_backoff_bps: float = 0.0
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -307,4 +310,7 @@ class RuntimeStateStore:
             presence_by_pressure=dict(data.get("presence_by_pressure") or {}),
             zero_quote_breakdown=dict(data.get("zero_quote_breakdown") or {}),
             soak_evaluation=dict(data.get("soak_evaluation") or {}),
+            g7_summary=str(data.get("g7_summary", "")),
+            bid_touch_backoff_bps=float(data.get("bid_touch_backoff_bps", 0.0)),
+            ask_touch_backoff_bps=float(data.get("ask_touch_backoff_bps", 0.0)),
         )

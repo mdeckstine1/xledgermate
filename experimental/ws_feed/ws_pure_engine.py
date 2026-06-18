@@ -42,6 +42,7 @@ from monitoring.csv_logger import CSVLogger
 from monitoring.fill_detection import detect_fill_from_balance_delta
 from monitoring.fill_economics import estimate_spread_capture_xrp
 from monitoring.telegram_alerts import TelegramAlerts
+from utils.book_visibility import enrich_open_offers, quote_visibility
 from risk.drawdown import DrawdownMonitor, portfolio_value_xrp, session_pnl_balance_delta_xrp
 from risk.kill_switch import KillSwitch
 from strategy.fill_quality import FillQualityState, FillQualityTracker
@@ -753,10 +754,20 @@ class WsPureTradingEngine:
         flags = WsFeatureFlags.from_config(config)
         drawdown_pct = self.drawdown_monitor.get_drawdown_percent()
         open_offers = []
+        enriched_offers: list = []
+        quotes_at_touch = True
+        worst_vs_touch_bps = 0.0
+        quote_visibility_summary = ""
         if self.connector:
             try:
                 offers = await self.connector.get_open_offers()
                 open_offers = [o.__dict__ if hasattr(o, "__dict__") else o for o in offers]
+                enriched_offers = enrich_open_offers(
+                    open_offers, best_bid=bb, best_ask=ba
+                )
+                quotes_at_touch, worst_vs_touch_bps, quote_visibility_summary = quote_visibility(
+                    enriched_offers
+                )
             except Exception:
                 open_offers = []
         ed = engine_dec or {}
@@ -912,6 +923,12 @@ class WsPureTradingEngine:
             g4_active=bool(ed.get("g4_active")),
             g4_summary=str(ed.get("g4_summary") or ""),
             competitor_intel=dict(self._last_comp_intel),
+            g7_summary=str(ed.get("g7_summary") or ""),
+            bid_touch_backoff_bps=float(ed.get("bid_touch_backoff_bps") or 0.0),
+            ask_touch_backoff_bps=float(ed.get("ask_touch_backoff_bps") or 0.0),
+            quotes_at_touch=quotes_at_touch,
+            worst_vs_touch_bps=float(worst_vs_touch_bps),
+            quote_visibility_summary=str(quote_visibility_summary),
         )
         self.state_store.save(state)
         if ed and flags.intel_log:

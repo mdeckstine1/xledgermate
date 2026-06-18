@@ -158,6 +158,9 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "inside_l1": decision.inside_l1,
         "reservation_to_bbo_delta_bps": decision.reservation_to_bbo_delta_bps,
         "effective_quote_age_at_fill_seconds": decision.effective_quote_age_at_fill_seconds,
+        "g7_summary": decision.g7_summary,
+        "bid_touch_backoff_bps": decision.bid_touch_backoff_bps,
+        "ask_touch_backoff_bps": decision.ask_touch_backoff_bps,
     }
 
 

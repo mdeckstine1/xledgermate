@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from experimental.competitor_pressure import apply_competitor_pressure, from_intel_dict
+from experimental.ws_feed.execution_envelope import (
+    compute_execution_envelope,
+    touch_prices_from_backoff,
+)
 from experimental.ws_feed.dynamic_sizing import build_pure_quote_ladder, compute_pure_l1_sizes
 from experimental.ws_feed.pure_inventory_policy import (
     apply_pause_to_ladder,
@@ -118,6 +122,9 @@ class PureQuoteDecision:
     inside_l1: bool = False
     reservation_to_bbo_delta_bps: Optional[float] = None
     effective_quote_age_at_fill_seconds: Optional[float] = None
+    g7_summary: str = ""
+    bid_touch_backoff_bps: float = 0.0
+    ask_touch_backoff_bps: float = 0.0
 
     def to_runtime_dict(self, *, competitor_intel: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -154,6 +161,9 @@ class PureQuoteDecision:
             "inside_l1": self.inside_l1,
             "reservation_to_bbo_delta_bps": self.reservation_to_bbo_delta_bps,
             "effective_quote_age_at_fill_seconds": self.effective_quote_age_at_fill_seconds,
+            "g7_summary": self.g7_summary,
+            "bid_touch_backoff_bps": self.bid_touch_backoff_bps,
+            "ask_touch_backoff_bps": self.ask_touch_backoff_bps,
         }
         if competitor_intel:
             out.update({k: v for k, v in competitor_intel.items() if k != "top_competitors"})
@@ -217,6 +227,8 @@ def _build_summary(
         parts.append(decision.size_rationale)
     if decision.g2_active and decision.g2_summary:
         parts.append(decision.g2_summary)
+    if decision.g7_summary:
+        parts.append(decision.g7_summary)
     if decision.g4_active and decision.g4_summary:
         parts.append(decision.g4_summary)
     if decision.inventory_limits_summary:
@@ -450,10 +462,22 @@ class PureQuotePath:
         if inv_policy.policy_tag:
             size_rationale = f"{size_rationale} | {inv_policy.policy_tag}"
 
+        g7 = compute_execution_envelope(
+            inventory_label=inv_state.label,
+            inventory_skew=inv_skew,
+            g2_spread_mult=g2.spread_mult,
+        )
+        l1_bid_price, l1_ask_price = touch_prices_from_backoff(
+            best_bid=best_bid,
+            best_ask=best_ask,
+            bid_backoff_bps=g7.bid_touch_backoff_bps,
+            ask_backoff_bps=g7.ask_touch_backoff_bps,
+        )
+
         ladder = build_pure_quote_ladder(
             mid=mid,
-            l1_bid_price=as_quote.bid_price,
-            l1_ask_price=as_quote.ask_price,
+            l1_bid_price=l1_bid_price,
+            l1_ask_price=l1_ask_price,
             l1_bid_size=inv_policy.bid_size_xrp,
             l1_ask_size=inv_policy.ask_size_xrp,
             optimal_spread_pct=as_quote.optimal_spread_pct,
@@ -500,8 +524,8 @@ class PureQuotePath:
             ai_is_skimmable=ai_skimmable,
             ai_rationale=ai_rationale,
             ai_suggested_posture=ai_posture,
-            suggested_bid=as_quote.bid_price if would_quote_reservation and not inv_policy.pause_bids else None,
-            suggested_ask=as_quote.ask_price if would_quote_reservation and not inv_policy.pause_asks else None,
+            suggested_bid=l1_bid_price if would_quote_reservation and not inv_policy.pause_bids else None,
+            suggested_ask=l1_ask_price if would_quote_reservation and not inv_policy.pause_asks else None,
             bid_size=inv_policy.bid_size_xrp,
             ask_size=inv_policy.ask_size_xrp,
             l1_xrp=sizes.l1_xrp,
@@ -525,6 +549,9 @@ class PureQuotePath:
             g4_peer_pressure=g4.peer_pressure,
             inside_l1=inside_l1,
             reservation_to_bbo_delta_bps=reservation_delta_bps,
+            g7_summary=g7.summary,
+            bid_touch_backoff_bps=g7.bid_touch_backoff_bps,
+            ask_touch_backoff_bps=g7.ask_touch_backoff_bps,
         )
         skim = (competitor_intel or {}).get("competitor_skim_advice", "") or ""
         decision.quote_decision_summary = _build_summary(

@@ -7,6 +7,20 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+---
+
+## [2.1.16] — 2026-06-18 (`Ashigaru Kaizen II`)
+
+**Theme:** G7 execution envelope — per-side touch backoff × G2 brake.
+
+### Added
+
+- **`execution_envelope.py`** — inventory-asymmetric touch (join side 3 bps, passive 8 bps) × `g2.spread_mult`.
+- **Visibility** — `quote_visibility` + `worst_vs_touch_bps` on production runtime export.
+- **RuntimeState** — `g7_summary`, `bid_touch_backoff_bps`, `ask_touch_backoff_bps`.
+
+---
+
 ## [2.1.15] — 2026-06-18 (`Ashigaru Kaizen II`)
 
 **Theme:** Engine-window bundle M2–M5 — fill age, stale-cross, production soak samples.

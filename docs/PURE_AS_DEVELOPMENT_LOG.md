@@ -146,16 +146,17 @@ VPS intel: ~122 min gap 2026-06-16 (cycle reset); brief Jun 17 restarts ~1–2 m
 
 ---
 
-## Engine-window bundle (2026-06-18 — coded, pending VPS deploy)
+## Engine-window bundle (2026-06-18 — deployed v2.1.15)
 
-Single `xledgermate` restart deploys:
+Single `xledgermate` restart deployed M2–M5 on VPS. Post-deploy: gates + queue soak for **G7** spec.
 
-1. **M2** — `OfferAgeTracker` records place times in `_sync_offers`; fill age in `_detect_fills` → `effective_quote_age_at_fill_seconds` on runtime/HUD  
-2. **M3** — `detect_stale_cross` compares BBO before vs after competitor-intel scrape → `reservation_crossed_after_ws_sample`  
-3. **M4** — `append_runtime_sample` each cycle in `_persist_cycle`; `sample_history`, C1 presence, zero-quote breakdown, soak gate on `runtime_state.json`  
-4. **M5** — confirmed: `enforce_reservation_gate` already on `PureQuotePath` production path  
-5. **Fill economics** — implied price in `fill_detection.py` (ships with same engine restart)  
-6. **Post-deploy** — `fill_quote_age_report`, `ws_runtime_analysis`, `live_activation_grading --gate`
+---
+
+## G7 execution envelope (shipped v2.1.16)
+
+**Problem:** v2.1.15 posted both sides ~8 bps behind touch; xrp-heavy 1 XRP bids invisible.
+
+**Shipped:** Three-rule envelope in `execution_envelope.py` — per-side touch from inventory, widen via `g2.spread_mult` only, visibility on runtime. No modes, no Grok in hot path.
 
 ---
 
@@ -185,6 +186,7 @@ Full IDs and blockers: critical path **After segment** table.
 | HUD mirror | `experimental/ws_feed/ws_hud_production.py` |
 | Operator UI | `experimental/ws_feed/hud/index.html` |
 | G6 grades | `experimental/ws_feed/live_activation_grading.py` |
+| G7 envelope | `experimental/ws_feed/execution_envelope.py` |
 | Session fills gate | `scripts/ws_path_session_report.py` |
 | Intel JSONL | `experimental/ws_feed/intel_decisions_log.py` |
 
