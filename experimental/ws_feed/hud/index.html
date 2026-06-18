@@ -68,7 +68,20 @@
         .content { flex: 1; padding: 16px; overflow-y: auto; }
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
         .card { background: #1e2937; border-radius: 8px; padding: 12px; border: 1px solid #334155; }
-        .label { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+        .label { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; line-height: 1.35; }
+        /* Card section title (block header, not a metric-row label) */
+        .card > .label:first-child {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+        /* Hero value under card title (e.g. live book mid) */
+        .card > .value {
+            margin-top: 0;
+            margin-bottom: 6px;
+            line-height: 1.25;
+        }
         .info {
             font-size: 0.55rem;
             background: #475569;
@@ -112,13 +125,38 @@
         .collapsible-content.collapsed {
             display: none;
         }
-        .value { font-size: 1.1rem; font-weight: 600; margin-top: 2px; }
+        .value { font-size: 1.05rem; font-weight: 600; line-height: 1.3; }
         .good { color: #4ade80; }
         .warn { color: #facc15; }
         .bad { color: #f87171; }
         .note { font-family: ui-monospace, monospace; font-size: 0.8rem; background: #0f172a; padding: 6px; border-radius: 4px; white-space: pre-wrap; }
         .recent { max-height: 180px; overflow-y: auto; font-size: 0.75rem; }
-        .metric-row { display: flex; justify-content: space-between; margin: 2px 0; font-size: 0.9rem; }
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 10px;
+            margin: 4px 0;
+            padding: 1px 0;
+            line-height: 1.35;
+            min-height: 1.35em;
+        }
+        .metric-row .label {
+            flex: 1 1 42%;
+            min-width: 0;
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .metric-row .value {
+            flex: 0 1 58%;
+            margin-top: 0;
+            text-align: right;
+            font-size: 0.88rem;
+            font-weight: 600;
+            line-height: 1.35;
+            word-break: break-word;
+        }
         .sidebar-value { font-size: 0.95rem; font-weight: 600; margin-top: 1px; }
         .nav { display: flex; gap: 12px; background: #1e2937; padding: 8px 16px; border-bottom: 1px solid #334155; flex-shrink: 0; }
         .nav a { color: #60a5fa; text-decoration: none; padding: 4px 10px; border-radius: 4px; font-size: 0.9rem; }
@@ -154,7 +192,7 @@
             padding-bottom: 24px; /* breathing room for bottom buttons when scrolled to end */
         }
 
-        .metric-grade { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid #1e293b; font-size: 0.78rem; }
+        .metric-grade { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 0; border-bottom: 1px solid #1e293b; font-size: 0.78rem; line-height: 1.35; }
         .metric-grade:last-child { border-bottom: none; }
         .grade-pill { font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; white-space: nowrap; }
         .grade-good { background: rgba(74,222,128,0.15); color: #4ade80; }
@@ -184,7 +222,7 @@
         .soak-pill .soak-value {
             font-size: 1rem;
             font-weight: 700;
-            margin-top: 3px;
+            margin-top: 2px;
             line-height: 1.2;
         }
         .soak-pill.good { border-color: #22c55e; }
@@ -467,7 +505,8 @@
             font-weight: 600;
             color: #94a3b8;
             letter-spacing: 0.04em;
-            margin-bottom: 2px;
+            margin-bottom: 4px;
+            line-height: 1.2;
         }
         .ladder-level.planned .ladder-level-tag::after {
             content: ' · planned';
@@ -759,7 +798,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 <p style="font-size:0.8rem; color:#94a3b8; margin-top:0;">Grades from Phase E §7 — spread capture is primary; inventory is steering. G6 activation tier grades live posture. Log: <code style="font-size:0.7rem;">logs/intel_decisions.jsonl</code></p>
 
                 <div class="card full-width" style="margin-top:8px; margin-bottom:12px;">
-                    <div class="metric-row" style="align-items:center;">
+                    <div class="metric-row">
                         <span class="label">G6 activation</span>
                         <span id="metrics-g6-tier" class="grade-pill grade-unknown">—</span>
                     </div>
