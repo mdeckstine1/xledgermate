@@ -203,12 +203,27 @@ def main() -> int:
         )
     print()
 
+    dec_ok = True
+    print("--- DECISIONS.JSONL (last row) ---")
+    dec_path = LOGS / "decisions.jsonl"
+    if dec_path.exists():
+        last = dec_path.read_text(encoding="utf-8").strip().splitlines()[-1]
+        row = json.loads(last)
+        rt_wq = bool(d.get("would_quote") or d.get("zero_quote_reason") == "quoted")
+        dec_wq = bool(row.get("would_quote"))
+        print(f"  cycle={row.get('cycle')} decisions would_quote={dec_wq} runtime_quoted={rt_wq}")
+        if dec_wq != rt_wq:
+            dec_ok = False
+            print(f"  ISSUE: decisions.jsonl would_quote={dec_wq} != runtime quoted={rt_wq}")
+    print(f"  OK: {dec_ok}")
+    print()
+
     kill = _load_json(LOGS / "kill_switch.json")
     print("--- KILL SWITCH ---")
     print(f"  active={kill.get('active', d.get('kill_switch_active'))} reason={kill.get('reason', d.get('kill_switch_reason'))}")
     print()
 
-    all_ok = proc_ok and rt_ok and log_ok and m6_ok
+    all_ok = proc_ok and rt_ok and log_ok and m6_ok and dec_ok
     print("=" * 60)
     print("VERDICT:", "SOLID" if all_ok else "NEEDS ATTENTION")
     print("=" * 60)

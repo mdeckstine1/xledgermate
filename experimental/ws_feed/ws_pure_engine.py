@@ -526,7 +526,9 @@ class WsPureTradingEngine:
             open_offers=len(await connector.get_open_offers()),
             dry_run=config.dry_run,
         )
-        self._append_decision_file(cycle=self._cycle_count, mid=mid, execution=execution)
+        self._append_decision_file(
+            cycle=self._cycle_count, mid=mid, execution=execution, would_quote=would_quote
+        )
         hud_ladder = ladder_intents_for_hud(engine_dec.get("quote_intents") or [])
         await self._persist_cycle(
             config, mid, bb, ba, balance_xrp, balance_rlusd, portfolio, intents, offers_last,
@@ -804,14 +806,16 @@ class WsPureTradingEngine:
             return "Live WS pure: no quote this cycle (A-S protected)."
         return "Live WS pure: no placement this cycle."
 
-    def _append_decision_file(self, *, cycle: int, mid: Optional[float], execution: str) -> None:
+    def _append_decision_file(
+        self, *, cycle: int, mid: Optional[float], execution: str, would_quote: bool
+    ) -> None:
         record = {
             "cycle": cycle,
             "mid_rlusd_per_xrp": mid,
             "execution": execution,
             "as_mode": "pure",
             "ws_as_version": current_ws_as_version(),
-            "would_quote": "would sync" in execution.lower(),
+            "would_quote": bool(would_quote),
             "pid": os.getpid(),
             "events": [
                 {"ts_utc": e.ts_utc, "category": e.category, "message": e.message}
