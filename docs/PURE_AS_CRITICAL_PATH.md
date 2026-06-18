@@ -17,7 +17,7 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 | # | Task | Status |
 |---|------|--------|
 | — | Engine restart + deploy M6 per-sequence quote age | [x] 2026-06-18 — v2.1.18 |
-| — | Post-deploy snapshot (baseline at 0 fills) | [ ] run immediately after restart |
+| — | Post-deploy snapshot (baseline at 0 fills) | [x] `logs/post_deploy_snapshot_m6_2.1.18.txt` |
 | — | **M6 eval soak — target 50 session fills** | ongoing |
 | — | At 50 fills: compare fill quote age (M6 vs M2 side-only offline report), Skim Δ, toxic@30s, cancel/fill | pending |
 | — | Watch G6 tier, markout@30s, G7 posture vs inventory | ongoing |
