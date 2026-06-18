@@ -21,7 +21,7 @@ from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig, is_trustworthy_rlusd_mid
 from core import DecisionLog, VERSION
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
-from engine.order_sync import plan_order_sync
+from engine.order_sync import find_offer_sequence_for_intent, plan_order_sync
 from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter
 from experimental.ws_feed.intel_decisions_log import (
     append_intel_record,
@@ -583,19 +583,41 @@ class WsPureTradingEngine:
             )
         cancelled = 0
         for seq in plan.cancel_sequences:
+            self._offer_age.forget_sequence(seq)
             try:
                 await connector.cancel_offer(seq)
                 cancelled += 1
             except Exception as exc:
                 self.decision_log.add("execution", f"Cancel seq {seq} failed: {exc}")
         placed = 0
+        placed_intents: List[QuoteIntent] = []
+        size_tol = float(getattr(config, "order_size_tolerance_xrp", 0.75))
         for intent in plan.place_intents:
             try:
                 await connector.place_quote(intent)
                 placed += 1
-                self._offer_age.record_place(intent.side)
+                placed_intents.append(intent)
             except Exception as exc:
                 self.decision_log.add("execution", f"Place {intent.side} failed: {exc}")
+        if placed_intents:
+            try:
+                refreshed_offers = await connector.get_open_offers()
+            except Exception as exc:
+                refreshed_offers = []
+                self.decision_log.add("execution", f"Open offers refresh after place failed: {exc}")
+            placed_utc = datetime.now(tz=timezone.utc)
+            for intent in placed_intents:
+                seq = find_offer_sequence_for_intent(
+                    intent,
+                    refreshed_offers,
+                    price_tolerance_pct=price_tol,
+                    size_tolerance_xrp=size_tol,
+                )
+                self._offer_age.record_place(
+                    intent.side,
+                    placed_utc=placed_utc,
+                    sequence=seq,
+                )
         self._offers_cancelled += cancelled
         self._offers_kept += plan.kept_count
         self.decision_log.add(

@@ -221,6 +221,25 @@ Full numbers and table in `PURE_AS_CRITICAL_PATH.md`.
 
 ---
 
+## 113-fill checkpoint (2026-06-18, same soak segment)
+
+**Reached ~113–114 session fills** on v2.1.17 without engine restart.
+
+- **Skim Δ** −0.101 XRP (slightly better than −0.106 at 61 fills).
+- **Wallet Δ** +0.102 XRP — spot/MTM; not edge.
+- **toxic@30s** 4.5% (down from ~26% peak during xrp_heavy leg).
+- **markout@30s** +0.017%.
+- **cancel/fill** 2.35 (up from 1.77 at 61 — watch).
+- **presence** 93.4%.
+- **Inventory / G7:** rlusd_heavy — bid join 3 bps, ask passive 8 bps (mirror of xrp_heavy case at 61 fills).
+- **G2** neutral (×1.0).
+
+**Verdict:** G7 v1 confirmed through both inventory mirrors. Continue soak; no mid-soak overrides.
+
+**Next dev:** **M6** per-sequence quote age (M2 side-only age reviewed; many 0s / p95 ~32s in fill-age report). Ship at next engine restart. Telegram hourly narrative on hold.
+
+---
+
 ## Post-soak backlog (condensed)
 
 | Track | Items |

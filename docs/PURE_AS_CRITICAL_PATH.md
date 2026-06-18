@@ -2,7 +2,7 @@
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
 **Version:** v2.1.17 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-18
+**Last updated:** 2026-06-18 (113-fill checkpoint)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
@@ -17,16 +17,40 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 | # | Task | Status |
 |---|------|--------|
 | — | Post-deploy gates + 60-fill checkpoint | [x] done 2026-06-18 |
-| — | G7 v1 soak A/B validation | [x] Good enough for current scale (operator call 2026-06-18). Keep eye on live data. Run until next engine restart needed. |
+| — | Post-deploy gates + **113-fill checkpoint** | [x] done 2026-06-18 (same soak segment, v2.1.17) |
+| — | G7 v1 soak A/B validation | [x] Good enough for current scale (operator call 2026-06-18). Confirmed through **113 fills** — see checkpoint below. Run until next engine restart needed. |
 | — | Watch G6 tier, toxic@30s, markout@30s (v2.1.17 soak) | ongoing |
-| — | **Queue review** — vs-touch bps, cancel/fill, fill age (G7 A/B) | [x] baseline captured + 61-fill data in intel JSONL |
+| — | **Queue review** — vs-touch bps, cancel/fill, fill age (G7 A/B) | [x] baseline + 61-fill + **113-fill** data in runtime + intel JSONL |
 | — | **Skim Δ** vs wallet Δ | [x] improved — coherence guard + HUD no longer overwrites |
 | — | HUD: G7 queue + "Queue vs touch" visible in Session fills card | [x] HUD-only restart (soak-safe) now fully synthesizes G7 posture via compute_execution_envelope (using live inventory_label + g2_spread_mult) + queue visibility from planned ladder or suggested L1. Both rows populate immediately. (Authoritative on-ledger visibility numbers arrive after engine restart.) |
+| — | **M6** Per-sequence quote age | [x] **implemented** — deploy at next engine restart (not mid-soak) |
+| — | Telegram hourly narrative (Grok lead-in) | on hold (operator 2026-06-18) |
 
 **G7 soak checkpoint (2026-06-18, ~61 session fills on v2.1.17):** C2 sample_history gate now **PASS** (123 min, 86.8% presence, flip 0.141). G6 still `pilot_watch` (toxicity + empty peer lane) but gate PASS. Session Skim slipped to −0.106 XRP during xrp_heavy leg (adverse flow on the join-ask side) then inventory normalized. Markout@30s recovered to ~0. See A/B below. Full snapshot in `logs/post_deploy_snapshot.txt`. After HUD restart + hard refresh you will see:
 - G7 queue: the correct decision e.g. "bid passive 9.0bps · ask join 3.4bps" (or ×G2 when braking), computed on the HUD side from the current inventory_label + g2_spread_mult that the engine *is* already writing.
 - Queue vs touch: worst-bps or "at touch / back / join" summary computed from the planned quote ladder vs BBO in the snapshot (proxy until engine restart writes the real on-ledger visibility).
 Full authoritative G7 + on-ledger visibility numbers will flow after the next engine restart (when the ws-engine writes them into runtime_state.json).
+
+**113-fill checkpoint (2026-06-18, same soak segment — v2.1.17, no engine restart):**
+
+| Metric | ~61 fills | ~113 fills | Notes |
+|--------|-----------|------------|-------|
+| Session fills | 61 | **113–114** | ~2× sample; same segment |
+| Skim Δ | −0.106 XRP | **−0.101 XRP** | Slightly improved; edge still negative on session |
+| Wallet Δ | — | **+0.102 XRP** | Spot/MTM positive — not trading edge |
+| toxic@30s | ~26% peak (xrp_heavy) | **4.5%** | Recovered after inventory flip |
+| markout@30s | ~0 | **+0.017%** | Positive |
+| cancel/fill | 1.77 | **2.35** | Higher churn — watch |
+| presence | ~87% | **93.4%** | Improved |
+| inventory / G7 | xrp_heavy → balanced | **rlusd_heavy** — bid join 3 bps, ask passive 8 bps | Mirror case validated |
+| G2 | braking during skew | **neutral** (×1.0) | |
+| G6 tier | pilot_watch | pilot_watch | Gate still PASS |
+
+**Verdict:** G7 v1 holds through 113 fills. Both inventory mirrors seen (xrp_heavy at 61, rlusd_heavy at 113). Skim Δ flat-to-slightly-better vs 61-fill nadir; toxicity and markout healthier. **Nothing to override** — continue soak. Re-run `scripts/soak_dashboard_report.py` or HUD Reports → Soak dashboard for live bundle.
+
+### Next dev — M6 per-sequence quote age
+
+M2 side-only age understates resting time when cancel/replace happens before a fill (soak fill-age report: many 0s, p95 ~32s). **M6** tracks `placed_utc` per offer **sequence** (clear on cancel; resolve age at fill from last sequence on filled side). Ships at **next engine restart** — not mid-soak.
 
 ### Next engine window — G7 execution envelope
 
@@ -36,9 +60,9 @@ Full authoritative G7 + on-ledger visibility numbers will flow after the next en
 | 2 | Per-side touch | xrp-heavy → ask 3 bps / bid 8 bps; rlusd-heavy → opposite |
 | 3 | G2 coupling | `backoff × max(1, g2.spread_mult)` |
 | 4 | Visibility + debug | `worst_vs_touch_bps`, `quote_visibility_summary`, `g7_summary` on runtime |
-| 5 | Validation | Soak A/B vs v2.1.15 — **in progress** (baseline 2026-06-18) |
+| 5 | Validation | Soak A/B vs v2.1.15 — [x] **complete at 113 fills** (2026-06-18) |
 
-**Blocker:** [x] accumulate v2.1.16+ data — done at 61 fills.  
+**Blocker:** [x] accumulate v2.1.16+ data — done at 113 fills.  
 **Status:** [x] G7 v1 — Good enough (see verdict below). Keep monitoring live data. No engine restart until necessary.
 
 **Order:** monitor markout/toxic/cancel vs baseline → sign off or tune envelope.
@@ -75,7 +99,7 @@ Focus on consistency rather than perfection at pilot size:
 - **Session Skim Δ** — direction and stability (look for flattening or positive drift as inventory stays near target).
 - **mean_markout_30s_pct** — trend (ideally staying > −0.02% or improving).
 - **toxic_ratio_30s** — staying ≤ 28–30% or trending down.
-- **cancel_per_fill** — flat or slowly improving (currently ~1.77).
+- **cancel_per_fill** — flat or slowly improving (was ~1.77 at 61 fills; **~2.35 at 113** — watch).
 - **G7 posture vs inventory** — when inventory_label is "balanced", both sides should be symmetric (~8–9 bps). Confirm via HUD + runtime.
 - **Queue vs touch / worst_vs_touch_bps** — visible in Session fills card after HUD restart + hard refresh.
 - **Fills per hour** — rough consistency (thin book → 1–3/hr is normal).
@@ -192,7 +216,7 @@ Single line operator can read:
 
 | # | Item | Blocker |
 |---|------|---------|
-| **G7** | **Execution envelope** — shipped v2.1.16 | [x] soak A/B data at 61 fills; [x] Good enough for current scale (keep watching live data) |
+| **G7** | **Execution envelope** — shipped v2.1.16 | [x] soak A/B at **113 fills**; good enough |
 | P1–P3 | Per-peer history, tx correlation, full L1–L3 in runtime | Engine + soak data |
 | P4–P6 | Structured `PeerBriefing`, G4 nudges, F2 engine hook | P1 + markout |
 | P7 | Async submit / tx rate instrumentation (L1–L4) | M2/M3 review |
@@ -201,7 +225,7 @@ Single line operator can read:
 | E3 | 11k funding + rebalance execution | [ ] waiting for consistent gain + warm fuzzy on the bot (on operator timeline) |
 | H3–H7 | Arb paper/live, USDC, path scanner | G6 pass + H1 monitor data |
 | F4 | Grok suggestion → outcome correlation | Fill attribution |
-| M6 | Per-sequence quote age | After M2 soak review |
+| **M6** | **Per-sequence quote age** | [x] implemented — **deploy next engine restart** |
 
 ---
 
@@ -335,7 +359,7 @@ scripts/vps_deploy_ashigaru.sh             # VPS deploy (plan segment end)
 2. HUD + long runs — done  
 3. Dry-run WS offers — done  
 4. E1 live ws-engine — done (2026-06-15)  
-5. **Current:** v2.1.17 live → [x] G7 v1 good enough (61 fills) → continue soak + watch metrics → E3 when consistent gain + warm fuzzy (operator timeline)
+5. **Current:** v2.1.17 live → [x] G7 v1 good enough (**113 fills**) → continue soak + watch cancel/fill → **M6** at next engine restart → E3 when consistent gain + warm fuzzy (operator timeline)
 
 ---
 

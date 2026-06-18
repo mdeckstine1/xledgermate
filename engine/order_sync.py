@@ -142,6 +142,30 @@ def plan_order_sync(
     )
 
 
+def find_offer_sequence_for_intent(
+    intent: QuoteIntent,
+    open_offers: Sequence[OpenOffer],
+    *,
+    price_tolerance_pct: float,
+    size_tolerance_xrp: float,
+) -> Optional[int]:
+    """Ledger sequence for a placed intent matched against AccountOffers (M6)."""
+    side = (intent.side or "").strip().lower()
+    for offer in open_offers:
+        if offer.side != side:
+            continue
+        if not _price_within_tolerance(
+            intent.price, offer.price, tol_pct=price_tolerance_pct
+        ):
+            continue
+        if not _size_within_tolerance(
+            intent.size_xrp, offer.size_xrp, tol_xrp=size_tolerance_xrp
+        ):
+            continue
+        return offer.sequence
+    return None
+
+
 def offers_off_touch(
     open_offers: Sequence[OpenOffer],
     *,
