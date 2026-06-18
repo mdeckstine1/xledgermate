@@ -1,8 +1,8 @@
 # Pure A-S Critical Path
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
-**Version:** v2.1.17 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-18 (113-fill checkpoint)
+**Version:** v2.1.18 · **Branch:** `Ashigaru-Kaizen-II`  
+**Last updated:** 2026-06-18 (M6 deploy — 50-fill eval soak started)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
@@ -12,19 +12,39 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 
 ## Active TODO
 
-### Now (operator)
+### Now (operator) — M6 50-fill eval soak (v2.1.18)
+
+| # | Task | Status |
+|---|------|--------|
+| — | Engine restart + deploy M6 per-sequence quote age | [x] 2026-06-18 — v2.1.18 |
+| — | Post-deploy snapshot (baseline at 0 fills) | [ ] run immediately after restart |
+| — | **M6 eval soak — target 50 session fills** | ongoing |
+| — | At 50 fills: compare fill quote age (M6 vs M2 side-only offline report), Skim Δ, toxic@30s, cancel/fill | pending |
+| — | Watch G6 tier, markout@30s, G7 posture vs inventory | ongoing |
+| — | Telegram hourly narrative (Grok lead-in) | on hold |
+
+**M6 eval gates (at 50 fills):**
+
+- `effective_quote_age_at_fill_seconds` on runtime reflects per-sequence tracking (not all ~0 when p95 offline age > 10s).
+- Fill-age report: median/p95 sensible vs v2.1.17 segment (side-only had many 0s, p95 ~32s).
+- Skim Δ trend — direction matters more than sign at pilot size.
+- toxic@30s ≤ 30%; cancel/fill not worse than 2.5 sustained.
+- G7 posture tracks inventory_label (both mirrors if flow allows).
+
+**Discipline:** A-S sacred; M6 is measurement only — no strategy overrides mid-soak.
+
+<details>
+<summary>Prior soak segment (v2.1.17 — archived TODO)</summary>
 
 | # | Task | Status |
 |---|------|--------|
 | — | Post-deploy gates + 60-fill checkpoint | [x] done 2026-06-18 |
-| — | Post-deploy gates + **113-fill checkpoint** | [x] done 2026-06-18 (same soak segment, v2.1.17) |
-| — | G7 v1 soak A/B validation | [x] Good enough for current scale (operator call 2026-06-18). Confirmed through **113 fills** — see checkpoint below. Run until next engine restart needed. |
-| — | Watch G6 tier, toxic@30s, markout@30s (v2.1.17 soak) | ongoing |
-| — | **Queue review** — vs-touch bps, cancel/fill, fill age (G7 A/B) | [x] baseline + 61-fill + **113-fill** data in runtime + intel JSONL |
-| — | **Skim Δ** vs wallet Δ | [x] improved — coherence guard + HUD no longer overwrites |
-| — | HUD: G7 queue + "Queue vs touch" visible in Session fills card | [x] HUD-only restart (soak-safe) now fully synthesizes G7 posture via compute_execution_envelope (using live inventory_label + g2_spread_mult) + queue visibility from planned ladder or suggested L1. Both rows populate immediately. (Authoritative on-ledger visibility numbers arrive after engine restart.) |
-| — | **M6** Per-sequence quote age | [x] **implemented** — deploy at next engine restart (not mid-soak) |
-| — | Telegram hourly narrative (Grok lead-in) | on hold (operator 2026-06-18) |
+| — | Post-deploy gates + **113-fill checkpoint** | [x] done 2026-06-18 |
+| — | G7 v1 soak A/B validation | [x] good enough through 113 fills |
+| — | **Queue review** G7 A/B | [x] 61 + 113 fill data |
+| — | **M6** implementation | [x] shipped in 2.1.18 |
+
+</details>
 
 **G7 soak checkpoint (2026-06-18, ~61 session fills on v2.1.17):** C2 sample_history gate now **PASS** (123 min, 86.8% presence, flip 0.141). G6 still `pilot_watch` (toxicity + empty peer lane) but gate PASS. Session Skim slipped to −0.106 XRP during xrp_heavy leg (adverse flow on the join-ask side) then inventory normalized. Markout@30s recovered to ~0. See A/B below. Full snapshot in `logs/post_deploy_snapshot.txt`. After HUD restart + hard refresh you will see:
 - G7 queue: the correct decision e.g. "bid passive 9.0bps · ask join 3.4bps" (or ×G2 when braking), computed on the HUD side from the current inventory_label + g2_spread_mult that the engine *is* already writing.
@@ -225,7 +245,7 @@ Single line operator can read:
 | E3 | 11k funding + rebalance execution | [ ] waiting for consistent gain + warm fuzzy on the bot (on operator timeline) |
 | H3–H7 | Arb paper/live, USDC, path scanner | G6 pass + H1 monitor data |
 | F4 | Grok suggestion → outcome correlation | Fill attribution |
-| **M6** | **Per-sequence quote age** | [x] implemented — **deploy next engine restart** |
+| **M6** | **Per-sequence quote age** | [x] deployed v2.1.18 — **50-fill eval soak in progress** |
 
 ---
 
@@ -359,7 +379,7 @@ scripts/vps_deploy_ashigaru.sh             # VPS deploy (plan segment end)
 2. HUD + long runs — done  
 3. Dry-run WS offers — done  
 4. E1 live ws-engine — done (2026-06-15)  
-5. **Current:** v2.1.17 live → [x] G7 v1 good enough (**113 fills**) → continue soak + watch cancel/fill → **M6** at next engine restart → E3 when consistent gain + warm fuzzy (operator timeline)
+5. **Current:** v2.1.18 live → **M6 50-fill eval soak** → sign off M6 at 50 fills → E3 when consistent gain + warm fuzzy
 
 ---
 
