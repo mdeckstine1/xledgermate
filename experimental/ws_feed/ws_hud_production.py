@@ -205,28 +205,32 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
                     rt["quote_visibility_summary"] = str(summary or "")
                     if rt.get("quotes_at_touch") is None:
                         rt["quotes_at_touch"] = bool(at_touch)
-
-                    # Also synthesize a basic "observed queue" label for the G7 row
-                    # when the engine has not yet written the G7 decision label.
-                    if not rt.get("g7_scaler_label") and not rt.get("g7_summary"):
-                        try:
-                            bid_int = next((i for i in intents if isinstance(i, dict) and i.get("side") == "bid" and i.get("price")), None)
-                            ask_int = next((i for i in intents if isinstance(i, dict) and i.get("side") == "ask" and i.get("price")), None)
-                            parts = []
-                            if bid_int and bb:
-                                b_bps = (float(bid_int["price"]) - float(bb)) / float(bb) * 10000.0
-                                b_txt = f"bid {abs(b_bps):.1f}bps" + (" back" if b_bps < -0.5 else (" join" if b_bps > 0.5 else " at touch"))
-                                parts.append(b_txt)
-                            if ask_int and ba:
-                                a_bps = (float(ask_int["price"]) - float(ba)) / float(ba) * 10000.0
-                                a_txt = f"ask {abs(a_bps):.1f}bps" + (" back" if a_bps > 0.5 else (" join" if a_bps < -0.5 else " at touch"))
-                                parts.append(a_txt)
-                            if parts:
-                                rt["g7_scaler_label"] = "observed: " + " / ".join(parts) + " (from ladder)"
-                        except Exception:
-                            pass
         except Exception:
             # best-effort only; never break the HUD mirror on synthesis failure
+            pass
+
+    # Independent observed posture for G7 queue row (from current ladder) when the
+    # engine snapshot has no G7 decision label yet. Runs even if visibility was present.
+    if not rt.get("g7_scaler_label") and not rt.get("g7_summary"):
+        try:
+            intents = rt.get("quote_intents") or []
+            bb = rt.get("best_bid") or rt.get("best_bid_rlusd_per_xrp")
+            ba = rt.get("best_ask") or rt.get("best_ask_rlusd_per_xrp")
+            if intents and (bb is not None or ba is not None):
+                bid_int = next((i for i in intents if isinstance(i, dict) and i.get("side") == "bid" and i.get("price")), None)
+                ask_int = next((i for i in intents if isinstance(i, dict) and i.get("side") == "ask" and i.get("price")), None)
+                parts = []
+                if bid_int and bb:
+                    b_bps = (float(bid_int["price"]) - float(bb)) / float(bb) * 10000.0
+                    b_txt = f"bid {abs(b_bps):.1f}bps" + (" back" if b_bps < -0.5 else (" join" if b_bps > 0.5 else " at touch"))
+                    parts.append(b_txt)
+                if ask_int and ba:
+                    a_bps = (float(ask_int["price"]) - float(ba)) / float(ba) * 10000.0
+                    a_txt = f"ask {abs(a_bps):.1f}bps" + (" back" if a_bps > 0.5 else (" join" if a_bps < -0.5 else " at touch"))
+                    parts.append(a_txt)
+                if parts:
+                    rt["g7_scaler_label"] = "observed: " + " / ".join(parts) + " (from ladder)"
+        except Exception:
             pass
 
     return rt
