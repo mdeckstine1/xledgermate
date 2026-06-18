@@ -631,7 +631,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     <div class="card">
                         <div class="label">Session fills · G2 / G7 <span class="info" title="G2 = toxic markout brake (size/spread). G7 = per-side touch backoff (join vs passive queue).">?</span></div>
                         <div class="metric-row"><span class="label">Fills (session)</span> <span id="fills-session" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">Quote age @ detected fill <span class="info" title="Age when fill was inferred from balance change (engine). Not ledger fill time. Requires ws-engine deploy.">?</span></span> <span id="fill-quote-age" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Quote age @ detected fill <span class="info" title="M6 live: seconds from offer place (per sequence) to balance-delta fill detect. Last fill only.">?</span></span> <span id="fill-quote-age" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Recent fill ages (M6) <span class="info" title="Last up to 5 session fills from engine JSONL stream (newest first).">?</span></span> <span id="fill-age-recent" class="value" style="font-size:0.85rem;">—</span></div>
                         <div class="metric-row"><span class="label">Skim Δ (session) <span class="info" title="Estimated spread capture from WS fills this session. Uses stored capture when present; otherwise volume × half book spread (balance-delta fills often store profit=0). Excludes deposits.">?</span></span> <span id="session-pnl" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Spread capture</span> <span id="session-capture" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Markout @30s</span> <span id="session-markout" class="value">—</span></div>
@@ -1915,6 +1916,21 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     fillAgeEl.textContent = `${parseFloat(fillAge).toFixed(1)}s`;
                 } else {
                     fillAgeEl.textContent = '—';
+                }
+            }
+            const fillAgeRecentEl = document.getElementById('fill-age-recent');
+            if (fillAgeRecentEl) {
+                const recent = Array.isArray(s.recent_fill_quote_ages) ? s.recent_fill_quote_ages : [];
+                if (recent.length) {
+                    const parts = recent.slice(-5).map((r) => {
+                        const age = r.quote_age_seconds;
+                        const side = (r.side || '').charAt(0) || '?';
+                        if (age == null || Number.isNaN(parseFloat(age))) return `${side}:?`;
+                        return `${side}:${parseFloat(age).toFixed(1)}s`;
+                    });
+                    fillAgeRecentEl.textContent = parts.reverse().join(' · ');
+                } else {
+                    fillAgeRecentEl.textContent = '—';
                 }
             }
             if (skimDelta != null && !Number.isNaN(skimDelta)) {

@@ -112,6 +112,24 @@ class OfferAgeTracker:
             sequence=sequence,
         )
 
+    def last_sequence_for_side(self, side: str) -> Optional[int]:
+        key = _norm_side(side)
+        if key is None:
+            return None
+        seq = self._last_sequence.get(key)
+        return int(seq) if seq is not None else None
+
+    def tracking_label(self, side: str) -> str:
+        """How fill age will be resolved for this offer side."""
+        key = _norm_side(side)
+        if key is None:
+            return "unknown"
+        if self._last_sequence.get(key) is not None:
+            return "m6_sequence"
+        if self._placed_utc.get(key) is not None:
+            return "m6_side"
+        return "none"
+
     def clear_side(self, side: str) -> None:
         key = _norm_side(side)
         if key is None:

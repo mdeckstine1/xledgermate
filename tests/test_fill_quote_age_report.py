@@ -74,5 +74,6 @@ def test_fill_age_matches_prior_refresh(tmp_path: Path) -> None:
     report = build_fill_age_report(logs_dir=logs, cycle_seconds=5.0)
     assert report.fill_count == 1
     assert report.with_refresh_match == 1
+    assert report.m2_proxy_count == 1
     assert report.rows[0].age_seconds_since_refresh == 25.0
     assert report.age_seconds_mean == 25.0

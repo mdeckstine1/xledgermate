@@ -28,7 +28,11 @@ from experimental.ws_feed.intel_decisions_log import (
     build_cycle_intel_record,
     build_peer_scrape_intel_record,
 )
-from experimental.ws_feed.hud_intel_support import fetch_competitor_quoting_intel
+from experimental.ws_feed.fill_quote_age_log import (
+    append_fill_quote_age_record,
+    build_fill_quote_age_record,
+    push_recent_fill_age,
+)
 from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
 from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
 from experimental.ws_feed.pure_quote_path import current_ws_as_version
@@ -205,6 +209,7 @@ class WsPureTradingEngine:
         self._last_ws_book_age_s: Optional[float] = None
         self._offer_age = OfferAgeTracker()
         self._last_fill_quote_age_seconds: Optional[float] = None
+        self._recent_fill_quote_ages: List[Dict[str, Any]] = []
         self._reservation_crossed_after_ws_sample = False
         self._analysis_bundle: Dict[str, Any] = {"sample_history": []}
 
@@ -682,13 +687,19 @@ class WsPureTradingEngine:
         side = str(fill["side"])
         fill_detected_utc = datetime.now(tz=timezone.utc)
         tracker_side = fill_side_to_offer_age_side(side)
+        quote_age: Optional[float] = None
+        offer_sequence: Optional[int] = None
+        tracking = "none"
         if tracker_side:
-            age = self._offer_age.effective_quote_age_at_fill_seconds(
+            offer_sequence = self._offer_age.last_sequence_for_side(tracker_side)
+            tracking = self._offer_age.tracking_label(tracker_side)
+            quote_age = self._offer_age.effective_quote_age_at_fill_seconds(
                 tracker_side,
                 fill_detected_utc=fill_detected_utc,
+                sequence=offer_sequence,
             )
-            if age is not None:
-                self._last_fill_quote_age_seconds = age
+            if quote_age is not None:
+                self._last_fill_quote_age_seconds = quote_age
         xrp_amount = float(fill["xrp_amount"])
         rlusd_amount = float(fill["rlusd_amount"])
         price = float(fill["price_rlusd_per_xrp"])
@@ -700,6 +711,24 @@ class WsPureTradingEngine:
         )
         mid_at_fill = mid if is_trustworthy_rlusd_mid(mid) else mid_at_quote
         self._session_fills += 1
+        age_record = build_fill_quote_age_record(
+            cycle=self._cycle_count + 1,
+            side=side,
+            offer_side=tracker_side or "",
+            xrp_amount=xrp_amount,
+            quote_age_seconds=quote_age,
+            offer_sequence=offer_sequence,
+            ws_as_version=current_ws_as_version(),
+            fills_session=self._session_fills,
+            capture_xrp=cap,
+            tracking=tracking,
+        )
+        age_record["ts_utc"] = fill_detected_utc.isoformat()
+        append_fill_quote_age_record(age_record)
+        self._recent_fill_quote_ages = push_recent_fill_age(
+            self._recent_fill_quote_ages,
+            age_record,
+        )
         self._session_spread_capture += cap
         if mid_at_fill and WsFeatureFlags.from_config(config).fill_quality:
             self._fill_quality.note_fill(
@@ -719,6 +748,13 @@ class WsPureTradingEngine:
             notes=(
                 f"WS pure fill (balance delta); capture ~{cap:+.4f} XRP "
                 f"@ mid {mid_at_quote or 'n/a'}"
+                + (
+                    f"; quote_age_m6={quote_age:.3f}s"
+                    + (f" seq={offer_sequence}" if offer_sequence is not None else "")
+                    + f" ({tracking})"
+                    if quote_age is not None
+                    else ""
+                )
             ),
             balance_xrp_after=balance_xrp,
             balance_rlusd_after=balance_rlusd,
@@ -938,6 +974,7 @@ class WsPureTradingEngine:
             inside_l1=ed.get("inside_l1"),
             reservation_to_bbo_delta_bps=ed.get("reservation_to_bbo_delta_bps"),
             effective_quote_age_at_fill_seconds=self._last_fill_quote_age_seconds,
+            recent_fill_quote_ages=list(self._recent_fill_quote_ages),
             reservation_crossed_after_ws_sample=self._reservation_crossed_after_ws_sample,
             zero_quote_reason=str(ed.get("zero_quote_reason") or ""),
             sample_history=list(self._analysis_bundle.get("sample_history") or []),

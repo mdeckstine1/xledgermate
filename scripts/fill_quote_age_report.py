@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Offline fill → quote-age report (M2 prep; soak-safe).
+Fill → quote-age report.
 
-Joins WS fills in trades_*.csv with the most recent OFFER_REFRESH before each fill.
-OFFER_REFRESH is logged only when cancel/place occurs (not on kept-only cycles), so
-ages are a **lower bound** — same caveat as M2/M6 engine instrumentation.
+Primary source: M6 live stream `logs/fill_quote_age.jsonl` (engine at detect-fill).
+Fallback: OFFER_REFRESH join in trades_*.csv (M2 proxy) for legacy fills.
 """
 
 from __future__ import annotations
@@ -12,19 +11,23 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, median
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from experimental.ws_feed.fill_quote_age_log import tail_fill_quote_age_records
+
 WS_FILL_MARKER = "WS pure fill"
 DEFAULT_CYCLE_S = 5.0
+_M6_AGE_RE = re.compile(r"quote_age_m6=([0-9.]+)s")
 
 
 def _parse_ts(raw: str) -> Optional[datetime]:
@@ -137,17 +140,45 @@ class FillAgeReport:
     cycle_seconds_assumed: float
     fill_count: int = 0
     with_refresh_match: int = 0
+    m6_live_count: int = 0
+    m2_proxy_count: int = 0
     rows: List[FillAgeRow] = field(default_factory=list)
     age_seconds_mean: Optional[float] = None
     age_seconds_median: Optional[float] = None
     age_seconds_p95: Optional[float] = None
     caveat: str = (
-        "OFFER_REFRESH only logs cancel/place cycles; kept resting quotes are older. "
-        "Fill detection is balance-delta (~1 engine cycle late)."
+        "Primary: M6 live JSONL from engine at fill detect. "
+        "Fallback: OFFER_REFRESH join (M2 proxy) for fills before M6 logging."
     )
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+def _m6_index(
+    records: List[Dict[str, Any]],
+) -> Dict[Tuple[int, str], Dict[str, Any]]:
+    """Map (cycle, SIDE) -> M6 JSONL row."""
+    out: Dict[Tuple[int, str], Dict[str, Any]] = {}
+    for row in records:
+        try:
+            cycle = int(row.get("cycle") or 0)
+        except (TypeError, ValueError):
+            cycle = 0
+        side = str(row.get("side") or "").upper()
+        if cycle > 0 and side:
+            out[(cycle, side)] = row
+    return out
+
+
+def _m6_from_csv_notes(notes: str) -> Optional[float]:
+    match = _M6_AGE_RE.search(notes or "")
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
 
 
 def build_fill_age_report(
@@ -163,8 +194,17 @@ def build_fill_age_report(
     if since is not None:
         fills = [r for r in fills if (_parse_ts(r.get("timestamp_utc", "")) or since) >= since]
 
+    m6_records = tail_fill_quote_age_records(
+        limit=5000,
+        path=logs / "fill_quote_age.jsonl",
+        since=since,
+    )
+    m6_by_cycle = _m6_index(m6_records)
+
     report_rows: List[FillAgeRow] = []
     ages: List[float] = []
+    m6_live = 0
+    m2_proxy = 0
     for fill in fills:
         ts = _parse_ts(fill.get("timestamp_utc", ""))
         if ts is None:
@@ -173,29 +213,50 @@ def build_fill_age_report(
             cycle = int(float(fill.get("cycle") or 0))
         except (TypeError, ValueError):
             cycle = 0
-        refresh = _last_refresh_before(refreshes, ts=ts, cycle=cycle)
+        side = (fill.get("side") or fill.get("event_type") or "").upper()
+        notes = fill.get("notes") or ""
+
         age_s: Optional[float] = None
         age_cycles: Optional[int] = None
         placed = 0
         cancelled = 0
         method = "none"
-        if refresh is not None:
-            placed = int(refresh.get("placed") or 0)
-            cancelled = int(refresh.get("cancelled") or 0)
-            age_s = max(0.0, (ts - refresh["ts"]).total_seconds())
-            if cycle > 0 and refresh.get("cycle"):
-                age_cycles = max(0, cycle - int(refresh["cycle"]))
-            method = "timestamp"
+
+        m6_row = m6_by_cycle.get((cycle, side)) if cycle > 0 else None
+        if m6_row is not None and m6_row.get("quote_age_seconds") is not None:
+            age_s = float(m6_row["quote_age_seconds"])
+            method = str(m6_row.get("tracking") or "m6_live")
+            m6_live += 1
             ages.append(age_s)
-        elif cycle > 0:
-            method = "cycle_gap_only"
-            age_cycles = cycle
-            age_s = age_cycles * cycle_seconds
+        else:
+            csv_m6 = _m6_from_csv_notes(notes)
+            if csv_m6 is not None:
+                age_s = csv_m6
+                method = "m6_csv_notes"
+                m6_live += 1
+                ages.append(age_s)
+            else:
+                refresh = _last_refresh_before(refreshes, ts=ts, cycle=cycle)
+                if refresh is not None:
+                    placed = int(refresh.get("placed") or 0)
+                    cancelled = int(refresh.get("cancelled") or 0)
+                    age_s = max(0.0, (ts - refresh["ts"]).total_seconds())
+                    if cycle > 0 and refresh.get("cycle"):
+                        age_cycles = max(0, cycle - int(refresh["cycle"]))
+                    method = "m2_proxy_refresh"
+                    m2_proxy += 1
+                    ages.append(age_s)
+                elif cycle > 0:
+                    method = "m2_proxy_cycle_gap"
+                    age_cycles = cycle
+                    age_s = age_cycles * cycle_seconds
+                    m2_proxy += 1
+                    ages.append(age_s)
 
         report_rows.append(
             FillAgeRow(
                 timestamp_utc=ts.isoformat(),
-                side=(fill.get("side") or fill.get("event_type") or "").upper(),
+                side=side,
                 xrp_amount=float(fill.get("xrp_amount") or 0),
                 cycle=cycle,
                 age_seconds_since_refresh=round(age_s, 2) if age_s is not None else None,
@@ -206,7 +267,7 @@ def build_fill_age_report(
             )
         )
 
-    matched = sum(1 for r in report_rows if r.method == "timestamp")
+    matched = m2_proxy
     ts_ages = [r.age_seconds_since_refresh for r in report_rows if r.age_seconds_since_refresh is not None]
     p95 = None
     if ts_ages:
@@ -220,6 +281,8 @@ def build_fill_age_report(
         cycle_seconds_assumed=cycle_seconds,
         fill_count=len(report_rows),
         with_refresh_match=matched,
+        m6_live_count=m6_live,
+        m2_proxy_count=m2_proxy,
         rows=report_rows,
         age_seconds_mean=round(mean(ts_ages), 2) if ts_ages else None,
         age_seconds_median=round(median(ts_ages), 2) if ts_ages else None,
@@ -229,14 +292,14 @@ def build_fill_age_report(
 
 def format_fill_age_report(report: FillAgeReport) -> str:
     lines = [
-        "=== Fill quote age (offline; M2 prep) ===",
+        "=== Fill quote age (M6 live + M2 fallback) ===",
         "",
         f"Generated: {report.generated_utc}",
         f"Logs: {report.logs_dir}",
-        f"WS fills: {report.fill_count} | matched OFFER_REFRESH: {report.with_refresh_match}",
+        f"WS fills: {report.fill_count} | M6 live: {report.m6_live_count} | M2 proxy: {report.m2_proxy_count}",
         f"Age (s) mean={report.age_seconds_mean} median={report.age_seconds_median} p95={report.age_seconds_p95}",
         "",
-        f"Caveat: {report.caveat}",
+        f"Source: {report.caveat}",
         "",
     ]
     if not report.rows:
@@ -257,7 +320,7 @@ def format_fill_age_report(report: FillAgeReport) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Offline WS fill quote-age report from trades CSV")
+    parser = argparse.ArgumentParser(description="WS fill quote-age report (M6 JSONL + M2 fallback)")
     parser.add_argument("--logs-dir", type=Path, default=None, help="Logs directory (default: repo/logs)")
     parser.add_argument("--cycle-seconds", type=float, default=DEFAULT_CYCLE_S)
     parser.add_argument("--json", action="store_true", dest="as_json")

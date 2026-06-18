@@ -135,6 +135,7 @@ class RuntimeState:
     inside_l1: Optional[bool] = None
     reservation_to_bbo_delta_bps: Optional[float] = None
     effective_quote_age_at_fill_seconds: Optional[float] = None
+    recent_fill_quote_ages: List[Dict[str, Any]] = field(default_factory=list)
     reservation_crossed_after_ws_sample: bool = False
     zero_quote_reason: str = ""
     sample_history: List[Dict[str, Any]] = field(default_factory=list)
@@ -306,6 +307,7 @@ class RuntimeStateStore:
             inside_l1=data.get("inside_l1"),
             reservation_to_bbo_delta_bps=data.get("reservation_to_bbo_delta_bps"),
             effective_quote_age_at_fill_seconds=data.get("effective_quote_age_at_fill_seconds"),
+            recent_fill_quote_ages=list(data.get("recent_fill_quote_ages") or []),
             reservation_crossed_after_ws_sample=bool(
                 data.get("reservation_crossed_after_ws_sample", False)
             ),

@@ -142,6 +142,7 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         "effective_quote_age_at_fill_seconds": runtime.get(
             "effective_quote_age_at_fill_seconds"
         ),
+        "recent_fill_quote_ages": runtime.get("recent_fill_quote_ages") or [],
         "as_optimal_spread_pct": runtime.get("as_optimal_spread_pct"),
         "as_gamma": runtime.get("as_gamma"),
         "as_kappa": runtime.get("as_kappa"),
