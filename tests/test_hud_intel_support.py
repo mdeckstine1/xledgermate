@@ -159,3 +159,44 @@ def test_own_bot_address_gets_self_profile() -> None:
     assert "our bot (self-audit)" in briefing["evidence_header"]
     assert briefing["structured_briefing"]["scrape_source"] == "our_bot"
     assert briefing["structured_briefing"]["is_our_bot"] is True
+
+
+def test_format_intel_analysis_report_self() -> None:
+    from experimental.ws_feed.hud_intel_support import format_intel_analysis_report
+
+    text = format_intel_analysis_report(
+        {
+            "is_our_bot": True,
+            "source": "our_bot",
+            "in_peer_lane": True,
+            "touch_xrp": 13.44,
+            "our_lane_xrp": 13.44,
+            "peer_band_low_xrp": 5.38,
+            "peer_band_high_xrp": 33.6,
+            "profile": {
+                "account_full": "rsLnfMsP5LzdLyR2Ume7fgyjwNfgwMjp8g",
+                "touch_xrp": 13.44,
+                "last_spread": 0.018,
+                "g7_summary": "G7 balanced: bid 8bps ask 8bps",
+                "worst_vs_touch_bps": 8.0,
+                "activity": 2,
+                "cancels": 1.5,
+                "sides": "b1/a1",
+            },
+            "evidence_lines": ["inventory_label=balanced", "worst_vs_touch_bps=8.0"],
+            "lane_note": "OUR bot ledger — self-audit only",
+        }
+    )
+    assert "=== Our bot — self-audit report ===" in text
+    assert "G7 balanced" in text
+    assert "IN peer touch band" in text
+    assert "{" not in text
+
+
+def test_strip_grok_json_echo() -> None:
+    from experimental.ws_feed.hud_intel_support import strip_grok_json_echo
+
+    raw = '```json\n{"schema_version": 1}\n```'
+    out = strip_grok_json_echo(raw)
+    assert "schema_version" not in out
+    assert "JSON only" in out

@@ -578,35 +578,25 @@ if app:
 
             context_str = (" Current live WS book context: " + "; ".join(context_lines) + ".") if context_lines else ""
 
-            import json as _json
-
-            structured_json = ""
-            sb = briefing.get("structured_briefing")
-            if isinstance(sb, dict) and sb:
-                structured_json = (
-                    "\n\n**Structured briefing (machine-readable — align your analysis to these fields):**\n"
-                    f"```json\n{_json.dumps(sb, indent=2)}\n```\n"
-                )
-
-            structured_json = (
-                    "\n\n**Structured briefing (machine-readable — align your analysis to these fields):**\n"
-                    f"```json\n{_json.dumps(sb, indent=2)}\n```\n"
-                )
-
             is_our_bot = bool(briefing.get("is_our_bot"))
+            response_format = (
+                "Respond in plain English with markdown section headers "
+                "(e.g. ## Visibility, ## Inventory, ## Recommendations). "
+                "Do NOT output JSON, code fences, or repeat a structured briefing schema."
+            )
             if is_our_bot:
                 current_prompt = (
                     f"You are an expert XRPL market-making operator reviewing OUR OWN bot ledger {address}.\n\n"
                     f"**Primary goal:** Self-audit — quote visibility, touch distance vs BBO, inventory alignment, "
                     f"cancel/fill hygiene, and whether G7 envelope settings match current regime. "
                     f"Do NOT recommend exploitative tactics against this address (it is us).\n\n"
-                    f"{briefing.get('prompt_block', '')}\n"
-                    f"{structured_json}\n"
+                    f"{briefing.get('prompt_block', '')}\n\n"
                     f"Focus areas:\n"
                     f"- Are we visible at touch or too far back (worst_vs_touch_bps, quote_visibility)?\n"
                     f"- Does inventory_label match our bid/ask backoff (G7 summary)?\n"
                     f"- Session cancel_per_fill and fill age vs peer_lane_count=0 regime\n"
                     f"- Concrete tuning suggestions for our pure A-S bot only\n\n"
+                    f"{response_format}\n"
                     f"{context_str}"
                 )
             else:
@@ -615,8 +605,7 @@ if app:
                     f"Analyze the ledger address {address} for its likely market-making strategy on the RLUSD/XRP order book.\n\n"
                     f"**Primary goal:** Identify the holes and repeatable patterns in this competitor's behavior that we can exploit to win the best queue positions, "
                     f"increase our realized skim (spread capture), and compound our bag more effectively over time.\n\n"
-                    f"{briefing.get('prompt_block', '')}\n"
-                    f"{structured_json}\n"
+                    f"{briefing.get('prompt_block', '')}\n\n"
                     f"Focus areas:\n"
                     f"- Posted spreads and sizes from recent activity (use scraped facts first)\n"
                     f"- Aggressiveness vs defensiveness, inventory skew signals\n"
@@ -626,6 +615,7 @@ if app:
                     f"Then give **concrete, actionable exploitative tactics** our pure A-S bot can use right now: better positioning ideas, when to step inside their levels, queue-jumping opportunities, sizing/timing suggestions, when to be patient vs aggressive, etc.\n"
                     f"If the maker is OUT of our peer touch band, say so up front and limit tactics to regime/macro context.\n\n"
                     f"Base your reasoning on the scraped facts above; do not speculate on off-chain identity.\n"
+                    f"{response_format}\n"
                     f"{context_str}"
                 )
 
@@ -650,7 +640,14 @@ if app:
             result = content.strip()
             if finish == "length":
                 result += "\n\n---\n(Response hit the token limit and may be cut off mid-thought.)"
-            header = str(briefing.get("evidence_header") or "")
+            from experimental.ws_feed.hud_intel_support import (
+                format_intel_analysis_report,
+                strip_grok_json_echo,
+            )
+
+            local_report = format_intel_analysis_report(briefing)
+            grok_text = strip_grok_json_echo(result)
+            result = f"{local_report}\n\n── Grok commentary (advisory) ──\n\n{grok_text}"
             try:
                 from experimental.ws_feed.intel_decisions_log import (
                     append_intel_record,
@@ -676,7 +673,7 @@ if app:
             except Exception as log_exc:
                 print(f"[HUD /analyze] grok_suggestion log failed: {log_exc}")
             return {
-                "result": header + result,
+                "result": result,
                 "truncated": finish == "length",
                 "debug": debug_note,
                 "briefing": {

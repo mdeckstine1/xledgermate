@@ -6,7 +6,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig
@@ -731,6 +731,97 @@ def build_competitor_analysis_context(
         "lane_note": lane_note,
         "structured_briefing": structured,
     }
+
+
+def strip_grok_json_echo(text: str) -> str:
+    """Remove echoed ```json blocks; flag JSON-only replies."""
+    import re
+
+    cleaned = re.sub(r"```json\s*[\s\S]*?```", "", text or "", flags=re.IGNORECASE).strip()
+    if not cleaned:
+        return "(Grok echoed structured JSON only — expand “Input briefing” below for machine-readable fields.)"
+    if cleaned.startswith("{") and cleaned.endswith("}"):
+        try:
+            import json as _json
+
+            _json.loads(cleaned)
+            return "(Grok returned JSON only — expand “Input briefing” below for machine-readable fields.)"
+        except ValueError:
+            pass
+    return cleaned
+
+
+def format_intel_analysis_report(briefing: Mapping[str, Any]) -> str:
+    """Operator-facing prose report from briefing facts (always shown above Grok commentary)."""
+    is_our_bot = bool(briefing.get("is_our_bot"))
+    profile = briefing.get("profile") if isinstance(briefing.get("profile"), dict) else {}
+    source = str(briefing.get("source") or "none")
+    touch = briefing.get("touch_xrp")
+    our_lane = briefing.get("our_lane_xrp")
+    band_lo = briefing.get("peer_band_low_xrp")
+    band_hi = briefing.get("peer_band_high_xrp")
+    in_lane = briefing.get("in_peer_lane")
+
+    lines: List[str] = []
+    if is_our_bot:
+        lines.append("=== Our bot — self-audit report ===")
+    else:
+        lines.append("=== Competitor analysis report ===")
+    lines.append("")
+
+    if profile:
+        acct = profile.get("account_full") or profile.get("account") or "—"
+        lines.append(f"Address: {acct}")
+        lines.append(f"Source: {source.replace('_', ' ')}")
+        if touch is not None:
+            lines.append(f"Touch size: {float(touch):.2f} XRP")
+        if our_lane is not None:
+            lines.append(f"Our lane: {float(our_lane):.2f} XRP")
+        if band_lo is not None and band_hi is not None:
+            lines.append(f"Peer band: {float(band_lo):.1f}–{float(band_hi):.1f} XRP")
+        lane_txt = "IN peer touch band" if in_lane else "OUT of peer touch band"
+        lines.append(f"Band status: {lane_txt}")
+        if profile.get("last_spread") is not None:
+            lines.append(
+                f"Spread: last {profile.get('last_spread')}% · avg {profile.get('avg_spread', '—')}%"
+            )
+        if profile.get("activity") is not None:
+            lines.append(f"Open offers / activity: {profile.get('activity')}")
+        if profile.get("cancels") is not None:
+            lines.append(f"Cancel/fill (session): {profile.get('cancels')}")
+        if profile.get("sides"):
+            lines.append(f"Sides: {profile.get('sides')}")
+        if profile.get("g7_summary"):
+            lines.append(f"G7: {profile.get('g7_summary')}")
+        if profile.get("worst_vs_touch_bps") is not None:
+            lines.append(f"Worst vs touch: {float(profile.get('worst_vs_touch_bps')):.1f} bps")
+        if profile.get("quote_visibility_summary"):
+            lines.append(f"Visibility: {profile.get('quote_visibility_summary')}")
+    else:
+        lines.append("No scrape profile — address absent from last peer/book snapshot.")
+
+    lines.append("")
+    lines.append("Live context")
+    for ev in briefing.get("evidence_lines") or []:
+        if str(ev).startswith("scrape_source=") or str(ev).startswith("target_role="):
+            continue
+        lines.append(f"  · {ev}")
+
+    fled = briefing.get("fled_events") or []
+    if fled:
+        lines.append("")
+        lines.append(f"Recent fled-touch events: {len(fled)}")
+        for ev in fled[:3]:
+            if isinstance(ev, dict):
+                lines.append(
+                    f"  · was {ev.get('previous_touch_xrp')} XRP, {ev.get('age_s')}s ago"
+                )
+
+    if briefing.get("lane_note"):
+        lines.append("")
+        lines.append(str(briefing.get("lane_note")))
+
+    return "\n".join(lines)
 
 
 def enrich_inventory_hud_fields(
