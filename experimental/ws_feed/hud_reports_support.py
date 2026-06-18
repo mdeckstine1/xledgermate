@@ -11,6 +11,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 LOGS_DEFAULT = Path("logs")
 
+# Optional Grok config passed from HUD when generating narrative reports.
+GrokConfig = Dict[str, Any]
+
 
 @dataclass(frozen=True)
 class ReportSpec:
@@ -112,6 +115,19 @@ def _gen_clob_amm_monitor(logs: Path) -> str:
     from experimental.arb.clob_amm_monitor import format_clob_amm_report
 
     return format_clob_amm_report(logs_dir=logs)
+
+
+def _gen_soak_dashboard(logs: Path, *, narrative: bool = False, grok_config: Optional[GrokConfig] = None) -> str:
+    from scripts.soak_dashboard_report import build_soak_dashboard_report
+
+    cfg = grok_config or {}
+    return build_soak_dashboard_report(
+        logs_dir=logs,
+        narrative=narrative,
+        grok_key=str(cfg.get("intel_ai_key") or ""),
+        grok_model=str(cfg.get("intel_ai_model") or "grok-3"),
+        grok_enabled=bool(cfg.get("grok_enabled", True)),
+    )
 
 
 def _gen_reservation_snapshot(logs: Path) -> str:
@@ -251,6 +267,35 @@ REPORT_SPECS: List[ReportSpec] = [
         cli_command="(ws-hud polls ~60s; report view only)",
         phase_ref="Phase H1",
     ),
+    ReportSpec(
+        id="soak_dashboard",
+        title="Soak dashboard",
+        subtitle="Facts — runtime, gates, G7, 24h trend",
+        category="Soak analysis",
+        description=(
+            "Deterministic soak bundle: runtime + G7/G2, fill age, C2/G6 gates, hourly trend, "
+            "intel queue review. No Grok API call."
+        ),
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="python scripts/soak_dashboard_report.py",
+        phase_ref="Soak ops",
+    ),
+    ReportSpec(
+        id="soak_dashboard_narrative",
+        title="Soak dashboard + narrative",
+        subtitle="Facts + Grok explanation (on demand)",
+        category="Soak analysis",
+        description=(
+            "Same fact bundle as Soak dashboard, plus a short Grok narrative explaining soak phase, "
+            "G7/G2 alignment, edge vs MTM, and what to watch. Requires Grok key in Config/.env. "
+            "Discipline-bound — explain only, no strategy overrides."
+        ),
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="python scripts/soak_dashboard_report.py --narrative",
+        phase_ref="Soak ops / F4",
+    ),
 ]
 
 _GENERATORS: Dict[str, ReportGenerator] = {
@@ -263,6 +308,8 @@ _GENERATORS: Dict[str, ReportGenerator] = {
     "hourly_soak_trend": _gen_hourly_soak_trend,
     "grok_suggestions": _gen_grok_suggestions,
     "clob_amm_monitor": _gen_clob_amm_monitor,
+    "soak_dashboard": _gen_soak_dashboard,
+    "soak_dashboard_narrative": lambda logs: _gen_soak_dashboard(logs, narrative=True),
 }
 
 
@@ -277,12 +324,22 @@ def get_report_spec(report_id: str) -> Optional[ReportSpec]:
     return None
 
 
-def generate_report_text(report_id: str, *, logs_dir: Optional[Path] = None) -> str:
+def generate_report_text(
+    report_id: str,
+    *,
+    logs_dir: Optional[Path] = None,
+    grok_config: Optional[GrokConfig] = None,
+) -> str:
+    logs = _logs_dir(logs_dir)
+    if report_id == "soak_dashboard":
+        return _gen_soak_dashboard(logs, narrative=False, grok_config=grok_config)
+    if report_id == "soak_dashboard_narrative":
+        return _gen_soak_dashboard(logs, narrative=True, grok_config=grok_config)
     gen = _GENERATORS.get(report_id)
     if gen is None:
         raise KeyError(f"Unknown report id: {report_id}")
     try:
-        return gen(_logs_dir(logs_dir))
+        return gen(logs)
     except Exception as exc:
         return (
             f"=== Report error: {report_id} ===\n\n"

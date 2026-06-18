@@ -214,7 +214,7 @@ HUD-only deploys (`xledgermate-ws-hud` restart OK). No further soak-safe code re
 | **M1** | Res→BBO delta, inside L1, hourly Telegram |
 | **M2/M3 prep** | `fill_quote_age_report.py`, `offer_age_tracker.py`, `stale_cross.py`, analysis schema |
 | **Intel HUD** | I5 side skew, I6 regime vs peer, F1 nicknames, F3a/F3b Grok briefing, F4 JSONL, F2 advisory stub |
-| **Reports** | 9 soak-safe reports tab (`grok_suggestions`, `clob_amm_monitor`, …) |
+| **Reports** | 11 soak-safe reports tab (`soak_dashboard`, `soak_dashboard_narrative`, `grok_suggestions`, `clob_amm_monitor`, …) |
 | **H1/H2** | Read-only CLOB vs AMM monitor + `amm_provider.py` |
 | **HUD ops** | Inventory nav restored; Metrics toxicity gray-zone fix; **Skim Δ** (not wallet/deposit); Wallet Δ on Inventory |
 

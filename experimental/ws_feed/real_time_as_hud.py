@@ -332,6 +332,23 @@ if app:
 
         return {"reports": list_reports()}
 
+    def _report_grok_config() -> Dict[str, Any]:
+        """Grok key/model for on-demand narrative reports (soak dashboard + narrative)."""
+        try:
+            from config.settings import BotConfig
+            from experimental.ws_feed.hud_intel_support import resolve_hud_intel_fields
+            from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
+
+            flags = WsFeatureFlags.from_config(BotConfig.load())
+            intel = resolve_hud_intel_fields(dict(_current_state), grok_enabled=flags.hud_grok)
+            return {
+                "intel_ai_key": intel.get("intel_ai_key") or "",
+                "intel_ai_model": intel.get("intel_ai_model") or "grok-3",
+                "grok_enabled": flags.hud_grok,
+            }
+        except Exception:
+            return {"intel_ai_key": "", "intel_ai_model": "grok-3", "grok_enabled": True}
+
     @app.get("/report/{report_id}", response_class=HTMLResponse)
     async def report_view_html(report_id: str):
         """Standalone report page (open in new browser tab)."""
@@ -348,7 +365,10 @@ if app:
                 f"<p><a href='/'>Back to HUD</a></p>",
                 status_code=404,
             )
-        body = generate_report_text(report_id)
+        body = generate_report_text(
+            report_id,
+            grok_config=_report_grok_config() if report_id == "soak_dashboard_narrative" else None,
+        )
         page = wrap_report_html(
             report_id=report_id,
             title=spec.title,
@@ -369,7 +389,12 @@ if app:
 
         if get_report_spec(report_id) is None:
             return PlainTextResponse(f"Unknown report: {report_id}\n", status_code=404)
-        return PlainTextResponse(generate_report_text(report_id))
+        return PlainTextResponse(
+            generate_report_text(
+                report_id,
+                grok_config=_report_grok_config() if report_id == "soak_dashboard_narrative" else None,
+            )
+        )
 
     @app.get("/list_models")
     async def list_models():
