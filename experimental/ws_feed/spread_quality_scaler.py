@@ -103,3 +103,49 @@ def compute_g2_adjustments(
         summary=summary,
         rationale=rationale,
     )
+
+
+def format_g2_scaler_label(g2: G2Adjustments) -> str:
+    """Short operator label for HUD G2 row."""
+    if g2.active:
+        return f"{g2.grade} size×{g2.size_mult:.2f} spread×{g2.spread_mult:.2f}"
+    if g2.grade == "ok":
+        return "ok (no chase)"
+    return "neutral"
+
+
+def format_execution_brake_panel(
+    g2: G2Adjustments,
+    *,
+    g7_summary: str = "",
+    g7_scaler_label: str = "",
+    bid_touch_backoff_bps: float = 0.0,
+    ask_touch_backoff_bps: float = 0.0,
+    bid_role: str = "",
+    ask_role: str = "",
+    quote_visibility_summary: str = "",
+) -> dict[str, str]:
+    """
+    Operator-facing labels for G2 + G7 brakes (HUD / runtime).
+
+    G2 = spread-quality brake (size + vol spread).
+    G7 = per-side touch backoff (queue position).
+    """
+    g2_line = format_g2_scaler_label(g2)
+    if g2.active and g2.rationale:
+        g2_line = f"{g2_line} — {g2.rationale}"
+
+    g7_line = g7_scaler_label or g7_summary or "off"
+    if g2.spread_mult > 1.0 and g7_scaler_label:
+        g7_line = f"{g7_line} (G2 spread×{g2.spread_mult:.2f} widens touch)"
+
+    parts = [f"G2 {g2_line}", f"G7 {g7_line}"]
+    if quote_visibility_summary:
+        parts.append(f"queue {quote_visibility_summary}")
+    combined = " | ".join(parts)
+
+    return {
+        "g2_scaler_label": g2_line,
+        "g7_scaler_label": g7_line,
+        "execution_brakes_summary": combined,
+    }

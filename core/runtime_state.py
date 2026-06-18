@@ -145,6 +145,11 @@ class RuntimeState:
     g7_summary: str = ""
     bid_touch_backoff_bps: float = 0.0
     ask_touch_backoff_bps: float = 0.0
+    g7_bid_role: str = ""
+    g7_ask_role: str = ""
+    g7_scaler_label: str = ""
+    g2_scaler_label: str = ""
+    execution_brakes_summary: str = ""
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -313,4 +318,9 @@ class RuntimeStateStore:
             g7_summary=str(data.get("g7_summary", "")),
             bid_touch_backoff_bps=float(data.get("bid_touch_backoff_bps", 0.0)),
             ask_touch_backoff_bps=float(data.get("ask_touch_backoff_bps", 0.0)),
+            g7_bid_role=str(data.get("g7_bid_role", "")),
+            g7_ask_role=str(data.get("g7_ask_role", "")),
+            g7_scaler_label=str(data.get("g7_scaler_label", "")),
+            g2_scaler_label=str(data.get("g2_scaler_label", "")),
+            execution_brakes_summary=str(data.get("execution_brakes_summary", "")),
         )

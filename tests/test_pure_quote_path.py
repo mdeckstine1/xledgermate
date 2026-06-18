@@ -188,6 +188,11 @@ def test_g7_xrp_heavy_ask_tighter_touch() -> None:
         assert d.ask_touch_backoff_bps == 3.0
         assert d.bid_touch_backoff_bps == 8.0
         assert d.g7_summary.startswith("G7 xrp_heavy")
+        assert d.g7_ask_role == "join"
+        assert d.g7_bid_role == "passive"
+        assert "join" in d.g7_scaler_label
+        assert d.g2_scaler_label
+        assert "G7" in d.execution_brakes_summary
         assert d.suggested_ask is not None
         assert d.suggested_ask >= d.best_ask
         if not d.pause_bids:

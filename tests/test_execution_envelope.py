@@ -19,12 +19,17 @@ def test_xrp_heavy_ask_joins_bid_passive() -> None:
     env = compute_execution_envelope(inventory_label="xrp_heavy", g2_spread_mult=1.0)
     assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
     assert env.ask_touch_backoff_bps == JOIN_BACKOFF_BPS
+    assert env.bid_role == "passive"
+    assert env.ask_role == "join"
+    assert "join" in env.scaler_label
 
 
 def test_rlusd_heavy_bid_joins() -> None:
     env = compute_execution_envelope(inventory_label="rlusd_heavy", g2_spread_mult=1.0)
     assert env.bid_touch_backoff_bps == JOIN_BACKOFF_BPS
     assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.bid_role == "join"
+    assert env.ask_role == "passive"
 
 
 def test_g2_spread_mult_widens_both() -> None:

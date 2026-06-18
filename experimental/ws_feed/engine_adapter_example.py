@@ -161,6 +161,11 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "g7_summary": decision.g7_summary,
         "bid_touch_backoff_bps": decision.bid_touch_backoff_bps,
         "ask_touch_backoff_bps": decision.ask_touch_backoff_bps,
+        "g7_bid_role": decision.g7_bid_role,
+        "g7_ask_role": decision.g7_ask_role,
+        "g7_scaler_label": decision.g7_scaler_label,
+        "g2_scaler_label": decision.g2_scaler_label,
+        "execution_brakes_summary": decision.execution_brakes_summary,
     }
 
 

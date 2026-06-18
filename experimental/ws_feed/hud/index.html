@@ -589,7 +589,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     </div>
 
                     <div class="card">
-                        <div class="label">Session fills &amp; G2 <span class="info" title="Detail view — headline health KPIs are pinned under the header.">?</span></div>
+                        <div class="label">Session fills · G2 / G7 <span class="info" title="G2 = toxic markout brake (size/spread). G7 = per-side touch backoff (join vs passive queue).">?</span></div>
                         <div class="metric-row"><span class="label">Fills (session)</span> <span id="fills-session" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Quote age @ detected fill <span class="info" title="Age when fill was inferred from balance change (engine). Not ledger fill time. Requires ws-engine deploy.">?</span></span> <span id="fill-quote-age" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Skim Δ (session) <span class="info" title="Estimated spread capture from WS fills this session. Uses stored capture when present; otherwise volume × half book spread (balance-delta fills often store profit=0). Excludes deposits.">?</span></span> <span id="session-pnl" class="value">—</span></div>
@@ -597,6 +597,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="metric-row"><span class="label">Markout @30s</span> <span id="session-markout" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Toxic ratio @30s</span> <span id="session-toxic" class="value">—</span></div>
                         <div class="metric-row"><span class="label">G2 scaler</span> <span id="g2-scaler" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">G7 queue</span> <span id="g7-scaler" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Queue vs touch</span> <span id="queue-visibility" class="value">—</span></div>
                         <small id="fill-quality-note" style="display:block; margin-top:6px; font-size:0.65rem; opacity:0.7;">—</small>
                     </div>
 
@@ -1878,14 +1880,22 @@ The A-S strategy itself decides presence via reservation price being inside the 
             } else {
                 setText('session-toxic', '—');
             }
-            setText('fill-quality-note', s.g2_summary || s.fill_quality_summary || '—');
-            if (s.g2_active) {
+            setText('fill-quality-note', s.execution_brakes_summary || s.g2_summary || s.fill_quality_summary || '—');
+            if (s.g2_scaler_label) {
+                setText('g2-scaler', s.g2_scaler_label);
+            } else if (s.g2_active) {
                 const g2s = s.g2_size_mult != null ? parseFloat(s.g2_size_mult) : 1;
                 const g2p = s.g2_spread_mult != null ? parseFloat(s.g2_spread_mult) : 1;
                 setText('g2-scaler', `${s.g2_grade || 'brake'} size×${g2s.toFixed(2)} spread×${g2p.toFixed(2)}`);
             } else {
-                setText('g2-scaler', s.g2_grade === 'ok' ? 'neutral (no chase)' : 'neutral');
+                setText('g2-scaler', s.g2_grade === 'ok' ? 'ok (no chase)' : 'neutral');
             }
+            setText('g7-scaler', s.g7_scaler_label || s.g7_summary || '—');
+            const qVis = s.quote_visibility_summary
+                || (s.worst_vs_touch_bps != null && s.worst_vs_touch_bps > 0
+                    ? `worst ${parseFloat(s.worst_vs_touch_bps).toFixed(1)}bps off touch`
+                    : (s.quotes_at_touch === true ? 'at touch' : ''));
+            setText('queue-visibility', qVis || '—');
 
             renderSuggestedLadder(s);
 

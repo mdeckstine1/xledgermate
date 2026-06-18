@@ -53,6 +53,15 @@ logger = logging.getLogger(__name__)
 ENGINE_STOP_FILE = Path("logs/engine.stop")
 WS_STALE_REFRESH_S = 12.0
 DEFAULT_SAMPLE_INTERVAL_S = 5.0
+
+
+def _execution_brakes_summary_with_queue(summary: str, quote_visibility_summary: str) -> str:
+    if not quote_visibility_summary:
+        return summary
+    queue_part = f"queue {quote_visibility_summary}"
+    if summary and queue_part not in summary:
+        return f"{summary} | {queue_part}"
+    return summary or queue_part
 COMP_SCRAPE_INTERVAL_S = 15.0
 WS_MID_MOVE_REFRESH_BPS = 4.0
 WS_TOXIC_PRESERVE_OFF_RATIO = 0.35
@@ -926,6 +935,14 @@ class WsPureTradingEngine:
             g7_summary=str(ed.get("g7_summary") or ""),
             bid_touch_backoff_bps=float(ed.get("bid_touch_backoff_bps") or 0.0),
             ask_touch_backoff_bps=float(ed.get("ask_touch_backoff_bps") or 0.0),
+            g7_bid_role=str(ed.get("g7_bid_role") or ""),
+            g7_ask_role=str(ed.get("g7_ask_role") or ""),
+            g7_scaler_label=str(ed.get("g7_scaler_label") or ""),
+            g2_scaler_label=str(ed.get("g2_scaler_label") or ""),
+            execution_brakes_summary=_execution_brakes_summary_with_queue(
+                str(ed.get("execution_brakes_summary") or ""),
+                quote_visibility_summary,
+            ),
             quotes_at_touch=quotes_at_touch,
             worst_vs_touch_bps=float(worst_vs_touch_bps),
             quote_visibility_summary=str(quote_visibility_summary),

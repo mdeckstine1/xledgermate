@@ -26,7 +26,11 @@ from experimental.ws_feed.pure_inventory_policy import (
 )
 from experimental.ws_feed.ws_book_age_modulator import apply_ws_book_age_modulator
 from experimental.ws_feed.peer_lane_quoting import G4Adjustments, compute_g4_adjustments, prepare_quoting_intel
-from experimental.ws_feed.spread_quality_scaler import G2Adjustments, compute_g2_adjustments
+from experimental.ws_feed.spread_quality_scaler import (
+    G2Adjustments,
+    compute_g2_adjustments,
+    format_execution_brake_panel,
+)
 from strategy.fill_quality import FillQualityState
 from experimental.ws_feed.as_safety import enforce_reservation_gate
 from experimental.ws_feed.reservation_metrics import reservation_bbo_metrics
@@ -125,6 +129,11 @@ class PureQuoteDecision:
     g7_summary: str = ""
     bid_touch_backoff_bps: float = 0.0
     ask_touch_backoff_bps: float = 0.0
+    g7_bid_role: str = ""
+    g7_ask_role: str = ""
+    g7_scaler_label: str = ""
+    g2_scaler_label: str = ""
+    execution_brakes_summary: str = ""
 
     def to_runtime_dict(self, *, competitor_intel: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -164,6 +173,11 @@ class PureQuoteDecision:
             "g7_summary": self.g7_summary,
             "bid_touch_backoff_bps": self.bid_touch_backoff_bps,
             "ask_touch_backoff_bps": self.ask_touch_backoff_bps,
+            "g7_bid_role": self.g7_bid_role,
+            "g7_ask_role": self.g7_ask_role,
+            "g7_scaler_label": self.g7_scaler_label,
+            "g2_scaler_label": self.g2_scaler_label,
+            "execution_brakes_summary": self.execution_brakes_summary,
         }
         if competitor_intel:
             out.update({k: v for k, v in competitor_intel.items() if k != "top_competitors"})
@@ -473,6 +487,15 @@ class PureQuotePath:
             bid_backoff_bps=g7.bid_touch_backoff_bps,
             ask_backoff_bps=g7.ask_touch_backoff_bps,
         )
+        brake_panel = format_execution_brake_panel(
+            g2,
+            g7_summary=g7.summary,
+            g7_scaler_label=g7.scaler_label,
+            bid_touch_backoff_bps=g7.bid_touch_backoff_bps,
+            ask_touch_backoff_bps=g7.ask_touch_backoff_bps,
+            bid_role=g7.bid_role,
+            ask_role=g7.ask_role,
+        )
 
         ladder = build_pure_quote_ladder(
             mid=mid,
@@ -552,6 +575,11 @@ class PureQuotePath:
             g7_summary=g7.summary,
             bid_touch_backoff_bps=g7.bid_touch_backoff_bps,
             ask_touch_backoff_bps=g7.ask_touch_backoff_bps,
+            g7_bid_role=g7.bid_role,
+            g7_ask_role=g7.ask_role,
+            g7_scaler_label=brake_panel["g7_scaler_label"],
+            g2_scaler_label=brake_panel["g2_scaler_label"],
+            execution_brakes_summary=brake_panel["execution_brakes_summary"],
         )
         skim = (competitor_intel or {}).get("competitor_skim_advice", "") or ""
         decision.quote_decision_summary = _build_summary(

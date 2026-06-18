@@ -21,7 +21,10 @@ class ExecutionEnvelope:
     ask_touch_backoff_bps: float
     g2_spread_mult: float = 1.0
     inventory_posture: str = "balanced"
+    bid_role: str = "passive"
+    ask_role: str = "passive"
     summary: str = ""
+    scaler_label: str = ""
 
     @property
     def g7_summary(self) -> str:
@@ -54,24 +57,31 @@ def compute_execution_envelope(
     posture = _inventory_posture(inventory_label=inventory_label, inventory_skew=inventory_skew)
     if posture == "xrp_heavy":
         bid_base, ask_base = PASSIVE_BACKOFF_BPS, JOIN_BACKOFF_BPS
+        bid_role, ask_role = "passive", "join"
     elif posture == "rlusd_heavy":
         bid_base, ask_base = JOIN_BACKOFF_BPS, PASSIVE_BACKOFF_BPS
+        bid_role, ask_role = "join", "passive"
     else:
         bid_base = ask_base = PASSIVE_BACKOFF_BPS
+        bid_role = ask_role = "wide"
 
     mult = max(1.0, float(g2_spread_mult))
     bid_bps = round(bid_base * mult, 2)
     ask_bps = round(ask_base * mult, 2)
 
     mult_note = f" × G2 {mult:.2f}" if mult > 1.0 else ""
-    summary = f"G7 {posture}: bid {bid_bps:.1f}bps ask {ask_bps:.1f}bps{mult_note}"
+    summary = f"G7 {posture}: bid {bid_bps:.1f}bps ({bid_role}) · ask {ask_bps:.1f}bps ({ask_role}){mult_note}"
+    scaler_label = f"bid {bid_role} {bid_bps:.1f}bps · ask {ask_role} {ask_bps:.1f}bps"
 
     return ExecutionEnvelope(
         bid_touch_backoff_bps=bid_bps,
         ask_touch_backoff_bps=ask_bps,
         g2_spread_mult=mult,
         inventory_posture=posture,
+        bid_role=bid_role,
+        ask_role=ask_role,
         summary=summary,
+        scaler_label=scaler_label,
     )
 
 

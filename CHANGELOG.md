@@ -9,6 +9,18 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.17] — 2026-06-17 (`Ashigaru Kaizen II`)
+
+**Theme:** G2/G7 operator labels on runtime and HUD.
+
+### Added
+
+- **Scaler labels** — `g2_scaler_label`, `g7_scaler_label`, `execution_brakes_summary` on `PureQuoteDecision` / `RuntimeState`.
+- **G7 roles** — `bid_role` / `ask_role` (`join` / `passive` / `wide`) in `execution_envelope.py`.
+- **HUD** — Session fills card shows G2 scaler, G7 queue, and queue-vs-touch rows.
+
+---
+
 ## [2.1.16] — 2026-06-18 (`Ashigaru Kaizen II`)
 
 **Theme:** G7 execution envelope — per-side touch backoff × G2 brake.
