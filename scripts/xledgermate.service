@@ -1,0 +1,16 @@
+[Unit]
+Description=XLedgerMate WS + pure A-S engine (production)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/xledgermate
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/root/xledgermate/.venv/bin/python /root/xledgermate/main.py --mode ws-engine
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

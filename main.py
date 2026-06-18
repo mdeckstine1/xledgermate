@@ -60,11 +60,12 @@ def parse_args() -> argparse.Namespace:
             "send",
             "rebalance-check",
         ],
-        default="engine",
+        default="ws-engine",
         help=(
-            "engine = HTTP poll (legacy); ws-engine = WS + pure A-S v2; "
-            "ws-hud = real-time WS A-S HUD (:8765, mirrors ws-engine); "
-            "gui, once, cancel-offers, clear-kill, setup-trust, "
+            "ws-engine = WS + pure A-S production (default); ws-hud = operator HUD :8765; "
+            "engine = DEPRECATED HTTP poll (replay/lab only); "
+            "once = DEPRECATED single legacy cycle; "
+            "gui, cancel-offers, clear-kill, setup-trust, "
             "trust-no-ripple, send, rebalance-check"
         ),
     )
@@ -167,6 +168,10 @@ async def run_engine_async(config: BotConfig, mode: str, args: argparse.Namespac
         logger.info("RLUSD rippling disabled (No Ripple set): %s", tx_hash)
         return
     if mode == "once":
+        logger.warning(
+            "DEPRECATED: --mode once runs legacy HTTP-poll TradingEngine. "
+            "Production uses ws-engine. For replay use experimental/ws_feed/replay_long_run.py"
+        )
         await engine._run_cycle()
         logger.info("Single cycle complete.")
         return
@@ -204,6 +209,11 @@ async def run_engine_async(config: BotConfig, mode: str, args: argparse.Namespac
             logger.info("WS HUD stopped by user.")
         return
     _register_engine_pid_cleanup()
+    logger.warning(
+        "DEPRECATED: --mode engine is legacy HTTP-poll TradingEngine. "
+        "Production market making uses --mode ws-engine. "
+        "Sacred replay: experimental/ws_feed/replay_long_run.py"
+    )
     try:
         await engine.run()
     except KeyboardInterrupt:

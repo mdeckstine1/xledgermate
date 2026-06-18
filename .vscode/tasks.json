@@ -38,10 +38,10 @@
       "problemMatcher": []
     },
     {
-      "label": "XLedgerMate: Run Engine",
+      "label": "XLedgerMate: Run WS Engine",
       "type": "process",
       "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
-      "args": ["main.py", "--mode", "engine"],
+      "args": ["main.py", "--mode", "ws-engine"],
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -53,10 +53,39 @@
       "problemMatcher": []
     },
     {
-      "label": "XLedgerMate: Run One Cycle",
+      "label": "XLedgerMate: Run WS HUD",
       "type": "process",
       "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
-      "args": ["main.py", "--mode", "once"],
+      "args": ["main.py", "--mode", "ws-hud"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "xledgermate-hud",
+        "pattern": {
+          "regexp": "^(.*)$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "8765"
+        }
+      }
+    },
+    {
+      "label": "XLedgerMate: Run Legacy Engine (HTTP poll)",
+      "type": "process",
+      "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+      "args": ["main.py", "--mode", "engine"],
       "options": {
         "cwd": "${workspaceFolder}"
       },

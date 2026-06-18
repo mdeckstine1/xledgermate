@@ -1,7 +1,8 @@
 """
 Phase A2 + C1 + C2 — analyze live WS + pure A-S runtime exports.
 
-Reads `logs/ws_as_demo_runtime.json` (and optional timestamped backups) for:
+Reads `logs/runtime_state.json` (production ws-engine SSOT) or lab
+`logs/ws_as_demo_runtime.json` (and optional timestamped backups) for:
 - pressure variance and bucketed presence (low / mid / high)
 - zero_quote_reason breakdown (all samples, including quoted)
 - book spread vs A-S optimal spread (why 0 quotes)
@@ -422,7 +423,7 @@ def collect_samples(
     Returns (samples, source_notes).
     """
     logs = logs_dir or Path("logs")
-    primary = primary or logs / "ws_as_demo_runtime.json"
+    primary = primary or logs / "runtime_state.json"
     sources: List[str] = []
     samples: List[Dict[str, Any]] = []
 
@@ -431,7 +432,12 @@ def collect_samples(
         paths.append(primary)
     if include_backups and logs.exists():
         backups = sorted(
-            p for p in logs.glob("ws_as_demo_runtime_*.json") if p != primary
+            p
+            for p in (
+                list(logs.glob("runtime_state_*.json"))
+                + list(logs.glob("ws_as_demo_runtime_*.json"))
+            )
+            if p != primary
         )
         paths = backups + paths
 
@@ -608,7 +614,7 @@ def analyze_samples(samples: Sequence[Dict[str, Any]]) -> RuntimeAnalysis:
 def format_runtime_analysis_report(
     analysis: RuntimeAnalysis,
     *,
-    path_label: str = "logs/ws_as_demo_runtime.json",
+    path_label: str = "logs/runtime_state.json",
 ) -> str:
     lines = [
         "=== WS RUNTIME ANALYSIS (Phase A2 + C1 + C2) ===",
@@ -755,18 +761,18 @@ def run_runtime_analysis(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Analyze logs/ws_as_demo_runtime.json (Phase A2: pressure, spread, flips, competitor correlation)"
+        description="Analyze logs/runtime_state.json (ws-engine) or lab ws_as_demo export"
     )
     parser.add_argument(
         "--path",
         type=Path,
         default=None,
-        help="Runtime JSON path (default: logs/ws_as_demo_runtime.json)",
+        help="Runtime JSON path (default: logs/runtime_state.json)",
     )
     parser.add_argument(
         "--include-backups",
         action="store_true",
-        help="Also load ws_as_demo_runtime_*.json backups from logs/",
+        help="Also load runtime_state_*.json and ws_as_demo_runtime_*.json backups from logs/",
     )
     parser.add_argument("--json", action="store_true", dest="as_json", help="Emit machine-readable JSON")
     parser.add_argument(
@@ -776,7 +782,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    path = args.path or Path("logs/ws_as_demo_runtime.json")
+    path = args.path or Path("logs/runtime_state.json")
     analysis = run_runtime_analysis(path=path, include_backups=args.include_backups)
 
     if args.as_json:

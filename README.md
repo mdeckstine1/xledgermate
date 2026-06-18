@@ -53,24 +53,28 @@ xledgermate/
      - `xrpl_mainnet_rpc_url`
      - optional `private_node_url` (overrides both)
 
-3. Run everything (one step):
+3. Run production stack (one step):
 
    - Double-click `run.bat`, or in terminal: `.\run.ps1`
    - In Cursor: **Terminal → Run Task → XLedgerMate: Run All**
 
-   This opens the engine and GUI in separate windows.
+   This opens **ws-engine** (live MM) and the **WS HUD** at http://localhost:8765 in separate windows.
 
 4. Or run components separately:
 
-   - Trading engine (continuous loop): `python main.py --mode engine`
-   - Single test cycle: `python main.py --mode once`
-   - GUI (control panel): `python main.py --mode gui`
+   - **Production engine:** `python main.py --mode ws-engine` (default if you omit `--mode`)
+   - **Production HUD:** `python main.py --mode ws-hud` → http://localhost:8765
+   - **Legacy HTTP poll** (replay/lab only): `python main.py --mode engine`
+   - **Legacy single cycle:** `python main.py --mode once`
+   - **Streamlit lab panel:** `python main.py --mode gui` → http://localhost:8501
 
    In Cursor, use **Terminal → Run Task**:
-   - **XLedgerMate: Run All**
-   - **XLedgerMate: Run Engine**
-   - **XLedgerMate: Run One Cycle**
-   - **XLedgerMate: Run GUI**
+   - **XLedgerMate: Run All** — ws-engine + WS HUD
+   - **XLedgerMate: Run WS Engine**
+   - **XLedgerMate: Run WS HUD**
+   - **XLedgerMate: Run GUI** — legacy Streamlit lab
+
+   See [`docs/WS_ONLY_MIGRATION.md`](docs/WS_ONLY_MIGRATION.md) for legacy vs production map.
 
 5. Safety defaults:
 

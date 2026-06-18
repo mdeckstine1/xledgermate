@@ -1,4 +1,4 @@
-"""Print sacred vs WS demo runtime side-by-side (D3 terminal view)."""
+"""Print production WS runtime vs optional lab export side-by-side."""
 from __future__ import annotations
 
 import json
@@ -27,45 +27,56 @@ def _presence(runtime: dict) -> tuple[float | None, int]:
     return (float(pct) if pct is not None else None), int(runtime.get("sample_count") or 0)
 
 
+def _is_ws_production(runtime: dict) -> bool:
+    return (
+        runtime.get("price_source") == "ws_book_feed"
+        or runtime.get("as_mode") == "pure"
+        or bool(runtime.get("ws_as_version"))
+    )
+
+
 def main() -> int:
-    sacred = _load(ROOT / "logs" / "runtime_state.json")
-    ws = _load(ROOT / "logs" / "ws_as_demo_runtime.json")
+    production = _load(ROOT / "logs" / "runtime_state.json")
+    lab = _load(ROOT / "logs" / "ws_as_demo_runtime.json")
 
-    print("=== D3 Side-by-side snapshot ===")
-    print(f"Sacred updated: {sacred.get('updated_utc', 'n/a')}")
-    ws_hist = ws.get("sample_history") or [{}]
-    print(f"WS last sample:  {ws_hist[-1].get('ts_utc', 'n/a')}")
+    print("=== WS runtime side-by-side ===")
+    print(f"Production updated: {production.get('updated_utc', 'n/a')}")
+    lab_hist = lab.get("sample_history") or [{}]
+    print(f"Lab last sample:    {lab_hist[-1].get('ts_utc', 'n/a')}")
     print()
 
-    print("--- Sacred (VPS path) ---")
-    print(f"  profile:           {sacred.get('active_profile')}")
-    print(f"  market_edge_met:   {sacred.get('market_edge_met')}")
-    print(f"  zero_quote_reason: {sacred.get('zero_quote_reason', '—')}")
-    print(f"  book_spread_pct:   {sacred.get('book_spread_pct')}")
-    sp, sn = _presence(sacred)
+    print("--- Production (ws-engine SSOT) ---")
+    print(f"  ws_as_version:     {production.get('ws_as_version', '—')}")
+    print(f"  price_source:      {production.get('price_source', '—')}")
+    print(f"  as_mode:           {production.get('as_mode', '—')}")
+    print(f"  zero_quote_reason: {production.get('zero_quote_reason', '—')}")
+    print(f"  book_spread_pct:   {production.get('book_spread_pct')}")
+    print(f"  ws_book_age_s:     {production.get('ws_book_age_s')}")
+    sp, sn = _presence(production)
     print(f"  presence:          {sp}% ({sn} samples)")
-    print(f"  open_offers:       {sacred.get('open_offers_count', '—')}")
+    print(f"  open_offers:       {production.get('open_offers_count', '—')}")
     print()
 
-    print("--- WS + Pure A-S (lab) ---")
-    print(f"  ws_as_version:     {ws.get('ws_as_version')}")
-    print(f"  market_edge_met:   {ws.get('market_edge_met')}")
-    print(f"  zero_quote_reason: {ws.get('zero_quote_reason')}")
-    print(f"  as_reservation:    {ws.get('as_reservation')}")
-    print(f"  ws_book_age_s:     {ws.get('ws_book_age_s')}")
-    print(f"  dry_run open:      {ws.get('open_offers_count')}")
-    wp, wn = _presence(ws)
+    print("--- Lab export (live_pure_as_tester / dry-run) ---")
+    print(f"  ws_as_version:     {lab.get('ws_as_version')}")
+    print(f"  zero_quote_reason: {lab.get('zero_quote_reason')}")
+    print(f"  as_reservation:    {lab.get('as_reservation')}")
+    print(f"  ws_book_age_s:     {lab.get('ws_book_age_s')}")
+    print(f"  dry_run open:      {lab.get('open_offers_count')}")
+    wp, wn = _presence(lab)
     print(f"  presence:          {wp}% ({wn} samples)")
     print()
 
-    print("--- Swap preview headline ---")
-    se = sacred.get("market_edge_met", True)
-    wq = ws.get("market_edge_met", True) or ws.get("zero_quote_reason") == "quoted"
-    print(f"  Sacred edge met: {'YES' if se else 'NO'}  |  WS would quote: {'YES' if wq else 'NO'}")
+    print("--- Headline ---")
+    prod_quote = production.get("zero_quote_reason") == "quoted" or production.get("would_quote")
+    lab_quote = lab.get("would_quote") or lab.get("zero_quote_reason") == "quoted"
+    print(f"  Production would quote: {'YES' if prod_quote else 'NO'}  |  Lab would quote: {'YES' if lab_quote else 'NO'}")
     if sp is not None and wp is not None:
         print(f"  Presence delta:  {sp}% -> {wp}% ({wp - sp:+.1f} pts)")
+    if production and not _is_ws_production(production):
+        print("  WARNING: runtime_state.json does not look like ws-engine output (legacy poll?)")
 
-    return 0 if (sacred or ws) else 1
+    return 0 if (production or lab) else 1
 
 
 if __name__ == "__main__":

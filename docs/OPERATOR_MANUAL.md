@@ -2,6 +2,8 @@
 
 *Version 1.4.1 · For humans who remember when “save” meant a floppy disk*
 
+> **Production (VPS / live MM, v2.1+):** Market making runs as **`ws-engine`** with the operator **HUD at port 8765** (`http://YOUR_VPS:8765`). Runtime state lives in `logs/runtime_state.json`. The Streamlit panel at **:8501** below is the **legacy lab** UI — still useful for replay analysis, not the live soak path. See [`WS_ONLY_MIGRATION.md`](WS_ONLY_MIGRATION.md).
+
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
 ---
@@ -18,15 +20,19 @@ This guide assumes you are **not** a programmer. You have a **Bot Account** (a s
 
 ## How to start it (the easy way)
 
+**Production (recommended):** Double-click `run.bat` or run `.\run.ps1`. This starts **ws-engine** and the **WS HUD** at **http://localhost:8765**.
+
+**Legacy lab (Streamlit):** `python main.py --mode gui` → **http://localhost:8501** (sections below describe this UI).
+
 1. Open the project folder (`xledgermate`).
 2. **Double-click `run.bat`.**
 3. Wait. Two things should happen:
-   - A black window (the **engine** — the worker).
-   - Your web browser opens to **http://localhost:8501** (the **control panel**).
+   - A black window (**ws-engine** — the live market maker).
+   - A second window serving the **WS HUD** at **http://localhost:8765**.
 
-If the browser does not open, type that address in Chrome or Edge yourself.
+For the legacy Streamlit lab only, use `python main.py --mode gui` and open **http://localhost:8501**.
 
-**To stop:** Close the browser tab if you like, but also close the black engine window — or use **Stop Bot** in the Dashboard (see below).
+**To stop:** Close the engine/HUD windows — or use **Stop Bot** in Streamlit Dashboard if you are on the lab UI (see below).
 
 ---
 

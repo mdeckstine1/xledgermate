@@ -162,7 +162,12 @@ def _presence_from_decisions(lines: Sequence[str], as_strat: AvellanedaStrategy)
 def find_best_soak_pass(logs_dir: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Return best passing C2 soak evaluation and source filename."""
     candidates: List[Tuple[float, str, SoakEvaluation]] = []
-    paths = sorted(logs_dir.glob("ws_as_demo_runtime*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    paths = sorted(
+        list(logs_dir.glob("runtime_state*.json"))
+        + list(logs_dir.glob("ws_as_demo_runtime*.json")),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
     for path in paths:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -198,7 +203,7 @@ def build_swap_readiness_report(
     crit = criteria or SwapReadinessCriteria()
     logs = logs_dir or Path("logs")
     decisions_path = Path(decisions_path)
-    ws_runtime_path = Path(ws_runtime_path or logs / "ws_as_demo_runtime.json")
+    ws_runtime_path = Path(ws_runtime_path or logs / "runtime_state.json")
     trades_file = trades_path or resolve_trades_path(logs)
 
     report = SwapReadinessReport(
@@ -264,8 +269,8 @@ def build_swap_readiness_report(
         report.soak = soak_dict
     else:
         report.warnings.append(
-            "no passing C2 soak snapshot found in logs/ws_as_demo_runtime*.json "
-            "(run live_pure_as_tester ≥30 min)"
+            "no passing C2 soak snapshot found in logs/runtime_state*.json or "
+            "logs/ws_as_demo_runtime*.json (run ws-engine soak or live_pure_as_tester ≥30 min)"
         )
         if ws_runtime_path.exists():
             try:
@@ -447,7 +452,7 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="D4 swap readiness report (replay + economics + soak + wiring)")
     p.add_argument("--decisions", default="logs/decisions.jsonl")
     p.add_argument("--trades", default=None)
-    p.add_argument("--ws-runtime", default="logs/ws_as_demo_runtime.json")
+    p.add_argument("--ws-runtime", default="logs/runtime_state.json", help="Production SSOT or lab export")
     p.add_argument("--profile", default="tight_spread")
     p.add_argument("--json", action="store_true", help="Print JSON to stdout")
     p.add_argument("--output", default=None, help="Write JSON report to path (default: logs/swap_readiness_report.json)")

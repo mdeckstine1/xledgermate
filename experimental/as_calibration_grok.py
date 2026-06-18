@@ -417,7 +417,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Grok advisory A-S calibration (Phase A3): live market + competitors -> param trials"
     )
-    parser.add_argument("--path", type=Path, default=Path("logs/ws_as_demo_runtime.json"))
+    parser.add_argument(
+        "--path",
+        type=Path,
+        default=Path("logs/runtime_state.json"),
+        help="Production runtime_state.json or lab ws_as_demo_runtime.json",
+    )
     parser.add_argument("--key", default="", help="xAI API key (or set XLG_GROK_KEY env)")
     parser.add_argument("--model", default="grok-3")
     parser.add_argument("--gamma", type=float, default=0.35, help="Current gamma used in brief")
