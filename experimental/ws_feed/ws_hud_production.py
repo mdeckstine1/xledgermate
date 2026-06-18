@@ -176,6 +176,59 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
 
     rt = enrich_runtime_reservation_metrics(rt)
 
+    # Fallback synthesis for "Queue vs touch" using planned quote_intents + BBO from snapshot.
+    # This populates the Session fills card row after HUD-only restart, even when the
+    # running ws-engine process has not yet been restarted (so it hasn't written the
+    # authoritative worst_vs_touch_bps / quote_visibility_summary into runtime_state.json).
+    # Engine-provided values (when present) are preferred.
+    if not rt.get("quote_visibility_summary") and not rt.get("worst_vs_touch_bps"):
+        try:
+            from utils.book_visibility import enrich_open_offers, quote_visibility
+
+            intents = rt.get("quote_intents") or []
+            bb = rt.get("best_bid") or rt.get("best_bid_rlusd_per_xrp")
+            ba = rt.get("best_ask") or rt.get("best_ask_rlusd_per_xrp")
+            if intents and (bb is not None or ba is not None):
+                as_offers = [
+                    {
+                        "side": it.get("side"),
+                        "price": it.get("price"),
+                        "size_xrp": it.get("size_xrp") or it.get("size"),
+                    }
+                    for it in intents
+                    if isinstance(it, dict) and it.get("price")
+                ]
+                if as_offers:
+                    enriched_offers = enrich_open_offers(as_offers, best_bid=bb, best_ask=ba)
+                    at_touch, worst_bps, summary = quote_visibility(enriched_offers)
+                    rt["worst_vs_touch_bps"] = float(worst_bps or 0.0)
+                    rt["quote_visibility_summary"] = str(summary or "")
+                    if rt.get("quotes_at_touch") is None:
+                        rt["quotes_at_touch"] = bool(at_touch)
+
+                    # Also synthesize a basic "observed queue" label for the G7 row
+                    # when the engine has not yet written the G7 decision label.
+                    if not rt.get("g7_scaler_label") and not rt.get("g7_summary"):
+                        try:
+                            bid_int = next((i for i in intents if isinstance(i, dict) and i.get("side") == "bid" and i.get("price")), None)
+                            ask_int = next((i for i in intents if isinstance(i, dict) and i.get("side") == "ask" and i.get("price")), None)
+                            parts = []
+                            if bid_int and bb:
+                                b_bps = (float(bid_int["price"]) - float(bb)) / float(bb) * 10000.0
+                                b_txt = f"bid {abs(b_bps):.1f}bps" + (" back" if b_bps < -0.5 else (" join" if b_bps > 0.5 else " at touch"))
+                                parts.append(b_txt)
+                            if ask_int and ba:
+                                a_bps = (float(ask_int["price"]) - float(ba)) / float(ba) * 10000.0
+                                a_txt = f"ask {abs(a_bps):.1f}bps" + (" back" if a_bps > 0.5 else (" join" if a_bps < -0.5 else " at touch"))
+                                parts.append(a_txt)
+                            if parts:
+                                rt["g7_scaler_label"] = "observed: " + " / ".join(parts) + " (from ladder)"
+                        except Exception:
+                            pass
+        except Exception:
+            # best-effort only; never break the HUD mirror on synthesis failure
+            pass
+
     return rt
 
 

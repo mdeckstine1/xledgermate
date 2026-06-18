@@ -21,9 +21,9 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 | — | Watch G6 tier, toxic@30s, markout@30s (v2.1.17 soak) | ongoing |
 | — | **Queue review** — vs-touch bps, cancel/fill, fill age (G7 A/B) | [x] baseline captured + 61-fill data in intel JSONL |
 | — | **Skim Δ** vs wallet Δ | [x] improved — coherence guard + HUD no longer overwrites |
-| — | HUD: G7 queue + "Queue vs touch" visible in Session fills card | [ ] pending HUD service restart + hard refresh (fields wired) |
+| — | HUD: G7 queue + "Queue vs touch" visible in Session fills card | [ ] HUD restart (soak-safe) now synthesizes observed queue from ladder when engine snapshot lacks G7 fields; full G7 decision labels appear after next engine restart (the snapshot writer) |
 
-**G7 soak checkpoint (2026-06-18, ~61 session fills on v2.1.17):** C2 sample_history gate now **PASS** (123 min, 86.8% presence, flip 0.141). G6 still `pilot_watch` (toxicity + empty peer lane) but gate PASS. Session Skim slipped to −0.106 XRP during xrp_heavy leg (adverse flow on the join-ask side) then inventory normalized. Markout@30s recovered to ~0. See A/B below. Full snapshot in `logs/post_deploy_snapshot.txt`. Hard-refresh HUD to see G7 queue / visibility in Session fills card (g7-scaler + queue-visibility).
+**G7 soak checkpoint (2026-06-18, ~61 session fills on v2.1.17):** C2 sample_history gate now **PASS** (123 min, 86.8% presence, flip 0.141). G6 still `pilot_watch` (toxicity + empty peer lane) but gate PASS. Session Skim slipped to −0.106 XRP during xrp_heavy leg (adverse flow on the join-ask side) then inventory normalized. Markout@30s recovered to ~0. See A/B below. Full snapshot in `logs/post_deploy_snapshot.txt`. After HUD restart + hard refresh, "Queue vs touch" will show observed posted distances from the current ladder (synthesized when engine snapshot is from pre-restart code). The specific "G7 queue" decision string (e.g. "xrp_heavy: bid ...") will appear after the ws-engine process itself is restarted.
 
 ### Next engine window — G7 execution envelope
 
