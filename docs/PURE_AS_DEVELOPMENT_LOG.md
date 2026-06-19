@@ -3,8 +3,8 @@
 **Purpose:** Posterity — how we got here, what we learned, and why decisions were made.  
 **Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live priority stack; this file is the narrative + archaeology.
 
-**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.23  
-**Last updated:** 2026-06-20 (A1 G7 sell-defense shipped)
+**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.24 (built; VPS still v2.1.23 A1 soak)  
+**Last updated:** 2026-06-20 (A2 G7 solo + G4 solo_acquire built; deploy after A1 ~50-fill soak)
 
 ---
 
@@ -346,7 +346,7 @@ Operator consensus: stop grading churn; fix false **hold** on thin join-aligned 
 
 ### Acquisition pivot (2026-06-20)
 
-Build order: **A1 → A2 → A3**. **A1 shipped** v2.1.23 / G7 v1.2 ask sell-defense. VPS baseline: 83 fills, BUY +0.072 / SELL −0.035 XRP, worst-8 mostly SELL. Triggers: G2 brake, toxic@30s≥15%, markout@30s&lt;−0.005% (n≥8). Action: ask join→passive +2 bps ask-only. **Segment-end engine deploy.**
+Build order: **A1 → A2 → A3**. **A1 deployed** v2.1.23 / G7 v1.2 ask sell-defense (A1 segment soak ~50 fills). **A2 built** v2.1.24 / G7 v1.3 solo acquisition + G4 v1.1 `solo_acquire` — **not deployed** until A1 soak analysis.
 
 ---
 

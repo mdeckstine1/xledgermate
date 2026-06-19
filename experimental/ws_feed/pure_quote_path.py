@@ -25,7 +25,7 @@ from experimental.ws_feed.pure_inventory_policy import (
     count_active_l1_quotes,
 )
 from experimental.ws_feed.ws_book_age_modulator import apply_ws_book_age_modulator
-from experimental.ws_feed.peer_lane_quoting import G4Adjustments, compute_g4_adjustments, prepare_quoting_intel
+from experimental.ws_feed.peer_lane_quoting import G4Adjustments, compute_g4_adjustments, is_peer_lane_empty, prepare_quoting_intel
 from experimental.ws_feed.spread_quality_scaler import (
     G2Adjustments,
     compute_g2_adjustments,
@@ -134,6 +134,7 @@ class PureQuoteDecision:
     g7_scaler_label: str = ""
     g7_ask_sell_defense: bool = False
     g7_sell_defense_reason: str = ""
+    g7_solo_acquisition: bool = False
     g2_scaler_label: str = ""
     execution_brakes_summary: str = ""
 
@@ -180,6 +181,7 @@ class PureQuoteDecision:
             "g7_scaler_label": self.g7_scaler_label,
             "g7_ask_sell_defense": self.g7_ask_sell_defense,
             "g7_sell_defense_reason": self.g7_sell_defense_reason,
+            "g7_solo_acquisition": self.g7_solo_acquisition,
             "g2_scaler_label": self.g2_scaler_label,
             "execution_brakes_summary": self.execution_brakes_summary,
         }
@@ -375,6 +377,9 @@ class PureQuotePath:
                 inventory_skew=inv_skew,
                 inventory_label=inv_state.label,
                 g2_size_mult=g2.size_mult,
+                toxic_ratio_30s=(
+                    float(fill_quality.toxic_ratio_30s) if fill_quality else 0.0
+                ),
             )
             pressure_size_mult *= g4.size_mult
         else:
@@ -497,6 +502,7 @@ class PureQuotePath:
                 float(fill_quality.mean_markout_30s_pct) if fill_quality else 0.0
             ),
             recent_fills=int(fill_quality.recent_fills) if fill_quality else 0,
+            peer_lane_empty=is_peer_lane_empty(quoting_intel),
         )
         l1_bid_price, l1_ask_price = touch_prices_from_backoff(
             best_bid=best_bid,
@@ -597,6 +603,7 @@ class PureQuotePath:
             g7_scaler_label=brake_panel["g7_scaler_label"],
             g7_ask_sell_defense=g7.ask_sell_defense,
             g7_sell_defense_reason=g7.sell_defense_reason,
+            g7_solo_acquisition=g7.solo_acquisition,
             g2_scaler_label=brake_panel["g2_scaler_label"],
             execution_brakes_summary=brake_panel["execution_brakes_summary"],
         )

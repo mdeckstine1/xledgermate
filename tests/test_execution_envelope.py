@@ -4,6 +4,7 @@ from experimental.ws_feed.execution_envelope import (
     ASK_DEFENSE_EXTRA_BPS,
     JOIN_BACKOFF_BPS,
     PASSIVE_BACKOFF_BPS,
+    apply_solo_lane_posture,
     compute_execution_envelope,
     resolve_join_backoff_bps,
     sell_defense_active,
@@ -113,3 +114,66 @@ def test_sell_defense_inactive_when_markout_ok() -> None:
     )
     assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
     assert env.ask_sell_defense is False
+
+
+def test_solo_acquisition_balanced_bid_join() -> None:
+    env = compute_execution_envelope(
+        inventory_label="balanced",
+        g2_spread_mult=1.0,
+        peer_lane_empty=True,
+        toxic_ratio_30s=0.05,
+    )
+    assert env.solo_acquisition is True
+    assert env.bid_touch_backoff_bps == JOIN_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.bid_role == "join"
+    assert env.ask_role == "passive"
+    assert "solo acquire" in env.summary
+
+
+def test_solo_acquisition_xrp_heavy_passive_both() -> None:
+    env = compute_execution_envelope(
+        inventory_label="xrp_heavy",
+        g2_spread_mult=1.0,
+        peer_lane_empty=True,
+        toxic_ratio_30s=0.05,
+    )
+    assert env.solo_acquisition is True
+    assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.bid_role == "passive"
+    assert env.ask_role == "passive"
+
+
+def test_solo_acquisition_skipped_on_toxic() -> None:
+    env = compute_execution_envelope(
+        inventory_label="balanced",
+        peer_lane_empty=True,
+        toxic_ratio_30s=0.25,
+    )
+    assert env.solo_acquisition is False
+    assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+
+
+def test_solo_acquisition_skipped_on_g2_brake() -> None:
+    env = compute_execution_envelope(
+        inventory_label="balanced",
+        peer_lane_empty=True,
+        g2_spread_mult=1.1,
+        toxic_ratio_30s=0.05,
+    )
+    assert env.solo_acquisition is False
+
+
+def test_apply_solo_lane_posture_no_intel_fields() -> None:
+    bid, ask, br, ar, solo = apply_solo_lane_posture(
+        posture="balanced",
+        peer_lane_empty=False,
+        join_bps=JOIN_BACKOFF_BPS,
+        bid_base=PASSIVE_BACKOFF_BPS,
+        ask_base=PASSIVE_BACKOFF_BPS,
+        bid_role="wide",
+        ask_role="wide",
+    )
+    assert solo is False
+    assert bid == PASSIVE_BACKOFF_BPS

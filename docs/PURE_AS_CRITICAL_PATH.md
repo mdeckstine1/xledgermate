@@ -1,8 +1,8 @@
 # Pure A-S Critical Path
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
-**Version:** v2.1.23 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-20 (A1 G7 sell-defense shipped · segment-end deploy)
+**Version:** v2.1.24 · **Branch:** `Ashigaru-Kaizen-II`  
+**Last updated:** 2026-06-20 (A2 built v2.1.24 · VPS A1 soak on v2.1.23)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
@@ -18,7 +18,7 @@ Ordered by what live soaks proved matters. **Do not skip tiers** — finish P0 b
 |-----|------|-------------|--------|
 | **P2** | **G6 v1.1** (HUD-only) | M6 false hold; align gate with macro ops | **[x] shipped** — calibration soak ongoing |
 | **P1** | **A1 — SELL-side bleed** | VPS 83 fills: BUY +0.072 / SELL −0.035 XRP | **[x] v2.1.23** — G7 v1.2 ask defense · **deploy at segment end** |
-| **P1** | **A2 — presence / fill rate** | Solo whale book — win by being at touch | after A1 baseline |
+| **P1** | **A2 — presence / fill rate** | Solo whale book — win by being at touch | **[x] v2.1.24 built** — deploy after A1 ~50-fill soak |
 | **P1** | **A3 — stale-quote tail** | #2 fill-age 127s–4876s; toxic stale asks | after A2 |
 | **P2** | G6 calibration soak | ~50 fills on v1.1 labels (engine unchanged) | ongoing — **hold expected** until A1 |
 | **P3** | **G8** spot trend posture | #1 spot pain; #2 spot helped — **defer** | spec only — [stance](#spot--inventory-operator-stance) |
@@ -81,7 +81,7 @@ We are **not** building a spot-prediction or directional trading bot. Spot moves
 | Order | Build | Segment signal | Target |
 |-------|-------|----------------|--------|
 | **A1** | SELL-side bleed | #2 SELL −0.043 vs BUY +0.067 XRP | Flatten side skew; lift session bps off hold band |
-| **A2** | Presence / fill rate | Solo band, 0 peers | Raise `as_presence_pct` and fills/hour without more toxic |
+| **A2** | Presence / fill rate | Solo band, 0 peers | Raise `as_presence_pct` and fills/hour without more toxic | **[x] v2.1.24 built** — deploy after A1 ~50-fill soak |
 | **A3** | Stale-quote tail | 127s–4876s ask fills in #2 | Cap quote age at fill; cut stale-toxic SELL |
 
 #### A1 — SELL-side bleed (shipped v2.1.23 / G7 v1.2)
@@ -98,13 +98,26 @@ We are **not** building a spot-prediction or directional trading bot. Spot moves
 
 **Done when:** Session `by side` SELL capture ≥ 0; session bps ≥ 3 with pos ≥ 70% → G6 off `hold`.
 
-#### A2 — presence / fill rate
+#### A2 — presence / fill rate (built v2.1.24 / G7 v1.3 + G4 v1.1)
 
-Solo whale book — no peer queue war. After A1 stops bleeding on asks:
+Solo whale book — no peer queue war. **Built locally; deploy after A1 ~50-fill soak + analysis.**
 
-- Track `as_presence_pct`, `would_quote_pct`, fills/hour (soak strip).
-- Levers: size ladder (G4 neutral today), join vs passive balance when alone at touch, cancel/fill window only if presence already high.
-- **Done when:** Sustained presence ≥75% with toxic@30s ≤30% and improving fill rate.
+**G7 v1.3 solo acquisition** (`execution_envelope.py`):
+
+- When `peer_lane_empty` and toxic@30s &lt; 20% and no G2 brake:
+  - **balanced** / **rlusd_heavy:** bid **join** (5 bps), ask **passive** (8 bps)
+  - **xrp_heavy:** passive both (no ask join — A1 lesson)
+- Skips when G2 braking or toxic elevated.
+- Observability: `g7_solo_acquisition`, `· solo acquire` in G7 summary.
+
+**G4 v1.1 solo_acquire** (`peer_lane_quoting.py`):
+
+- Empty lane + low toxic + G2 not defensive → bid size **+6%**, ask **+2%** (`grade=solo_acquire`).
+- Falls back to neutral `empty_lane` when toxic ≥20% or G2 size brake.
+
+**Deploy:** segment-end `systemctl restart xledgermate` after A1 soak verdict (bundled with A1 on VPS today).
+
+**Done when:** Sustained presence ≥75% with toxic@30s ≤30% and improving fill rate.
 
 #### A3 — stale-quote tail
 

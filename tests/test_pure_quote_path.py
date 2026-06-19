@@ -2,6 +2,7 @@
 
 import asyncio
 
+from experimental.ws_feed.execution_envelope import JOIN_BACKOFF_BPS, PASSIVE_BACKOFF_BPS
 from experimental.ws_feed.pure_quote_path import PureQuotePath, WS_AS_VERSION, book_scaled_volatility_pct
 
 
@@ -133,11 +134,28 @@ def test_zero_quote_reason_in_summary() -> None:
 
 
 def test_g4_peer_lane_in_quote_path() -> None:
-    """G4: empty lane neutral; peer lane + fled applies skim side bias."""
+    """G4: empty lane solo_acquire; peer lane + fled applies skim side bias."""
     path = PureQuotePath(gamma=0.35, kappa=3.5, configured_l1_xrp=150.0, balance_fraction_k=0.07)
 
     async def run() -> None:
-        empty = await path.compute_decision(
+        balanced_empty = await path.compute_decision(
+            mid=1.10,
+            best_bid=1.099,
+            best_ask=1.101,
+            xrp_bal=500.0,
+            rlusd_bal=550.0,
+            competitor_intel={
+                "competitor_pressure": 0.85,
+                "peer_lane_count": 0,
+                "peer_lane_empty": True,
+            },
+        )
+        assert balanced_empty.g4_grade == "solo_acquire"
+        assert balanced_empty.g7_solo_acquisition is True
+        assert balanced_empty.g7_bid_role == "join"
+        assert balanced_empty.g7_ask_role == "passive"
+
+        xrp_empty = await path.compute_decision(
             mid=1.120508,
             best_bid=1.1198083175159341,
             best_ask=1.1212070418817652,
@@ -149,8 +167,10 @@ def test_g4_peer_lane_in_quote_path() -> None:
                 "peer_lane_empty": True,
             },
         )
-        assert empty.g4_grade == "empty_lane"
-        assert "G4 neutral" in empty.g4_summary
+        assert xrp_empty.g4_grade == "solo_acquire"
+        assert xrp_empty.g7_solo_acquisition is True
+        assert xrp_empty.g7_bid_role == "passive"
+        assert xrp_empty.g7_ask_role == "passive"
 
         skim = await path.compute_decision(
             mid=1.120508,
@@ -168,7 +188,7 @@ def test_g4_peer_lane_in_quote_path() -> None:
         assert skim.g4_grade == "skim"
         assert skim.g4_active is True
         assert skim.g4_ask_size_mult > 1.0
-        assert skim.ask_size > empty.ask_size
+        assert skim.ask_size > xrp_empty.ask_size
 
     asyncio.run(run())
 
@@ -185,8 +205,8 @@ def test_g7_xrp_heavy_ask_tighter_touch() -> None:
             rlusd_bal=80.0,
             target_ratio=0.55,
         )
-        assert d.ask_touch_backoff_bps == 3.0
-        assert d.bid_touch_backoff_bps == 8.0
+        assert d.ask_touch_backoff_bps == JOIN_BACKOFF_BPS
+        assert d.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
         assert d.g7_summary.startswith("G7 xrp_heavy")
         assert d.g7_ask_role == "join"
         assert d.g7_bid_role == "passive"

@@ -1934,12 +1934,141 @@ The A-S strategy itself decides presence via reservation price being inside the 
             return 'unknown';
         }
 
+        function escapeHudHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function safeNum(v, fallback) {
+            const n = parseFloat(v);
+            return Number.isFinite(n) ? n : fallback;
+        }
+
         function g6SoakPillClass(tier) {
             const t = String(tier || '');
             if (t === 'active' || t === 'scale_ready') return 'good';
             if (t === 'thin_edge' || t === 'pilot_watch' || t === 'pilot') return 'warn';
             if (t === 'hold' || t === 'halted') return 'bad';
             return 'neutral';
+        }
+
+        function spotMidChangePct(s) {
+            const mid = sessionMid(s);
+            const bm = s.session_baseline_mid != null ? parseFloat(s.session_baseline_mid) : NaN;
+            if (mid == null || Number.isNaN(bm) || bm <= 0) return null;
+            return 100 * (mid - bm) / bm;
+        }
+
+        function g2MarqueeKind(s) {
+            const grade = String(s.g2_grade || 'neutral').toLowerCase();
+            const sm = s.g2_spread_mult != null ? parseFloat(s.g2_spread_mult) : 1.0;
+            if (grade === 'defensive' || grade === 'stressed' || sm > 1.15) return 'danger';
+            if (grade === 'cautious' || sm > 1.0) return 'warn';
+            if (grade === 'ok' || grade === 'neutral') return 'quote';
+            return 'info';
+        }
+
+        function g2MarqueeText(s) {
+            const grade = s.g2_grade || 'neutral';
+            const sm = safeNum(s.g2_spread_mult, 1.0);
+            if (grade === 'ok' || (grade === 'neutral' && sm <= 1.0)) return 'G2 ok';
+            if (sm > 1.0) return `G2 ${grade} spread x${sm.toFixed(2)}`;
+            return `G2 ${grade}`;
+        }
+
+        function g6MarqueeKind(tier) {
+            const t = String(tier || '');
+            if (t === 'hold' || t === 'halted') return 'danger';
+            if (t === 'thin_edge' || t === 'pilot_watch' || t === 'warming_up') return 'warn';
+            if (t === 'active' || t === 'scale_ready' || t === 'pilot') return 'quote';
+            return 'info';
+        }
+
+        function g7MarqueeText(s) {
+            const bid = s.g7_bid_role || '—';
+            const ask = s.g7_ask_role || '—';
+            let parts = [`G7 bid ${bid} · ask ${ask}`];
+            if (s.g7_solo_acquisition) parts.push('solo acquire');
+            if (s.g7_ask_sell_defense) parts.push('ask defense');
+            return parts.join(' · ');
+        }
+
+        function g7MarqueeKind(s) {
+            if (s.g7_ask_sell_defense) return 'warn';
+            if (s.g7_solo_acquisition) return 'quote';
+            return 'info';
+        }
+
+        function spotMarqueeText(s) {
+            const mid = sessionMid(s);
+            const spotPct = spotMidChangePct(s);
+            const spotR = spotDeltaRlusd(s);
+            if (mid == null) return 'XRP spot: —';
+            let line = `XRP ${mid.toFixed(4)} RLUSD`;
+            if (spotPct != null && !Number.isNaN(spotPct)) {
+                const sign = spotPct >= 0 ? '+' : '';
+                line += ` · Δmid ${sign}${spotPct.toFixed(2)}%`;
+            }
+            if (spotR != null && !Number.isNaN(spotR)) {
+                const sign = spotR >= 0 ? '+' : '';
+                line += ` · spot ${sign}${spotR.toFixed(2)} RLUSD`;
+            }
+            return line;
+        }
+
+        function spotMarqueeKind(s) {
+            const spotR = spotDeltaRlusd(s);
+            if (spotR == null || Number.isNaN(spotR)) return 'info';
+            if (spotR > 0.05) return 'quote';
+            if (spotR < -0.05) return 'warn';
+            return 'info';
+        }
+
+        function buildOperatorMarqueeHtml(s) {
+            const ver = s.ws_as_version || '—';
+            const fills = s.fills_session != null ? parseInt(s.fills_session, 10) : 0;
+            const presence = s.as_presence_pct != null ? `${parseFloat(s.as_presence_pct).toFixed(0)}%` : '—';
+            const inv = s.inventory_label || '—';
+            const g6 = resolveG6Fields(s);
+            const g6Tier = g6.tier ? String(g6.tier).replace(/_/g, ' ') : 'warming';
+            const g6Ver = g6VersionShort(g6.version);
+            const g6Label = g6Ver ? `G6 ${g6Ver}` : 'G6';
+
+            let html = `<span class="quote">PURE A-S</span> <span class="info">v${ver}</span>`;
+            html += ` <span class="info">fills ${fills}</span> <span class="info">pos ${presence}</span>`;
+            html += ` <span class="info">inv ${inv}</span>`;
+            html += ` <span class="${g2MarqueeKind(s)}">${g2MarqueeText(s)}</span>`;
+            html += ` <span class="${g6MarqueeKind(g6.tier)}">${g6Label} ${g6Tier}</span>`;
+            html += ` <span class="${g7MarqueeKind(s)}">${g7MarqueeText(s)}</span>`;
+            html += ` <span class="${spotMarqueeKind(s)}">${spotMarqueeText(s)}</span>`;
+
+            const toxic30 = s.toxic_fill_ratio_30s != null ? parseFloat(s.toxic_fill_ratio_30s) : null;
+            if (toxic30 != null && !Number.isNaN(toxic30)) {
+                const kind = toxic30 <= 0.15 ? 'quote' : (toxic30 <= 0.30 ? 'warn' : 'danger');
+                html += ` <span class="${kind}">toxic@30s ${(toxic30 * 100).toFixed(0)}%</span>`;
+            }
+
+            const skimR = sessionSkimDeltaRlusd(s);
+            if (skimR != null && !Number.isNaN(skimR)) {
+                const sign = skimR >= 0 ? '+' : '';
+                const kind = skimR >= 0 ? 'quote' : 'warn';
+                html += ` <span class="${kind}">skim ${sign}${skimR.toFixed(2)} RLUSD</span>`;
+            }
+
+            if (s.g4_grade && s.g4_grade !== 'neutral') {
+                html += ` <span class="info">G4 ${s.g4_grade}</span>`;
+            }
+
+            if (s.kill_switch_active) {
+                html += ` <span class="danger">KILL SWITCH</span>`;
+            } else if (s.last_note) {
+                html += ` <span class="warn">${escapeHudHtml(String(s.last_note).substring(0, 48))}</span>`;
+            }
+
+            return html;
         }
 
         function sessionSkimDeltaXrp(s) {
@@ -2164,6 +2293,19 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
         function renderLive(s) {
             if (!s) return;
+            try {
+                renderLiveInner(s);
+            } catch (e) {
+                console.error('[HUD] renderLive error', e);
+                const statusEl = document.getElementById('hud-poll-status');
+                if (statusEl) {
+                    statusEl.textContent = 'RENDER ERROR — check browser console (F12); engine data may still be polling';
+                    statusEl.style.color = '#facc15';
+                }
+            }
+        }
+
+        function renderLiveInner(s) {
             if (s.competitor_nicknames && typeof s.competitor_nicknames === 'object') {
                 competitorNicknames = s.competitor_nicknames;
             }
@@ -2787,21 +2929,19 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 recentEl.innerHTML = notes.map(n => `<div class="new-decision" style="margin:2px 0;opacity:0.85;">${n}</div>`).join('');
             }
 
-            // Marquee (slow scroll, color spans) - always keep fresh
+            // Marquee (slow scroll, color spans) - operator posture strip
             const marqueeEl = document.getElementById('marquee');
             if (marqueeEl) {
-                let base = `<span class="quote">PURE A-S</span> <span class="info">WS</span>`;
-                if (s.last_note) {
-                    base += ` <span class="warn">${String(s.last_note).substring(0, 65)}</span>`;
+                try {
+                    const base = buildOperatorMarqueeHtml(s);
+                    const sep = '   |   ';
+                    const unit = base + sep + base + sep + base + sep + base;
+                    marqueeEl.innerHTML = unit + unit;
+                    marqueeEl.style.animation = 'marquee-seamless 60s linear infinite';
+                } catch (e) {
+                    console.error('[HUD] marquee error', e);
+                    marqueeEl.textContent = 'PURE A-S WS — marquee recover; fills ' + (s.fills_session != null ? s.fills_session : '—');
                 }
-                if (s.recent_notes && s.recent_notes.length > 0) {
-                    base += ` <span class="info">${String(s.recent_notes[0]).substring(0, 40)}</span>`;
-                }
-                const sep = "   •   ";
-                const unit = base + sep + base + sep + base + sep + base;  // 4 copies
-                const full = unit + unit;  // 8 copies for seamless constant scroll
-                marqueeEl.innerHTML = full;
-                marqueeEl.style.animation = 'marquee-seamless 60s linear infinite';
             }
 
             // === Bottom live market ticker (order book top + price direction) ===
@@ -2830,6 +2970,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
 
             let base = `Mid <span style="${lastMidDirectionStyle}">${midDisplay}</span>   Bid ${bidVal}   Ask ${askVal}   Spread ${spreadVal}   WS ${ageVal}`;
+            const spotPct = spotMidChangePct(s);
+            const spotR = spotDeltaRlusd(s);
+            if (spotPct != null && !Number.isNaN(spotPct)) {
+                const sign = spotPct >= 0 ? '+' : '';
+                const spotStyle = spotPct >= 0 ? 'color:#4ade80;' : 'color:#facc15;';
+                base += `   Spot Δmid <span style="${spotStyle}">${sign}${spotPct.toFixed(2)}%</span>`;
+            }
+            if (spotR != null && !Number.isNaN(spotR)) {
+                const sign = spotR >= 0 ? '+' : '';
+                base += `   Spot P&L ${sign}${spotR.toFixed(2)} RLUSD`;
+            }
             const sep = "     •     ";
             const unit = base + sep + base;  // two instances per visible block
             const full = unit + unit;  // duplicate the block for seamless constant scroll (4 total instances)
@@ -3325,7 +3476,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
         async function poll() {
             const statusEl = document.getElementById('hud-poll-status');
             try {
-                const res = await fetch('/state');
+                const res = await fetch('/state', { credentials: 'same-origin' });
                 if (!res.ok) throw new Error('bad status ' + res.status);
                 const s = await res.json();
                 lastState = s;
@@ -3352,7 +3503,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
             } catch (e) {
                 console.error('[HUD] poll error', e);
                 if (statusEl) {
-                    statusEl.textContent = 'POLL FAILED — keep SSH tunnel open: ssh -L 8765:127.0.0.1:8765 root@VPS (then http://localhost:8765)';
+                    const msg = (e && e.message && String(e.message).indexOf('401') >= 0)
+                        ? 'AUTH REQUIRED — re-login at /login then reopen Live tab'
+                        : 'POLL FAILED — keep SSH tunnel open: ssh -L 8765:127.0.0.1:8765 root@VPS (then http://localhost:8765)';
+                    statusEl.textContent = msg;
                     statusEl.style.color = '#f87171';
                 }
             }

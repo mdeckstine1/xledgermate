@@ -55,6 +55,7 @@ from experimental.ws_feed.reservation_metrics import enrich_runtime_reservation_
 from experimental.ws_feed.pure_quote_path import current_ws_as_version
 from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
 from experimental.ws_feed.execution_envelope import compute_execution_envelope
+from experimental.ws_feed.peer_lane_quoting import is_peer_lane_empty
 
 from experimental.ws_feed.real_time_as_hud import (
 
@@ -206,6 +207,12 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
                 toxic_ratio_30s=float(rt.get("toxic_fill_ratio_30s") or 0.0),
                 mean_markout_30s_pct=float(rt.get("mean_markout_30s_pct") or 0.0),
                 recent_fills=int(rt.get("fills_session") or 0),
+                peer_lane_empty=is_peer_lane_empty(
+                    {
+                        "peer_lane_empty": rt.get("peer_lane_empty"),
+                        "peer_lane_count": rt.get("g4_peer_lane_count"),
+                    }
+                ),
             )
             rt["g7_summary"] = env.summary
             rt["g7_scaler_label"] = env.scaler_label
@@ -215,6 +222,7 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
             rt["g7_ask_role"] = env.ask_role
             rt["g7_ask_sell_defense"] = env.ask_sell_defense
             rt["g7_sell_defense_reason"] = env.sell_defense_reason
+            rt["g7_solo_acquisition"] = env.solo_acquisition
             # mark that this came from HUD synthesis so operator can tell
             rt["_g7_synth"] = "inventory+g2+fill_quality"
         except Exception:

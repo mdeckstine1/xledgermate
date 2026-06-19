@@ -1,7 +1,9 @@
 """Tests for G4 peer-lane quoting adjustments."""
 
 from experimental.ws_feed.peer_lane_quoting import (
+    SOLO_ACQUIRE_BID_SIZE_MULT,
     compute_g4_adjustments,
+    is_peer_lane_empty,
     prepare_quoting_intel,
 )
 
@@ -68,8 +70,23 @@ def test_g4_fled_touch_ask_bias_when_xrp_heavy() -> None:
     assert g4.bid_size_mult == 1.0
 
 
-def test_g4_empty_lane_neutral() -> None:
+def test_g4_empty_lane_solo_acquire() -> None:
     g4 = compute_g4_adjustments({"peer_lane_empty": True, "peer_lane_count": 0})
+    assert g4.grade == "solo_acquire"
+    assert g4.active is True
+    assert g4.bid_size_mult == SOLO_ACQUIRE_BID_SIZE_MULT
+
+
+def test_g4_empty_lane_neutral_when_toxic() -> None:
+    g4 = compute_g4_adjustments(
+        {"peer_lane_empty": True, "peer_lane_count": 0},
+        toxic_ratio_30s=0.25,
+    )
     assert g4.grade == "empty_lane"
-    assert g4.size_mult == 1.0
     assert g4.active is False
+
+
+def test_is_peer_lane_empty_requires_fields() -> None:
+    assert is_peer_lane_empty(None) is False
+    assert is_peer_lane_empty({"competitor_pressure": 0.5}) is False
+    assert is_peer_lane_empty({"peer_lane_empty": True}) is True

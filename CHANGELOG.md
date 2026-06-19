@@ -5,6 +5,20 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.24] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**Theme:** A2 solo acquisition — presence/fill rate on empty peer lane (built; deploy after A1 soak).
+
+### Added
+
+- **G7 v1.3** — `apply_solo_lane_posture`: balanced solo → bid join / ask passive; xrp_heavy solo → passive both; skips on G2 brake or toxic@30s ≥ 20%.
+- **G4 v1.1** — `solo_acquire` grade: empty lane bid +6% / ask +2% when low toxic and G2 not defensive.
+- **Runtime** — `g7_solo_acquisition` on `PureQuoteDecision` + HUD G7 synth.
+
+### Note
+
+VPS remains on **v2.1.23** (A1 segment soak). Deploy **v2.1.24** at segment end after ~50-fill A1 analysis.
+
 ---
 
 ---

@@ -11,6 +11,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional
 
+G4_VERSION = "1.1.0"
+SOLO_ACQUIRE_BID_SIZE_MULT = 1.06
+SOLO_ACQUIRE_ASK_SIZE_MULT = 1.02
+SOLO_ACQUIRE_TOXIC_30S_MAX = 0.20
+
 
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
@@ -28,6 +33,15 @@ def _safe_float(value: Any, default: float = 0.5) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def is_peer_lane_empty(intel: Optional[Mapping[str, Any]]) -> bool:
+    """True when intel includes peer lane fields and lane is empty."""
+    if not intel:
+        return False
+    if "peer_lane_count" not in intel and "peer_lane_empty" not in intel:
+        return False
+    return bool(intel.get("peer_lane_empty")) or _safe_int(intel.get("peer_lane_count")) <= 0
 
 
 def prepare_quoting_intel(intel: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -81,6 +95,7 @@ def compute_g4_adjustments(
     inventory_skew: float = 0.0,
     inventory_label: str = "",
     g2_size_mult: float = 1.0,
+    toxic_ratio_30s: float = 0.0,
 ) -> G4Adjustments:
     """Peer-lane structural nudges after competitor pressure + G2 (brake-only size)."""
     if not intel:
@@ -93,6 +108,20 @@ def compute_g4_adjustments(
     peer_empty = bool(intel.get("peer_lane_empty")) or peer_count <= 0
 
     if peer_empty:
+        if (
+            g2_size_mult >= 0.95
+            and toxic_ratio_30s < SOLO_ACQUIRE_TOXIC_30S_MAX
+        ):
+            return G4Adjustments(
+                size_mult=1.0,
+                bid_size_mult=SOLO_ACQUIRE_BID_SIZE_MULT,
+                ask_size_mult=SOLO_ACQUIRE_ASK_SIZE_MULT,
+                active=True,
+                grade="solo_acquire",
+                summary="G4 solo_acquire — empty lane bid+6% ask+2%",
+                peer_lane_count=0,
+                peer_pressure=0.5,
+            )
         return G4Adjustments(
             grade="empty_lane",
             summary="G4 neutral — empty peer lane",

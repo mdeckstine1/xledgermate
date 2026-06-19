@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-G7_VERSION = "1.2.0"
+G7_VERSION = "1.3.0"
 JOIN_BACKOFF_BPS = 5.0
 PASSIVE_BACKOFF_BPS = 8.0
 INVENTORY_SKEW_THRESHOLD = 0.12
@@ -20,6 +20,8 @@ ASK_DEFENSE_EXTRA_BPS = 2.0
 SELL_DEFENSE_TOXIC_30S = 0.15
 SELL_DEFENSE_MARKOUT_PCT = -0.005
 SELL_DEFENSE_MIN_FILLS = 8
+# A2 — solo empty peer lane: bid join on balanced; no ask join on xrp_heavy.
+SOLO_ACQUIRE_TOXIC_30S_MAX = 0.20
 
 
 def resolve_join_backoff_bps(*, book_half_spread_bps: Optional[float] = None) -> float:
@@ -70,6 +72,7 @@ class ExecutionEnvelope:
     scaler_label: str = ""
     ask_sell_defense: bool = False
     sell_defense_reason: str = ""
+    solo_acquisition: bool = False
 
     @property
     def g7_summary(self) -> str:
@@ -89,6 +92,35 @@ def _inventory_posture(*, inventory_label: str, inventory_skew: float) -> str:
     return "balanced"
 
 
+def apply_solo_lane_posture(
+    *,
+    posture: str,
+    peer_lane_empty: bool,
+    join_bps: float,
+    bid_base: float,
+    ask_base: float,
+    bid_role: str,
+    ask_role: str,
+    toxic_ratio_30s: float = 0.0,
+    g2_spread_mult: float = 1.0,
+) -> tuple[float, float, str, str, bool]:
+    """
+    A2: empty peer band — join bid on balanced for acquisition; never ask-join xrp_heavy solo.
+    Skips when toxicity elevated or G2 braking (presence without adverse flow).
+    """
+    if not peer_lane_empty:
+        return bid_base, ask_base, bid_role, ask_role, False
+    if float(g2_spread_mult) > 1.0:
+        return bid_base, ask_base, bid_role, ask_role, False
+    if toxic_ratio_30s >= SOLO_ACQUIRE_TOXIC_30S_MAX:
+        return bid_base, ask_base, bid_role, ask_role, False
+    if posture == "balanced" or posture == "rlusd_heavy":
+        return join_bps, PASSIVE_BACKOFF_BPS, "join", "passive", True
+    if posture == "xrp_heavy":
+        return PASSIVE_BACKOFF_BPS, PASSIVE_BACKOFF_BPS, "passive", "passive", True
+    return bid_base, ask_base, bid_role, ask_role, False
+
+
 def compute_execution_envelope(
     *,
     inventory_label: str = "",
@@ -99,12 +131,14 @@ def compute_execution_envelope(
     toxic_ratio_30s: float = 0.0,
     mean_markout_30s_pct: float = 0.0,
     recent_fills: int = 0,
+    peer_lane_empty: bool = False,
 ) -> ExecutionEnvelope:
     """
     Rule A: per-side base backoff from inventory.
     Rule B: multiply both sides by max(1, g2.spread_mult).
     Rule C: join side uses resolve_join_backoff_bps (book-aware floor).
     Rule D (A1): ask sell-defense — demote ask join + extra ask backoff on bleed signals.
+    Rule E (A2): solo empty lane — bid join balanced; xrp_heavy passive both.
     """
     join_bps = resolve_join_backoff_bps(book_half_spread_bps=book_half_spread_bps)
     posture = _inventory_posture(inventory_label=inventory_label, inventory_skew=inventory_skew)
@@ -117,6 +151,18 @@ def compute_execution_envelope(
     else:
         bid_base = ask_base = PASSIVE_BACKOFF_BPS
         bid_role = ask_role = "wide"
+
+    bid_base, ask_base, bid_role, ask_role, solo = apply_solo_lane_posture(
+        posture=posture,
+        peer_lane_empty=peer_lane_empty,
+        join_bps=join_bps,
+        bid_base=bid_base,
+        ask_base=ask_base,
+        bid_role=bid_role,
+        ask_role=ask_role,
+        toxic_ratio_30s=toxic_ratio_30s,
+        g2_spread_mult=g2_spread_mult,
+    )
 
     defense, defense_reason = sell_defense_active(
         g2_spread_mult=g2_spread_mult,
@@ -136,10 +182,11 @@ def compute_execution_envelope(
     ask_bps = round(ask_base * mult, 2)
 
     mult_note = f" × G2 {mult:.2f}" if mult > 1.0 else ""
+    solo_note = " · solo acquire" if solo else ""
     defense_note = f" · ask defense ({defense_reason})" if defense else ""
     summary = (
         f"G7 {posture}: bid {bid_bps:.1f}bps ({bid_role}) · "
-        f"ask {ask_bps:.1f}bps ({ask_role}){mult_note}{defense_note}"
+        f"ask {ask_bps:.1f}bps ({ask_role}){mult_note}{solo_note}{defense_note}"
     )
     scaler_label = f"bid {bid_role} {bid_bps:.1f}bps · ask {ask_role} {ask_bps:.1f}bps"
 
@@ -154,6 +201,7 @@ def compute_execution_envelope(
         scaler_label=scaler_label,
         ask_sell_defense=defense,
         sell_defense_reason=defense_reason,
+        solo_acquisition=solo,
     )
 
 
