@@ -3,8 +3,8 @@
 **Purpose:** Posterity — how we got here, what we learned, and why decisions were made.  
 **Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live priority stack; this file is the narrative + archaeology.
 
-**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.22  
-**Last updated:** 2026-06-20 (acquisition pivot A1→A2→A3)
+**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.23  
+**Last updated:** 2026-06-20 (A1 G7 sell-defense shipped)
 
 ---
 
@@ -346,9 +346,7 @@ Operator consensus: stop grading churn; fix false **hold** on thin join-aligned 
 
 ### Acquisition pivot (2026-06-20)
 
-Build order locked: **A1 SELL bleed → A2 presence/fill rate → A3 stale quote**. G6 v1.1 shipped; **hold on live session is expected** when session bps &lt;3 and pos &lt;70% (#2 pattern). `thin_edge` requires 5–8 bps at ≥70% pos — fixing SELL bleed is how hold clears, not more grading.
-
-**A1 diagnose:** `scripts/_session_diag_quick.py` (by-side capture), `fill_quote_age_report.py` (ask age at fill).
+Build order: **A1 → A2 → A3**. **A1 shipped** v2.1.23 / G7 v1.2 ask sell-defense. VPS baseline: 83 fills, BUY +0.072 / SELL −0.035 XRP, worst-8 mostly SELL. Triggers: G2 brake, toxic@30s≥15%, markout@30s&lt;−0.005% (n≥8). Action: ask join→passive +2 bps ask-only. **Segment-end engine deploy.**
 
 ---
 

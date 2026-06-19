@@ -1,10 +1,12 @@
 """Tests for G7 execution envelope."""
 
 from experimental.ws_feed.execution_envelope import (
+    ASK_DEFENSE_EXTRA_BPS,
     JOIN_BACKOFF_BPS,
     PASSIVE_BACKOFF_BPS,
     compute_execution_envelope,
     resolve_join_backoff_bps,
+    sell_defense_active,
     touch_prices_from_backoff,
 )
 
@@ -52,7 +54,8 @@ def test_rlusd_heavy_join_uses_book_half_spread() -> None:
 def test_g2_spread_mult_widens_both() -> None:
     env = compute_execution_envelope(inventory_label="balanced", g2_spread_mult=1.25)
     assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS * 1.25
-    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS * 1.25
+    assert env.ask_touch_backoff_bps == (PASSIVE_BACKOFF_BPS + ASK_DEFENSE_EXTRA_BPS) * 1.25
+    assert env.ask_sell_defense is True
     assert "G2 1.25" in env.summary
 
 
@@ -66,3 +69,47 @@ def test_touch_prices_never_cross() -> None:
     assert bid <= 1.10
     assert ask >= 1.11
     assert bid < ask
+
+
+def test_sell_defense_demotes_xrp_heavy_ask_join() -> None:
+    env = compute_execution_envelope(
+        inventory_label="xrp_heavy",
+        g2_spread_mult=1.0,
+        mean_markout_30s_pct=-0.02,
+        recent_fills=20,
+    )
+    assert env.ask_sell_defense is True
+    assert env.ask_role == "passive"
+    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS + ASK_DEFENSE_EXTRA_BPS
+    assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert "ask defense" in env.summary
+
+
+def test_sell_defense_widens_balanced_ask_only() -> None:
+    env = compute_execution_envelope(
+        inventory_label="balanced",
+        g2_spread_mult=1.0,
+        toxic_ratio_30s=0.20,
+        recent_fills=10,
+    )
+    assert env.ask_sell_defense is True
+    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS + ASK_DEFENSE_EXTRA_BPS
+    assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+
+
+def test_sell_defense_inactive_when_markout_ok() -> None:
+    active, _ = sell_defense_active(
+        g2_spread_mult=1.0,
+        toxic_ratio_30s=0.05,
+        mean_markout_30s_pct=0.01,
+        recent_fills=20,
+    )
+    assert active is False
+    env = compute_execution_envelope(
+        inventory_label="balanced",
+        mean_markout_30s_pct=0.01,
+        toxic_ratio_30s=0.05,
+        recent_fills=20,
+    )
+    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.ask_sell_defense is False

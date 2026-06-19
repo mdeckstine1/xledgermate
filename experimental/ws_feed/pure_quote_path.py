@@ -132,6 +132,8 @@ class PureQuoteDecision:
     g7_bid_role: str = ""
     g7_ask_role: str = ""
     g7_scaler_label: str = ""
+    g7_ask_sell_defense: bool = False
+    g7_sell_defense_reason: str = ""
     g2_scaler_label: str = ""
     execution_brakes_summary: str = ""
 
@@ -176,6 +178,8 @@ class PureQuoteDecision:
             "g7_bid_role": self.g7_bid_role,
             "g7_ask_role": self.g7_ask_role,
             "g7_scaler_label": self.g7_scaler_label,
+            "g7_ask_sell_defense": self.g7_ask_sell_defense,
+            "g7_sell_defense_reason": self.g7_sell_defense_reason,
             "g2_scaler_label": self.g2_scaler_label,
             "execution_brakes_summary": self.execution_brakes_summary,
         }
@@ -480,11 +484,19 @@ class PureQuotePath:
             inventory_label=inv_state.label,
             inventory_skew=inv_skew,
             g2_spread_mult=g2.spread_mult,
+            g2_grade=g2.grade,
             book_half_spread_bps=(
                 (float(book_spread_pct) / 100.0) * 10_000.0 / 2.0
                 if book_spread_pct is not None and float(book_spread_pct) > 0
                 else None
             ),
+            toxic_ratio_30s=(
+                float(fill_quality.toxic_ratio_30s) if fill_quality else 0.0
+            ),
+            mean_markout_30s_pct=(
+                float(fill_quality.mean_markout_30s_pct) if fill_quality else 0.0
+            ),
+            recent_fills=int(fill_quality.recent_fills) if fill_quality else 0,
         )
         l1_bid_price, l1_ask_price = touch_prices_from_backoff(
             best_bid=best_bid,
@@ -583,6 +595,8 @@ class PureQuotePath:
             g7_bid_role=g7.bid_role,
             g7_ask_role=g7.ask_role,
             g7_scaler_label=brake_panel["g7_scaler_label"],
+            g7_ask_sell_defense=g7.ask_sell_defense,
+            g7_sell_defense_reason=g7.sell_defense_reason,
             g2_scaler_label=brake_panel["g2_scaler_label"],
             execution_brakes_summary=brake_panel["execution_brakes_summary"],
         )

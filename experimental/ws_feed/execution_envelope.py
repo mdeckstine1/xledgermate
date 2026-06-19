@@ -10,11 +10,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-G7_VERSION = "1.1.0"
+G7_VERSION = "1.2.0"
 JOIN_BACKOFF_BPS = 5.0
 PASSIVE_BACKOFF_BPS = 8.0
 INVENTORY_SKEW_THRESHOLD = 0.12
 JOIN_HALF_SPREAD_FRAC = 0.45
+# A1 — widen ask when SELL-side bleed signals fire (execution only).
+ASK_DEFENSE_EXTRA_BPS = 2.0
+SELL_DEFENSE_TOXIC_30S = 0.15
+SELL_DEFENSE_MARKOUT_PCT = -0.005
+SELL_DEFENSE_MIN_FILLS = 8
 
 
 def resolve_join_backoff_bps(*, book_half_spread_bps: Optional[float] = None) -> float:
@@ -29,6 +34,30 @@ def resolve_join_backoff_bps(*, book_half_spread_bps: Optional[float] = None) ->
     return max(floor, min(PASSIVE_BACKOFF_BPS - 1.0, scaled))
 
 
+def sell_defense_active(
+    *,
+    g2_spread_mult: float = 1.0,
+    g2_grade: str = "",
+    toxic_ratio_30s: float = 0.0,
+    mean_markout_30s_pct: float = 0.0,
+    recent_fills: int = 0,
+) -> tuple[bool, str]:
+    """A1: ask-only defense when SELL bleed / adverse flow signals fire."""
+    grade = (g2_grade or "").lower()
+    if float(g2_spread_mult) > 1.0:
+        return True, "g2_brake"
+    if grade in ("cautious", "stressed", "defensive"):
+        return True, f"g2_{grade}"
+    if toxic_ratio_30s >= SELL_DEFENSE_TOXIC_30S:
+        return True, f"toxic@{toxic_ratio_30s:.0%}"
+    if (
+        recent_fills >= SELL_DEFENSE_MIN_FILLS
+        and mean_markout_30s_pct < SELL_DEFENSE_MARKOUT_PCT
+    ):
+        return True, f"markout@{mean_markout_30s_pct:+.3f}%"
+    return False, ""
+
+
 @dataclass(frozen=True)
 class ExecutionEnvelope:
     bid_touch_backoff_bps: float
@@ -39,6 +68,8 @@ class ExecutionEnvelope:
     ask_role: str = "passive"
     summary: str = ""
     scaler_label: str = ""
+    ask_sell_defense: bool = False
+    sell_defense_reason: str = ""
 
     @property
     def g7_summary(self) -> str:
@@ -63,12 +94,17 @@ def compute_execution_envelope(
     inventory_label: str = "",
     inventory_skew: float = 0.0,
     g2_spread_mult: float = 1.0,
+    g2_grade: str = "",
     book_half_spread_bps: Optional[float] = None,
+    toxic_ratio_30s: float = 0.0,
+    mean_markout_30s_pct: float = 0.0,
+    recent_fills: int = 0,
 ) -> ExecutionEnvelope:
     """
-  Rule A: per-side base backoff from inventory.
-  Rule B: multiply both sides by max(1, g2.spread_mult).
-  Rule C: join side uses resolve_join_backoff_bps (book-aware floor).
+    Rule A: per-side base backoff from inventory.
+    Rule B: multiply both sides by max(1, g2.spread_mult).
+    Rule C: join side uses resolve_join_backoff_bps (book-aware floor).
+    Rule D (A1): ask sell-defense — demote ask join + extra ask backoff on bleed signals.
     """
     join_bps = resolve_join_backoff_bps(book_half_spread_bps=book_half_spread_bps)
     posture = _inventory_posture(inventory_label=inventory_label, inventory_skew=inventory_skew)
@@ -82,12 +118,29 @@ def compute_execution_envelope(
         bid_base = ask_base = PASSIVE_BACKOFF_BPS
         bid_role = ask_role = "wide"
 
+    defense, defense_reason = sell_defense_active(
+        g2_spread_mult=g2_spread_mult,
+        g2_grade=g2_grade,
+        toxic_ratio_30s=toxic_ratio_30s,
+        mean_markout_30s_pct=mean_markout_30s_pct,
+        recent_fills=recent_fills,
+    )
+    if defense:
+        if ask_role == "join":
+            ask_base = PASSIVE_BACKOFF_BPS
+            ask_role = "passive"
+        ask_base = ask_base + ASK_DEFENSE_EXTRA_BPS
+
     mult = max(1.0, float(g2_spread_mult))
     bid_bps = round(bid_base * mult, 2)
     ask_bps = round(ask_base * mult, 2)
 
     mult_note = f" × G2 {mult:.2f}" if mult > 1.0 else ""
-    summary = f"G7 {posture}: bid {bid_bps:.1f}bps ({bid_role}) · ask {ask_bps:.1f}bps ({ask_role}){mult_note}"
+    defense_note = f" · ask defense ({defense_reason})" if defense else ""
+    summary = (
+        f"G7 {posture}: bid {bid_bps:.1f}bps ({bid_role}) · "
+        f"ask {ask_bps:.1f}bps ({ask_role}){mult_note}{defense_note}"
+    )
     scaler_label = f"bid {bid_role} {bid_bps:.1f}bps · ask {ask_role} {ask_bps:.1f}bps"
 
     return ExecutionEnvelope(
@@ -99,6 +152,8 @@ def compute_execution_envelope(
         ask_role=ask_role,
         summary=summary,
         scaler_label=scaler_label,
+        ask_sell_defense=defense,
+        sell_defense_reason=defense_reason,
     )
 
 

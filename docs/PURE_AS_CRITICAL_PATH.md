@@ -1,8 +1,8 @@
 # Pure A-S Critical Path
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
-**Version:** v2.1.22 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-20 (G6 v1.1 shipped · acquisition phase primary)
+**Version:** v2.1.23 · **Branch:** `Ashigaru-Kaizen-II`  
+**Last updated:** 2026-06-20 (A1 G7 sell-defense shipped · segment-end deploy)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
@@ -17,7 +17,7 @@ Ordered by what live soaks proved matters. **Do not skip tiers** — finish P0 b
 | Pri | Item | Soak signal | Status |
 |-----|------|-------------|--------|
 | **P2** | **G6 v1.1** (HUD-only) | M6 false hold; align gate with macro ops | **[x] shipped** — calibration soak ongoing |
-| **P1** | **A1 — SELL-side bleed** | #2: BUY +0.067 / SELL −0.043 XRP skim; drags bps → **hold** | **[ ] next engine build** — [spec](#acquisition-build-plan) |
+| **P1** | **A1 — SELL-side bleed** | VPS 83 fills: BUY +0.072 / SELL −0.035 XRP | **[x] v2.1.23** — G7 v1.2 ask defense · **deploy at segment end** |
 | **P1** | **A2 — presence / fill rate** | Solo whale book — win by being at touch | after A1 baseline |
 | **P1** | **A3 — stale-quote tail** | #2 fill-age 127s–4876s; toxic stale asks | after A2 |
 | **P2** | G6 calibration soak | ~50 fills on v1.1 labels (engine unchanged) | ongoing — **hold expected** until A1 |
@@ -84,29 +84,19 @@ We are **not** building a spot-prediction or directional trading bot. Spot moves
 | **A2** | Presence / fill rate | Solo band, 0 peers | Raise `as_presence_pct` and fills/hour without more toxic |
 | **A3** | Stale-quote tail | 127s–4876s ask fills in #2 | Cap quote age at fill; cut stale-toxic SELL |
 
-#### A1 — SELL-side bleed (next)
+#### A1 — SELL-side bleed (shipped v2.1.23 / G7 v1.2)
 
-**Diagnose (no engine restart):** `scripts/_session_diag_quick.py`, `scripts/fill_quote_age_report.py` — SELL capture, quote_age on ask fills, worst-8 list.
+**VPS baseline (2026-06-19 session, 83 fills):** BUY **+0.072** / SELL **−0.035** XRP · mean **1.38 bps** · worst-8 **7/8 SELL**.
 
-**Working hypotheses (#2 recovery tape):**
+**Shipped — G7 v1.2 ask sell-defense** (`execution_envelope.py`):
 
-1. **Ask join + rising mid** — G7 puts ask on **join** (5 bps) when xrp_heavy or balanced; mid drifts up → SELL capture measured vs stale `mid_at_quote` understates or realizes adverse.
-2. **Inventory posture asymmetry** — xrp_heavy → ask join / bid passive → more SELL volume at thin edge during spot-led recovery.
-3. **Toxic ask fills** — toxic@30s ~29%; markout@30s negative; SELL-heavy in worst-8.
-4. **Stale ask overlap** — long quote_age on SELL (feeds **A3**).
+- Triggers when: G2 brake (`spread_mult>1` or cautious/stressed/defensive), `toxic@30s ≥ 15%`, or `markout@30s < −0.005%` with n≥8 fills.
+- Action: demote ask **join → passive**; add **+2 bps** ask-only backoff. Bids unchanged (preserve BUY acquisition).
+- Observability: `g7_ask_sell_defense`, `g7_sell_defense_reason` on runtime + G7 summary.
 
-**Candidate levers (A-S sacred — execution envelope only):**
+**Deploy:** segment-end `systemctl restart xledgermate` (engine). HUD synth picks up defense from runtime fill-quality fields without engine restart.
 
-| Lever | Mechanism | Risk |
-|-------|-----------|------|
-| **G7 ask backoff** when sell-toxic elevated | Widen ask join → passive under G2 cautious + adverse markout | Lower SELL fill rate (trade to A2) |
-| **Side-aware G2 spread_mult** | Apply brake asymmetrically on ask when recent SELL markout bad | Complexity; defer if G7 ask widen enough |
-| **Pause asks** brief on rlusd_heavy + rising mid | Inventory policy already pauses sides — tighten trigger for ask when skew says “don’t sell cheap” | Miss solo-book SELL opportunities |
-| **Fill economics audit** | Confirm `estimate_spread_capture_xrp` SELL vs balance-delta price | Measurement only |
-
-**Done when:** Session `by side` SELL capture ≥ 0 or within 50% of BUY; session bps ≥ 3 with pos ≥ 70% → exit hold band (or `thin_edge` if 5–8 bps).
-
-**Segment end deploy** — engine restart required.
+**Done when:** Session `by side` SELL capture ≥ 0; session bps ≥ 3 with pos ≥ 70% → G6 off `hold`.
 
 #### A2 — presence / fill rate
 

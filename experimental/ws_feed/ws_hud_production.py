@@ -197,11 +197,15 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
                 inventory_label=inv_label,
                 inventory_skew=0.0,
                 g2_spread_mult=float(g2_mult or 1.0),
+                g2_grade=str(rt.get("g2_grade") or ""),
                 book_half_spread_bps=(
                     float(rt.get("book_spread_pct") or 0) / 100.0 * 10_000.0 / 2.0
                     if rt.get("book_spread_pct")
                     else None
                 ),
+                toxic_ratio_30s=float(rt.get("toxic_fill_ratio_30s") or 0.0),
+                mean_markout_30s_pct=float(rt.get("mean_markout_30s_pct") or 0.0),
+                recent_fills=int(rt.get("fills_session") or 0),
             )
             rt["g7_summary"] = env.summary
             rt["g7_scaler_label"] = env.scaler_label
@@ -209,8 +213,10 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
             rt["ask_touch_backoff_bps"] = float(env.ask_touch_backoff_bps)
             rt["g7_bid_role"] = env.bid_role
             rt["g7_ask_role"] = env.ask_role
+            rt["g7_ask_sell_defense"] = env.ask_sell_defense
+            rt["g7_sell_defense_reason"] = env.sell_defense_reason
             # mark that this came from HUD synthesis so operator can tell
-            rt["_g7_synth"] = "inventory+g2"
+            rt["_g7_synth"] = "inventory+g2+fill_quality"
         except Exception:
             # best effort; do not break the mirror
             pass
