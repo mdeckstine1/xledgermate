@@ -528,6 +528,9 @@ def find_competitor_profile(
     for row in state.get("top_peers") or []:
         if isinstance(row, dict) and _accounts_match(address, row):
             return dict(row), "peer_lane"
+    for row in state.get("shadow_top_peers") or []:
+        if isinstance(row, dict) and _accounts_match(address, row):
+            return dict(row), "peer_lane"
     for row in state.get("top_competitors") or []:
         if isinstance(row, dict) and _accounts_match(address, row):
             return dict(row), "book_wide"
@@ -656,6 +659,20 @@ def build_competitor_analysis_context(
         lane_note = (
             "OUR bot ledger — self-audit only (queue visibility, vs-touch, inventory). "
             "Not a competitor; do not recommend tactics to trade against ourselves."
+        )
+    elif str(merged.get("analysis_context") or "") == "shadow_e3_calibration":
+        if in_peer_lane:
+            lane_note = (
+                "SHADOW E3 calibration (11k equiv · 55/45 — not live posting size). "
+                "IN shadow peer touch band — queue tactics may apply at scaled touch."
+            )
+        else:
+            lane_note = (
+                "SHADOW E3 calibration — OUT of shadow band at E3 ruler; book context only."
+            )
+        evidence_lines.insert(
+            0,
+            "calibration_mode=shadow_e3 (11k XRP-equiv · 55% XRP · balanced — advisory only)",
         )
     elif in_peer_lane:
         lane_note = "IN peer touch band — tactics may apply at our posted size."
@@ -923,3 +940,190 @@ def enrich_inventory_hud_fields(
         "ledger_updated_utc": runtime.get("updated_utc"),
         "open_offers_count": int(runtime.get("open_offers_count") or 0),
     }
+
+
+# --- P4–P6 shadow E3 peer-lane calibration (HUD-only; does not affect quoting) ---
+
+SHADOW_E3_PORTFOLIO_XRP_EQUIV = 11000.0
+SHADOW_E3_XRP_SHARE = 0.55
+SHADOW_E3_ASSUMPTION = "11000_xrp_equiv_55_45_balanced"
+PEER_LANE_CALIBRATION_PATH = Path("logs/peer_lane_calibration.jsonl")
+
+
+def compute_shadow_e3_lane_xrp(
+    *,
+    configured_l1_xrp: float = 11254.0,
+    min_order_size_xrp: float = 1.0,
+) -> float:
+    """Representative L1 touch for E3 thesis: 11k XRP-equiv · 55% XRP · balanced skew."""
+    from experimental.ws_feed.dynamic_sizing import compute_pure_l1_sizes
+
+    xrp_balance = SHADOW_E3_PORTFOLIO_XRP_EQUIV * SHADOW_E3_XRP_SHARE
+    sizes = compute_pure_l1_sizes(
+        xrp_balance=xrp_balance,
+        configured_l1_xrp=max(float(configured_l1_xrp), xrp_balance * 0.07),
+        min_order_size_xrp=min_order_size_xrp,
+        inventory_label="balanced",
+        inventory_skew=0.0,
+        pressure_size_mult=1.0,
+    )
+    return round(max(sizes.l1_xrp, sizes.bid_size_xrp, sizes.ask_size_xrp), 2)
+
+
+def _dedupe_profile_rows(rows: Sequence[Any]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        acct = str(row.get("account_full") or row.get("account") or "").strip()
+        if not acct or acct in seen:
+            continue
+        seen.add(acct)
+        out.append(dict(row))
+    return out
+
+
+def shadow_peer_lane_hud_fields(
+    runtime: Mapping[str, Any],
+    *,
+    config: Optional[BotConfig] = None,
+) -> Dict[str, Any]:
+    """
+    Counterfactual peer band at E3 touch size — for Peer Cal tab / calibration JSONL.
+
+    Uses top_peers + top_competitors from the last engine scrape (partial; not full book).
+    """
+    from experimental.market_analysis.peer_lane import (
+        aggregate_peer_pressure,
+        select_peer_lane,
+    )
+
+    cfg = config or BotConfig.load()
+    configured_l1 = float(cfg.order_sizes[0]) if cfg.order_sizes else 150.0
+    configured_l1 = max(configured_l1, float(getattr(cfg, "risk_capital_xrp", 11254) or 11254))
+    shadow_lane = compute_shadow_e3_lane_xrp(configured_l1_xrp=configured_l1)
+
+    profiles = _dedupe_profile_rows(
+        list(runtime.get("top_peers") or []) + list(runtime.get("top_competitors") or [])
+    )
+    touch_by_account: Dict[str, float] = {}
+    profiles_by_acct: Dict[str, Dict[str, Any]] = {}
+    for row in profiles:
+        acct = str(row.get("account_full") or row.get("account") or "").strip()
+        if not acct:
+            continue
+        try:
+            touch = float(row.get("touch_xrp") or 0)
+        except (TypeError, ValueError):
+            touch = 0.0
+        if touch > 0:
+            touch_by_account[acct] = max(touch_by_account.get(acct, 0.0), touch)
+            profiles_by_acct[acct] = row
+
+    peer_result = select_peer_lane(touch_by_account, shadow_lane)
+    shadow_peers: List[Dict[str, Any]] = []
+    for acct in peer_result.peer_accounts:
+        if acct in profiles_by_acct:
+            shadow_peers.append(dict(profiles_by_acct[acct]))
+        else:
+            touch = float(touch_by_account.get(acct) or 0)
+            short = acct[:12] + "..." if len(acct) > 15 else acct
+            shadow_peers.append(
+                {
+                    "account": short,
+                    "account_full": acct,
+                    "touch_xrp": round(touch, 2),
+                    "last_spread": None,
+                    "avg_spread": None,
+                    "activity": None,
+                    "cancels": None,
+                    "sides": "—",
+                    "domain": "touch-only",
+                }
+            )
+
+    peer_spreads = [
+        float(p.get("last_spread") or 0)
+        for p in shadow_peers
+        if p.get("last_spread") is not None and float(p.get("last_spread") or 0) > 0
+    ]
+    try:
+        global_spread = float(runtime.get("competitor_observed_spread_pct") or runtime.get("book_spread_pct") or 0)
+    except (TypeError, ValueError):
+        global_spread = 0.0
+    peer_cancel_rate = 0.0
+    offers = sum(int(p.get("activity") or 0) for p in shadow_peers)
+    cancels = sum(int(p.get("cancels") or 0) for p in shadow_peers)
+    if offers > 0:
+        peer_cancel_rate = cancels / offers
+
+    shadow_pressure = aggregate_peer_pressure(
+        peer_spreads=peer_spreads,
+        global_spread=global_spread,
+        peer_count=peer_result.peer_lane_count,
+        fled_in_lane_count=0,
+        cancel_proxy_rate=peer_cancel_rate,
+    )
+
+    live_count = int(runtime.get("peer_lane_count") or 0)
+    live_lane = float(runtime.get("our_lane_xrp") or 0)
+    shadow_g4_active = peer_result.peer_lane_count > 0 and not peer_result.empty
+    live_g4_active = live_count > 0 and not bool(runtime.get("peer_lane_empty"))
+
+    return {
+        "shadow_e3_assumption": SHADOW_E3_ASSUMPTION,
+        "shadow_e3_lane_xrp": shadow_lane,
+        "shadow_peer_lane_low_xrp": round(peer_result.peer_low_xrp, 2),
+        "shadow_peer_lane_high_xrp": round(peer_result.peer_high_xrp, 2),
+        "shadow_peer_lane_count": peer_result.peer_lane_count,
+        "shadow_peer_lane_empty": peer_result.empty,
+        "shadow_peer_lane_widened": peer_result.widened,
+        "shadow_peer_pressure_score": shadow_pressure,
+        "shadow_top_peers": shadow_peers[:10],
+        "shadow_g4_would_activate": shadow_g4_active,
+        "live_vs_shadow_delta_peers": peer_result.peer_lane_count - live_count,
+        "shadow_peer_lane_partial": True,
+        "shadow_peer_lane_note": (
+            "Shadow peers from last scrape top lists only — full touch map at P1 engine pass."
+        ),
+        "live_g4_active": live_g4_active,
+        "live_our_lane_xrp": round(live_lane, 2) if live_lane > 0 else None,
+    }
+
+
+def append_peer_lane_calibration_record(
+    fields: Mapping[str, Any],
+    *,
+    path: Path = PEER_LANE_CALIBRATION_PATH,
+) -> None:
+    """Append one calibration snapshot (HUD mirror; soak-safe)."""
+    import json
+    from datetime import datetime, timezone
+
+    row = {
+        "kind": "peer_lane_shadow",
+        "ts_utc": datetime.now(tz=timezone.utc).isoformat(),
+        "assumption": fields.get("shadow_e3_assumption"),
+        "mid": fields.get("mid") or fields.get("mid_price"),
+        "live": {
+            "our_lane_xrp": fields.get("live_our_lane_xrp") or fields.get("our_lane_xrp"),
+            "peer_lane_count": fields.get("peer_lane_count"),
+            "peer_lane_empty": fields.get("peer_lane_empty"),
+            "peer_pressure_score": fields.get("peer_pressure_score"),
+            "g4_active": fields.get("live_g4_active"),
+        },
+        "shadow_e3": {
+            "lane_xrp": fields.get("shadow_e3_lane_xrp"),
+            "peer_lane_count": fields.get("shadow_peer_lane_count"),
+            "peer_lane_low_xrp": fields.get("shadow_peer_lane_low_xrp"),
+            "peer_lane_high_xrp": fields.get("shadow_peer_lane_high_xrp"),
+            "peer_lane_empty": fields.get("shadow_peer_lane_empty"),
+            "peer_pressure_score": fields.get("shadow_peer_pressure_score"),
+            "g4_would_activate": fields.get("shadow_g4_would_activate"),
+        },
+        "delta_peers": fields.get("live_vs_shadow_delta_peers"),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, separators=(",", ":")) + "\n")

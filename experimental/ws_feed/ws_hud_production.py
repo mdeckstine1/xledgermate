@@ -39,10 +39,12 @@ from config.settings import BotConfig
 
 from experimental.ws_feed.competitor_nicknames import apply_nicknames_to_profiles, load_nicknames
 from experimental.ws_feed.hud_intel_support import (
+    append_peer_lane_calibration_record,
     competitor_fields_from_runtime,
     enrich_inventory_hud_fields,
     regime_intel_hud_fields,
     resolve_hud_intel_fields,
+    shadow_peer_lane_hud_fields,
 )
 
 from experimental.ws_feed.live_pure_as_tester import _hud_market_payload
@@ -340,6 +342,7 @@ class ProductionHudMirror:
 
         enriched = _enrich_runtime_for_hud(runtime)
         enriched.update(competitor_fields_from_runtime(enriched))
+        enriched.update(shadow_peer_lane_hud_fields(enriched, config=self.config))
         enriched.update(regime_intel_hud_fields(enriched))
         from experimental.ws_feed.ai_advisory_hud import advisory_hud_fields, HUD_ADVISORY_MIN_INTERVAL_S
 
@@ -347,7 +350,7 @@ class ProductionHudMirror:
         enriched.update(advisory)
         nicknames = load_nicknames()
         enriched["competitor_nicknames"] = nicknames
-        for key in ("top_peers", "top_competitors"):
+        for key in ("top_peers", "top_competitors", "shadow_top_peers"):
             if enriched.get(key):
                 enriched[key] = apply_nicknames_to_profiles(enriched.get(key), nicknames)
         enriched.update(
@@ -368,6 +371,10 @@ class ProductionHudMirror:
         ):
             self._last_metrics = build_performance_metrics(runtime=enriched)
             self._last_metrics_at = now
+            try:
+                append_peer_lane_calibration_record(enriched)
+            except OSError:
+                pass
         elif not flags.hud_metrics:
             self._last_metrics = {}
         enriched["performance_metrics"] = self._last_metrics

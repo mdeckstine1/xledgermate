@@ -29,7 +29,7 @@ Ordered by what live soaks proved matters. **Do not skip tiers** — finish P0 b
 | **P3** | G6→G2/G7 coupling (Tier 3) | Hold advisory-only; negative skim with neutral G2 in #1 | deferred until hold is rare |
 | **P4** | L2/L3 ledger + `book_bids`/`book_asks` sync | Book tab shows L1; multi-level planned | P1–P3 peer track |
 | **P4** | I1–I4 regime channel (damped) | Empty peer lane OK at pilot size | post multiple soaks |
-| **P4** | P4–P6 peer intel + G4 nudges + F2 hook | Needs per-peer history + markout | P1 + soak data |
+| **P4** | P4–P6 peer intel + G4 nudges + F2 hook | Needs per-peer history + markout | **Peer Cal tab** (HUD) + `peer_lane_calibration.jsonl` — soak now |
 | **P4** | P7 async submit / tx rate | Cancel/replace can exceed 5s loop | M2/M3 review |
 | **P4** | I7 in-band peer automation | No touch-band peers yet | real competition |
 | **P4** | **E3** 11k funding + rebalance exec | Operator timeline | consistent gain + warm fuzzy |

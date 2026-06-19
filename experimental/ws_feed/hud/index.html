@@ -694,6 +694,7 @@
             <a href="#" data-page="live" class="active">Live</a>
             <a href="#" data-page="inventory">Inventory</a>
             <a href="#" data-page="intelligence">Intelligence</a>
+            <a href="#" data-page="peer-cal">Peer Cal</a>
             <a href="#" data-page="metrics">Metrics</a>
             <a href="#" data-page="book-page">Book</a>
             <a href="#" data-page="reports">Reports</a>
@@ -1295,6 +1296,78 @@ The A-S strategy itself decides presence via reservation price being inside the 
             </div>
         </div>
 
+        <!-- P4–P6 peer-lane calibration (temporary — E3 shadow ruler) -->
+        <div id="peer-cal" class="page">
+            <div class="content">
+                <h3 style="margin-top:0; color:#a78bfa;">Peer Cal — E3 shadow lane (P4–P6)</h3>
+                <p style="font-size:0.8rem; color:#94a3b8; margin-top:0;">
+                    Counterfactual peer band at <strong>11k XRP-equiv · 55/45 balanced</strong> touch size — calibration only, does not affect quoting.
+                    Compare to live pilot lane. Log: <code style="font-size:0.7rem;">logs/peer_lane_calibration.jsonl</code>
+                </p>
+                <p id="cal-assumption-badge" style="font-size:0.72rem; color:#64748b; margin:0 0 10px;">—</p>
+
+                <div class="inventory-cards">
+                    <div class="card" style="border-left:3px solid #64748b;">
+                        <div class="label">Live lane (pilot · G4 today)</div>
+                        <div class="metric-row"><span class="label">Touch L1 (XRP)</span> <span id="cal-live-lane" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Peer band</span> <span id="cal-live-band" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Peers in band</span> <span id="cal-live-count" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Peer pressure</span> <span id="cal-live-pressure" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">G4 active?</span> <span id="cal-live-g4" class="value">—</span></div>
+                    </div>
+
+                    <div class="card" style="border-left:3px solid #a78bfa;">
+                        <div class="label">Shadow E3 lane (calibration ruler)</div>
+                        <div class="metric-row"><span class="label">Touch L1 (XRP)</span> <span id="cal-shadow-lane" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Peer band</span> <span id="cal-shadow-band" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Peers in band</span> <span id="cal-shadow-count" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Shadow pressure</span> <span id="cal-shadow-pressure" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">G4 would activate?</span> <span id="cal-shadow-g4" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Δ peers (shadow − live)</span> <span id="cal-delta-peers" class="value">—</span></div>
+                    </div>
+
+                    <div class="card" style="display:flex; flex-direction:column; grid-row: span 2;">
+                        <div class="label">Shadow peers (E3 band)</div>
+                        <div id="cal-shadow-peer-list" class="hud-scroll-box hud-scroll-box-compact intel-top-list-box" tabindex="0" role="region" aria-label="Shadow E3 peer lane">
+                            <div id="cal-shadow-peer-list-inner" class="hud-scroll-box-inner">Waiting for scrape…</div>
+                        </div>
+                        <small id="cal-partial-note" style="opacity:0.65; margin-top:6px;">—</small>
+                        <div class="label" style="margin-top:10px;">Live peers (pilot band)</div>
+                        <div id="cal-live-peer-list" class="hud-scroll-box hud-scroll-box-compact intel-top-list-box" tabindex="0" role="region" aria-label="Live peer lane">
+                            <div id="cal-live-peer-list-inner" class="hud-scroll-box-inner">—</div>
+                        </div>
+                    </div>
+
+                    <div class="card" style="display:flex; flex-direction:column;">
+                        <div class="label">Grok analyze (shadow band context)<span class="scroll-box-hint">↕ scrollable</span></div>
+                        <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+                            <input id="cal-analyze-addr" type="text" placeholder="Click a shadow peer or paste r-address" style="flex:1; font-family:monospace; font-size:0.8rem;">
+                            <button id="btn-cal-analyze" type="button" style="background:#8b5cf6; color:white; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem; flex-shrink:0;">Analyze</button>
+                        </div>
+                        <div id="cal-ai-result" class="hud-scroll-box intel-ai-result-box" tabindex="0" role="region" aria-label="Shadow peer Grok analysis">Click a shadow peer, then Analyze — uses E3 lane ruler in the prompt (advisory only).</div>
+                        <details id="cal-briefing-details" class="intel-briefing-details" style="display:none; margin-top:6px;">
+                            <summary>Machine-readable briefing (JSON)</summary>
+                            <pre id="cal-briefing-json" class="intel-briefing-json"></pre>
+                        </details>
+                    </div>
+
+                    <div class="card">
+                        <div class="label">Operator nicknames (shared with Intelligence)</div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                            <input id="cal-nick-address" type="text" placeholder="r-address (click peer to fill)" style="flex:2; min-width:140px; font-family:monospace; font-size:0.75rem;">
+                            <input id="cal-nick-label" type="text" placeholder="Nickname" style="flex:1; min-width:80px; font-size:0.75rem;">
+                            <button id="btn-cal-save-nickname" type="button" style="background:#334155; color:#e2e8f0; border:none; border-radius:3px; padding:4px 10px; font-size:0.75rem;">Save</button>
+                        </div>
+                        <div id="cal-nick-status" style="font-size:0.7rem; color:#64748b; margin-top:4px;">Saved to logs/competitor_nicknames.json</div>
+                    </div>
+                </div>
+
+                <div class="marquee-container" style="margin-top:12px;">
+                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                </div>
+            </div>
+        </div>
+
         <!-- QR modal (used by Inventory tab) -->
         <div id="qr-modal" class="qr-modal">
             <div class="qr-content">
@@ -1373,6 +1446,106 @@ The A-S strategy itself decides presence via reservation price being inside the 
         function setText(id, text) {
             const el = document.getElementById(id);
             if (el) el.textContent = text;
+        }
+
+        /** Shared peer/competitor row list — Intelligence + Peer Cal tabs. */
+        function renderMakerPeerList(listEl, rows, emptyMsg, s, clickTargets) {
+            if (!listEl) return;
+            const targets = clickTargets || {};
+            if (!rows || !rows.length) {
+                listEl.innerHTML = emptyMsg;
+                return;
+            }
+            const nicks = (s && s.competitor_nicknames && typeof s.competitor_nicknames === 'object')
+                ? s.competitor_nicknames
+                : competitorNicknames;
+            listEl.innerHTML = rows.map(c => {
+                const full = c.account_full || c.account;
+                const nick = c.nickname || nicks[full] || '';
+                const base = c.domain && c.domain !== 'no-domain' ? `${c.account} (${c.domain})` : c.account;
+                const display = nick ? `${nick} · ${base}` : base;
+                const touch = c.touch_xrp != null && c.touch_xrp > 0 ? ` | touch:${c.touch_xrp}XRP` : '';
+                const fled = c.cancels != null && c.cancels > 0 ? ` | cancels:${c.cancels}` : '';
+                const spread = (c.last_spread != null && c.avg_spread != null)
+                    ? ` | ${c.last_spread}% / ${c.avg_spread}%`
+                    : '';
+                const act = c.activity != null ? ` | act:${c.activity}` : '';
+                const sides = c.sides ? ` | ${c.sides}` : '';
+                return `<div data-full="${full}" style="cursor:pointer; padding:2px 0;" title="Click to use this address">${display}${spread}${act}${sides}${touch}${fled}</div>`;
+            }).join('');
+            listEl.querySelectorAll('div[data-full]').forEach(row => {
+                row.onclick = () => {
+                    const fullAddr = row.getAttribute('data-full') || '';
+                    const analyzeInput = document.getElementById(targets.analyzeInputId || 'intel-analyze-addr');
+                    const nickInput = document.getElementById(targets.nickInputId || 'nick-address');
+                    if (analyzeInput) analyzeInput.value = fullAddr;
+                    if (nickInput) nickInput.value = fullAddr;
+                    const analyzeBtn = document.getElementById(targets.analyzeBtnId || 'btn-analyze-addr');
+                    if (analyzeBtn) {
+                        analyzeBtn.style.boxShadow = '0 0 0 3px #8b5cf6';
+                        setTimeout(() => { if (analyzeBtn) analyzeBtn.style.boxShadow = ''; }, 800);
+                    }
+                };
+            });
+        }
+
+        function renderPeerCal(s) {
+            if (!s) return;
+            const assumption = s.shadow_e3_assumption || '11000_xrp_equiv_55_45_balanced';
+            const shadowLane = s.shadow_e3_lane_xrp;
+            setText('cal-assumption-badge', `Assumption: ${assumption.replace(/_/g, ' ')} · shadow L1 ≈ ${shadowLane != null ? parseFloat(shadowLane).toFixed(1) : '—'} XRP`);
+
+            const liveLane = s.our_lane_xrp != null ? parseFloat(s.our_lane_xrp) : null;
+            setText('cal-live-lane', liveLane != null ? `${liveLane.toFixed(1)} XRP` : '—');
+            setText('cal-live-band', (s.peer_lane_low_xrp != null && s.peer_lane_high_xrp != null)
+                ? `${parseFloat(s.peer_lane_low_xrp).toFixed(0)}–${parseFloat(s.peer_lane_high_xrp).toFixed(0)} XRP`
+                : '—');
+            setText('cal-live-count', s.peer_lane_count != null ? String(s.peer_lane_count) : '—');
+            setText('cal-live-pressure', s.peer_pressure_score != null
+                ? parseFloat(s.peer_pressure_score).toFixed(2)
+                : (s.peer_lane_count > 0 ? '—' : 'n/a'));
+            setText('cal-live-g4', s.live_g4_active ? 'yes' : (s.peer_lane_count > 0 ? 'yes' : 'no (empty lane)'));
+
+            setText('cal-shadow-lane', shadowLane != null ? `${parseFloat(shadowLane).toFixed(1)} XRP` : '—');
+            setText('cal-shadow-band', (s.shadow_peer_lane_low_xrp != null && s.shadow_peer_lane_high_xrp != null)
+                ? `${parseFloat(s.shadow_peer_lane_low_xrp).toFixed(0)}–${parseFloat(s.shadow_peer_lane_high_xrp).toFixed(0)} XRP`
+                : '—');
+            const sc = s.shadow_peer_lane_count != null ? s.shadow_peer_lane_count : '—';
+            const widened = s.shadow_peer_lane_widened ? ' (widened)' : '';
+            setText('cal-shadow-count', `${sc}${widened}`);
+            setText('cal-shadow-pressure', s.shadow_peer_pressure_score != null
+                ? parseFloat(s.shadow_peer_pressure_score).toFixed(2)
+                : '—');
+            setText('cal-shadow-g4', s.shadow_g4_would_activate ? 'yes' : 'no');
+            const delta = s.live_vs_shadow_delta_peers;
+            setText('cal-delta-peers', delta != null ? (delta >= 0 ? `+${delta}` : String(delta)) : '—');
+
+            const partialNote = s.shadow_peer_lane_note || 'Partial: top scrape lists only.';
+            const partialEl = document.getElementById('cal-partial-note');
+            if (partialEl) partialEl.textContent = partialNote;
+
+            const shadowRows = (s.shadow_top_peers && s.shadow_top_peers.length) ? s.shadow_top_peers : null;
+            const liveRows = (s.top_peers && s.top_peers.length) ? s.top_peers : null;
+            const shadowBand = (s.shadow_peer_lane_low_xrp != null && s.shadow_peer_lane_high_xrp != null)
+                ? `${parseFloat(s.shadow_peer_lane_low_xrp).toFixed(0)}–${parseFloat(s.shadow_peer_lane_high_xrp).toFixed(0)} XRP`
+                : 'band';
+            renderMakerPeerList(
+                document.getElementById('cal-shadow-peer-list-inner'),
+                shadowRows,
+                `No shadow peers in E3 band (${shadowBand}). Whales in book-wide list are outside this ruler.`,
+                s,
+                { analyzeInputId: 'cal-analyze-addr', nickInputId: 'cal-nick-address', analyzeBtnId: 'btn-cal-analyze' }
+            );
+            const liveBand = (s.peer_lane_low_xrp != null && s.peer_lane_high_xrp != null)
+                ? `${parseFloat(s.peer_lane_low_xrp).toFixed(0)}–${parseFloat(s.peer_lane_high_xrp).toFixed(0)} XRP`
+                : 'band';
+            renderMakerPeerList(
+                document.getElementById('cal-live-peer-list-inner'),
+                liveRows,
+                `No live peers (${liveBand} around ${liveLane != null ? liveLane.toFixed(1) : 'pilot'} XRP). Expected at pilot size.`,
+                s,
+                { analyzeInputId: 'cal-analyze-addr', nickInputId: 'cal-nick-address', analyzeBtnId: 'btn-cal-analyze' }
+            );
         }
 
         function portfolioValueRlusd(s) {
@@ -1584,13 +1757,15 @@ The A-S strategy itself decides presence via reservation price being inside the 
             return (v == null || Number.isNaN(v)) ? null : v;
         }
 
-        function _findIntelProfile(addr, state) {
+        function _findIntelProfile(addr, state, shadowMode) {
             if (!state || !addr) return null;
             const q = String(addr).trim().toLowerCase();
             if (q.length < 8) return null;
             const bot = String(state.bot_account_address || state.bot_address || '').trim().toLowerCase();
             if (bot.length >= 25 && (bot === q || bot.startsWith(q) || q.startsWith(bot))) {
-                const lane = state.our_lane_xrp != null ? parseFloat(state.our_lane_xrp) : 0;
+                const lane = shadowMode && state.shadow_e3_lane_xrp != null
+                    ? parseFloat(state.shadow_e3_lane_xrp)
+                    : (state.our_lane_xrp != null ? parseFloat(state.our_lane_xrp) : 0);
                 return {
                     account: bot.slice(0, 12) + '...',
                     account_full: state.bot_account_address || state.bot_address,
@@ -1602,7 +1777,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     is_self: true,
                 };
             }
-            for (const list of [state.top_peers, state.top_competitors]) {
+            const lists = shadowMode
+                ? [state.shadow_top_peers, state.top_peers, state.top_competitors]
+                : [state.top_peers, state.top_competitors];
+            for (const list of lists) {
                 if (!list || !Array.isArray(list)) continue;
                 for (const row of list) {
                     if (!row) continue;
@@ -2518,40 +2696,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 : 'No scrape data — run live_pure_as_tester --serve-hud with a live WS book.'));
 
             function _renderIntelMakerList(listEl, rows, emptyMsg) {
-                if (!listEl) return;
-                if (!rows || !rows.length) {
-                    listEl.innerHTML = emptyMsg;
-                    return;
-                }
-                const nicks = (s.competitor_nicknames && typeof s.competitor_nicknames === 'object')
-                    ? s.competitor_nicknames
-                    : competitorNicknames;
-                listEl.innerHTML = rows.map(c => {
-                    const full = c.account_full || c.account;
-                    const nick = c.nickname || nicks[full] || '';
-                    const base = c.domain && c.domain !== 'no-domain' ? `${c.account} (${c.domain})` : c.account;
-                    const display = nick ? `${nick} · ${base}` : base;
-                    const touch = c.touch_xrp != null && c.touch_xrp > 0 ? ` | touch:${c.touch_xrp}XRP` : '';
-                    const fled = c.cancels != null && c.cancels > 0 ? ` | cancels:${c.cancels}` : '';
-                    return `<div data-full="${full}" style="cursor:pointer; padding:2px 0;" title="Click to use this address for Analyze with AI">${display} | ${c.last_spread}% / ${c.avg_spread}% | act:${c.activity} | ${c.sides}${touch}${fled}</div>`;
-                }).join('');
-                listEl.querySelectorAll('div[data-full]').forEach(row => {
-                    row.onclick = () => {
-                        const input = document.getElementById('intel-analyze-addr');
-                        const nickAddr = document.getElementById('nick-address');
-                        const fullAddr = row.getAttribute('data-full') || '';
-                        if (input) {
-                            input.value = fullAddr;
-                        }
-                        if (nickAddr) {
-                            nickAddr.value = fullAddr;
-                        }
-                        const analyzeBtn = document.getElementById('btn-analyze-addr');
-                        if (analyzeBtn) {
-                            analyzeBtn.style.boxShadow = '0 0 0 3px #8b5cf6';
-                            setTimeout(() => { if (analyzeBtn) analyzeBtn.style.boxShadow = ''; }, 800);
-                        }
-                    };
+                renderMakerPeerList(listEl, rows, emptyMsg, s, {
+                    analyzeInputId: 'intel-analyze-addr',
+                    nickInputId: 'nick-address',
+                    analyzeBtnId: 'btn-analyze-addr',
                 });
             }
 
@@ -2605,6 +2753,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
             renderMetrics(s);
             renderBook(s);
+            renderPeerCal(s);
 
             const recentEl = document.getElementById('recent');
             if (recentEl) {
@@ -3980,8 +4129,13 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
             // Intelligence API: analyze a specific competitor address using Config tab settings (real Grok if configured)
             async function runIntelAnalyze(addr, options = {}) {
-                const resultEl = document.getElementById('intel-ai-result');
-                const addrInput = document.getElementById('intel-analyze-addr');
+                const shadowMode = !!options.shadowMode;
+                const resultEl = document.getElementById(
+                    options.resultElId || (shadowMode ? 'cal-ai-result' : 'intel-ai-result')
+                );
+                const addrInput = document.getElementById(
+                    options.addrInputId || (shadowMode ? 'cal-analyze-addr' : 'intel-analyze-addr')
+                );
                 if (options.triggerBtn) {
                     triggerAnim(options.triggerBtn, 'btn-press', 120);
                 }
@@ -3995,23 +4149,34 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     return;
                 }
                 if (resultEl) {
-                    pinnedIntelAiResult = null;
+                    if (!shadowMode) pinnedIntelAiResult = null;
                     const prov = (document.getElementById('intel-ai-provider') || {}).value || 'AI';
-                    const mode = options.selfAudit ? 'self-audit' : 'competitor';
+                    const mode = options.selfAudit ? 'self-audit' : (shadowMode ? 'shadow E3 calibration' : 'competitor');
                     resultEl.textContent = `Applying API config, then calling ${prov} (${mode}) for ${addr}...`;
                     resultEl.scrollTop = 0;
                     try {
                         await applyIntelConfigFromForm();
                         const payload = { address: addr };
+                        if (shadowMode) {
+                            payload.analysis_context = 'shadow_e3_calibration';
+                        }
                         if (lastState) {
                             if (lastState.competitor_pressure != null) payload.competitor_pressure = lastState.competitor_pressure;
                             if (lastState.competitor_observed_spread_pct != null) payload.observed_spread_pct = lastState.competitor_observed_spread_pct;
                             if (lastState.competitor_depth_xrp != null) payload.competitor_depth_xrp = lastState.competitor_depth_xrp;
                             if (lastState.inventory_label) payload.inventory_label = lastState.inventory_label;
-                            if (lastState.our_lane_xrp != null) payload.our_lane_xrp = lastState.our_lane_xrp;
-                            if (lastState.peer_lane_low_xrp != null) payload.peer_lane_low_xrp = lastState.peer_lane_low_xrp;
-                            if (lastState.peer_lane_high_xrp != null) payload.peer_lane_high_xrp = lastState.peer_lane_high_xrp;
-                            if (lastState.peer_lane_count != null) payload.peer_lane_count = lastState.peer_lane_count;
+                            if (shadowMode && lastState.shadow_e3_lane_xrp != null) {
+                                payload.our_lane_xrp = lastState.shadow_e3_lane_xrp;
+                                payload.peer_lane_low_xrp = lastState.shadow_peer_lane_low_xrp;
+                                payload.peer_lane_high_xrp = lastState.shadow_peer_lane_high_xrp;
+                                payload.peer_lane_count = lastState.shadow_peer_lane_count;
+                                payload.peer_pressure_score = lastState.shadow_peer_pressure_score;
+                            } else {
+                                if (lastState.our_lane_xrp != null) payload.our_lane_xrp = lastState.our_lane_xrp;
+                                if (lastState.peer_lane_low_xrp != null) payload.peer_lane_low_xrp = lastState.peer_lane_low_xrp;
+                                if (lastState.peer_lane_high_xrp != null) payload.peer_lane_high_xrp = lastState.peer_lane_high_xrp;
+                                if (lastState.peer_lane_count != null) payload.peer_lane_count = lastState.peer_lane_count;
+                            }
                             if (lastState.as_reservation != null) payload.as_reservation = lastState.as_reservation;
                             if (lastState.as_optimal_spread_pct != null) payload.as_optimal_spread_pct = lastState.as_optimal_spread_pct;
                             if (lastState.peer_fled_events) payload.peer_fled_events = lastState.peer_fled_events;
@@ -4022,7 +4187,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             if (lastState.quote_visibility_summary) payload.quote_visibility_summary = lastState.quote_visibility_summary;
                             if (lastState.cancel_per_fill != null) payload.cancel_per_fill = lastState.cancel_per_fill;
                             if (lastState.open_offers_count != null) payload.open_offers_count = lastState.open_offers_count;
-                            const prof = _findIntelProfile(addr, lastState);
+                            const prof = _findIntelProfile(addr, lastState, shadowMode);
                             if (prof) payload.target_profile = prof;
                         }
                         const resp = await fetch('/analyze_competitor', {
@@ -4031,10 +4196,15 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             body: JSON.stringify(payload)
                         });
                         const data = await resp.json();
-                        pinnedIntelAiResult = data.result || 'No result from analysis.';
+                        const resultText = data.result || 'No result from analysis.';
+                        if (!shadowMode) pinnedIntelAiResult = resultText;
                         if (data.debug) console.log('[HUD analyze]', data.debug);
-                        const briefingDetails = document.getElementById('intel-briefing-details');
-                        const briefingJson = document.getElementById('intel-briefing-json');
+                        const briefingDetails = document.getElementById(
+                            shadowMode ? 'cal-briefing-details' : 'intel-briefing-details'
+                        );
+                        const briefingJson = document.getElementById(
+                            shadowMode ? 'cal-briefing-json' : 'intel-briefing-json'
+                        );
                         const sb = data.briefing && data.briefing.structured_briefing;
                         if (briefingDetails && briefingJson && sb) {
                             briefingDetails.style.display = 'block';
@@ -4042,13 +4212,14 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         } else if (briefingDetails) {
                             briefingDetails.style.display = 'none';
                         }
-                        resultEl.textContent = pinnedIntelAiResult;
+                        resultEl.textContent = resultText;
                         resultEl.scrollTop = 0;
                         resultEl.classList.add('new-decision');
                         setTimeout(() => resultEl.classList.remove('new-decision'), 400);
                     } catch (e) {
-                        pinnedIntelAiResult = `Error calling /analyze_competitor: ${e}. (Tester must be running with --serve-hud and the address must be valid.)`;
-                        resultEl.textContent = pinnedIntelAiResult;
+                        const err = `Error calling /analyze_competitor: ${e}. (HUD must be running with Grok configured.)`;
+                        if (!shadowMode) pinnedIntelAiResult = err;
+                        resultEl.textContent = err;
                         resultEl.scrollTop = 0;
                     }
                 }
@@ -4085,6 +4256,49 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         ? String(lastState.bot_account_address || lastState.bot_address || '').trim()
                         : '';
                     await runIntelAnalyze(botAddr, { triggerBtn: selfAnalyzeBtn, selfAudit: true });
+                });
+            }
+
+            const calAnalyzeBtn = document.getElementById('btn-cal-analyze');
+            if (calAnalyzeBtn) {
+                calAnalyzeBtn.addEventListener('click', async () => {
+                    const addr = (document.getElementById('cal-analyze-addr') || {}).value || '';
+                    await runIntelAnalyze(addr, { triggerBtn: calAnalyzeBtn, shadowMode: true });
+                });
+            }
+
+            const calNickBtn = document.getElementById('btn-cal-save-nickname');
+            if (calNickBtn) {
+                calNickBtn.addEventListener('click', async () => {
+                    const addrEl = document.getElementById('cal-nick-address');
+                    const labelEl = document.getElementById('cal-nick-label');
+                    const statusEl = document.getElementById('cal-nick-status');
+                    const address = addrEl ? addrEl.value.trim() : '';
+                    const nickname = labelEl ? labelEl.value.trim() : '';
+                    if (!address || address.length < 25) {
+                        if (statusEl) statusEl.textContent = 'Enter a valid r-address.';
+                        return;
+                    }
+                    try {
+                        const resp = await fetch('/competitor_nicknames', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ address, nickname }),
+                        });
+                        const data = await resp.json();
+                        competitorNicknames = data.nicknames || {};
+                        if (statusEl) {
+                            statusEl.textContent = nickname
+                                ? `Saved "${nickname}" for ${address.slice(0, 12)}…`
+                                : `Removed nickname for ${address.slice(0, 12)}…`;
+                        }
+                        if (lastState) {
+                            lastState.competitor_nicknames = competitorNicknames;
+                            renderPeerCal(lastState);
+                        }
+                    } catch (e) {
+                        if (statusEl) statusEl.textContent = `Save failed: ${e}`;
+                    }
                 });
             }
 

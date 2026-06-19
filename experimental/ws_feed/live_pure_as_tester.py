@@ -216,6 +216,12 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         **extra,
     }
     payload.update(lane_ladder_hud_fields(runtime))
+    try:
+        from experimental.ws_feed.hud_intel_support import shadow_peer_lane_hud_fields
+
+        payload.update(shadow_peer_lane_hud_fields(payload))
+    except Exception:
+        pass
     return payload
 
 from config.settings import BotConfig
