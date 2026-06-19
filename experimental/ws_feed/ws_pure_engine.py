@@ -71,7 +71,7 @@ def _execution_brakes_summary_with_queue(summary: str, quote_visibility_summary:
         return f"{summary} | {queue_part}"
     return summary or queue_part
 COMP_SCRAPE_INTERVAL_S = 15.0
-WS_MID_MOVE_REFRESH_BPS = 4.0
+WS_MID_MOVE_REFRESH_BPS = 8.0
 WS_TOXIC_PRESERVE_OFF_RATIO = 0.35
 
 
@@ -212,6 +212,7 @@ class WsPureTradingEngine:
         self._last_fill_quote_age_seconds: Optional[float] = None
         self._recent_fill_quote_ages: List[Dict[str, Any]] = []
         self._reservation_crossed_after_ws_sample = False
+        self._session_boot_utc = datetime.now(tz=timezone.utc).isoformat()
         self._analysis_bundle: Dict[str, Any] = {"sample_history": []}
 
     def stop(self) -> None:
@@ -766,6 +767,11 @@ class WsPureTradingEngine:
             self.csv_logger.log_sell(**common)
         else:
             self.csv_logger.log_buy(**common)
+        if tracker_side:
+            if offer_sequence is not None:
+                self._offer_age.forget_sequence(offer_sequence)
+            else:
+                self._offer_age.clear_side(tracker_side)
 
     async def _cancel_if_live(
         self, connector: XRPLConnector, config: BotConfig, reason: str
@@ -877,6 +883,12 @@ class WsPureTradingEngine:
         bb_spread = ed.get("book_spread_pct")
         if bb_spread is None and mid and bb and ba:
             bb_spread = (ba - bb) / mid * 100.0 if mid > 0 else 0.0
+        book_bids: List[Dict[str, Any]] = []
+        book_asks: List[Dict[str, Any]] = []
+        if self._ws_feed and hasattr(self._ws_feed, "state"):
+            depth = self._ws_feed.state.depth_levels(25)
+            book_bids = list(depth.get("bids") or [])
+            book_asks = list(depth.get("asks") or [])
         if mid and mid > 0:
             self._price_history.append(float(mid))
             if len(self._price_history) > 200:
@@ -1027,6 +1039,9 @@ class WsPureTradingEngine:
             quotes_at_touch=quotes_at_touch,
             worst_vs_touch_bps=float(worst_vs_touch_bps),
             quote_visibility_summary=str(quote_visibility_summary),
+            book_bids=book_bids,
+            book_asks=book_asks,
+            session_boot_utc=self._session_boot_utc,
         )
         self.state_store.save(state)
         if ed and flags.intel_log:

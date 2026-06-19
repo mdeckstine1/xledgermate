@@ -38,7 +38,17 @@ def session_start_from_log() -> datetime:
 
 def main() -> int:
     start = session_start_from_log()
-    print(f"Session start (v2.1.21 boot): {start.isoformat()}")
+    rt_path = LOGS / "runtime_state.json"
+    if rt_path.exists():
+        try:
+            boot = json.loads(rt_path.read_text(encoding="utf-8")).get("session_boot_utc")
+            if boot:
+                parsed = _parse_ts(str(boot))
+                if parsed:
+                    start = parsed
+        except (OSError, json.JSONDecodeError):
+            pass
+    print(f"Session start: {start.isoformat()}")
     print()
 
     m6_rows: list[dict] = []

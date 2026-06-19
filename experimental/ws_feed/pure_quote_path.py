@@ -480,6 +480,11 @@ class PureQuotePath:
             inventory_label=inv_state.label,
             inventory_skew=inv_skew,
             g2_spread_mult=g2.spread_mult,
+            book_half_spread_bps=(
+                (float(book_spread_pct) / 100.0) * 10_000.0 / 2.0
+                if book_spread_pct is not None and float(book_spread_pct) > 0
+                else None
+            ),
         )
         l1_bid_price, l1_ask_price = touch_prices_from_backoff(
             best_bid=best_bid,

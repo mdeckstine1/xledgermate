@@ -57,6 +57,15 @@ def test_clear_side() -> None:
     assert tracker.last_placed_utc("ask") is None
 
 
+def test_forget_sequence_after_fill_consumes_side() -> None:
+    tracker = OfferAgeTracker()
+    placed = datetime(2026, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
+    tracker.record_place("ask", placed_utc=placed, sequence=77)
+    tracker.forget_sequence(77)
+    assert tracker.last_sequence_for_side("ask") is None
+    assert tracker.effective_quote_age_at_fill_seconds("ask") is None
+
+
 def test_find_offer_sequence_for_intent() -> None:
     intent = QuoteIntent(level=1, side="bid", price=2.18, size_xrp=10.0)
     offers = [

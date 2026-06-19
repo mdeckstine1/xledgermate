@@ -48,6 +48,20 @@ def test_pure_intents_empty_when_blocked() -> None:
     assert pure_intents_to_quote_intents(ladder, would_quote=False) == []
 
 
+def test_resolve_ws_sync_tolerances_small_mid_move_keeps_queue() -> None:
+    """Sub-8 bps mid wiggle should preserve queue (v2.1.22 churn tuning)."""
+    tol, preserve = resolve_ws_sync_tolerances(
+        mid=1.2758,
+        last_sync_mid=1.2750,
+        toxic_ratio_30s=0.0,
+        recent_fills=0,
+        g2_active=False,
+        base_price_tolerance_pct=0.08,
+    )
+    assert preserve is True
+    assert tol == 0.08
+
+
 def test_resolve_ws_sync_tolerances_mid_move_disables_preserve() -> None:
     tol, preserve = resolve_ws_sync_tolerances(
         mid=1.2800,

@@ -63,6 +63,14 @@ class BookState:
             "asks": sorted(self.asks.values(), key=lambda x: x["price"]),
         }
 
+    def depth_levels(self, max_levels: int = 25) -> Dict[str, List[Dict[str, float]]]:
+        """Top-N CLOB levels for HUD Book tab / runtime export."""
+        ob = self.to_order_book()
+        return {
+            "bids": ob["bids"][: max(0, int(max_levels))],
+            "asks": ob["asks"][: max(0, int(max_levels))],
+        }
+
     def best_prices(self) -> tuple[Optional[float], Optional[float]]:
         book = self.to_order_book()
         return self.connector.compute_best_prices(book)

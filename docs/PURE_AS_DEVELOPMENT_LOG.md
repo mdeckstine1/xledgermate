@@ -271,11 +271,19 @@ Full IDs and blockers: critical path **After segment** table.
 | Post-deploy gates | `scripts/post_deploy_snapshot.py` |
 | Intel JSONL | `experimental/ws_feed/intel_decisions_log.py` |
 
-| 2026-06-18 | HUD soak batch: RLUSD wealth sidebar (payload pass-through), Book tab L1–L3, G6 hold metrics UX, spread-capture grading dead-zone fix |
+| 2026-06-19 | M6 signed off (50 fills); **v2.1.22** engine bundle for spread-capture + churn; 6–8h time soak next |
 
 ---
 
-## 2026-06-18 — HUD soak batch (no engine restart)
+## 2026-06-19 — M6 sign-off + v2.1.22 engine bundle
+
+**M6 verdict (50 fills, v2.1.21):** Measurement PASS. Economics: 92% pos but 4.96 bps → G6 `hold`, Skim Δ −0.175 XRP. Toxicity/markout healthy. cancel/fill 2.92 elevated.
+
+**v2.1.22 (next restart):** G7 join floor 5 bps + book-aware; mid-move preserve 8 bps; `book_bids`/`book_asks` export; M6 tracker clear on fill; `session_boot_utc`.
+
+**Next soak:** 6–8 hours wall-clock, not fill-count gated.
+
+---
 
 **Deploy:** `xledgermate-ws-hud` only — ws-engine left running through M6 eval soak.
 

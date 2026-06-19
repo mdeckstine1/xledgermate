@@ -4,6 +4,7 @@ from experimental.ws_feed.execution_envelope import (
     JOIN_BACKOFF_BPS,
     PASSIVE_BACKOFF_BPS,
     compute_execution_envelope,
+    resolve_join_backoff_bps,
     touch_prices_from_backoff,
 )
 
@@ -30,6 +31,22 @@ def test_rlusd_heavy_bid_joins() -> None:
     assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
     assert env.bid_role == "join"
     assert env.ask_role == "passive"
+
+
+def test_join_backoff_scales_with_half_spread() -> None:
+    assert resolve_join_backoff_bps(book_half_spread_bps=10.0) == 5.0
+    assert resolve_join_backoff_bps(book_half_spread_bps=20.0) == 7.0
+    assert resolve_join_backoff_bps() == JOIN_BACKOFF_BPS
+
+
+def test_rlusd_heavy_join_uses_book_half_spread() -> None:
+    env = compute_execution_envelope(
+        inventory_label="rlusd_heavy",
+        g2_spread_mult=1.0,
+        book_half_spread_bps=20.0,
+    )
+    assert env.bid_touch_backoff_bps == 7.0
+    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
 
 
 def test_g2_spread_mult_widens_both() -> None:

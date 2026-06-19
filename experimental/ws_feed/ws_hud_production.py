@@ -194,6 +194,11 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
                 inventory_label=inv_label,
                 inventory_skew=0.0,
                 g2_spread_mult=float(g2_mult or 1.0),
+                book_half_spread_bps=(
+                    float(rt.get("book_spread_pct") or 0) / 100.0 * 10_000.0 / 2.0
+                    if rt.get("book_spread_pct")
+                    else None
+                ),
             )
             rt["g7_summary"] = env.summary
             rt["g7_scaler_label"] = env.scaler_label

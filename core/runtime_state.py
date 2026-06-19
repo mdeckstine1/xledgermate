@@ -151,6 +151,9 @@ class RuntimeState:
     g7_scaler_label: str = ""
     g2_scaler_label: str = ""
     execution_brakes_summary: str = ""
+    book_bids: List[Dict[str, Any]] = field(default_factory=list)
+    book_asks: List[Dict[str, Any]] = field(default_factory=list)
+    session_boot_utc: Optional[str] = None
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()

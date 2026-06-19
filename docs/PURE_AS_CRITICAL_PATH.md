@@ -1,8 +1,8 @@
 # Pure A-S Critical Path
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
-**Version:** v2.1.18 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-18 (HUD soak batch — wealth sidebar, Book tab, G6 hold metrics)
+**Version:** v2.1.22 · **Branch:** `Ashigaru-Kaizen-II`  
+**Last updated:** 2026-06-19 (M6 signed off · v2.1.22 engine bundle · 6–8h time soak next)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
@@ -12,27 +12,50 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 
 ## Active TODO
 
-### Now (operator) — M6 50-fill eval soak (v2.1.18)
+### Now (operator) — 6–8 hour time soak (v2.1.22)
 
 | # | Task | Status |
 |---|------|--------|
-| — | Engine restart + deploy M6 per-sequence quote age | [x] 2026-06-18 — v2.1.18 |
-| — | Post-deploy snapshot (baseline at 0 fills) | [x] `logs/post_deploy_snapshot_m6_2.1.18.txt` |
-| — | **M6 eval soak — target 50 session fills** | ongoing (restart v2.1.19 for live JSONL stream) |
-| — | **M6 live stream** `logs/fill_quote_age.jsonl` + HUD recent ages | [x] v2.1.19 — engine persists per fill |
-| — | At 50 fills: compare fill quote age (M6 vs M2 side-only offline report), Skim Δ, toxic@30s, cancel/fill | pending |
-| — | Watch G6 tier, markout@30s, G7 posture vs inventory | ongoing — **G6 `hold`** (spread capture 5.35 bps, 92% pos @ ~41 session fills) |
+| — | **M6 eval** (50 session fills on v2.1.21) | [x] 2026-06-19 — signed off |
+| — | Deploy **v2.1.22** engine bundle + restart `xledgermate` | pending (you) |
+| — | Post-restart snapshot | pending — `scripts/post_deploy_snapshot.py` → `logs/post_deploy_snapshot_v2.1.22.txt` |
+| — | **Time soak 6–8 hours** (not fill-count gated) | pending |
+| — | Hourly: soak dashboard, Skim Δ, toxic@30s, cancel/fill, G6 tier | ongoing during soak |
 | — | Telegram hourly narrative (Grok lead-in) | on hold |
 
-**M6 eval gates (at 50 fills):**
+**Time soak gates (6–8h, v2.1.22 vs M6 baseline):**
 
-- `effective_quote_age_at_fill_seconds` on runtime reflects per-sequence tracking (not all ~0 when p95 offline age > 10s).
-- Fill-age report: median/p95 sensible vs v2.1.17 segment (side-only had many 0s, p95 ~32s).
-- Skim Δ trend — direction matters more than sign at pilot size.
-- toxic@30s ≤ 30%; cancel/fill not worse than 2.5 sustained.
-- G7 posture tracks inventory_label (both mirrors if flow allows).
+| Metric | M6 baseline (50 fills) | Watch in time soak |
+|--------|------------------------|-------------------|
+| Skim Δ | −0.175 XRP | Direction / stability — target flatten or positive drift |
+| Spread capture bps | 4.96 avg (92% pos) | **Primary** — G7 v1.1 join floor 5 bps + book-aware |
+| toxic@30s | 8.7% | ≤30% sustained |
+| markout@30s | +0.001% | Not adverse |
+| cancel/fill | 2.92 | Target &lt;2.5 sustained (v2.1.22: mid-move preserve 8 bps) |
+| G6 tier | `hold` | Spread capture → `pilot_watch` or better if bps improve |
+| presence | 99.2% | ≥85% |
 
-**Discipline:** A-S sacred; M6 is measurement only — no strategy overrides mid-soak.
+**Discipline:** A-S sacred. v2.1.22 changes are **execution-only** (G7 join widen, churn tuning, book depth export, M6 fill-side cleanup). No mid-soak engine edits.
+
+<details>
+<summary>M6 eval verdict (2026-06-19, 50 fills v2.1.21) — archived</summary>
+
+| Gate | Result |
+|------|--------|
+| M6 JSONL | PASS — 50/50 session fills logged |
+| Fill age median | ~0.3 ms (88% instant); p95 36s (6 stale tail) |
+| toxic@30s | PASS — 8.7% |
+| markout@30s | PASS — +0.001% |
+| cancel/fill | FAIL watch — 2.92 (&gt;2.5) |
+| G7 mirror | PASS — rlusd_heavy bid join / ask passive |
+| G6 | `hold` — spread capture 4.96 bps (attention) |
+| Skim Δ | −0.175 XRP — thin edge, not toxic flow |
+
+**Learned:** High positive % but low bps/fill → join too tight at 3 bps. Safety stack healthy. M6 measurement validated.
+
+**v2.1.22 response:** G7 join floor 5 bps + 45% half-spread; `WS_MID_MOVE_REFRESH_BPS` 4→8; `book_bids`/`book_asks` on runtime; M6 clear tracker after fill; `session_boot_utc` for time-soak scripts.
+
+</details>
 
 <details>
 <summary>Prior soak segment (v2.1.17 — archived TODO)</summary>
@@ -69,11 +92,20 @@ Full authoritative G7 + on-ledger visibility numbers will flow after the next en
 
 **Verdict:** G7 v1 holds through 113 fills. Both inventory mirrors seen (xrp_heavy at 61, rlusd_heavy at 113). Skim Δ flat-to-slightly-better vs 61-fill nadir; toxicity and markout healthier. **Nothing to override** — continue soak. Re-run `scripts/soak_dashboard_report.py` or HUD Reports → Soak dashboard for live bundle.
 
-### Next dev — M6 per-sequence quote age
+### Next engine window — v2.1.22 spread-capture + churn (shipped)
 
-M2 side-only age understates resting time when cancel/replace happens before a fill (soak fill-age report: many 0s, p95 ~32s). **M6** tracks `placed_utc` per offer **sequence** (clear on cancel; resolve age at fill from last sequence on filled side). Ships at **next engine restart** — not mid-soak.
+| # | Item | Notes |
+|---|------|--------|
+| 1 | **G7 v1.1** join backoff | Floor **5 bps** (was 3); scales to 45% of book half-spread |
+| 2 | **Churn** | `WS_MID_MOVE_REFRESH_BPS` 4→8 — preserve queue on sub-8 bps mid wiggle |
+| 3 | **Book depth** | `book_bids` / `book_asks` top-25 on `runtime_state.json` → HUD Book tab |
+| 4 | **M6 hygiene** | Clear offer-age tracker after fill consumed |
+| 5 | **Time soak** | `session_boot_utc` on runtime for 6–8h segment scripts |
 
-### Next engine window — G7 execution envelope
+**Restart:** `git pull` + `systemctl restart xledgermate` (+ `xledgermate-ws-hud` if needed). Fresh session counters at 0 fills.
+
+<details>
+<summary>Prior — G7 v1 execution envelope (shipped v2.1.16+)</summary>
 
 | # | Item | Notes |
 |---|------|--------|
@@ -292,7 +324,8 @@ Balance-delta fills use implied price when coherent (±25% of mid, BBO band, min
 
 | Commit | What |
 |--------|------|
-| *(this)* | HUD soak batch: wealth sidebar payload (`wealth_hud_payload`), Book tab (L1–L3 + depth chart), G6 **hold** metrics card (red tier, attention list, gate FAIL), spread-capture mid-bps → `attention` not `unknown`, duplicate `deltaEl` JS fix |
+| *(this)* | **v2.1.22** post-M6: G7 join 5 bps + book-aware, churn preserve 8 bps, book depth export, M6 fill cleanup, `session_boot_utc` |
+| `06815c6` | Docs: operator manuals synced (Book, G6 hold, wealth) |
 | `5b9cb9b` | RLUSD-stable wealth sidebar with session decomposition |
 | `2fb597d` | Balance-delta coherence guard — reject nonsense implied prices before fill log |
 | `b463887` | HUD Skim Δ fix — stop CSV overwrite; strict `@ mid` for economics; session fills display |

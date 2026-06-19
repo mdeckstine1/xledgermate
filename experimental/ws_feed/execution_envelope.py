@@ -8,11 +8,25 @@ reservation, optimal spread, or would_quote.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
-G7_VERSION = "1.0.0"
-JOIN_BACKOFF_BPS = 3.0
+G7_VERSION = "1.1.0"
+JOIN_BACKOFF_BPS = 5.0
 PASSIVE_BACKOFF_BPS = 8.0
 INVENTORY_SKEW_THRESHOLD = 0.12
+JOIN_HALF_SPREAD_FRAC = 0.45
+
+
+def resolve_join_backoff_bps(*, book_half_spread_bps: Optional[float] = None) -> float:
+    """
+    Join-side backoff: floor JOIN_BACKOFF_BPS, scale up on wider books.
+    Post-M6 soak: 3 bps join captured too little spread (~5 bps avg at 92% pos).
+    """
+    floor = JOIN_BACKOFF_BPS
+    if book_half_spread_bps is None or book_half_spread_bps <= 0:
+        return floor
+    scaled = round(book_half_spread_bps * JOIN_HALF_SPREAD_FRAC, 2)
+    return max(floor, min(PASSIVE_BACKOFF_BPS - 1.0, scaled))
 
 
 @dataclass(frozen=True)
@@ -49,17 +63,20 @@ def compute_execution_envelope(
     inventory_label: str = "",
     inventory_skew: float = 0.0,
     g2_spread_mult: float = 1.0,
+    book_half_spread_bps: Optional[float] = None,
 ) -> ExecutionEnvelope:
     """
   Rule A: per-side base backoff from inventory.
   Rule B: multiply both sides by max(1, g2.spread_mult).
+  Rule C: join side uses resolve_join_backoff_bps (book-aware floor).
     """
+    join_bps = resolve_join_backoff_bps(book_half_spread_bps=book_half_spread_bps)
     posture = _inventory_posture(inventory_label=inventory_label, inventory_skew=inventory_skew)
     if posture == "xrp_heavy":
-        bid_base, ask_base = PASSIVE_BACKOFF_BPS, JOIN_BACKOFF_BPS
+        bid_base, ask_base = PASSIVE_BACKOFF_BPS, join_bps
         bid_role, ask_role = "passive", "join"
     elif posture == "rlusd_heavy":
-        bid_base, ask_base = JOIN_BACKOFF_BPS, PASSIVE_BACKOFF_BPS
+        bid_base, ask_base = join_bps, PASSIVE_BACKOFF_BPS
         bid_role, ask_role = "join", "passive"
     else:
         bid_base = ask_base = PASSIVE_BACKOFF_BPS
