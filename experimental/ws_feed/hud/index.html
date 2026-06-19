@@ -695,7 +695,7 @@
             <a href="#" data-page="inventory">Inventory</a>
             <a href="#" data-page="intelligence">Intelligence</a>
             <a href="#" data-page="metrics">Metrics</a>
-            <a href="#" data-page="book">Book</a>
+            <a href="#" data-page="book-page">Book</a>
             <a href="#" data-page="reports">Reports</a>
             <a href="#" data-page="credentials">Credentials</a>
             <a href="#" data-page="config">Config</a>
@@ -712,7 +712,7 @@
                 <div class="grid">
                     <div class="card">
                         <div class="label">Live Book (WS)</div>
-                        <div id="book" class="value">—</div>
+                        <div id="live-book-snippet" class="value">—</div>
                         <div class="metric-row"><span class="label">Spread</span> <span id="spread" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Book freshness <span class="info" title="Seconds since the last WS book update. Should tick up between messages, then drop when a new tick arrives. Green &lt;5s, yellow &lt;12s, red ≥12s.">?</span></span> <span id="age" class="value">—</span></div>
                         <div class="metric-row"><span class="label">WS Messages <span class="info" title="Count of book updates received this session. Higher is better — stale counts mean reconnect or RPC issues.">?</span></span> <span id="msgs" class="value">—</span></div>
@@ -953,7 +953,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             </div>
         </div>
 
-        <div id="book" class="page">
+        <div id="book-page" class="page">
             <div class="content">
                 <h3 style="margin-top:0; color:#60a5fa;">Book — live WS depth</h3>
                 <p id="book-depth-hint" style="font-size:0.8rem; color:#94a3b8; margin-top:0;">
@@ -2089,7 +2089,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const qCopy = quoteStatusCopy(s);
 
             // Live page cards - ALWAYS update the DOM values (visibility is controlled by CSS on #live container only)
-            const bookEl = document.getElementById('book');
+            const bookEl = document.getElementById('live-book-snippet');
             if (bookEl) {
                 if (!s.best_bid && !s.best_ask && !s.mid) {
                     bookEl.innerHTML = '<span style="color:#64748b;">Connecting to live book feed…</span>';
@@ -3063,9 +3063,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const metaEl = document.getElementById('metrics-g6-meta');
             if (metaEl) {
                 const fills = act.ws_fills != null ? act.ws_fills : cap.ws_fills;
+                const scope = pm.metrics_scope || (act.scope === 'session' ? 'session' : 'cumulative');
                 const gateTxt = act.gate_pass === false ? 'G6 gate: FAIL' : (act.gate_pass === true ? 'G6 gate: PASS' : '');
                 const parts = [];
-                if (fills != null) parts.push(`${fills} WS fills (CSV)`);
+                if (fills != null) {
+                    parts.push(scope === 'session'
+                        ? `${fills} session fills (since boot)`
+                        : `${fills} WS fills (CSV)`);
+                }
+                if (scope === 'session' && pm.capture_cumulative && pm.capture_cumulative.ws_fills != null) {
+                    parts.push(`cumulative ${pm.capture_cumulative.ws_fills} fills`);
+                }
                 if (gateTxt) parts.push(gateTxt);
                 metaEl.textContent = parts.join(' · ');
             }

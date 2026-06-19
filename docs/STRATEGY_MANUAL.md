@@ -1,6 +1,6 @@
 # XLedgerMate — Strategy Manual
 
-*Version 1.4.3 · What the bot is trying to do with your money, in plain language*
+*Version 1.4.4 · What the bot is trying to do with your money, in plain language*
 
 This document is about **strategy and risk**, not which buttons to press. For setup, tabs, and wallet steps, see [`OPERATOR_MANUAL.md`](OPERATOR_MANUAL.md).  
 For the engineering roadmap and **pilot → field deployment gates** (validation, competitive pilot, scale), see [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
@@ -25,7 +25,9 @@ News hits and mid drops **0.6% in five minutes**. Everyone hits the bids. If you
 
 **You are running:** A quoting bot that competes for spread while trying not to get picked off when price moves.
 
-**You are not running:** A rebalancer, a trend follower, or a “guaranteed profit” machine. If you are **80% XRP** and want **55%**, you still need **fills on the right side** or a **manual swap** on Xaman or a DEX. The bot will help over time; it will not teleport inventory there in one click.
+**You are not running:** A rebalancer, an **unconstrained trend follower**, or a “guaranteed profit” machine. If you are **80% XRP** and want **55%**, you still need **fills on the right side** or a **manual swap** on Xaman or a DEX. The bot will help over time; it will not teleport inventory there in one click.
+
+**WS pure path (VPS soak):** Production **`ws-engine`** uses pure A-S + G2/G7 execution — not the legacy momentum pause stack in Scenarios B/C below. **G6 hold** is an advisory tier (conservative size); it does **not** stop quoting. **G8 Spot Trend Posture** (future) will add a bounded offensive overlay for strong XRP moves — see [G8 section](#g8--spot-trend-posture-future-phase).
 
 ### Narrative — “I’m 80% XRP and I turned the bot on”
 
@@ -57,6 +59,8 @@ When two goals conflict, **protection usually wins**. Example: you are heavy XRP
 **What you should expect:** Slow, boring P&L — that is fine.
 
 ### Scenario B — price falling fast (protect asks / pause)
+
+*Legacy Streamlit / sacred engine path. WS pure soak uses G2/G7 + G6 advisory — see [G8](#g8--spot-trend-posture-future-phase) for planned offensive posture.*
 
 **Market:** Mid down **0.35%** over the last few samples; momentum tier **strong** or **extreme**.  
 **You:** **safe** or **high_volatility**.  
@@ -93,6 +97,8 @@ When two goals conflict, **protection usually wins**. Example: you are heavy XRP
 | **Balance change P&L** | Change in raw XRP and RLUSD balances, marked at today’s mid — closer to “coins in/out,” less sensitive to mid moving while you hold. |
 
 A red session P&L after a volatile hour does not always mean “bad trading”; it can be **inventory marked at a new price**. Use session P&L together with **how full you are on each side** and whether you are near your **55% XRP** target.
+
+**WS HUD wealth sidebar (RLUSD-stable):** Session Δ decomposes into **Skim** (spread capture from trading), **Spot** (XRP inventory × mid move since session start), and **Rebal** (residual balance change). A falling XRP tape with ~55% XRP inventory often shows **negative Spot** even when skim is flat — that is **beta**, not necessarily bad quotes. Read all three before judging a soak segment.
 
 ### Example — “Session is red but I didn’t trade badly”
 
@@ -266,7 +272,7 @@ The engine now **refuses** that mid for marking, drawdown, and fill capture. It 
 
 **Growing holdings (long-term goal):** The bot should compound **total XRP-equivalent** through **positive balance PnL** sessions, not through inventory luck or bad marks. **Gate 1 is complete** (plumbing validated on mainnet); Gate 2 uses **`tight_spread`** with the same ~250 XRP wallet. Treat toxic spikes on few fills as noise; scoreboard = **balance Δ + capture** over stable runs.
 
-**G6 activation (WS HUD Metrics):** Live soak grades spread capture, toxicity, drawdown, inventory, peer lane. Tier **`hold`** when spread capture is weak (e.g. many positive fills but &lt;8 bps average) — gate FAIL, conservative size. Distinct from toxic refresh pause or kill switch. See [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) and [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md).
+**G6 activation (WS HUD Metrics):** Live soak grades spread capture, toxicity, drawdown, inventory, peer lane. Grades are **session-scoped** when `session_boot_utc` is present (early segment → **`warming_up`**, not inherited cumulative **hold**). **v1.0:** tier **`hold`** when session spread capture fails the **≥70% pos and ≥8 bps avg** bar (n≥8) — gate FAIL, conservative size. **v1.1 (approved, post-soak):** thin_edge band, hold only on bad economics — see [`PURE_AS_CRITICAL_PATH.md` — G6](PURE_AS_CRITICAL_PATH.md#g6-activation-grading). **Hold does not halt quoting.**
 
 ### Example — edge guard
 
@@ -471,7 +477,65 @@ You Apply **safe** (spread preset) but leave L1 size at **50 XRP** with only **2
 
 ---
 
+## G8 — Spot Trend Posture (future phase)
+
+**Name:** G8 – Spot Trend Posture  
+**Status:** Future phase (post-soak, after G7 + M6 validation complete)  
+**Goal:** Deliberately lean into spot moves in a **controlled** way, rather than only defending against them.
+
+### Core philosophy
+
+- The bot remains a **market maker at its core** (two-sided quoting, spread capture, inventory discipline).
+- G8 adds a **light trend overlay** during strong directional moves.
+- Intent: **offensive monetization of XRP volatility**, not unconstrained directional speculation.
+- **Falling XRP:** accumulate XRP cheaper while capturing spread (when inventory vs target allows).
+- **Rising XRP:** monetize / reduce XRP exposure while capturing spread (when inventory vs target allows).
+- All behavior is **bounded** and respects the inventory target (~55% XRP).
+
+**Sacred rule (non-negotiable):** G8 may influence reservation, G7 posture, size, and refresh — but never overrides the core A-S check: reservation must sit **inside live best bid/ask** to quote.
+
+### What G8 does
+
+1. **Trend signal** — short/medium momentum from price history → `trend_label` (up / down / flat) + `trend_strength`.
+2. **Trend × inventory matrix** — combine tape with deviation from ~55% target to pick join/passive sides (e.g. falling tape + want more XRP → favor join bids; rising tape + want less XRP → favor join asks; strong move against desired inventory → stay neutral/defensive).
+3. **Light reservation bias** — small trend term on reservation (falling → slightly lower; rising → slightly higher); capped so reservation stays inside BBO on normal books.
+4. **Asymmetric refresh** — refresh the favorable side faster during a move; allow the unfavorable side to widen or go stale.
+5. **Size bias** — modest size up on the favorable side; capped by inventory limits.
+6. **Measurement** — trend-aligned vs counter-trend P&L (spot + rebalance + skim), not skim alone.
+
+### What G8 does not do
+
+- Break the reservation-inside-BBO rule.
+- Become a full trend-following system.
+- Override G2 toxicity braking.
+- Cause large sustained drift away from target ratio.
+- Run when disabled in config.
+
+### Build order (when ready)
+
+| Phase | Item | Priority |
+|-------|------|----------|
+| G8.1 | Trend signal from `_price_history` | High |
+| G8.2 | G7 trend × inventory bias | High |
+| G8.3 | Asymmetric refresh (per-side preserve) | Medium |
+| G8.4 | Light reservation bias | Medium |
+| G8.5 | Size bias | Medium |
+| G8.6 | Trend-aligned P&L measurement | Medium |
+| G8.7 | HUD + grading | Low |
+
+**Composition rule (implementers):** `final_g7 = merge(inventory_g7, trend_g7)` — trend wins join/passive only when `trend_strength >= moderate` and G2 is not in defensive grade. Default posture below mild momentum remains **neutral/defensive**.
+
+### From defensive to offensive
+
+Legacy momentum logic (Streamlit / sacred path) **protects** the vulnerable side (widen/pause bids on rips, asks on drops). G8 **inverts that in favorable conditions**: when tape moves in a direction that helps desired inventory, lean in; when tape moves against desired inventory, stay passive. Success is measured by skim **and** whether trend-era inventory drift was intentional and net positive.
+
+Engineering detail: [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) (G8 future pointer).
+
+---
+
 ## Further reading
 
 - [`OPERATOR_MANUAL.md`](OPERATOR_MANUAL.md) — Buttons, Apply profile, spread guard, kill switch.  
+- [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) — WS HUD, G6, wealth sidebar, soak ops.  
+- [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) — Live soak checklist.  
 - [`MAINNET_PILOT.md`](MAINNET_PILOT.md) — Pilot scope and checklist.

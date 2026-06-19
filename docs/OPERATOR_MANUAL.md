@@ -51,9 +51,23 @@ Use this surface on VPS or when running `live_pure_as_tester --serve-hud`. Hard 
 
 **Left sidebar — wealth (RLUSD-stable):** Session Δ, skim / spot / rebal split, XRP @ mid. **Skim Δ** on the soak strip is **trading spread capture only** (engine counter) — not the same as Wallet Δ or a deposit.
 
-**G6 `hold`:** On Metrics, red tier means spread capture needs attention (often high win rate but low bps/fill). Gate FAIL — stay conservative; no automatic size-up. See [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md).
+**G6 `hold`:** On Metrics, red tier means **session** spread capture needs attention. Gate FAIL — stay conservative; **does not auto-stop quotes**. Use kill switch to halt. See [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md).
 
-**Deploy during soak:** HUD-only changes restart **`xledgermate-ws-hud`** only — leave **`xledgermate`** (ws-engine) running unless planned.
+**Soak restart (VPS):**
+
+```bash
+cd /root/xledgermate
+.venv/bin/python main.py --mode clear-kill
+.venv/bin/python main.py --mode cancel-offers
+systemctl restart xledgermate
+systemctl restart xledgermate-ws-hud
+```
+
+Fresh session: `fills_session` 0, G6 **`warming_up`**, new `session_boot_utc`. Hard refresh HUD (**Ctrl+Shift+R**).
+
+**Operator halt (emergency):** `scripts/_operator_halt.py` — activates kill + cancels offers. Run from project root (`cd /root/xledgermate`).
+
+**Deploy during soak:** HUD-only → `systemctl restart xledgermate-ws-hud` only. Engine restart starts a **new soak segment**.
 
 ---
 

@@ -2,40 +2,199 @@
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
 **Version:** v2.1.22 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-19 (M6 signed off · v2.1.22 engine bundle · 6–8h time soak next)
+**Last updated:** 2026-06-19 (priority stack reorg · G6 v1.1 spec · segment #2 soak)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
-**Soak = timed test run.** Collect fills, toxicity, markout, G6 grades under real quoting. **M2–M5 shipped v2.1.15** (2026-06-18). **G7 execution envelope shipped v2.1.16+.** Post-deploy gates + baseline snapshot **2026-06-18** (`scripts/post_deploy_snapshot.py` on VPS).
+**Soak = timed test run.** Collect fills, toxicity, markout, G6 grades under real quoting. **M6 signed off** (2026-06-19). **v2.1.22** deployed. **Current segment:** boot **2026-06-19 ~13:24 UTC** — 6–8h wall-clock soak after spot-drop halt + clear-kill restart.
 
 ---
 
-## Active TODO
+## Priority stack
 
-### Now (operator) — 6–8 hour time soak (v2.1.22)
+Ordered by what live soaks proved matters. **Do not skip tiers** — finish P0 before P2 engine work; ship P2 HUD-only before the next timed segment.
 
-| # | Task | Status |
-|---|------|--------|
-| — | **M6 eval** (50 session fills on v2.1.21) | [x] 2026-06-19 — signed off |
-| — | Deploy **v2.1.22** engine bundle + restart `xledgermate` | pending (you) |
-| — | Post-restart snapshot | pending — `scripts/post_deploy_snapshot.py` → `logs/post_deploy_snapshot_v2.1.22.txt` |
-| — | **Time soak 6–8 hours** (not fill-count gated) | pending |
-| — | Hourly: soak dashboard, Skim Δ, toxic@30s, cancel/fill, G6 tier | ongoing during soak |
-| — | Telegram hourly narrative (Grok lead-in) | on hold |
+| Pri | Item | Soak signal | Status |
+|-----|------|-------------|--------|
+| **P0** | **Segment #2 time soak** (6–8h wall-clock) | Validate v2.1.22 after spot-drop triage | **in progress** |
+| **P0** | Hourly operator strip | Skim Δ, wealth spot/skim/rebal, toxic@30s, cancel/fill, G6 tier | ongoing |
+| **P1** | Post-segment snapshot | `scripts/post_deploy_snapshot.py` + dated save | pending |
+| **P1** | Segment #2 verdict vs gates | Compare to M6 baseline + segment #1 learnings | pending |
+| **P2** | **G6 v1.1** (HUD-only) | False **hold** on thin edge (M6 92%/5 bps; #2 n&lt;15); 8 bps bar vs 5 bps join | [ ] after P1 — [spec](#g6-activation-grading) |
+| **P2** | G6 v1.1 calibration soak | Confirm thin_edge / pilot_watch / hold semantics on live fills | after G6 v1.1 ship |
+| **P3** | **G8** spot trend posture | Segment #1 spot P&amp;L vs skim; inventory skew under moves — **decision after P1 review** | spec only — [no build until decided](#spot--inventory-operator-stance) |
+| **P3** | Stale-quote guard (if tail repeats) | 61s stale bid fill in #1; M6 logs age, no auto-cancel today | watch segment #2 fill-age p95 |
+| **P3** | cancel/fill re-eval | M6 **2.92**; v2.1.22 preserve 8 bps — did churn improve? | watch in P1 verdict |
+| **P3** | G6 Tier 2 (rolling window) | Full-session cumulative feels sticky after bad early fills | after one v1.1 soak |
+| **P3** | G6→G2/G7 coupling (Tier 3) | Hold advisory-only; negative skim with neutral G2 in #1 | deferred until hold is rare |
+| **P4** | L2/L3 ledger + `book_bids`/`book_asks` sync | Book tab shows L1; multi-level planned | P1–P3 peer track |
+| **P4** | I1–I4 regime channel (damped) | Empty peer lane OK at pilot size | post multiple soaks |
+| **P4** | P4–P6 peer intel + G4 nudges + F2 hook | Needs per-peer history + markout | P1 + soak data |
+| **P4** | P7 async submit / tx rate | Cancel/replace can exceed 5s loop | M2/M3 review |
+| **P4** | I7 in-band peer automation | No touch-band peers yet | real competition |
+| **P4** | **E3** 11k funding + rebalance exec | Operator timeline | consistent gain + warm fuzzy |
+| **P4** | H3–H7 arb paper/live | Separate wallet | G6 pass + H1 monitor |
+| **P4** | F4 Grok → outcome correlation | Offline attribution | fill history depth |
 
-**Time soak gates (6–8h, v2.1.22 vs M6 baseline):**
+**Discipline:** A-S sacred. **No P2+ code mid P0 segment.** G6 v1.1 is HUD-only (P2). G8 and engine knobs wait for **P1 soak review** — see [Spot & inventory](#spot--inventory-operator-stance).
 
-| Metric | M6 baseline (50 fills) | Watch in time soak |
-|--------|------------------------|-------------------|
-| Skim Δ | −0.175 XRP | Direction / stability — target flatten or positive drift |
-| Spread capture bps | 4.96 avg (92% pos) | **Primary** — G7 v1.1 join floor 5 bps + book-aware |
+### Spot & inventory (operator stance)
+
+We are **not** building a spot-prediction or directional trading bot. Spot moves still move **inventory and wealth** (segment #1: most −2.6 RLUSD was spot, not skim). That tension is real and hard — G7/G2 today handle inventory **symmetrically** via skew labels, not forecast.
+
+**Plan (2026-06-19):** Finish segment #2 → P1 verdict with **wealth decomposition** (spot vs skim vs rebal) → ship **G6 v1.1** → then decide whether G8 (or something lighter) is worth engine complexity. G8 spec in STRATEGY_MANUAL stays a **reference option**, not a committed build. Alternatives if soak says “no trend layer”: operator kill on judgment, tighter inventory targets, or G7-only defensive skew — no new prediction module required.
+
+### P0 — segment #2 (operator now)
+
+| Task | Status |
+|------|--------|
+| Deploy **v2.1.22** + restart `xledgermate` | [x] 2026-06-19 |
+| Session-scoped G6 (HUD) | [x] deployed |
+| Operator halt — spot-drop triage (#1) | [x] ~10:26 UTC |
+| Fresh restart clear-kill + engine + HUD | [x] ~13:24 UTC |
+| **Time soak 6–8 hours** | **in progress** |
+| Hourly monitoring | ongoing |
+| Post-segment snapshot | pending |
+
+**Gates (this segment vs M6 baseline):**
+
+| Metric | M6 (50 fills) | Watch #2 |
+|--------|---------------|----------|
+| Skim Δ | −0.175 XRP | Flatten or positive drift |
+| Spread capture bps | 4.96 avg (92% pos) | **Primary** — session G6 |
 | toxic@30s | 8.7% | ≤30% sustained |
 | markout@30s | +0.001% | Not adverse |
-| cancel/fill | 2.92 | Target &lt;2.5 sustained (v2.1.22: mid-move preserve 8 bps) |
-| G6 tier | `hold` | Spread capture → `pilot_watch` or better if bps improve |
-| presence | 99.2% | ≥85% |
+| cancel/fill | 2.92 | Target &lt;2.5 sustained |
+| G6 tier | v1.0 false hold on thin edge | v1.1 after P1 |
+| Wealth spot Δ | — | Separate from skim — beta on XRP moves |
 
-**Discipline:** A-S sacred. v2.1.22 changes are **execution-only** (G7 join widen, churn tuning, book depth export, M6 fill-side cleanup). No mid-soak engine edits.
+### P1 — segment close (next)
+
+1. Run `post_deploy_snapshot.py` + `live_activation_grading --gate` — save dated output.
+2. Write segment verdict: pass / watch / halt pattern for next window.
+3. Sync [`PURE_AS_DEVELOPMENT_LOG.md`](PURE_AS_DEVELOPMENT_LOG.md) narrative.
+4. Decide: G6 v1.1 ship before vs after any engine restart.
+5. **G8 / spot posture:** go / no-go / defer — based on segment #2 wealth split and whether inventory pain repeats without a forecast layer.
+
+### Soak findings → backlog (why this order)
+
+| Finding | Segments | Drives |
+|---------|----------|--------|
+| G6 **hold** on good pos% + ~5 bps | M6, #2 | **P2 G6 v1.1** |
+| Spot drop; wealth −2.6 RLUSD mostly spot | #1 | P1 review → maybe P3 G8 (not committed) |
+| G2 neutral while skim negative | #1 | P3 G6→G2 (deferred) |
+| 61s stale quote fill | #1 | P3 stale guard if repeats |
+| cancel/fill elevated | M6, 113-fill | P3 re-eval after v2.1.22 |
+| Inherited cumulative G6 after restart | pre-fix | [x] session-scoped G6 |
+| Skim Δ / wallet Δ confusion | Jun soak | [x] HUD semantics fixed |
+| Join 3 bps too tight | M6 | [x] G7 v1.1 5 bps floor |
+
+---
+
+## G6 activation grading (P2 spec)
+
+**Priority:** P2 — ship after segment #2 close (HUD-only). Full stack: [Priority stack](#priority-stack).
+
+**Code (v1.0 shipped):** `experimental/ws_feed/live_activation_grading.py`, `experimental/ws_feed/performance_metrics.py`  
+**CLI:** `python -m experimental.ws_feed.live_activation_grading [--gate]`
+
+### Role (measurement, not control)
+
+| G6 **is** | G6 **is not** |
+|-----------|----------------|
+| Session-scoped §7 grades + activation tier for HUD / soak strip | A kill switch or auto halt |
+| Recomputed every poll (not latched) | Wired to G2/G7 today |
+| Post-soak / milestone gate (`--gate`) | A guarantee of profitability |
+
+**Operator runbook:** `hold` + negative skim + judgment → **kill switch** (segment #1). G6 hold alone does **not** stop quoting.
+
+### v1.0 diagnosis (consensus — Grok + Cursor, 2026-06-19)
+
+| Issue | Detail |
+|-------|--------|
+| Not sticky | Tier recomputed from session CSV + runtime each poll |
+| Feels sticky | **Full-session cumulative** stats; early bad fills dilute slowly |
+| Chronic hold | **8 bps “good” bar** vs **G7 join floor ~5 bps** — M6 (92% pos, ~5 bps) → hold |
+| Action gap | Advisory only until v1.1 calibration; **defer G6→G2/G7** until hold is rare |
+
+**v1.0 hold rule:** `spread_capture = attention` (n≥8, not good bar) → tier **`hold`**, gate **FAIL**.
+
+### G6 v1.1 — approved spec (ship after segment #2)
+
+**Status:** [ ] pending — HUD-only (`performance_metrics.py`, `live_activation_grading.py`, HUD tier pill). **Do not ship mid-soak.**
+
+**Philosophy:** Keep G6 **advisory** through calibration soak; gate fails on **bad economics**, not thin-book normal. No G6→G2/G7 coupling in v1.1.
+
+#### Tier 1 (ship together)
+
+1. **`thin_edge` band** — n ≥ 8, pos% ≥ **70%**, avg bps in **[5, 8)** (aligned with G7 join). Spread grade **`thin_edge`**; tier **`pilot_watch`** or **`thin_edge`**; **gate pass** (yellow UI, not red hold).
+
+2. **`hold_min_fills = 15`** — hold only when n ≥ 15. For 8 ≤ n &lt; 15 with spread attention (outside thin_edge) → **`pilot_watch`**, gate pass.
+
+3. **Hold = bad economics only** (n ≥ 15) — tier **`hold`**, gate **FAIL**, only if any of:
+   - avg bps **&lt; 0**, or
+   - pos% **&lt; 50%**, or
+   - avg bps **&lt; 3** and pos% **&lt; 70%**
+
+   Thin positive capture → **never hold**.
+
+4. **Spread grade split** — §7 card: `good` | `thin_edge` | `attention` (not all sub-8 bps as red attention).
+
+5. **Optional Tier 1:** zero-capture fills count **neutral** for pos% (not positive).
+
+#### Tier 2 (after one v1.1 soak)
+
+- Rolling window (last **25** fills or **2h**) for tier recovery; session totals still on HUD.
+- Mean + **median** bps on Metrics; median for outlier guard only.
+
+#### Tier 3 (deferred)
+
+| Item | Status |
+|------|--------|
+| G6 → G2 min spread_mult on hold | After v1.1 soak proves hold is meaningful |
+| G6 → G7 defensive | Same |
+| Auto-halt on hold | **No** — kill stays operator-driven |
+
+#### Gate semantics (v1.1)
+
+| Tier | `gate_pass` |
+|------|-------------|
+| `warming_up` | **fail** |
+| `thin_edge` / `pilot_watch` | **pass** (warn in UI) |
+| `pilot` / `active` / `scale_ready` | **pass** |
+| **`hold`** | **fail** |
+| `halted` / `paper` | **fail** |
+
+#### Target tier ladder
+
+```
+n < 8                          → warming_up (gate fail)
+n ≥ 8, pos ≥ 70%, 5 ≤ bps < 8  → thin_edge / pilot_watch (gate pass)
+8 ≤ n < 15, spread bad         → pilot_watch (gate pass)
+n ≥ 15, bad economics          → hold (gate fail)
+n ≥ 25/50, core good           → active / scale_ready
+```
+
+#### Sanity check (past segments)
+
+| Segment | v1.0 | v1.1 expected |
+|---------|------|----------------|
+| M6: 50 fills, 92% / ~5 bps | hold | **thin_edge**, gate pass |
+| #1: 83 fills, 51% / −0.14 bps | hold | **hold** ✓ |
+| #2: 18 fills, 67% / 1.8 bps | hold | **pilot_watch** (n&lt;15), not hold |
+
+**Implement checklist:** tests for M6-style thin_edge, segment #1 hold, segment #2 pilot_watch; bump `G6_VERSION`; HUD pill for `thin_edge`; update STRATEGY_MANUAL one-liner; deploy `xledgermate-ws-hud` only.
+
+---
+
+<details>
+<summary>Prior segment #1 (v2.1.22, boot 03:40 UTC — archived)</summary>
+
+~83 fills before operator halt. Mid **1.138 → 1.124** (−1.1% spot). Wealth Δ **−2.6 RLUSD** (mostly **spot** −3.3, skim −0.12). Session G6 → **`hold`** (51% pos, −0.14 bps). BUY-side bleed (−0.18 XRP capture); one fill **61s stale quote**. G2 stayed neutral (toxic@5%). Kill activated manually; offers cancelled.
+
+**Learned:** G6 hold is advisory only; G2 does not brake on negative skim; preserve_touch_queue + low toxic keeps stale bids. G8 trend posture planned (see STRATEGY_MANUAL).
+
+</details>
 
 <details>
 <summary>M6 eval verdict (2026-06-19, 50 fills v2.1.21) — archived</summary>
@@ -70,98 +229,41 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 
 </details>
 
-**G7 soak checkpoint (2026-06-18, ~61 session fills on v2.1.17):** C2 sample_history gate now **PASS** (123 min, 86.8% presence, flip 0.141). G6 still `pilot_watch` (toxicity + empty peer lane) but gate PASS. Session Skim slipped to −0.106 XRP during xrp_heavy leg (adverse flow on the join-ask side) then inventory normalized. Markout@30s recovered to ~0. See A/B below. Full snapshot in `logs/post_deploy_snapshot.txt`. After HUD restart + hard refresh you will see:
+<details>
+<summary>Archive — soak checkpoints &amp; shipped bundles (v2.1.17–v2.1.22)</summary>
+
+**G7 soak (2026-06-18, v2.1.17):** C2 PASS at 61 fills; G7 v1 good enough through **113 fills**. Both inventory mirrors validated. cancel/fill 1.77 → 2.35 drove M6 + v2.1.22 churn work.
+
+| Metric | ~61 fills | ~113 fills |
+|--------|-----------|------------|
+| Skim Δ | −0.106 XRP | −0.101 XRP |
+| toxic@30s | ~26% peak | 4.5% |
+| cancel/fill | 1.77 | 2.35 |
+| G7 | xrp_heavy asymmetric | rlusd_heavy mirror |
+
+**v2.1.22 shipped (2026-06-19):** G7 join floor 5 bps; mid-move preserve 8 bps; book depth export; M6 tracker clear; `session_boot_utc`.
+
+**M2–M5 shipped (v2.1.15):** fill age, stale-cross, sample_history, as_safety, fill economics.
+
+<details>
+<summary>G7 v1 A/B + design notes (2026-06-18)</summary>
+
+| Metric | v2.1.15 baseline | v2.1.17 (~61 fills) |
+|--------|------------------|---------------------|
+| cancel/fill | ~1.5 | 1.77 |
+| worst_vs_touch_bps | ~8.0 | ~9.0 (xrp_heavy) |
+| markout@30s | −0.013% | −0.001% (recovered) |
+| Skim Δ | small positive | −0.106 (join-side adverse flow) |
+
+**Verdict:** [x] G7 v1 good enough. A-S reservation untouched. G7 + G2 are execution only — no mid-soak overrides from HUD intel.
+
+<details>
+<summary>G7 draft spec v1 (design reference)</summary>
+
+**G7 soak checkpoint (2026-06-18, ~61 session fills on v2.1.17):** C2 sample_history gate now **PASS** (123 min, 86.8% presence, flip 0.141). G6 still `pilot_watch` (toxicity + empty peer lane) but gate PASS. Session Skim slipped to −0.106 XRP during xrp_heavy leg (adverse flow on the join-ask side) then inventory normalized. Markout@30s recovered to ~0. Full snapshot in `logs/post_deploy_snapshot.txt`. After HUD restart + hard refresh you will see:
 - G7 queue: the correct decision e.g. "bid passive 9.0bps · ask join 3.4bps" (or ×G2 when braking), computed on the HUD side from the current inventory_label + g2_spread_mult that the engine *is* already writing.
 - Queue vs touch: worst-bps or "at touch / back / join" summary computed from the planned quote ladder vs BBO in the snapshot (proxy until engine restart writes the real on-ledger visibility).
 Full authoritative G7 + on-ledger visibility numbers will flow after the next engine restart (when the ws-engine writes them into runtime_state.json).
-
-**113-fill checkpoint (2026-06-18, same soak segment — v2.1.17, no engine restart):**
-
-| Metric | ~61 fills | ~113 fills | Notes |
-|--------|-----------|------------|-------|
-| Session fills | 61 | **113–114** | ~2× sample; same segment |
-| Skim Δ | −0.106 XRP | **−0.101 XRP** | Slightly improved; edge still negative on session |
-| Wallet Δ | — | **+0.102 XRP** | Spot/MTM positive — not trading edge |
-| toxic@30s | ~26% peak (xrp_heavy) | **4.5%** | Recovered after inventory flip |
-| markout@30s | ~0 | **+0.017%** | Positive |
-| cancel/fill | 1.77 | **2.35** | Higher churn — watch |
-| presence | ~87% | **93.4%** | Improved |
-| inventory / G7 | xrp_heavy → balanced | **rlusd_heavy** — bid join 3 bps, ask passive 8 bps | Mirror case validated |
-| G2 | braking during skew | **neutral** (×1.0) | |
-| G6 tier | pilot_watch | pilot_watch | Gate still PASS |
-
-**Verdict:** G7 v1 holds through 113 fills. Both inventory mirrors seen (xrp_heavy at 61, rlusd_heavy at 113). Skim Δ flat-to-slightly-better vs 61-fill nadir; toxicity and markout healthier. **Nothing to override** — continue soak. Re-run `scripts/soak_dashboard_report.py` or HUD Reports → Soak dashboard for live bundle.
-
-### Next engine window — v2.1.22 spread-capture + churn (shipped)
-
-| # | Item | Notes |
-|---|------|--------|
-| 1 | **G7 v1.1** join backoff | Floor **5 bps** (was 3); scales to 45% of book half-spread |
-| 2 | **Churn** | `WS_MID_MOVE_REFRESH_BPS` 4→8 — preserve queue on sub-8 bps mid wiggle |
-| 3 | **Book depth** | `book_bids` / `book_asks` top-25 on `runtime_state.json` → HUD Book tab |
-| 4 | **M6 hygiene** | Clear offer-age tracker after fill consumed |
-| 5 | **Time soak** | `session_boot_utc` on runtime for 6–8h segment scripts |
-
-**Restart:** `git pull` + `systemctl restart xledgermate` (+ `xledgermate-ws-hud` if needed). Fresh session counters at 0 fills.
-
-<details>
-<summary>Prior — G7 v1 execution envelope (shipped v2.1.16+)</summary>
-
-| # | Item | Notes |
-|---|------|--------|
-| 1 | **G7** Execution envelope | **shipped** — `execution_envelope.py`; per-side touch × `g2.spread_mult` |
-| 2 | Per-side touch | xrp-heavy → ask 3 bps / bid 8 bps; rlusd-heavy → opposite |
-| 3 | G2 coupling | `backoff × max(1, g2.spread_mult)` |
-| 4 | Visibility + debug | `worst_vs_touch_bps`, `quote_visibility_summary`, `g7_summary` on runtime |
-| 5 | Validation | Soak A/B vs v2.1.15 — [x] **complete at 113 fills** (2026-06-18) |
-
-**Blocker:** [x] accumulate v2.1.16+ data — done at 113 fills.  
-**Status:** [x] G7 v1 — Good enough (see verdict below). Keep monitoring live data. No engine restart until necessary.
-
-**Order:** monitor markout/toxic/cancel vs baseline → sign off or tune envelope.
-
-### G7 A/B at 61-fill checkpoint (this run)
-
-| Metric                  | v2.1.15 / early baseline (from initial soak data) | v2.1.17 this run (~61 session fills) | Notes |
-|-------------------------|---------------------------------------------------|--------------------------------------|-------|
-| cancel/fill             | ~1.5                                              | 1.77                                 | Slightly higher churn under G2 brakes |
-| worst_vs_touch_bps      | ~8.0                                              | ~9.0 (during xrp_heavy; symmetric 9/9 when balanced) | G7 widens passive side as designed |
-| markout@30s             | −0.013%                                           | −0.001% (recovered)                  | Adverse during heavy leg, improved as inventory normalized |
-| toxic@30s               | ~14% (early)                                      | 26% (peak during skew)               | G2 correctly cautious (size×0.75, spread×1.12) |
-| G7 posture              | balanced 8/8                                      | xrp_heavy asymmetric (bid passive 9, ask join ~3.4 ×G2) → balanced 9/9 | Execution knob reacting to inventory; A-S reservation untouched |
-| Skim Δ (session)        | small positive early                              | −0.106 (slipped on adverse ask hits while heavy) | Expected cost of "join rebalance side" during one-sided flow |
-| C2 gate                 | FAIL (short window, high flips)                   | PASS (123 min)                       | Longer stable run met flip-rate bar |
-| Peer lane               | 0                                                 | 0                                    | No competitors at pilot size |
-| Inventory behavior      | —                                                 | xrp_heavy → balanced without manual rebalance | G7 + G2 + natural flow handled it |
-
-**Design note:** Pure A-S reservation math (would_quote only when inside live BBO, optimal spread from γ/κ/vol) remains the sacred core. G7 is a thin execution envelope (posted-price backoff only) + G2 as dynamic brake on size/spread. Other knobs (pressure, book age, G4) influence inputs only — never override the inside-book guard.
-
-**Discipline rule:** A-S is what we do. G7 + G2 are execution only. The HUD self-audit and intel exist to verify the bot is executing the design (inventory-driven asymmetry, G2 coupling, reservation untouched). Visibility costs and regime signals are observed, not used for reactive overrides. We win by discipline.
-
-**G7 v1 Checkpoint Verdict (2026-06-18):**  
-[x] Good enough for current pilot scale.  
-
-The envelope behaved as designed: wider passive side while xrp_heavy produced the expected visibility cost (~9 bps) and temporary session Skim drag on adverse flow. Inventory self-corrected without manual action. Markout recovered. C2 gate now passes. A-S core (reservation + inside-BBO `would_quote`) remained untouched throughout.  
-
-Live data will continue to be watched. No engine restart until needed. Future windows can explore the rlusd_heavy mirror or longer-horizon stats if desired.
-
-### Metrics to watch (next 24–48 hours, while this run continues)
-
-Focus on consistency rather than perfection at pilot size:
-
-- **Session Skim Δ** — direction and stability (look for flattening or positive drift as inventory stays near target).
-- **mean_markout_30s_pct** — trend (ideally staying > −0.02% or improving).
-- **toxic_ratio_30s** — staying ≤ 28–30% or trending down.
-- **cancel_per_fill** — flat or slowly improving (was ~1.77 at 61 fills; **~2.35 at 113** — watch).
-- **G7 posture vs inventory** — when inventory_label is "balanced", both sides should be symmetric (~8–9 bps). Confirm via HUD + runtime.
-- **Queue vs touch / worst_vs_touch_bps** — visible in Session fills card after HUD restart + hard refresh.
-- **Fills per hour** — rough consistency (thin book → 1–3/hr is normal).
-- **Wallet balance PnL (session_pnl_balance_delta_xrp)** — the real "warm fuzzy" metric for E3.
-
-Re-run `scripts/post_deploy_snapshot.py` and `live_activation_grading` periodically. Save dated outputs.
-
-<details>
-<summary><strong>G7 draft — execution envelope</strong> (spec v1 — minimal moving parts)</summary>
 
 ### Design goal
 
@@ -246,39 +348,16 @@ Single line operator can read:
 
 ### Future (out of G7 v1 — only if soak asks for it)
 
+- **G8 Spot Trend Posture** — bounded offensive overlay for XRP spot moves (trend × inventory → G7 bias, asymmetric refresh, light reservation bias, trend P&L). Spec: [`STRATEGY_MANUAL.md`](STRATEGY_MANUAL.md#g8--spot-trend-posture-future-phase). Build after G7 + M6 soak sign-off.
 - Markout-adaptive backoff (needs more M2 fill history)  
 - F4 Grok correlation (offline)  
 - Merge `execution_envelope` into `spread_quality_scaler.py` if we want one file later  
 
 </details>
 
-### Segment end — M2–M5 (shipped v2.1.15)
+</details>
 
-| # | Item | Notes |
-|---|------|--------|
-| 1 | **M2** Fill age live | **shipped** — `OfferAgeTracker` in `_sync_offers` + `_detect_fills`; HUD `effective_quote_age_at_fill_seconds` |
-| 2 | **M3** Stale-cross flag | **shipped** — `reservation_crossed_after_ws_sample` pre/post intel BBO in `_run_cycle` |
-| 3 | **M4** Production `sample_history` | **shipped** — `append_runtime_sample` in `_persist_cycle`; C1 soak metrics on runtime export |
-| 4 | **M5** `as_safety` on production path | **confirmed** — `enforce_reservation_gate` in `pure_quote_path.py` (no engine change) |
-| 5 | **Fill economics** | `fill_detection.py` implied price — **deploy with engine restart** |
-| 6 | Post-deploy gates | `fill_quote_age_report.py`, `ws_runtime_analysis`, `live_activation_grading --gate` |
-
-**Order:** deploy M2–M5 bundle → engine restart → post-deploy reports + G6 `--gate`.
-
-### After segment (engine or separate windows)
-
-| # | Item | Blocker |
-|---|------|---------|
-| **G7** | **Execution envelope** — shipped v2.1.16 | [x] soak A/B at **113 fills**; good enough |
-| P1–P3 | Per-peer history, tx correlation, full L1–L3 in runtime | Engine + soak data |
-| P4–P6 | Structured `PeerBriefing`, G4 nudges, F2 engine hook | P1 + markout |
-| P7 | Async submit / tx rate instrumentation (L1–L4) | M2/M3 review |
-| I1–I4 | Regime channel (book-wide pressure, damped) | Empty peer lane validated |
-| I7 | In-band peer automation path | Real touch-band peers |
-| E3 | 11k funding + rebalance execution | [ ] waiting for consistent gain + warm fuzzy on the bot (on operator timeline) |
-| H3–H7 | Arb paper/live, USDC, path scanner | G6 pass + H1 monitor data |
-| F4 | Grok suggestion → outcome correlation | Fill attribution |
-| **M6** | **Per-sequence quote age** | [x] deployed v2.1.18 — **50-fill eval soak in progress** |
+</details>
 
 ---
 
@@ -314,29 +393,34 @@ HUD-only deploys (`xledgermate-ws-hud` restart OK). No further soak-safe code re
 |-----------|---------|
 | **Skim Δ** | Session spread capture from **engine** `session_spread_capture_xrp` (incoherent balance-delta fills rejected; HUD does not overwrite with CSV sum) |
 | **Wallet Δ** (Inventory) | Portfolio change since session start — **includes deposits** |
-| **Metrics → Total capture** | CSV sum (all-time in month file); grades use toxic@30s |
+| **Metrics → Total capture** | Session-scoped when `session_boot_utc` set; meta shows `N session fills · cumulative M fills` |
+| **Wealth sidebar** | Session Δ = skim + spot + rebal (RLUSD-stable); spot = baseline XRP × mid move |
 
-Balance-delta fills use implied price when coherent (±25% of mid, BBO band, min 0.01 XRP). Bogus composite deltas are rejected at detect time and excluded from G6 skim grading. Historical CSV rows may remain; session HUD uses engine counters only.
+Balance-delta fills use implied price when coherent (±25% of mid, BBO band, min 0.01 XRP). Bogus composite deltas are rejected at detect time and excluded from G6 skim grading. **G6 grades session fills since boot** when `session_boot_utc` present (0–7 fills → `warming_up`). Historical CSV rows remain in file; HUD activation uses session scope.
 
 ---
 
-## Recent ships (2026-06-18)
+## Recent ships (2026-06-19)
+
+| Item | What |
+|------|------|
+| Session-scoped G6 | `performance_metrics.py` filters fills since `session_boot_utc`; HUD meta shows session vs cumulative |
+| Operator halt | `scripts/_operator_halt.py` — kill + cancel (must run from project root / `chdir` to `logs/`) |
+| Fresh soak segment | clear-kill → restart engine + HUD; boot ~13:24 UTC, mid ~1.129 |
+| G8 spec | STRATEGY_MANUAL + critical path future pointer — not coded |
+
+<details>
+<summary>Prior ships (2026-06-18)</summary>
 
 | Commit | What |
 |--------|------|
-| *(this)* | **v2.1.22** post-M6: G7 join 5 bps + book-aware, churn preserve 8 bps, book depth export, M6 fill cleanup, `session_boot_utc` |
+| **v2.1.22** | G7 join 5 bps + book-aware, churn preserve 8 bps, book depth export, M6 fill cleanup, `session_boot_utc` |
 | `06815c6` | Docs: operator manuals synced (Book, G6 hold, wealth) |
 | `5b9cb9b` | RLUSD-stable wealth sidebar with session decomposition |
-| `2fb597d` | Balance-delta coherence guard — reject nonsense implied prices before fill log |
-| `b463887` | HUD Skim Δ fix — stop CSV overwrite; strict `@ mid` for economics; session fills display |
-| `4c38c65` / `b420437` | USD portfolio in sidebar; metric row alignment |
-| `5b85263` + follow-ups | HUD "Analyze our bot" self-audit + prose reports (no JSON echo); G7 fields now explicitly in HUD payload for session fills card |
+| `2fb597d` | Balance-delta coherence guard |
+| `b463887` | HUD Skim Δ fix — stop CSV overwrite |
 
-**G6 hold (live soak, ~41 session fills):** spread capture **attention** (92% pos, **5.35 bps** &lt; 8 bps good bar) → tier **`hold`**, gate **FAIL**. Toxicity/drawdown good. Conservative size + G2/G4 brake review — no engine change mid-soak. Metrics tab shows red hold card + attention triggers after HUD deploy.
-
-**Book tab:** touch + our L1–L3 from `quote_intents` (L2/L3 dashed/planned until ledger sync). Full CLOB depth (`book_bids`/`book_asks`) after next ws-engine restart.
-
-Post-deploy + 60-fill checkpoint: `scripts/post_deploy_snapshot.py` + `live_activation_grading --gate`. G7 A/B data logged via `ws_as_version` in intel JSONL. G7 queue/visibility now visible in HUD Session fills card (hard refresh recommended).
+</details>
 
 ---
 
@@ -351,7 +435,7 @@ Post-deploy + 60-fill checkpoint: `scripts/post_deploy_snapshot.py` + `live_acti
 - **C:** C1 pressure/presence metrics, C2 soak gate
 - **D:** WS feed hardening, dry-run offers, Streamlit compare, swap readiness
 - **E:** E1 live VPS ws-engine, E1.5 gate PASS, E2 merge, E4 `WsPureTradingEngine`
-- **G:** G1–G6 peer lane, G2 scaler, intel JSONL, G4 quoting, G5 replay, G6 activation grading · **G7** execution envelope (planned)
+- **G:** G1–G6 peer lane, G2 scaler, intel JSONL, G4 quoting, G5 replay, G6 activation grading · **G7** execution envelope · **G8** spot trend posture (spec)
 
 </details>
 
@@ -371,8 +455,9 @@ Post-deploy + 60-fill checkpoint: `scripts/post_deploy_snapshot.py` + `live_acti
 
 | File | Use |
 |------|-----|
-| **This file** | Critical path + TODO |
+| **This file** | **Priority stack** + P0–P4 backlog + G6 v1.1 spec |
 | [`PURE_AS_DEVELOPMENT_LOG.md`](PURE_AS_DEVELOPMENT_LOG.md) | **Posterity** — how we got here, soak learnings, decisions |
+| [`G6_ACTIVATION_REFERENCE.md`](G6_ACTIVATION_REFERENCE.md) | v1.0 code reference (superseded for spec by G6 section above) |
 | [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) | Tester + HUD + Grok (tabs, G6, Book, wealth) |
 | [`PHASE_E_VPS_RUNBOOK.md`](PHASE_E_VPS_RUNBOOK.md) | VPS swap ladder |
 | [`E2_BRANCH_DISCIPLINE.md`](E2_BRANCH_DISCIPLINE.md) | Branch roles |
@@ -419,7 +504,8 @@ scripts/vps_deploy_ashigaru.sh             # VPS deploy (plan segment end)
 2. HUD + long runs — done  
 3. Dry-run WS offers — done  
 4. E1 live ws-engine — done (2026-06-15)  
-5. **Current:** v2.1.18 live → **M6 50-fill eval soak** → sign off M6 at 50 fills → E3 when consistent gain + warm fuzzy
+5. G7 v1 + M6 measurement — done (2026-06-19)  
+6. **Current:** segment #2 time soak (v2.1.22) → P1 verdict → **G6 v1.1** → calibration soak → **G8 decision** (optional) → **E3** on operator timeline
 
 ---
 

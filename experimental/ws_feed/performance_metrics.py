@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -108,23 +109,53 @@ def _peer_coverage_pct(intel_rows: List[Dict[str, Any]]) -> Optional[float]:
     return round(100.0 * with_peers / len(scrapes), 1)
 
 
-def build_performance_metrics(
-    *,
-    runtime: Dict[str, Any],
-    logs_dir: Path = Path("logs"),
-    intel_tail_limit: int = 400,
-) -> Dict[str, Any]:
-    """HUD payload: §7 grades + fill stats + recent intel tail."""
-    rt = runtime or {}
-    fills = _ws_fills_from_trades(logs_dir)
-    cap = _fill_capture_stats(fills)
-    intel_tail = tail_intel_records(limit=intel_tail_limit, path=logs_dir / "intel_decisions.jsonl")
-    peer_cov = _peer_coverage_pct(intel_tail)
+def _parse_fill_ts(raw: str) -> Optional[datetime]:
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
+
+def _session_fills(
+    fills: List[Dict[str, str]],
+    runtime: Dict[str, Any],
+) -> tuple[List[Dict[str, str]], str]:
+    """
+    Prefer fills on/after session_boot_utc; else last fills_session rows.
+    Returns (rows, scope label).
+    """
+    rt = runtime or {}
+    boot = rt.get("session_boot_utc")
+    if boot:
+        boot_dt = _parse_fill_ts(str(boot))
+        if boot_dt:
+            if boot_dt.tzinfo is None:
+                boot_dt = boot_dt.replace(tzinfo=timezone.utc)
+            scoped = []
+            for row in fills:
+                ts = _parse_fill_ts(row.get("timestamp_utc") or "")
+                if ts and ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if ts and ts >= boot_dt:
+                    scoped.append(row)
+            return scoped, "session"
+    fs = int(rt.get("fills_session") or 0)
+    if fs > 0 and len(fills) >= fs:
+        return fills[-fs:], "session"
+    return fills, "cumulative"
+
+
+def _build_grades(
+    rt: Dict[str, Any],
+    cap: Dict[str, Any],
+    peer_cov: Optional[float],
+) -> List[MetricGrade]:
+    n_fills = int(cap.get("ws_fills") or 0)
     pos_pct = cap.get("positive_capture_pct")
     avg_bps = cap.get("avg_capture_bps")
     neg_pct = cap.get("neg_capture_pct")
-    n_fills = int(cap.get("ws_fills") or 0)
 
     capture_good = (
         n_fills >= 8
@@ -153,7 +184,6 @@ def build_performance_metrics(
     if xrp_share is not None:
         dev = abs(float(xrp_share) - target_pct)
     inv_good = dev is not None and dev <= 10.0 and (capture_good or n_fills < 8)
-    inv_attention = dev is not None and dev > 12.0
 
     toxic_30 = rt.get("toxic_fill_ratio_30s")
     try:
@@ -169,12 +199,10 @@ def build_performance_metrics(
     except (TypeError, ValueError):
         dd = None
     dd_good = dd is not None and dd <= 10.0
-    dd_attention = dd is not None and dd > 15.0
 
     peer_good = peer_cov is not None and peer_cov >= 50.0
-    peer_attention = peer_cov is not None and peer_cov < 30.0
 
-    grades: List[MetricGrade] = [
+    return [
         MetricGrade(
             id="spread_capture",
             label="Spread capture (§7.1)",
@@ -228,6 +256,25 @@ def build_performance_metrics(
         ),
     ]
 
+
+def build_performance_metrics(
+    *,
+    runtime: Dict[str, Any],
+    logs_dir: Path = Path("logs"),
+    intel_tail_limit: int = 400,
+) -> Dict[str, Any]:
+    """HUD payload: §7 grades + fill stats + recent intel tail."""
+    rt = runtime or {}
+    all_fills = _ws_fills_from_trades(logs_dir)
+    scope_fills, scope = _session_fills(all_fills, rt)
+    cap = _fill_capture_stats(scope_fills)
+    cap_cumulative = _fill_capture_stats(all_fills) if scope == "session" else cap
+    intel_tail = tail_intel_records(limit=intel_tail_limit, path=logs_dir / "intel_decisions.jsonl")
+    peer_cov = _peer_coverage_pct(intel_tail)
+
+    grades = _build_grades(rt, cap, peer_cov)
+    n_fills = int(cap.get("ws_fills") or 0)
+
     recent_intel = intel_tail[-12:]
     from experimental.ws_feed.live_activation_grading import summarize_activation
 
@@ -239,7 +286,10 @@ def build_performance_metrics(
         },
         intel_rows=intel_tail,
     )
-    return {
+    if scope == "session":
+        activation["scope"] = "session"
+        activation["session_boot_utc"] = rt.get("session_boot_utc")
+    out: Dict[str, Any] = {
         "grades": [g.as_dict() for g in grades],
         "capture": cap,
         "peer_coverage_pct": peer_cov,
@@ -248,4 +298,8 @@ def build_performance_metrics(
         "e15_fills_gate": 50,
         "e15_fills_met": n_fills >= 50,
         "activation": activation,
+        "metrics_scope": scope,
     }
+    if scope == "session":
+        out["capture_cumulative"] = cap_cumulative
+    return out

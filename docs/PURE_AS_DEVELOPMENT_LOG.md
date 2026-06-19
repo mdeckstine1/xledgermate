@@ -1,10 +1,10 @@
 # Pure A-S Development Log
 
 **Purpose:** Posterity — how we got here, what we learned, and why decisions were made.  
-**Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live TODO; this file is the narrative + archaeology.
+**Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live priority stack; this file is the narrative + archaeology.
 
-**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.15  
-**Last updated:** 2026-06-18
+**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.22  
+**Last updated:** 2026-06-19
 
 ---
 
@@ -23,7 +23,8 @@ We moved from a **sacred HTTP-poll Gate 2 engine** (replay corpus, economics gat
 | 2026-06-15 | **E1** VPS live flip (`dry_run: false`); E1.5 ≥50 WS fills + markout PASS; E2 merge |
 | 2026-06-16 | Kaizen soak hardening: kill-switch decoupled from sacred session-balance trip; lean MM (ws-engine + ws-hud only); feature flags; HUD auth |
 | 2026-06-16–17 | **Live soak segment** on VPS; soak-safe operator batch (see below) |
-| 2026-06-17 | Critical path slimmed to active TODO; skim/wallet PnL HUD fix; dev log created |
+| 2026-06-19 | **M6 signed off** (50 fills v2.1.21); **v2.1.22** deployed; session-scoped G6; spot-drop segment + operator halt; fresh soak segment #2 |
+| 2026-06-19 | **G8 Spot Trend Posture** spec — STRATEGY_MANUAL (future offensive overlay for XRP volatility) |
 
 ---
 
@@ -250,7 +251,7 @@ Full numbers and table in `PURE_AS_CRITICAL_PATH.md`.
 | Arb line | H3–H7 (separate wallet; H1 monitor already logging) |
 | UX | F4 grok suggestion outcome correlation |
 
-Full IDs and blockers: critical path **After segment** table.
+Full IDs and blockers: critical path [Priority stack](PURE_AS_CRITICAL_PATH.md#priority-stack).
 
 ---
 
@@ -297,6 +298,28 @@ Full IDs and blockers: critical path **After segment** table.
 
 ---
 
+## 2026-06-19 — v2.1.22 time soak + G8 spec
+
+### M6 sign-off + v2.1.22 engine bundle
+
+50-fill eval on v2.1.21: measurement PASS; economics thin (4.96 bps, G6 hold, Skim Δ −0.175). v2.1.22: G7 join floor 5 bps, `WS_MID_MOVE_REFRESH_BPS` 8, book depth export, M6 tracker clear on fill, `session_boot_utc`.
+
+### Session-scoped G6 (HUD)
+
+`build_performance_metrics()` grades fills since `session_boot_utc`. Fixes inherited cumulative **hold** after engine restart. HUD meta: session vs cumulative fill counts. Test: `test_session_boot_scopes_g6_to_warming_up_not_cumulative_hold`.
+
+### Soak segment #1 (spot drop) — archived
+
+Boot 03:40 UTC → ~83 fills. Mid 1.138 → 1.124. Wealth Δ −2.6 RLUSD (spot −3.3, skim −0.12). Session G6 **hold** (51% pos, −0.14 bps). BUY-side capture bleed; 61s stale bid fill. G2 neutral at toxic@5%. Operator halt via kill + cancel.
+
+**Takeaways:** G6 hold advisory only; G2 brakes on markout/toxic not negative skim; preserve_touch_queue + tight book vol proxy miss directional drops. **G8** spec drafted to lean into spot moves offensively (bounded).
+
+### Soak segment #2 — in progress
+
+Clear-kill + restart ~13:24 UTC. Mid ~1.129 → recovery toward ~1.138. At **18 fills**: G6 **hold** (66.7% pos, 1.84 bps, skim −0.007 XRP) — **correct per v1.0 rules**; fails 8 bps bar. Under **v1.1** → `pilot_watch` (n&lt;15). See [G6 spec](PURE_AS_CRITICAL_PATH.md#g6-activation-grading).
+
+---
+
 ## How to extend this log
 
 When shipping a meaningful chunk:
@@ -313,7 +336,7 @@ Do not duplicate the full task checklist here — link to critical path instead.
 
 ## Related docs
 
-- [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) — active TODO  
+- [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) — priority stack + backlog  
 - [`PHASE_E_VPS_RUNBOOK.md`](PHASE_E_VPS_RUNBOOK.md) — E1–E3 ladder  
 - [`../experimental/ws_feed/WS_HANDOFF.md`](../experimental/ws_feed/WS_HANDOFF.md) — wiring parity  
 - [`../CHANGELOG.md`](../CHANGELOG.md) — versioned release notes  

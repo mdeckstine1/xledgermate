@@ -89,3 +89,31 @@ def test_capture_grade_mid_bps_band_is_attention_not_unknown(tmp_path: Path) -> 
     spread = next(g for g in pm["grades"] if g["id"] == "spread_capture")
     assert spread["grade"] == "attention"
     assert "bps" in spread["value"]
+
+
+def test_session_boot_scopes_g6_to_warming_up_not_cumulative_hold(tmp_path: Path) -> None:
+    """Fresh engine session must not inherit hold from pre-boot CSV fills."""
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    rows = [
+        "timestamp_utc,event_type,xrp_amount,profit_xrp_equiv,notes",
+    ]
+    rows.extend(
+        f"2026-06-17T12:00:0{i}+00:00,FILL,10.0,0.0054,WS pure fill @ mid 1.160000"
+        for i in range(20)
+    )
+    (logs / "trades_2026-06.csv").write_text("\n".join(rows), encoding="utf-8")
+    pm_cum = build_performance_metrics(runtime={}, logs_dir=logs)
+    assert pm_cum["activation"]["tier"] == "hold"
+
+    pm_sess = build_performance_metrics(
+        runtime={
+            "session_boot_utc": "2026-06-18T20:00:00+00:00",
+            "fills_session": 0,
+        },
+        logs_dir=logs,
+    )
+    assert pm_sess["metrics_scope"] == "session"
+    assert pm_sess["capture"]["ws_fills"] == 0
+    assert pm_sess["activation"]["tier"] == "warming_up"
+    assert pm_sess["activation"]["scope"] == "session"

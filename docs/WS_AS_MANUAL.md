@@ -2,7 +2,7 @@
 
 *Production path (`Ashigaru`). Pure A-S + WS book feed + on-chain competitor intelligence + advisory Grok.*
 
-**Status (as of 2026-06-18, VPS soak):** Production **`ws-engine`** + **HUD `:8765`** on Ashigaru branch. Pure A-S + WS BookFeed + G2/G4/G7 + competitor/peer intel. HUD tabs: **Live**, **Inventory**, **Intelligence**, **Metrics**, **Book**, **Reports**, **Credentials**, **Config**. RLUSD-stable **wealth sidebar** (session Δ, skim/spot/rebal). **Book** tab: depth chart + L1–L3 ladder (L2/L3 planned until ledger sync). **Metrics**: G3 §7 grades + **G6 activation** tier (`hold` when spread capture needs attention). Grok analyze live when configured. Sacred HTTP-poll long-run untouched (validation corpus). AI / Grok is **strictly advisory** — never overrides A-S reservation.
+**Status (as of 2026-06-19, VPS soak):** Production **`ws-engine`** + **HUD `:8765`** on Ashigaru branch · **v2.1.22**. Pure A-S + WS BookFeed + G2/G4/G7 + competitor/peer intel. HUD tabs: **Live**, **Inventory**, **Intelligence**, **Metrics**, **Book**, **Reports**, **Credentials**, **Config**. RLUSD-stable **wealth sidebar** (session Δ, skim/spot/rebal). **Book** tab: depth chart + L1–L3 ladder (L2/L3 planned until ledger sync). **Metrics**: G3 §7 grades + **G6 activation** (session-scoped since `session_boot_utc`). **G8** spot trend posture spec in [`STRATEGY_MANUAL.md`](STRATEGY_MANUAL.md) — not implemented. Grok analyze live when configured. Sacred HTTP-poll long-run untouched. AI / Grok is **strictly advisory** — never overrides A-S reservation.
 
 **Critical path:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) — task checklist. **Run commands:** `groks input/CURSOR_HANDOFF_ROADMAP.md`. Update checkboxes + FOR_AI milestones on progress.
 
@@ -47,7 +47,20 @@ python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 600 --v
 
 **Wealth sidebar (all pages):** RLUSD-stable portfolio, session Δ, skim / spot / rebal decomposition, XRP @ mid, share %. Distinct from **Skim Δ** on soak strip (engine `session_spread_capture_xrp` — trading edge, not deposits).
 
-**G6 activation (Metrics + soak strip):** Grades from CSV fills + runtime. Spread capture **attention** (e.g. high positive % but &lt;8 bps avg) → tier **`hold`**, gate **FAIL** — keep size conservative; review G2/G4 brakes. CLI: `python -m experimental.ws_feed.live_activation_grading --gate`.
+**G6 activation (Metrics + soak strip):** Grades **session fills since `session_boot_utc`** when present (0–7 fills → **`warming_up`**; does not inherit cumulative CSV **hold** after restart). **v1.0 shipped:** spread capture **attention** → tier **`hold`**, gate **FAIL** — conservative size; **does not halt quoting**. **v1.1 spec:** [`PURE_AS_CRITICAL_PATH.md` — G6](PURE_AS_CRITICAL_PATH.md#g6-activation-grading). Meta line: `N session fills (since boot) · cumulative M fills`. v1.0 code tree: [`G6_ACTIVATION_REFERENCE.md`](G6_ACTIVATION_REFERENCE.md). CLI: `python -m experimental.ws_feed.live_activation_grading --gate`.
+
+**Kill switch / operator halt:** Persisted in `logs/kill_switch.json`. Survives restart until cleared. **G6 hold ≠ kill** — use halt when stopping a bad segment:
+
+```bash
+cd /root/xledgermate
+.venv/bin/python scripts/_operator_halt.py   # kill ON + cancel offers
+# Resume soak:
+.venv/bin/python main.py --mode clear-kill
+systemctl restart xledgermate
+systemctl restart xledgermate-ws-hud   # optional HUD refresh
+```
+
+**Fresh soak restart:** clear-kill → cancel-offers (if any) → `systemctl restart xledgermate` resets `fills_session`, skim, wealth baselines, and G6 session scope.
 
 The tester also writes `logs/ws_as_demo_runtime.json` (frequent + at end) so you can load the exact same data into the main Streamlit GUI for deeper side-by-side views (sidebar, tickers, full "Why these quotes?" etc.).
 
