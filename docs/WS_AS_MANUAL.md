@@ -39,7 +39,7 @@ python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 600 --v
 - **Live tab**: WS book + A-S reservation, optimal spread, gamma/kappa, `would_quote`, G2/G7 posture, quote ladder (L1–L3), session fills / skim, soak strip (toxic@30s, markout, G6 tier).
 - **Inventory tab**: Bot address (copy + QR), live XRP/RLUSD balances, **Wallet Δ** (portfolio change since session start — includes deposits), target ratio.
 - **Intelligence tab**: Competitor + peer lane scrape, pressure scores, Grok analyze, advisory signals. JSONL: `logs/intel_decisions.jsonl`.
-- **Peer Cal tab** (temporary P4–P6): Live pilot lane vs **E3 shadow ruler** (11k XRP-equiv · 55/45). Shadow peer list, Grok with shadow band context, shared nicknames. JSONL: `logs/peer_lane_calibration.jsonl` (~30s). Does not affect quoting.
+- **Peer Cal tab** (temporary P4–P6): E3 shadow lane vs **live pilot band** — **monitor only** (shelved; revisit if peer count &gt; 0). JSONL: `logs/peer_lane_calibration.jsonl`.
 - **Metrics tab**: Phase E §7 grades (spread capture primary; inventory steering). **G6 activation** card — tier (`warming_up` → `pilot` → `active` → `scale_ready`; **`hold`** when spread capture is attention with ≥8 fills; **`halted`** on kill). Red hold card lists attention triggers + gate FAIL. Capture summary + recent intel tail.
 - **Book tab**: Depth chart (bids left / asks right of mid), split ladder, touch, **our L1–L3** from `quote_intents` (L2/L3 dashed = planned until multi-level ledger sync). Full CLOB depth after ws-engine exports `book_bids`/`book_asks`.
 - **Reports tab**: Soak-safe read-only reports from `logs/` (G6 activation, soak dashboard, fill age, CLOB/AMM monitor, …).

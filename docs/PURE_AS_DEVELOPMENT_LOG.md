@@ -314,6 +314,10 @@ Boot 03:40 UTC → ~83 fills. Mid 1.138 → 1.124. Wealth Δ −2.6 RLUSD (spot 
 
 **Takeaways:** G6 hold advisory only; G2 brakes on markout/toxic not negative skim; preserve_touch_queue + tight book vol proxy miss directional drops. **G8** spec drafted to lean into spot moves offensively (bounded).
 
+### Peer Cal — empty lane verdict (2026-06-20)
+
+Peer Cal tab deployed (`89c89f7`). VPS calibration JSONL: **live ~18 XRP** and **shadow E3 ~424 XRP** both **0 peers in band** — whale book, solo MM at touch. **P4–P6 peer intel shelved**; passive watch if `peer_lane_count` or `shadow_peer_lane_count` &gt; 0. G4 empty-lane neutral validated.
+
 ### Soak segment #2 — in progress
 
 Clear-kill + restart ~13:24 UTC. Mid ~1.129 → recovery toward ~1.138. At **18 fills**: G6 **hold** (66.7% pos, 1.84 bps, skim −0.007 XRP) — **correct per v1.0 rules**; fails 8 bps bar. Under **v1.1** → `pilot_watch` (n&lt;15). See [G6 spec](PURE_AS_CRITICAL_PATH.md#g6-activation-grading).

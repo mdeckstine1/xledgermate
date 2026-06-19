@@ -2,7 +2,7 @@
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
 **Version:** v2.1.22 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-19 (priority stack reorg · G6 v1.1 spec · segment #2 soak)
+**Last updated:** 2026-06-20 (peer lane shelved · empty band at live + E3 shadow · G6 v1.1 next)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
@@ -17,7 +17,8 @@ Ordered by what live soaks proved matters. **Do not skip tiers** — finish P0 b
 | Pri | Item | Soak signal | Status |
 |-----|------|-------------|--------|
 | **P0** | **Segment #2 time soak** (6–8h wall-clock) | Validate v2.1.22 after spot-drop triage | **in progress** |
-| **P0** | Hourly operator strip | Skim Δ, wealth spot/skim/rebal, toxic@30s, cancel/fill, G6 tier | ongoing |
+| — | Hourly operator strip | Skim Δ, wealth spot/skim/rebal, toxic@30s, cancel/fill, G6 tier | ongoing |
+| — | Peer lane watch (optional) | Peer Cal / cal JSONL — **&gt; 0** peers in band? | passive |
 | **P1** | Post-segment snapshot | `scripts/post_deploy_snapshot.py` + dated save | pending |
 | **P1** | Segment #2 verdict vs gates | Compare to M6 baseline + segment #1 learnings | pending |
 | **P2** | **G6 v1.1** (HUD-only) | False **hold** on thin edge (M6 92%/5 bps; #2 n&lt;15); 8 bps bar vs 5 bps join | [ ] after P1 — [spec](#g6-activation-grading) |
@@ -27,14 +28,24 @@ Ordered by what live soaks proved matters. **Do not skip tiers** — finish P0 b
 | **P3** | cancel/fill re-eval | M6 **2.92**; v2.1.22 preserve 8 bps — did churn improve? | watch in P1 verdict |
 | **P3** | G6 Tier 2 (rolling window) | Full-session cumulative feels sticky after bad early fills | after one v1.1 soak |
 | **P3** | G6→G2/G7 coupling (Tier 3) | Hold advisory-only; negative skim with neutral G2 in #1 | deferred until hold is rare |
-| **P4** | L2/L3 ledger + `book_bids`/`book_asks` sync | Book tab shows L1; multi-level planned | P1–P3 peer track |
-| **P4** | I1–I4 regime channel (damped) | Empty peer lane OK at pilot size | post multiple soaks |
-| **P4** | P4–P6 peer intel + G4 nudges + F2 hook | Needs per-peer history + markout | **Peer Cal tab** (HUD) + `peer_lane_calibration.jsonl` — soak now |
+| **P4** | L2/L3 ledger + `book_bids`/`book_asks` sync | Book tab shows L1; multi-level planned | post-soak |
+| **P4** | I1–I4 regime channel (damped) | Book-wide intel; peer lane empty | post multiple soaks |
 | **P4** | P7 async submit / tx rate | Cancel/replace can exceed 5s loop | M2/M3 review |
-| **P4** | I7 in-band peer automation | No touch-band peers yet | real competition |
 | **P4** | **E3** 11k funding + rebalance exec | Operator timeline | consistent gain + warm fuzzy |
 | **P4** | H3–H7 arb paper/live | Separate wallet | G6 pass + H1 monitor |
 | **P4** | F4 Grok → outcome correlation | Offline attribution | fill history depth |
+
+### Optional shelf (no build unless signal)
+
+Peer-lane / P4–P6 work **deprioritized** after Peer Cal soak: **0 peers in band** at live (~18 XRP) and E3 shadow (~424 XRP) — whale book, solo MM. G4 empty-lane neutral is correct; no queue-war automation needed today.
+
+| Item | Watch trigger | Status |
+|------|---------------|--------|
+| **P4–P6** peer intel, G4 nudges, F2 hook, I7 in-band automation | `shadow_peer_lane_count` **or** live `peer_lane_count` **&gt; 0** sustained | **shelved** — [Peer Cal](#optional-shelf-no-build-unless-signal) tab + `peer_lane_calibration.jsonl` passive |
+| Per-peer history (P1–P3) | Same — peers appear at touch | shelved with P4–P6 |
+| Peer Cal HUD tab | Keep deployed; no new features | monitor only |
+
+**Operator glance:** Peer Cal tab or `tail logs/peer_lane_calibration.jsonl` — if shadow or live peer count goes **&gt; 0**, revisit shelf (book structure may have changed).
 
 **Discipline:** A-S sacred. **No P2+ code mid P0 segment.** G6 v1.1 is HUD-only (P2). G8 and engine knobs wait for **P1 soak review** — see [Spot & inventory](#spot--inventory-operator-stance).
 
@@ -88,6 +99,7 @@ We are **not** building a spot-prediction or directional trading bot. Spot moves
 | Inherited cumulative G6 after restart | pre-fix | [x] session-scoped G6 |
 | Skim Δ / wallet Δ confusion | Jun soak | [x] HUD semantics fixed |
 | Join 3 bps too tight | M6 | [x] G7 v1.1 5 bps floor |
+| **Empty peer lane** (live + E3 shadow) | Peer Cal 2026-06-20 | **P4–P6 shelved** — watch for &gt; 0 |
 
 ---
 
