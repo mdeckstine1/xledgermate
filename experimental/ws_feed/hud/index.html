@@ -197,6 +197,7 @@
         .grade-pill { font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; white-space: nowrap; }
         .grade-good { background: rgba(74,222,128,0.15); color: #4ade80; }
         .grade-attention { background: rgba(251,191,36,0.15); color: #fbbf24; }
+        .grade-thin_edge { background: rgba(250,204,21,0.14); color: #facc15; }
         .grade-hold { background: rgba(248,113,113,0.18); color: #f87171; }
         .grade-halted { background: rgba(239,68,68,0.22); color: #ef4444; }
         .grade-watch { background: rgba(250,204,21,0.12); color: #facc15; }
@@ -205,6 +206,7 @@
         .metrics-g6-card { transition: border-color 0.2s ease; }
         .metrics-g6-card.g6-hold { border-left: 3px solid #f87171; background: rgba(248,113,113,0.04); }
         .metrics-g6-card.g6-halted { border-left: 3px solid #ef4444; background: rgba(239,68,68,0.06); }
+        .metrics-g6-card.g6-watch { border-left: 3px solid #facc15; background: rgba(250,204,21,0.04); }
         .metrics-g6-attention { font-size: 0.72rem; color: #fbbf24; margin-top: 6px; line-height: 1.4; }
         .metrics-g6-meta { font-size: 0.68rem; color: #64748b; margin-top: 4px; }
         .book-depth-canvas {
@@ -1908,14 +1910,15 @@ The A-S strategy itself decides presence via reservation price being inside the 
             if (t === 'active' || t === 'scale_ready' || t === 'pilot') return 'good';
             if (t === 'hold') return 'hold';
             if (t === 'halted') return 'halted';
-            if (t === 'pilot_watch') return 'watch';
+            if (t === 'thin_edge' || t === 'pilot_watch') return 'watch';
             if (t === 'warming_up' || t === 'paper') return 'neutral';
             return 'unknown';
         }
 
         function g6SoakPillClass(tier) {
             const t = String(tier || '');
-            if (t === 'active' || t === 'scale_ready' || t === 'pilot_watch') return 'good';
+            if (t === 'active' || t === 'scale_ready') return 'good';
+            if (t === 'thin_edge' || t === 'pilot_watch' || t === 'pilot') return 'warn';
             if (t === 'hold' || t === 'halted') return 'bad';
             return 'neutral';
         }
@@ -3177,7 +3180,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 cardEl.classList.remove('g6-hold', 'g6-halted', 'g6-watch', 'g6-good');
                 if (tier === 'hold') cardEl.classList.add('g6-hold');
                 else if (tier === 'halted') cardEl.classList.add('g6-halted');
-                else if (tier === 'pilot_watch') cardEl.classList.add('g6-watch');
+                else if (tier === 'pilot_watch' || tier === 'thin_edge') cardEl.classList.add('g6-watch');
                 else if (tier === 'active' || tier === 'scale_ready') cardEl.classList.add('g6-good');
             }
             if (tierEl) {
@@ -3189,7 +3192,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 sumEl.textContent = act.summary || (pm.grades && pm.grades.length ? '—' : 'Waiting for activation grade…');
                 if (tier === 'hold' || tier === 'halted') {
                     sumEl.style.color = '#fca5a5';
-                } else if (tier === 'pilot_watch') {
+                } else if (tier === 'pilot_watch' || tier === 'thin_edge') {
                     sumEl.style.color = '#fbbf24';
                 } else {
                     sumEl.style.color = '#94a3b8';
@@ -3204,6 +3207,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 } else if (tier === 'pilot_watch' && attentionOn.length) {
                     attnEl.style.display = 'block';
                     attnEl.textContent = 'Watching: ' + attentionOn.join(' · ');
+                } else if (tier === 'thin_edge') {
+                    attnEl.style.display = 'block';
+                    attnEl.textContent = 'Thin edge — solo book / join floor; gate pass, not scale_ready';
                 } else {
                     attnEl.style.display = 'none';
                     attnEl.textContent = '';

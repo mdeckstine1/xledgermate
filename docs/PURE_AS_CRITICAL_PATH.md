@@ -2,11 +2,11 @@
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
 **Version:** v2.1.22 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-20 (peer lane shelved · empty band at live + E3 shadow · G6 v1.1 next)
+**Last updated:** 2026-06-20 (G6 v1.1 shipped · acquisition phase primary)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
-**Soak = timed test run.** Collect fills, toxicity, markout, G6 grades under real quoting. **M6 signed off** (2026-06-19). **v2.1.22** deployed. **Current segment:** boot **2026-06-19 ~13:24 UTC** — 6–8h wall-clock soak after spot-drop halt + clear-kill restart.
+**Soak = timed test run.** **M6 signed off** (2026-06-19). **v2.1.22** on engine. **Segment #2 closed** (Watch). **G6 v1.1** HUD shipped — one ~50-fill calibration soak, then **acquisition phase** (solo band, no peer competition).
 
 ---
 
@@ -16,24 +16,21 @@ Ordered by what live soaks proved matters. **Do not skip tiers** — finish P0 b
 
 | Pri | Item | Soak signal | Status |
 |-----|------|-------------|--------|
-| **P0** | **Segment #2 time soak** (6–8h wall-clock) | Validate v2.1.22 after spot-drop triage | **in progress** |
-| — | Hourly operator strip | Skim Δ, wealth spot/skim/rebal, toxic@30s, cancel/fill, G6 tier | ongoing |
-| — | Peer lane watch (optional) | Peer Cal / cal JSONL — **&gt; 0** peers in band? | passive |
-| **P1** | Post-segment snapshot | `scripts/post_deploy_snapshot.py` + dated save | pending |
-| **P1** | Segment #2 verdict vs gates | Compare to M6 baseline + segment #1 learnings | pending |
-| **P2** | **G6 v1.1** (HUD-only) | False **hold** on thin edge (M6 92%/5 bps; #2 n&lt;15); 8 bps bar vs 5 bps join | [ ] after P1 — [spec](#g6-activation-grading) |
-| **P2** | G6 v1.1 calibration soak | Confirm thin_edge / pilot_watch / hold semantics on live fills | after G6 v1.1 ship |
-| **P3** | **G8** spot trend posture | Segment #1 spot P&amp;L vs skim; inventory skew under moves — **decision after P1 review** | spec only — [no build until decided](#spot--inventory-operator-stance) |
-| **P3** | Stale-quote guard (if tail repeats) | 61s stale bid fill in #1; M6 logs age, no auto-cancel today | watch segment #2 fill-age p95 |
-| **P3** | cancel/fill re-eval | M6 **2.92**; v2.1.22 preserve 8 bps — did churn improve? | watch in P1 verdict |
-| **P3** | G6 Tier 2 (rolling window) | Full-session cumulative feels sticky after bad early fills | after one v1.1 soak |
-| **P3** | G6→G2/G7 coupling (Tier 3) | Hold advisory-only; negative skim with neutral G2 in #1 | deferred until hold is rare |
-| **P4** | L2/L3 ledger + `book_bids`/`book_asks` sync | Book tab shows L1; multi-level planned | post-soak |
-| **P4** | I1–I4 regime channel (damped) | Book-wide intel; peer lane empty | post multiple soaks |
-| **P4** | P7 async submit / tx rate | Cancel/replace can exceed 5s loop | M2/M3 review |
-| **P4** | **E3** 11k funding + rebalance exec | Operator timeline | consistent gain + warm fuzzy |
-| **P4** | H3–H7 arb paper/live | Separate wallet | G6 pass + H1 monitor |
-| **P4** | F4 Grok → outcome correlation | Offline attribution | fill history depth |
+| **P2** | **G6 v1.1** (HUD-only) | M6 false hold; align gate with macro ops | **[x] shipped** — one 50-fill calibration soak |
+| **P2** | **Acquisition phase** | Solo peer band — optimize fill acquisition, not grading optics | **primary build focus** |
+| **P2** | Next segment (post v1.1 HUD) | ~50 fills on v1.1 labels; then pivot to acquisition work | after HUD deploy |
+| **P3** | **G8** spot trend posture | #1 spot pain; #2 spot helped — **defer** | spec only — [stance](#spot--inventory-operator-stance) |
+| **P3** | cancel/fill tune | **2.96** unchanged vs M6 — engine window | deferred |
+| **P3** | Stale-quote guard | Fill-age tail in #2 (127s–4876s) | watch; engine if repeats |
+| **P3** | G6 Tier 2 (rolling window) | Sticky after bad early fills | after one v1.1 soak |
+| **P3** | G6→G2/G7 coupling (Tier 3) | Hold advisory-only today | deferred until hold is rare |
+| **P4** | L2/L3 ledger sync | Book tab L1 only | post-soak |
+| **P4** | I1–I4 regime channel | Book-wide; peer lane empty | low priority |
+| **P4** | P7 async submit | 5s loop pressure | M2/M3 review |
+| **P4** | **E3** 11k funding | Operator timeline + warm fuzzy | after consistent skim signal |
+| **P4** | H3–H7 arb | Separate wallet | G6 pass + H1 |
+| **P4** | F4 Grok correlation | Offline | fill depth |
+| — | Peer lane watch | Peer Cal / cal JSONL — **&gt; 0**? | passive (shelved) |
 
 ### Optional shelf (no build unless signal)
 
@@ -47,15 +44,46 @@ Peer-lane / P4–P6 work **deprioritized** after Peer Cal soak: **0 peers in ban
 
 **Operator glance:** Peer Cal tab or `tail logs/peer_lane_calibration.jsonl` — if shadow or live peer count goes **&gt; 0**, revisit shelf (book structure may have changed).
 
-**Discipline:** A-S sacred. **No P2+ code mid P0 segment.** G6 v1.1 is HUD-only (P2). G8 and engine knobs wait for **P1 soak review** — see [Spot & inventory](#spot--inventory-operator-stance).
+**Discipline:** A-S sacred. **G6 v1.1 is HUD-only** — no engine restart for P2. G8 **deferred** (#2 wealth positive, spot-led). Peer lane **shelved**.
 
 ### Spot & inventory (operator stance)
 
-We are **not** building a spot-prediction or directional trading bot. Spot moves still move **inventory and wealth** (segment #1: most −2.6 RLUSD was spot, not skim). That tension is real and hard — G7/G2 today handle inventory **symmetrically** via skew labels, not forecast.
+We are **not** building a spot-prediction or directional trading bot. Spot moves still move **inventory and wealth** (#1: most −2.6 RLUSD was spot). G7/G2 handle inventory **symmetrically** via skew, not forecast.
 
-**Plan (2026-06-19):** Finish segment #2 → P1 verdict with **wealth decomposition** (spot vs skim vs rebal) → ship **G6 v1.1** → then decide whether G8 (or something lighter) is worth engine complexity. G8 spec in STRATEGY_MANUAL stays a **reference option**, not a committed build. Alternatives if soak says “no trend layer”: operator kill on judgment, tighter inventory targets, or G7-only defensive skew — no new prediction module required.
+**After #2:** Wealth **+1.28 RLUSD** (spot-led) — **G8 deferred**. No engine trend layer until inventory pain repeats without spot help. G8 spec in STRATEGY_MANUAL stays reference only.
 
-### P0 — segment #2 (operator now)
+### Segment #2 verdict (2026-06-20) — closed
+
+**Boot:** 2026-06-19 13:24 UTC · **~4h 15m** · **57 fills** · v2.1.22 · snapshot `post_deploy_snapshot.txt`
+
+| Metric | M6 | Segment #2 | Gate |
+|--------|-----|------------|------|
+| Skim Δ | −0.175 XRP | **+0.024 XRP** | **Pass** |
+| Spread bps / pos% | 4.96 / 92% | **1.28 / 67%** | **Fail** (real weak capture) |
+| toxic@30s | 8.7% | **28.6%** | Borderline pass (≤30%) |
+| markout@30s | +0.001% | **−0.022%** | Watch |
+| cancel/fill | 2.92 | **2.96** | Fail (&lt;2.5 target) |
+| Wealth Δ (RLUSD) | — | **+1.28** (spot +1.36, skim +0.03) | Pass — no G8 signal |
+| G6 (v1.0) | hold (thin-edge false) | **hold** (economics real) | Fail gate — advisory |
+
+**Verdict: Watch** — positive skim &amp; wealth on whale book; SELL-side bleed and low bps are the real issues. **Sufficient sample — stop segment.** G8 deferred. Peer lane shelved.
+
+**Next:** Deploy G6 v1.1 HUD → ~50-fill calibration soak → **acquisition phase** build (solo whale book).
+
+### Acquisition phase (primary — post G6 v1.1)
+
+Peer Cal proved **0 peers in band** (live ~18 XRP, E3 shadow ~424 XRP). We are the only MM at touch on a whale book — **optimize acquisition** (fill rate, quote presence, size, join economics), not grading optics or peer-lane automation.
+
+| Focus | Rationale |
+|-------|-----------|
+| Fill acquisition / presence | Solo band — no queue war; win by being there and sized right |
+| Join + skim on thin book | G7 5 bps floor is the economic reality; G6 `thin_edge` labels it, does not fix it |
+| G8 / peer intel | **Deferred** — no peers to model |
+| G6 Tier 2+ | **Deferred** — one calibration soak then stop grading churn |
+
+**Discipline:** G6 v1.1 is **last major grading change** for now. Engine work serves acquisition, not HUD cosmetics.
+
+### P0 — segment #2 (archived)
 
 | Task | Status |
 |------|--------|
@@ -63,35 +91,16 @@ We are **not** building a spot-prediction or directional trading bot. Spot moves
 | Session-scoped G6 (HUD) | [x] deployed |
 | Operator halt — spot-drop triage (#1) | [x] ~10:26 UTC |
 | Fresh restart clear-kill + engine + HUD | [x] ~13:24 UTC |
-| **Time soak 6–8 hours** | **in progress** |
-| Hourly monitoring | ongoing |
-| Post-segment snapshot | pending |
-
-**Gates (this segment vs M6 baseline):**
-
-| Metric | M6 (50 fills) | Watch #2 |
-|--------|---------------|----------|
-| Skim Δ | −0.175 XRP | Flatten or positive drift |
-| Spread capture bps | 4.96 avg (92% pos) | **Primary** — session G6 |
-| toxic@30s | 8.7% | ≤30% sustained |
-| markout@30s | +0.001% | Not adverse |
-| cancel/fill | 2.92 | Target &lt;2.5 sustained |
-| G6 tier | v1.0 false hold on thin edge | v1.1 after P1 |
-| Wealth spot Δ | — | Separate from skim — beta on XRP moves |
-
-### P1 — segment close (next)
-
-1. Run `post_deploy_snapshot.py` + `live_activation_grading --gate` — save dated output.
-2. Write segment verdict: pass / watch / halt pattern for next window.
-3. Sync [`PURE_AS_DEVELOPMENT_LOG.md`](PURE_AS_DEVELOPMENT_LOG.md) narrative.
-4. Decide: G6 v1.1 ship before vs after any engine restart.
-5. **G8 / spot posture:** go / no-go / defer — based on segment #2 wealth split and whether inventory pain repeats without a forecast layer.
+| Time soak (57 fills — sufficient) | [x] 2026-06-20 closed |
+| Post-segment snapshot | [x] `logs/post_deploy_snapshot.txt` |
+| Segment verdict | [x] **Watch** (above) |
 
 ### Soak findings → backlog (why this order)
 
 | Finding | Segments | Drives |
 |---------|----------|--------|
-| G6 **hold** on good pos% + ~5 bps | M6, #2 | **P2 G6 v1.1** |
+| G6 **hold** on good pos% + ~5 bps | M6 only | **P2 G6 v1.1** (M6-style false hold) |
+| G6 **hold** on weak economics | #2 (1.28 bps, 67%) | v1.1 still **hold** — real signal |
 | Spot drop; wealth −2.6 RLUSD mostly spot | #1 | P1 review → maybe P3 G8 (not committed) |
 | G2 neutral while skim negative | #1 | P3 G6→G2 (deferred) |
 | 61s stale quote fill | #1 | P3 stale guard if repeats |
@@ -131,11 +140,34 @@ We are **not** building a spot-prediction or directional trading bot. Spot moves
 
 **v1.0 hold rule:** `spread_capture = attention` (n≥8, not good bar) → tier **`hold`**, gate **FAIL**.
 
-### G6 v1.1 — approved spec (ship after segment #2)
+### G6 v1.1 — shipped (HUD-only)
 
-**Status:** [ ] pending — HUD-only (`performance_metrics.py`, `live_activation_grading.py`, HUD tier pill). **Do not ship mid-soak.**
+**Status:** [x] **v1.1.0** — `performance_metrics.py`, `live_activation_grading.py`, HUD tier pill. Restart `xledgermate-ws-hud` only.
 
-**Philosophy:** Keep G6 **advisory** through calibration soak; gate fails on **bad economics**, not thin-book normal. No G6→G2/G7 coupling in v1.1.
+**Philosophy:** Advisory measurement; gate fails on **bad economics**, not thin-book normal. **No G6→G2/G7.** One ~50-fill soak to validate labels, then **acquisition phase** — no further grading churn.
+
+#### G6 v1.1 macro effect (why ship · what it does *not* do)
+
+| Layer | v1.1 net effect |
+|-------|-----------------|
+| **Engine / quoting** | **None** — G2, G7, reservation unchanged |
+| **Operator kill** | **None** — judgment + skim still drive halt |
+| **Gate semantics** | **Fixes false FAIL** on M6-style thin edge (92%/5 bps → `thin_edge`, pass) |
+| **Hold meaning** | **Hold = bad economics** — #2 at 57 fills/1.28 bps still **hold** under v1.1 ✓ |
+| **E3 / scale** | Does **not** auto-unlock 11k — `thin_edge` is yellow, not `scale_ready` |
+| **Arb (H3–H7)** | Gate pass becomes **trustworthy** when it happens (fewer false blocks/false greens) |
+| **Future Tier 3** | G6→G2 coupling only worth it when **hold is rare and real** — v1.1 enables that |
+| **Peer / G4 shelf** | **Unchanged** — empty lane; G4 neutral correct |
+
+**Risk to manage:** `thin_edge` + gate **pass** must not be read as “scale up” — UI yellow + operator discipline. `scale_ready` still needs n≥50 and core good.
+
+**Segment replay under v1.1:**
+
+| Segment | v1.0 | v1.1 expected |
+|---------|------|----------------|
+| M6: 92% / ~5 bps | hold (false) | **thin_edge**, gate pass |
+| #1: 51% / −0.14 bps | hold | **hold** ✓ |
+| #2: 67% / 1.28 bps, n=57 | hold | **hold** ✓ (bps&lt;3, pos&lt;70%) |
 
 #### Tier 1 (ship together)
 

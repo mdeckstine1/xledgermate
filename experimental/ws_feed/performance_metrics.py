@@ -17,7 +17,7 @@ class MetricGrade:
     id: str
     label: str
     value: str
-    grade: str  # good | attention | unknown
+    grade: str  # good | thin_edge | attention | unknown
     detail: str
 
     def as_dict(self) -> Dict[str, str]:
@@ -79,9 +79,9 @@ def _fill_capture_stats(fills: List[Dict[str, str]]) -> Dict[str, Any]:
             continue
         graded_n += 1
         total_cap += cap
-        if cap >= 0:
+        if cap > 0:
             pos += 1
-        else:
+        elif cap < 0:
             neg += 1
         try:
             xrp_amt = float(row.get("xrp_amount") or 0)
@@ -91,9 +91,10 @@ def _fill_capture_stats(fills: List[Dict[str, str]]) -> Dict[str, Any]:
             bps_sum += (cap / xrp_amt) * 10_000.0
             bps_n += 1
     n = graded_n
+    pos_denom = pos + neg
     return {
         "ws_fills": n,
-        "positive_capture_pct": round(100.0 * pos / n, 1) if n else None,
+        "positive_capture_pct": round(100.0 * pos / pos_denom, 1) if pos_denom else None,
         "avg_capture_bps": round(bps_sum / bps_n, 2) if bps_n else None,
         "neg_capture_count": neg,
         "neg_capture_pct": round(100.0 * neg / n, 1) if n else None,
@@ -164,7 +165,22 @@ def _build_grades(
         and pos_pct >= 70.0
         and avg_bps >= 8.0
     )
+    capture_thin_edge = (
+        n_fills >= 8
+        and pos_pct is not None
+        and avg_bps is not None
+        and pos_pct >= 70.0
+        and 5.0 <= avg_bps < 8.0
+    )
     capture_unknown = n_fills < 8 or pos_pct is None
+    if capture_good:
+        capture_grade = "good"
+    elif capture_thin_edge:
+        capture_grade = "thin_edge"
+    elif capture_unknown:
+        capture_grade = "unknown"
+    else:
+        capture_grade = "attention"
 
     target_pct = float(rt.get("inventory_target_xrp_pct") or rt.get("inventory_target_xrp_ratio", 0.55) * 100)
     if "inventory_target_xrp_pct" not in rt and "inventory_target_xrp_ratio" in rt:
@@ -211,8 +227,8 @@ def _build_grades(
                 if pos_pct is not None and avg_bps is not None
                 else f"{n_fills} fills"
             ),
-            grade=_grade(capture_good, unknown=capture_unknown),
-            detail="Good: ≥70% positive, ≥8 bps (n≥8); else attention when n≥8",
+            grade=capture_grade,
+            detail="Good: ≥70% pos, ≥8 bps · thin_edge: ≥70% pos, 5–8 bps · else attention (n≥8)",
         ),
         MetricGrade(
             id="inventory_health",

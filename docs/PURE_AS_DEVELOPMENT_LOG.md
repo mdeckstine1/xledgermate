@@ -4,7 +4,7 @@
 **Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live priority stack; this file is the narrative + archaeology.
 
 **Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.22  
-**Last updated:** 2026-06-19
+**Last updated:** 2026-06-20
 
 ---
 
@@ -24,6 +24,7 @@ We moved from a **sacred HTTP-poll Gate 2 engine** (replay corpus, economics gat
 | 2026-06-16 | Kaizen soak hardening: kill-switch decoupled from sacred session-balance trip; lean MM (ws-engine + ws-hud only); feature flags; HUD auth |
 | 2026-06-16–17 | **Live soak segment** on VPS; soak-safe operator batch (see below) |
 | 2026-06-19 | **M6 signed off** (50 fills v2.1.21); **v2.1.22** deployed; session-scoped G6; spot-drop segment + operator halt; fresh soak segment #2 |
+| 2026-06-20 | Peer Cal empty lane → P4–P6 shelved; segment #2 closed (57 fills, Watch); **G6 v1.1** HUD shipped; **acquisition phase** primary |
 | 2026-06-19 | **G8 Spot Trend Posture** spec — STRATEGY_MANUAL (future offensive overlay for XRP volatility) |
 
 ---
@@ -318,9 +319,30 @@ Boot 03:40 UTC → ~83 fills. Mid 1.138 → 1.124. Wealth Δ −2.6 RLUSD (spot 
 
 Peer Cal tab deployed (`89c89f7`). VPS calibration JSONL: **live ~18 XRP** and **shadow E3 ~424 XRP** both **0 peers in band** — whale book, solo MM at touch. **P4–P6 peer intel shelved**; passive watch if `peer_lane_count` or `shadow_peer_lane_count` &gt; 0. G4 empty-lane neutral validated.
 
-### Soak segment #2 — in progress
+### Soak segment #2 — closed (Watch)
 
-Clear-kill + restart ~13:24 UTC. Mid ~1.129 → recovery toward ~1.138. At **18 fills**: G6 **hold** (66.7% pos, 1.84 bps, skim −0.007 XRP) — **correct per v1.0 rules**; fails 8 bps bar. Under **v1.1** → `pilot_watch` (n&lt;15). See [G6 spec](PURE_AS_CRITICAL_PATH.md#g6-activation-grading).
+Clear-kill + restart ~13:24 UTC · **57 fills** · ~4h15m · v2.1.22. Snapshot `logs/post_deploy_snapshot.txt`.
+
+| Metric | M6 | Segment #2 |
+|--------|-----|--------------|
+| Skim Δ | −0.175 XRP | **+0.024 XRP** |
+| Spread bps / pos% | 4.96 / 92% | **1.28 / 67%** |
+| toxic@30s | 8.7% | 28.6% |
+| cancel/fill | 2.92 | 2.96 |
+| Wealth Δ RLUSD | — | **+1.28** (spot-led) |
+| G6 v1.0 | hold (thin-edge false) | hold (economics real) |
+
+**Verdict: Watch** — positive skim and wealth on solo whale book; weak spread capture and SELL-side bleed are real. G8 **deferred** (spot helped). Sufficient sample — segment stopped.
+
+**Patterns:** SELL skim bleed vs BUY; stale fill-age tail (127s–4876s); G2 cautious at ~29% toxic. v2.1.22 churn window did not improve cancel/fill vs M6.
+
+### G6 v1.1 shipped (HUD-only) — last optics update for a while
+
+Operator consensus: stop grading churn; fix false **hold** on thin join-aligned capture (M6 92%/5 bps); keep **hold** meaningful for bad economics (#2 1.28 bps / 67% still holds).
+
+**Shipped v1.1.0:** `thin_edge` grade (5–8 bps, ≥70% pos) → tier **`thin_edge`**, gate PASS (yellow); `hold_min_fills=15`; hold = bad economics only (bps&lt;0, pos&lt;50%, or bps&lt;3 and pos&lt;70%); zero-capture neutral for pos%. HUD tier pill + soak strip. **No engine change** — restart `xledgermate-ws-hud` only.
+
+**Next:** one ~50-fill calibration soak on v1.1 labels, then **acquisition phase** — optimize fill acquisition on empty peer band (presence, size, join), not HUD cosmetics. G6 Tier 2/3, G8, peer intel remain deferred.
 
 ---
 

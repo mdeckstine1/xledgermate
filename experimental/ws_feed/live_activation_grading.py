@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 from experimental.ws_feed.intel_decisions_log import tail_intel_records
 from experimental.ws_feed.performance_metrics import build_performance_metrics
 
-G6_VERSION = "1.0.0"
+G6_VERSION = "1.1.0"
 DEFAULT_REPORT_PATH = Path("logs/g6_activation_report.json")
 
 
@@ -32,6 +32,7 @@ class G6Criteria:
     min_fills_pilot: int = 8
     min_fills_active: int = 25
     min_fills_scale: int = 50
+    hold_min_fills: int = 15
     require_live: bool = True
     require_kill_clear: bool = True
 
@@ -141,15 +142,38 @@ def _grade_by_id(grades: List[Dict[str, str]], grade_id: str) -> str:
     return "unknown"
 
 
+def _bad_spread_economics(capture: Dict[str, Any]) -> bool:
+    """v1.1: hold only on bad economics (n≥hold_min_fills enforced by caller)."""
+    cap = capture or {}
+    pos_pct = cap.get("positive_capture_pct")
+    avg_bps = cap.get("avg_capture_bps")
+    if pos_pct is None or avg_bps is None:
+        return False
+    try:
+        pos_f = float(pos_pct)
+        bps_f = float(avg_bps)
+    except (TypeError, ValueError):
+        return False
+    if bps_f < 0:
+        return True
+    if pos_f < 50.0:
+        return True
+    if bps_f < 3.0 and pos_f < 70.0:
+        return True
+    return False
+
+
 def resolve_activation_tier(
     *,
     grades: List[Dict[str, str]],
     n_fills: int,
     runtime: Dict[str, Any],
     criteria: G6Criteria,
+    capture: Optional[Dict[str, Any]] = None,
 ) -> tuple[str, str]:
     """Return (tier, human summary)."""
     rt = runtime or {}
+    cap = capture or {}
     if bool(rt.get("dry_run")):
         return "paper", "dry_run=true — not live activation"
     if bool(rt.get("kill_switch_active")):
@@ -159,15 +183,27 @@ def resolve_activation_tier(
         return "warming_up", f"{n_fills} WS fills — need ≥{criteria.min_fills_pilot} for pilot grade"
 
     capture_g = _grade_by_id(grades, "spread_capture")
-    tox_g = _grade_by_id(grades, "toxicity")
-    dd_g = _grade_by_id(grades, "drawdown")
-    inv_g = _grade_by_id(grades, "inventory_health")
 
-    attention = [g for g in grades if g.get("grade") == "attention"]
-    if capture_g == "attention" and n_fills >= criteria.min_fills_pilot:
+    if capture_g == "thin_edge":
         return (
-            "hold",
-            "spread capture needs attention — keep size conservative; review G2/G4 brakes",
+            "thin_edge",
+            "thin spread capture (5–8 bps, join-aligned) — gate pass; not scale_ready",
+        )
+
+    if capture_g == "attention":
+        if n_fills < criteria.hold_min_fills:
+            return (
+                "pilot_watch",
+                f"spread capture below good bar — {n_fills} fills; need ≥{criteria.hold_min_fills} before hold",
+            )
+        if _bad_spread_economics(cap):
+            return (
+                "hold",
+                "spread capture economics weak — keep size conservative; review fills",
+            )
+        return (
+            "pilot_watch",
+            "spread capture below good bar — thin positive; not bad economics",
         )
 
     core_ids = ("spread_capture", "toxicity", "drawdown", "inventory_health")
@@ -179,6 +215,7 @@ def resolve_activation_tier(
     if n_fills >= criteria.min_fills_active and core_good:
         return "active", "§7 core metrics good — live activation confirmed"
 
+    attention = [g for g in grades if g.get("grade") == "attention"]
     if not attention:
         return "pilot", "live pilot — metrics neutral/good; accumulate fills for active tier"
 
@@ -205,6 +242,7 @@ def summarize_activation(
         n_fills=n_fills,
         runtime=runtime,
         criteria=crit,
+        capture=cap,
     )
     attention_on = [
         str(g.get("label") or g.get("id") or "?")
@@ -214,6 +252,7 @@ def summarize_activation(
     return {
         "tier": tier,
         "summary": summary,
+        "g6_version": G6_VERSION,
         "ws_fills": n_fills,
         "grades_attention": len(attention_on),
         "grades_good": sum(1 for g in grades if g.get("grade") == "good"),
@@ -243,6 +282,7 @@ def build_g6_report(
         n_fills=n_fills,
         runtime=rt,
         criteria=crit,
+        capture=cap,
     )
 
     failures: List[str] = []

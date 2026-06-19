@@ -7,6 +7,8 @@ from pathlib import Path
 
 from experimental.ws_feed.live_activation_grading import (
     G6Criteria,
+    G6_VERSION,
+    _bad_spread_economics,
     build_g6_report,
     resolve_activation_tier,
     summarize_activation,
@@ -33,15 +35,59 @@ def test_resolve_activation_tier_warming_up() -> None:
     assert tier == "warming_up"
 
 
-def test_resolve_activation_tier_hold_on_bad_capture() -> None:
+def test_resolve_activation_tier_pilot_watch_before_hold_min_fills() -> None:
     tier, summary = resolve_activation_tier(
         grades=_grades(capture="attention"),
         n_fills=12,
         runtime={"dry_run": False},
         criteria=G6Criteria(),
+        capture={"positive_capture_pct": 60.0, "avg_capture_bps": 2.0},
+    )
+    assert tier == "pilot_watch"
+    assert "15" in summary
+
+
+def test_resolve_activation_tier_hold_on_bad_economics() -> None:
+    tier, summary = resolve_activation_tier(
+        grades=_grades(capture="attention"),
+        n_fills=20,
+        runtime={"dry_run": False},
+        criteria=G6Criteria(),
+        capture={"positive_capture_pct": 60.0, "avg_capture_bps": 2.0},
     )
     assert tier == "hold"
-    assert "capture" in summary.lower()
+    assert "economics" in summary.lower()
+
+
+def test_resolve_activation_tier_thin_positive_not_hold() -> None:
+    tier, _ = resolve_activation_tier(
+        grades=_grades(capture="attention"),
+        n_fills=20,
+        runtime={"dry_run": False},
+        criteria=G6Criteria(),
+        capture={"positive_capture_pct": 75.0, "avg_capture_bps": 4.0},
+    )
+    assert tier == "pilot_watch"
+
+
+def test_resolve_activation_tier_thin_edge() -> None:
+    tier, summary = resolve_activation_tier(
+        grades=_grades(capture="thin_edge"),
+        n_fills=30,
+        runtime={"dry_run": False},
+        criteria=G6Criteria(),
+        capture={"positive_capture_pct": 92.0, "avg_capture_bps": 5.0},
+    )
+    assert tier == "thin_edge"
+    assert "scale_ready" in summary
+
+
+def test_bad_spread_economics_rules() -> None:
+    assert _bad_spread_economics({"positive_capture_pct": 80.0, "avg_capture_bps": -1.0}) is True
+    assert _bad_spread_economics({"positive_capture_pct": 40.0, "avg_capture_bps": 5.0}) is True
+    assert _bad_spread_economics({"positive_capture_pct": 67.0, "avg_capture_bps": 1.28}) is True
+    assert _bad_spread_economics({"positive_capture_pct": 75.0, "avg_capture_bps": 4.0}) is False
+    assert _bad_spread_economics({"positive_capture_pct": 92.0, "avg_capture_bps": 5.0}) is False
 
 
 def test_summarize_activation_hold_includes_attention_on() -> None:
@@ -49,12 +95,25 @@ def test_summarize_activation_hold_includes_attention_on() -> None:
         runtime={"dry_run": False},
         performance_metrics={
             "grades": _grades(capture="attention"),
-            "capture": {"ws_fills": 12},
+            "capture": {"ws_fills": 20, "positive_capture_pct": 55.0, "avg_capture_bps": 1.0},
         },
     )
     assert block["tier"] == "hold"
     assert block["gate_pass"] is False
+    assert block["g6_version"] == G6_VERSION
     assert "Spread capture" in block["attention_on"]
+
+
+def test_summarize_activation_thin_edge_gate_pass() -> None:
+    block = summarize_activation(
+        runtime={"dry_run": False},
+        performance_metrics={
+            "grades": _grades(capture="thin_edge"),
+            "capture": {"ws_fills": 30, "positive_capture_pct": 92.0, "avg_capture_bps": 5.0},
+        },
+    )
+    assert block["tier"] == "thin_edge"
+    assert block["gate_pass"] is True
 
 
 def test_resolve_activation_tier_active() -> None:
@@ -75,6 +134,17 @@ def test_resolve_activation_tier_scale_ready() -> None:
         criteria=G6Criteria(),
     )
     assert tier == "scale_ready"
+
+
+def test_thin_edge_does_not_reach_scale_ready() -> None:
+    tier, _ = resolve_activation_tier(
+        grades=_grades(capture="thin_edge"),
+        n_fills=55,
+        runtime={"dry_run": False},
+        criteria=G6Criteria(),
+        capture={"positive_capture_pct": 92.0, "avg_capture_bps": 5.0},
+    )
+    assert tier == "thin_edge"
 
 
 def test_summarize_activation_includes_tier() -> None:
@@ -136,7 +206,8 @@ def test_build_g6_report_from_logs(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     report = build_g6_report(runtime_path=runtime, logs_dir=logs)
+    assert report.g6_version == G6_VERSION
     assert report.structural_signals["cycle_rows"] == 20
     assert report.portfolio["portfolio_xrp_equiv"] == 240.0
     assert report.performance_metrics["capture"]["ws_fills"] == 10
-    assert report.activation_tier in ("pilot", "pilot_watch", "hold", "active")
+    assert report.activation_tier in ("pilot", "pilot_watch", "hold", "active", "thin_edge")

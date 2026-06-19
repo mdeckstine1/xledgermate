@@ -72,11 +72,10 @@ def test_capture_grade_excludes_incoherent_artifact_rows(tmp_path: Path) -> None
     assert spread["grade"] == "good"
 
 
-def test_capture_grade_mid_bps_band_is_attention_not_unknown(tmp_path: Path) -> None:
-    """5–8 bps with strong positive % should be attention, not unknown dead zone."""
+def test_capture_grade_mid_bps_band_is_thin_edge(tmp_path: Path) -> None:
+    """5–8 bps with strong positive % → thin_edge (G6 v1.1), not attention."""
     logs = tmp_path / "logs"
     logs.mkdir()
-    # 0.01 XRP on 10 XRP ≈ 10 bps — use smaller profit for ~5.4 bps band
     rows = [
         "timestamp_utc,event_type,xrp_amount,profit_xrp_equiv,notes",
     ]
@@ -87,7 +86,9 @@ def test_capture_grade_mid_bps_band_is_attention_not_unknown(tmp_path: Path) -> 
     (logs / "trades_2026-06.csv").write_text("\n".join(rows), encoding="utf-8")
     pm = build_performance_metrics(runtime={}, logs_dir=logs)
     spread = next(g for g in pm["grades"] if g["id"] == "spread_capture")
-    assert spread["grade"] == "attention"
+    assert spread["grade"] == "thin_edge"
+    assert pm["activation"]["tier"] == "thin_edge"
+    assert pm["activation"]["gate_pass"] is True
     assert "bps" in spread["value"]
 
 
@@ -104,7 +105,8 @@ def test_session_boot_scopes_g6_to_warming_up_not_cumulative_hold(tmp_path: Path
     )
     (logs / "trades_2026-06.csv").write_text("\n".join(rows), encoding="utf-8")
     pm_cum = build_performance_metrics(runtime={}, logs_dir=logs)
-    assert pm_cum["activation"]["tier"] == "hold"
+    assert pm_cum["activation"]["tier"] == "thin_edge"
+    assert pm_cum["activation"]["gate_pass"] is True
 
     pm_sess = build_performance_metrics(
         runtime={

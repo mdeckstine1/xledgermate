@@ -1,35 +1,32 @@
-# G6 Live Activation Grading — Code Reference (v1.0)
+# G6 Live Activation Grading — Code Reference
 
-**Authoritative spec (v1.0 diagnosis + v1.1 approved):** [`PURE_AS_CRITICAL_PATH.md` — G6 activation grading](PURE_AS_CRITICAL_PATH.md#g6-activation-grading)
+**Authoritative spec:** [`PURE_AS_CRITICAL_PATH.md` — G6 activation grading](PURE_AS_CRITICAL_PATH.md#g6-activation-grading)
 
 **Code:** `experimental/ws_feed/live_activation_grading.py`, `experimental/ws_feed/performance_metrics.py`  
-**CLI:** `python -m experimental.ws_feed.live_activation_grading [--gate]`
-
-This file is a **short v1.0 code map** only. Do not duplicate task lists or v1.1 spec here.
-
----
-
-## v1.0 tier tree (shipped)
-
-```
-dry_run?          → paper
-kill_switch?      → halted
-n_fills < 8       → warming_up
-spread_capture = attention AND n≥8  → hold   ← gate FAIL
-core all good AND n≥50               → scale_ready
-core all good AND n≥25               → active
-no attention grades                  → pilot
-else attention (not spread)          → pilot_watch
-```
-
-**Spread capture good bar (v1.0):** n ≥ 8, pos% ≥ 70%, avg bps ≥ **8.0**. Otherwise **attention** → **hold**.
-
-**Core metrics** for `active` / `scale_ready`: spread_capture, toxicity, drawdown, inventory_health — all **good**. Peer lane excluded from core.
+**CLI:** `python -m experimental.ws_feed.live_activation_grading [--gate]`  
+**Shipped:** **v1.1.0** (HUD-only)
 
 ---
 
-## Session scope
+## v1.1 tier tree (shipped)
 
-When `session_boot_utc` is on runtime, HUD grades fills since boot only (0–7 → `warming_up`). Cumulative CSV rows remain in file; activation uses session scope.
+```
+dry_run?                    → paper
+kill_switch?                → halted
+n_fills < 8                 → warming_up
+spread_capture = thin_edge  → thin_edge   ← gate PASS (yellow)
+spread_capture = attention:
+  n < 15                    → pilot_watch ← gate PASS
+  bad economics (n ≥ 15)    → hold        ← gate FAIL
+  else thin positive        → pilot_watch ← gate PASS
+core all good AND n≥50      → scale_ready (spread must be good, not thin_edge)
+core all good AND n≥25      → active
+no attention grades         → pilot
+else attention (not spread) → pilot_watch
+```
 
-**Operator:** `hold` is advisory — use kill switch to stop quoting. See critical path for v1.1 calibration plan.
+**Spread grades:** `good` (≥70% pos, ≥8 bps) · `thin_edge` (≥70% pos, 5–8 bps) · `attention` · `unknown` (n&lt;8).
+
+**Bad economics (hold):** avg bps &lt; 0 · pos% &lt; 50% · (avg bps &lt; 3 and pos% &lt; 70%).
+
+**Session scope:** fills since `session_boot_utc` when present. **Operator:** `hold` is advisory — kill switch stops quoting.
