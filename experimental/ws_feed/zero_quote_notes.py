@@ -43,6 +43,16 @@ def build_tight_book_advisory(
         floor_note = f" spread floor {min_spread_floor_pct:.2f}% binding"
 
     if would_quote:
+        if reservation <= best_bid:
+            return (
+                f"ONE-SIDED ask-only: reservation {reservation:.6f} at/below bid {best_bid:.6f} "
+                f"— inventory skew; posting sell side inside L1.{floor_note}"
+            )
+        if reservation >= best_ask:
+            return (
+                f"ONE-SIDED bid-only: reservation {reservation:.6f} at/above ask {best_ask:.6f} "
+                f"— inventory skew; posting buy side inside L1.{floor_note}"
+            )
         if gap > 0.01:
             return (
                 f"TIGHT OK: optimal {optimal_spread_pct:.3f}% > book {book_spread_pct:.3f}% "

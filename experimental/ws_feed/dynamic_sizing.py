@@ -93,6 +93,8 @@ def build_pure_quote_ladder(
     min_order_size_xrp: float = 1.0,
     configured_level_sizes: Optional[Sequence[float]] = None,
     active: bool = True,
+    allow_bid: bool = True,
+    allow_ask: bool = True,
 ) -> List[Dict[str, Any]]:
     """L1 from A-S touch; L2/L3 stepped by spread increment with scaled sizes."""
     half = (optimal_spread_pct / 100.0) / 2.0
@@ -130,7 +132,11 @@ def build_pure_quote_ladder(
                     "side": side,
                     "price": price,
                     "size_xrp": size,
-                    "active": active and level == 1,
+                    "active": (
+                        active
+                        and level == 1
+                        and ((side == "bid" and allow_bid) or (side == "ask" and allow_ask))
+                    ),
                     "planned": not active or level > 1,
                 }
             )

@@ -2,7 +2,8 @@
 Pure WS + Avellaneda-Stoikov quote path (xledger-ws-as).
 
 No trading profiles, no build_quote_adjustments, no min-edge hard gates.
-Quoting guard: reservation strictly inside live best bid/ask.
+Quoting guard: reservation inside live best bid/ask for two-sided quotes; when skew
+pushes reservation outside touch, post one-sided on the rebalancing leg only (MM posture).
 
 Pressure + Grok are inputs only (vol, spread anchor, gamma scale, advisory notes).
 """
@@ -32,8 +33,11 @@ from experimental.ws_feed.spread_quality_scaler import (
     format_execution_brake_panel,
 )
 from strategy.fill_quality import FillQualityState
-from experimental.ws_feed.as_safety import enforce_reservation_gate
-from experimental.ws_feed.reservation_metrics import reservation_bbo_metrics
+from experimental.ws_feed.reservation_metrics import (
+    effective_quote_sides,
+    reservation_bbo_metrics,
+    reservation_quote_sides,
+)
 from experimental.ws_feed.zero_quote_notes import classify_and_explain_pure_zero_quote
 from strategy.avellaneda_strategy import AvellanedaStrategy, AvellanedaQuote
 from strategy.quote_decision import assess_inventory
@@ -429,9 +433,7 @@ class PureQuotePath:
         finally:
             self.as_strat.gamma = base_gamma
 
-        would_quote_reservation = best_bid < as_quote.reservation_price < best_ask
-        would_quote_reservation = enforce_reservation_gate(
-            would_quote_reservation=would_quote_reservation,
+        allow_bid, allow_ask, _reservation_posture = reservation_quote_sides(
             reservation=as_quote.reservation_price,
             best_bid=best_bid,
             best_ask=best_ask,
@@ -444,17 +446,6 @@ class PureQuotePath:
         ) or {}
         inside_l1 = bool(bbo_metrics.get("inside_l1", False))
         reservation_delta_bps = bbo_metrics.get("reservation_to_bbo_delta_bps")
-        zero_reason, zero_detail, operator_note = classify_and_explain_pure_zero_quote(
-            would_quote=would_quote_reservation,
-            best_bid=best_bid,
-            best_ask=best_ask,
-            reservation=as_quote.reservation_price,
-            book_spread_pct=book_spread_pct,
-            optimal_spread_pct=as_quote.optimal_spread_pct,
-            min_spread_floor_pct=self.min_spread_floor_pct,
-        )
-        tight_note = operator_note if would_quote_reservation else ""
-        blocked_note = operator_note if not would_quote_reservation else ""
 
         sizes = compute_pure_l1_sizes(
             xrp_balance=xrp_bal,
@@ -504,6 +495,12 @@ class PureQuotePath:
             recent_fills=int(fill_quality.recent_fills) if fill_quality else 0,
             peer_lane_empty=is_peer_lane_empty(quoting_intel),
         )
+        quote_bid, quote_ask, quote_posture = effective_quote_sides(
+            allow_bid=allow_bid,
+            allow_ask=allow_ask,
+            pause_bids=inv_policy.pause_bids,
+            pause_asks=inv_policy.pause_asks,
+        )
         l1_bid_price, l1_ask_price = touch_prices_from_backoff(
             best_bid=best_bid,
             best_ask=best_ask,
@@ -531,7 +528,9 @@ class PureQuotePath:
             order_levels=self.order_levels,
             min_order_size_xrp=self.min_order_size_xrp,
             configured_level_sizes=self.configured_order_sizes,
-            active=would_quote_reservation,
+            active=True,
+            allow_bid=quote_bid,
+            allow_ask=quote_ask,
         )
         ladder = apply_pause_to_ladder(
             ladder,
@@ -540,10 +539,40 @@ class PureQuotePath:
             min_order_size_xrp=self.min_order_size_xrp,
         )
         active_quotes = count_active_l1_quotes(ladder)
+        would_quote = active_quotes > 0
+
+        zero_reason, zero_detail, operator_note = classify_and_explain_pure_zero_quote(
+            would_quote=would_quote,
+            best_bid=best_bid,
+            best_ask=best_ask,
+            reservation=as_quote.reservation_price,
+            book_spread_pct=book_spread_pct,
+            optimal_spread_pct=as_quote.optimal_spread_pct,
+            min_spread_floor_pct=self.min_spread_floor_pct,
+            pause_bids=inv_policy.pause_bids,
+            pause_asks=inv_policy.pause_asks,
+        )
+        policy_labels = {
+            "inside": "PURE A-S (inside L1)",
+            "two_sided": "PURE A-S (inside L1)",
+            "below_bid": "PURE A-S (ask-only skew)",
+            "above_ask": "PURE A-S (bid-only skew)",
+            "bid_only_rebalance": "PURE A-S (bid-only rebalance)",
+            "ask_only_rebalance": "PURE A-S (ask-only rebalance)",
+            "bid_only_skew": "PURE A-S (bid-only skew)",
+            "ask_only_skew": "PURE A-S (ask-only skew)",
+        }
+        quoting_policy = (
+            policy_labels.get(quote_posture, "PURE A-S (math blocked)")
+            if would_quote
+            else "PURE A-S (math blocked)"
+        )
+        tight_note = operator_note if would_quote else ""
+        blocked_note = operator_note if not would_quote else ""
 
         decision = PureQuoteDecision(
-            would_quote=would_quote_reservation and active_quotes > 0,
-            quote_count=active_quotes if would_quote_reservation else 0,
+            would_quote=would_quote,
+            quote_count=active_quotes if would_quote else 0,
             mid=mid,
             best_bid=best_bid,
             best_ask=best_ask,
@@ -563,15 +592,15 @@ class PureQuotePath:
             zero_quote_operator_note=blocked_note,
             tight_book_note=tight_note,
             quote_decision_summary="",
-            quoting_policy_label="PURE A-S (inside L1)" if would_quote_reservation else "PURE A-S (math blocked)",
+            quoting_policy_label=quoting_policy,
             competitor_pressure=competitor_pressure,
             pressure_rationale=pressure_rationale,
             ai_edge_quality=ai_edge,
             ai_is_skimmable=ai_skimmable,
             ai_rationale=ai_rationale,
             ai_suggested_posture=ai_posture,
-            suggested_bid=l1_bid_price if would_quote_reservation and not inv_policy.pause_bids else None,
-            suggested_ask=l1_ask_price if would_quote_reservation and not inv_policy.pause_asks else None,
+            suggested_bid=l1_bid_price if would_quote and quote_bid else None,
+            suggested_ask=l1_ask_price if would_quote and quote_ask else None,
             bid_size=inv_policy.bid_size_xrp,
             ask_size=inv_policy.ask_size_xrp,
             l1_xrp=sizes.l1_xrp,
