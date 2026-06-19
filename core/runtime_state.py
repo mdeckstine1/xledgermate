@@ -328,4 +328,7 @@ class RuntimeStateStore:
             g7_scaler_label=str(data.get("g7_scaler_label", "")),
             g2_scaler_label=str(data.get("g2_scaler_label", "")),
             execution_brakes_summary=str(data.get("execution_brakes_summary", "")),
+            book_bids=list(data.get("book_bids") or []),
+            book_asks=list(data.get("book_asks") or []),
+            session_boot_utc=data.get("session_boot_utc"),
         )
