@@ -133,12 +133,7 @@ def build_performance_metrics(
         and pos_pct >= 70.0
         and avg_bps >= 8.0
     )
-    capture_attention = (
-        n_fills >= 8
-        and pos_pct is not None
-        and avg_bps is not None
-        and (pos_pct < 60.0 or avg_bps < 5.0)
-    )
+    capture_unknown = n_fills < 8 or pos_pct is None
 
     target_pct = float(rt.get("inventory_target_xrp_pct") or rt.get("inventory_target_xrp_ratio", 0.55) * 100)
     if "inventory_target_xrp_pct" not in rt and "inventory_target_xrp_ratio" in rt:
@@ -188,8 +183,8 @@ def build_performance_metrics(
                 if pos_pct is not None and avg_bps is not None
                 else f"{n_fills} fills"
             ),
-            grade=_grade(capture_good, unknown=not capture_good and not capture_attention),
-            detail="Good: ≥70% positive, ≥8 bps (n≥8)",
+            grade=_grade(capture_good, unknown=capture_unknown),
+            detail="Good: ≥70% positive, ≥8 bps (n≥8); else attention when n≥8",
         ),
         MetricGrade(
             id="inventory_health",

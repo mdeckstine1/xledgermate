@@ -2,7 +2,7 @@
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
 **Version:** v2.1.18 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-18 (M6 deploy — 50-fill eval soak started)
+**Last updated:** 2026-06-18 (HUD soak batch — wealth sidebar, Book tab, G6 hold metrics)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
@@ -21,7 +21,7 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 | — | **M6 eval soak — target 50 session fills** | ongoing (restart v2.1.19 for live JSONL stream) |
 | — | **M6 live stream** `logs/fill_quote_age.jsonl` + HUD recent ages | [x] v2.1.19 — engine persists per fill |
 | — | At 50 fills: compare fill quote age (M6 vs M2 side-only offline report), Skim Δ, toxic@30s, cancel/fill | pending |
-| — | Watch G6 tier, markout@30s, G7 posture vs inventory | ongoing |
+| — | Watch G6 tier, markout@30s, G7 posture vs inventory | ongoing — **G6 `hold`** (spread capture 5.35 bps, 92% pos @ ~41 session fills) |
 | — | Telegram hourly narrative (Grok lead-in) | on hold |
 
 **M6 eval gates (at 50 fills):**
@@ -261,7 +261,7 @@ HUD-only deploys (`xledgermate-ws-hud` restart OK). No further soak-safe code re
 | **Intel HUD** | I5 side skew, I6 regime vs peer, F1 nicknames, F3a/F3b Grok briefing, F4 JSONL, F2 advisory stub |
 | **Reports** | 11 soak-safe reports tab (`soak_dashboard`, `soak_dashboard_narrative`, `grok_suggestions`, `clob_amm_monitor`, …) |
 | **H1/H2** | Read-only CLOB vs AMM monitor + `amm_provider.py` |
-| **HUD ops** | Inventory nav restored; Metrics toxicity gray-zone fix; **Skim Δ** (not wallet/deposit); Wallet Δ on Inventory |
+| **HUD ops** | Inventory nav restored; Metrics toxicity gray-zone fix; **Skim Δ** (not wallet/deposit); Wallet Δ on Inventory; **RLUSD wealth sidebar**; **Book tab** (L1–L3 ladder, depth chart); **G6 hold** card on Metrics |
 
 ### Deploy discipline
 
@@ -292,10 +292,16 @@ Balance-delta fills use implied price when coherent (±25% of mid, BBO band, min
 
 | Commit | What |
 |--------|------|
+| *(this)* | HUD soak batch: wealth sidebar payload (`wealth_hud_payload`), Book tab (L1–L3 + depth chart), G6 **hold** metrics card (red tier, attention list, gate FAIL), spread-capture mid-bps → `attention` not `unknown`, duplicate `deltaEl` JS fix |
+| `5b9cb9b` | RLUSD-stable wealth sidebar with session decomposition |
 | `2fb597d` | Balance-delta coherence guard — reject nonsense implied prices before fill log |
 | `b463887` | HUD Skim Δ fix — stop CSV overwrite; strict `@ mid` for economics; session fills display |
 | `4c38c65` / `b420437` | USD portfolio in sidebar; metric row alignment |
 | `5b85263` + follow-ups | HUD "Analyze our bot" self-audit + prose reports (no JSON echo); G7 fields now explicitly in HUD payload for session fills card |
+
+**G6 hold (live soak, ~41 session fills):** spread capture **attention** (92% pos, **5.35 bps** &lt; 8 bps good bar) → tier **`hold`**, gate **FAIL**. Toxicity/drawdown good. Conservative size + G2/G4 brake review — no engine change mid-soak. Metrics tab shows red hold card + attention triggers after HUD deploy.
+
+**Book tab:** touch + our L1–L3 from `quote_intents` (L2/L3 dashed/planned until ledger sync). Full CLOB depth (`book_bids`/`book_asks`) after next ws-engine restart.
 
 Post-deploy + 60-fill checkpoint: `scripts/post_deploy_snapshot.py` + `live_activation_grading --gate`. G7 A/B data logged via `ws_as_version` in intel JSONL. G7 queue/visibility now visible in HUD Session fills card (hard refresh recommended).
 

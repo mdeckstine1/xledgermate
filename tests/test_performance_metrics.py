@@ -70,3 +70,22 @@ def test_capture_grade_excludes_incoherent_artifact_rows(tmp_path: Path) -> None
     assert cap["total_capture_xrp"] == 0.09
     spread = next(g for g in pm["grades"] if g["id"] == "spread_capture")
     assert spread["grade"] == "good"
+
+
+def test_capture_grade_mid_bps_band_is_attention_not_unknown(tmp_path: Path) -> None:
+    """5–8 bps with strong positive % should be attention, not unknown dead zone."""
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    # 0.01 XRP on 10 XRP ≈ 10 bps — use smaller profit for ~5.4 bps band
+    rows = [
+        "timestamp_utc,event_type,xrp_amount,profit_xrp_equiv,notes",
+    ]
+    rows.extend(
+        f"2026-06-18T12:00:0{i}+00:00,FILL,10.0,0.0054,WS pure fill @ mid 1.160000"
+        for i in range(8)
+    )
+    (logs / "trades_2026-06.csv").write_text("\n".join(rows), encoding="utf-8")
+    pm = build_performance_metrics(runtime={}, logs_dir=logs)
+    spread = next(g for g in pm["grades"] if g["id"] == "spread_capture")
+    assert spread["grade"] == "attention"
+    assert "bps" in spread["value"]

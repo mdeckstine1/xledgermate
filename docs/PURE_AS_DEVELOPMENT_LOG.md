@@ -4,7 +4,7 @@
 **Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live TODO; this file is the narrative + archaeology.
 
 **Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.15  
-**Last updated:** 2026-06-17
+**Last updated:** 2026-06-18
 
 ---
 
@@ -270,6 +270,22 @@ Full IDs and blockers: critical path **After segment** table.
 | Session fills gate | `scripts/ws_path_session_report.py` |
 | Post-deploy gates | `scripts/post_deploy_snapshot.py` |
 | Intel JSONL | `experimental/ws_feed/intel_decisions_log.py` |
+
+| 2026-06-18 | HUD soak batch: RLUSD wealth sidebar (payload pass-through), Book tab L1–L3, G6 hold metrics UX, spread-capture grading dead-zone fix |
+
+---
+
+## 2026-06-18 — HUD soak batch (no engine restart)
+
+**Deploy:** `xledgermate-ws-hud` only — ws-engine left running through M6 eval soak.
+
+**Shipped:**
+- **Wealth sidebar:** `wealth_hud_payload()` wired through `_hud_market_payload` so spot/rebal/XRP@mid fields reach `/state` (enrichment alone was stripped).
+- **Book tab:** depth chart, split ladder, our L1–L3 from `quote_intents` (L2/L3 planned until multi-level ledger sync). `book_bids`/`book_asks` forward-ready for next engine restart.
+- **Metrics:** spread capture 5–8 bps band grades `attention` (not `unknown`); G6 **hold** card with red tier, attention triggers, gate FAIL when spread capture blocks activation.
+- **Bugfix:** duplicate `deltaEl` in HUD JS broke entire render loop (blank cards).
+
+**Live soak signal (~41 session fills):** G6 tier **`hold`** — 92% positive capture but 5.35 bps avg (&lt; 8 bps bar). Toxicity/drawdown good. Posture: conservative size, review G2/G4 brakes; no strategy override.
 
 ---
 

@@ -206,12 +206,19 @@ def summarize_activation(
         runtime=runtime,
         criteria=crit,
     )
+    attention_on = [
+        str(g.get("label") or g.get("id") or "?")
+        for g in grades
+        if g.get("grade") == "attention"
+    ]
     return {
         "tier": tier,
         "summary": summary,
         "ws_fills": n_fills,
-        "grades_attention": sum(1 for g in grades if g.get("grade") == "attention"),
+        "grades_attention": len(attention_on),
         "grades_good": sum(1 for g in grades if g.get("grade") == "good"),
+        "attention_on": attention_on,
+        "gate_pass": tier not in ("hold", "halted", "paper", "warming_up", "unknown"),
     }
 
 

@@ -44,6 +44,19 @@ def test_resolve_activation_tier_hold_on_bad_capture() -> None:
     assert "capture" in summary.lower()
 
 
+def test_summarize_activation_hold_includes_attention_on() -> None:
+    block = summarize_activation(
+        runtime={"dry_run": False},
+        performance_metrics={
+            "grades": _grades(capture="attention"),
+            "capture": {"ws_fills": 12},
+        },
+    )
+    assert block["tier"] == "hold"
+    assert block["gate_pass"] is False
+    assert "Spread capture" in block["attention_on"]
+
+
 def test_resolve_activation_tier_active() -> None:
     tier, _ = resolve_activation_tier(
         grades=_grades(),

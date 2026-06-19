@@ -87,6 +87,16 @@ def _session_fields(runtime: dict) -> dict[str, Any]:
     }
 
 
+def _wealth_fields(runtime: dict) -> dict[str, Any]:
+    """RLUSD-stable wealth sidebar fields (enrichment is stripped unless passed through)."""
+    try:
+        from core.wealth_metrics import wealth_hud_payload
+
+        return wealth_hud_payload(runtime)
+    except Exception:
+        return {}
+
+
 def _ws_freshness_payload(ws_feed: WsBookFeed) -> dict[str, Any]:
     """Recompute age from live BookState (monotonic clock); push every ~1s to HUD."""
     snap = ws_feed.freshness_snapshot()
@@ -131,6 +141,8 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         "best_bid_rlusd_per_xrp": runtime.get("best_bid_rlusd_per_xrp"),
         "best_ask_rlusd_per_xrp": runtime.get("best_ask_rlusd_per_xrp"),
         "book_spread_pct": runtime.get("book_spread_pct"),
+        "book_bids": runtime.get("book_bids") or [],
+        "book_asks": runtime.get("book_asks") or [],
         "ws_age_s": runtime.get("ws_book_age_s"),
         "ws_message_count": runtime.get("ws_message_count"),
         "ws_book_last_update_unix": runtime.get("ws_book_last_update_unix"),
@@ -200,6 +212,7 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         "g7_bid_role": runtime.get("g7_bid_role"),
         "g7_ask_role": runtime.get("g7_ask_role"),
         **_session_fields(runtime),
+        **_wealth_fields(runtime),
         **extra,
     }
     payload.update(lane_ladder_hud_fields(runtime))

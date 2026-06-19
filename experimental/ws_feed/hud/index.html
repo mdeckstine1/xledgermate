@@ -197,7 +197,93 @@
         .grade-pill { font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; white-space: nowrap; }
         .grade-good { background: rgba(74,222,128,0.15); color: #4ade80; }
         .grade-attention { background: rgba(251,191,36,0.15); color: #fbbf24; }
+        .grade-hold { background: rgba(248,113,113,0.18); color: #f87171; }
+        .grade-halted { background: rgba(239,68,68,0.22); color: #ef4444; }
+        .grade-watch { background: rgba(250,204,21,0.12); color: #facc15; }
+        .grade-neutral { background: rgba(100,116,139,0.15); color: #cbd5e1; }
         .grade-unknown { background: rgba(100,116,139,0.2); color: #94a3b8; }
+        .metrics-g6-card { transition: border-color 0.2s ease; }
+        .metrics-g6-card.g6-hold { border-left: 3px solid #f87171; background: rgba(248,113,113,0.04); }
+        .metrics-g6-card.g6-halted { border-left: 3px solid #ef4444; background: rgba(239,68,68,0.06); }
+        .metrics-g6-attention { font-size: 0.72rem; color: #fbbf24; margin-top: 6px; line-height: 1.4; }
+        .metrics-g6-meta { font-size: 0.68rem; color: #64748b; margin-top: 4px; }
+        .book-depth-canvas {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            height: 300px;
+            background: #0f172a;
+            border-radius: 6px;
+            border: 1px solid #334155;
+        }
+        .book-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 8px;
+            font-size: 0.68rem;
+            color: #94a3b8;
+        }
+        .book-legend span { display: inline-flex; align-items: center; gap: 4px; }
+        .book-legend .swatch {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            display: inline-block;
+        }
+        .book-split-wrap {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 8px;
+            align-items: stretch;
+            font-size: 0.72rem;
+            font-family: ui-monospace, monospace;
+        }
+        .book-split-col { min-width: 0; }
+        .book-split-col h4 {
+            margin: 0 0 6px 0;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #94a3b8;
+            font-weight: 600;
+        }
+        .book-split-mid {
+            text-align: center;
+            padding: 8px 10px;
+            border-left: 1px solid #334155;
+            border-right: 1px solid #334155;
+            min-width: 108px;
+        }
+        .book-split-mid .mid-val {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #60a5fa;
+        }
+        .book-level-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 6px;
+            padding: 3px 4px;
+            border-radius: 3px;
+        }
+        .book-level-row.ours { background: rgba(96,165,250,0.12); border: 1px solid rgba(96,165,250,0.35); }
+        .book-level-row.ours-planned { background: rgba(96,165,250,0.06); border: 1px dashed rgba(96,165,250,0.45); }
+        .book-level-row.touch { font-weight: 600; }
+        .book-lv-tag {
+            font-size: 0.58rem;
+            color: #93c5fd;
+            margin-right: 4px;
+            font-weight: 700;
+        }
+        .book-our-lv {
+            border-top: 1px solid #1e293b;
+            padding: 6px 0;
+            font-size: 0.72rem;
+        }
+        .book-our-lv:first-child { border-top: none; padding-top: 0; }
+        .book-bid-col .book-level-row { color: #86efac; }
+        .book-ask-col .book-level-row { color: #fca5a5; }
         .intel-log-line { font-family: ui-monospace, monospace; font-size: 0.62rem; color: #94a3b8; padding: 2px 0; border-bottom: 1px solid #0f172a; word-break: break-all; }
 
         .soak-strip {
@@ -573,16 +659,6 @@
         </div>
 
         <div class="section">
-            <div class="label">Engine</div>
-            <div class="sidebar-value" id="sidebar-version" style="font-size:0.7rem;">v —</div>
-            <div class="sidebar-value" id="sidebar-samples" style="font-size:0.7rem;">Cycles: —</div>
-        </div>
-        <div class="section">
-            <div class="label">Status</div>
-            <div class="sidebar-value" id="sidebar-would-quote">—</div>
-            <div class="sidebar-value" id="sidebar-resting" style="font-size:0.65rem; opacity:0.85;">Resting: —</div>
-        </div>
-        <div class="section">
             <div class="label" id="engine-controls-label">Engine Controls</div>
             <div style="display:flex; gap:4px;">
                 <button id="btn-start-engine" style="flex:1; font-size:0.65rem; padding:3px 4px; background:#22c55e; color:white; border:none; border-radius:3px;">▶ Start</button>
@@ -619,6 +695,7 @@
             <a href="#" data-page="inventory">Inventory</a>
             <a href="#" data-page="intelligence">Intelligence</a>
             <a href="#" data-page="metrics">Metrics</a>
+            <a href="#" data-page="book">Book</a>
             <a href="#" data-page="reports">Reports</a>
             <a href="#" data-page="credentials">Credentials</a>
             <a href="#" data-page="config">Config</a>
@@ -830,12 +907,14 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 <h3 style="margin-top:0; color:#60a5fa;">Performance Metrics (G3 / G6)</h3>
                 <p style="font-size:0.8rem; color:#94a3b8; margin-top:0;">Grades from Phase E §7 — spread capture is primary; inventory is steering. G6 activation tier grades live posture. Log: <code style="font-size:0.7rem;">logs/intel_decisions.jsonl</code></p>
 
-                <div class="card full-width" style="margin-top:8px; margin-bottom:12px;">
+                <div id="metrics-g6-card" class="card full-width metrics-g6-card" style="margin-top:8px; margin-bottom:12px;">
                     <div class="metric-row">
                         <span class="label">G6 activation</span>
                         <span id="metrics-g6-tier" class="grade-pill grade-unknown">—</span>
                     </div>
                     <div id="metrics-g6-summary" style="font-size:0.75rem; color:#94a3b8; margin-top:6px;">Waiting for activation grade…</div>
+                    <div id="metrics-g6-attention" class="metrics-g6-attention" style="display:none;"></div>
+                    <div id="metrics-g6-meta" class="metrics-g6-meta"></div>
                 </div>
 
                 <div class="grid" style="margin-top:12px;">
@@ -866,6 +945,51 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 <div class="card full-width" style="margin-top:12px;">
                     <div class="label">Recent intel log (last 12)</div>
                     <div id="metrics-intel-tail" style="max-height:220px; overflow-y:auto; margin-top:6px;">—</div>
+                </div>
+
+                <div class="marquee-container" style="margin-top:12px;">
+                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="book" class="page">
+            <div class="content">
+                <h3 style="margin-top:0; color:#60a5fa;">Book — live WS depth</h3>
+                <p id="book-depth-hint" style="font-size:0.8rem; color:#94a3b8; margin-top:0;">
+                    Bid / mid / ask from <code>/state</code>. Highlights L1–L3 from <code>quote_intents</code> (L2/L3 planned until multi-level ledger sync ships). Full CLOB depth after ws-engine restart.
+                </p>
+
+                <div class="card full-width" style="margin-top:8px;">
+                    <div class="label">Depth chart <span class="info" title="Horizontal bars: size vs price. Green bids extend left from mid; red asks extend right. Yellow dashed line = A-S reservation.">?</span></div>
+                    <canvas id="book-depth-canvas" class="book-depth-canvas" aria-label="Order book depth chart"></canvas>
+                    <div id="book-depth-legend" class="book-legend"></div>
+                </div>
+
+                <div class="grid" style="margin-top:12px;">
+                    <div class="card" style="grid-column: 1 / -1;">
+                        <div class="label">Split ladder (bid · mid · ask)</div>
+                        <div id="book-split" class="book-split-wrap">
+                            <div class="book-split-col book-bid-col"><h4>Bids</h4><div id="book-split-bids">—</div></div>
+                            <div class="book-split-mid" id="book-split-mid">—</div>
+                            <div class="book-split-col book-ask-col"><h4>Asks</h4><div id="book-split-asks">—</div></div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="label">Touch</div>
+                        <div class="metric-row"><span class="label">Best bid</span> <span id="book-touch-bid" class="value good">—</span></div>
+                        <div class="metric-row"><span class="label">Mid</span> <span id="book-touch-mid" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Best ask</span> <span id="book-touch-ask" class="value warn">—</span></div>
+                        <div class="metric-row"><span class="label">Spread</span> <span id="book-touch-spread" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Book age</span> <span id="book-touch-age" class="value">—</span></div>
+                    </div>
+                    <div class="card">
+                        <div class="label">Our ladder (L1–L3)</div>
+                        <div class="metric-row"><span class="label">Reservation</span> <span id="book-our-res" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Res → BBO</span> <span id="book-our-res-delta" class="value">—</span></div>
+                        <div id="book-our-ladder" style="margin-top:8px;">—</div>
+                        <div class="metric-row" style="margin-top:8px;"><span class="label">CLOB levels</span> <span id="book-depth-levels" class="value">—</span></div>
+                    </div>
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
@@ -1601,6 +1725,23 @@ The A-S strategy itself decides presence via reservation price being inside the 
             el.classList.add(kind || 'neutral');
         }
 
+        function g6TierPillClass(tier) {
+            const t = String(tier || 'unknown');
+            if (t === 'active' || t === 'scale_ready' || t === 'pilot') return 'good';
+            if (t === 'hold') return 'hold';
+            if (t === 'halted') return 'halted';
+            if (t === 'pilot_watch') return 'watch';
+            if (t === 'warming_up' || t === 'paper') return 'neutral';
+            return 'unknown';
+        }
+
+        function g6SoakPillClass(tier) {
+            const t = String(tier || '');
+            if (t === 'active' || t === 'scale_ready' || t === 'pilot_watch') return 'good';
+            if (t === 'hold' || t === 'halted') return 'bad';
+            return 'neutral';
+        }
+
         function sessionSkimDeltaXrp(s) {
             if (s.session_spread_capture_xrp != null && !Number.isNaN(parseFloat(s.session_spread_capture_xrp))) {
                 return parseFloat(s.session_spread_capture_xrp);
@@ -1635,18 +1776,92 @@ The A-S strategy itself decides presence via reservation price being inside the 
             return 'neutral';
         }
 
+        function sessionMid(s) {
+            const midRaw = s.mid_price != null ? s.mid_price : (s.mid != null ? s.mid : s.mid_rlusd_per_xrp);
+            const mid = midRaw != null ? parseFloat(midRaw) : NaN;
+            return !Number.isNaN(mid) && mid > 0 ? mid : null;
+        }
+
         function sessionSkimDeltaRlusd(s) {
             if (s.skim_delta_rlusd != null) {
                 const v = parseFloat(s.skim_delta_rlusd);
                 if (!Number.isNaN(v)) return v;
             }
             const skimXrp = sessionSkimDeltaXrp(s);
-            const midRaw = s.mid_price != null ? s.mid_price : s.mid_rlusd_per_xrp;
-            const mid = midRaw != null ? parseFloat(midRaw) : NaN;
-            if (skimXrp != null && !Number.isNaN(skimXrp) && !Number.isNaN(mid) && mid > 0) {
+            const mid = sessionMid(s);
+            if (skimXrp != null && !Number.isNaN(skimXrp) && mid != null) {
                 return skimXrp * mid;
             }
             return null;
+        }
+
+        function xrpValueRlusd(s) {
+            if (s.xrp_value_rlusd != null) {
+                const v = parseFloat(s.xrp_value_rlusd);
+                if (!Number.isNaN(v)) return v;
+            }
+            const mid = sessionMid(s);
+            const xrp = s.balance_xrp != null ? parseFloat(s.balance_xrp) : NaN;
+            if (mid != null && !Number.isNaN(xrp)) return xrp * mid;
+            return null;
+        }
+
+        function xrpSharePct(s) {
+            if (s.xrp_share_pct != null) {
+                const v = parseFloat(s.xrp_share_pct);
+                if (!Number.isNaN(v)) return v;
+            }
+            const mid = sessionMid(s);
+            const xrp = s.balance_xrp != null ? parseFloat(s.balance_xrp) : NaN;
+            const rlusd = s.balance_rlusd != null ? parseFloat(s.balance_rlusd) : NaN;
+            if (mid == null || Number.isNaN(xrp) || Number.isNaN(rlusd)) return null;
+            const total = xrp + rlusd / mid;
+            return total > 0 ? 100 * xrp / total : null;
+        }
+
+        function spotDeltaRlusd(s) {
+            if (s.spot_delta_rlusd != null) {
+                const v = parseFloat(s.spot_delta_rlusd);
+                if (!Number.isNaN(v)) return v;
+            }
+            const mid = sessionMid(s);
+            const bx = s.session_baseline_xrp != null ? parseFloat(s.session_baseline_xrp) : NaN;
+            const bm = s.session_baseline_mid != null ? parseFloat(s.session_baseline_mid) : NaN;
+            if (mid == null || Number.isNaN(bx) || Number.isNaN(bm)) return null;
+            return bx * (mid - bm);
+        }
+
+        function wealthDeltaSessionRlusd(s) {
+            if (s.wealth_delta_session_rlusd != null) {
+                const v = parseFloat(s.wealth_delta_session_rlusd);
+                if (!Number.isNaN(v)) return v;
+            }
+            const mid = sessionMid(s);
+            const xrp = s.balance_xrp != null ? parseFloat(s.balance_xrp) : NaN;
+            const rlusd = s.balance_rlusd != null ? parseFloat(s.balance_rlusd) : NaN;
+            const bx = s.session_baseline_xrp != null ? parseFloat(s.session_baseline_xrp) : NaN;
+            const br = s.session_baseline_rlusd != null ? parseFloat(s.session_baseline_rlusd) : NaN;
+            const bm = s.session_baseline_mid != null ? parseFloat(s.session_baseline_mid) : NaN;
+            if (mid == null || Number.isNaN(xrp) || Number.isNaN(rlusd) || Number.isNaN(bx) || Number.isNaN(br) || Number.isNaN(bm)) {
+                return null;
+            }
+            const wNow = rlusd + xrp * mid;
+            const wBase = br + bx * bm;
+            return wNow - wBase;
+        }
+
+        function rebalanceDeltaRlusd(s) {
+            if (s.rebalance_delta_rlusd != null) {
+                const v = parseFloat(s.rebalance_delta_rlusd);
+                if (!Number.isNaN(v)) return v;
+            }
+            const wDelta = wealthDeltaSessionRlusd(s);
+            const skim = sessionSkimDeltaRlusd(s);
+            const spot = spotDeltaRlusd(s);
+            if (wDelta == null || Number.isNaN(wDelta) || skim == null || Number.isNaN(skim) || spot == null || Number.isNaN(spot)) {
+                return null;
+            }
+            return wDelta - skim - spot;
         }
 
         function toxicSoakClass(ratio) {
@@ -1736,8 +1951,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
 
             setText('soak-g6', String(g6Tier).replace(/_/g, ' '));
-            const g6ok = g6Tier === 'active' || g6Tier === 'scale_ready' || g6Tier === 'pilot_watch';
-            soakPillClass(document.getElementById('soak-g6-pill'), g6ok ? 'good' : (g6Tier === 'hold' || g6Tier === 'halted' ? 'bad' : 'neutral'));
+            soakPillClass(document.getElementById('soak-g6-pill'), g6SoakPillClass(g6Tier));
 
             let statusTxt = kill ? 'KILL' : (qCopy.good ? 'LIVE' : 'PAUSE');
             setText('soak-status', statusTxt);
@@ -1791,8 +2005,6 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const toxic30 = (s.toxic_fill_ratio_30s != null) ? parseFloat(s.toxic_fill_ratio_30s) : null;
             const sessionLine = `v ${ver} · cycles ${sampleCount != null ? sampleCount : '—'}`;
             setText('header-session', sessionLine);
-            setText('sidebar-version', `v ${ver}`);
-            setText('sidebar-samples', `Cycles: ${sampleCount != null ? sampleCount : '—'}`);
 
             // Sidebar wealth (RLUSD-stable, no mental math)
             const wealthTotal = s.wealth_rlusd != null
@@ -1803,17 +2015,15 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 : '—';
             setText('sidebar-wealth-total', wealthDisplay);
 
-            const wDelta = s.wealth_delta_session_rlusd != null
-                ? parseFloat(s.wealth_delta_session_rlusd)
-                : null;
-            const deltaEl = document.getElementById('sidebar-wealth-delta');
-            if (deltaEl) {
+            const wDelta = wealthDeltaSessionRlusd(s);
+            const wealthDeltaEl = document.getElementById('sidebar-wealth-delta');
+            if (wealthDeltaEl) {
                 if (wDelta != null && !Number.isNaN(wDelta)) {
-                    deltaEl.textContent = `Session Δ ${formatSignedRlusd(wDelta, 2)}`;
-                    deltaEl.className = 'sidebar-value ' + wealthDeltaClass(wDelta);
+                    wealthDeltaEl.textContent = `Session Δ ${formatSignedRlusd(wDelta, 2)}`;
+                    wealthDeltaEl.className = 'sidebar-value ' + wealthDeltaClass(wDelta);
                 } else {
-                    deltaEl.textContent = 'Session Δ: —';
-                    deltaEl.className = 'sidebar-value';
+                    wealthDeltaEl.textContent = 'Session Δ: —';
+                    wealthDeltaEl.className = 'sidebar-value';
                 }
             }
 
@@ -1827,7 +2037,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     : 'Skim (spread): —'
             );
 
-            const spotR = s.spot_delta_rlusd != null ? parseFloat(s.spot_delta_rlusd) : null;
+            const spotR = spotDeltaRlusd(s);
             setText(
                 'sidebar-spot-rlusd',
                 spotR != null && !Number.isNaN(spotR)
@@ -1835,7 +2045,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     : 'Spot (XRP×Δmid): —'
             );
 
-            const rebalR = s.rebalance_delta_rlusd != null ? parseFloat(s.rebalance_delta_rlusd) : null;
+            const rebalR = rebalanceDeltaRlusd(s);
             setText(
                 'sidebar-rebal-rlusd',
                 rebalR != null && !Number.isNaN(rebalR)
@@ -1853,15 +2063,17 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     : 'RLUSD stable: —'
             );
 
-            const legXrpVal = s.xrp_value_rlusd != null ? parseFloat(s.xrp_value_rlusd) : null;
+            const legXrpVal = xrpValueRlusd(s);
             const xrpBal = s.balance_xrp != null ? parseFloat(s.balance_xrp) : null;
             if (legXrpVal != null && !Number.isNaN(legXrpVal) && xrpBal != null && !Number.isNaN(xrpBal)) {
                 setText('sidebar-leg-xrp', `XRP @ mid: ${legXrpVal.toFixed(2)} (${xrpBal.toFixed(1)} XRP)`);
+            } else if (legXrpVal != null && !Number.isNaN(legXrpVal)) {
+                setText('sidebar-leg-xrp', `XRP @ mid: ${legXrpVal.toFixed(2)}`);
             } else {
                 setText('sidebar-leg-xrp', 'XRP @ mid: —');
             }
 
-            const xrpShare = s.xrp_share_pct != null ? parseFloat(s.xrp_share_pct) : null;
+            const xrpShare = xrpSharePct(s);
             setText(
                 'sidebar-xrp-share',
                 xrpShare != null && !Number.isNaN(xrpShare)
@@ -1872,25 +2084,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setText('sidebar-xrp', s.balance_xrp !== undefined ? `XRP: ${parseFloat(s.balance_xrp).toFixed(2)}` : 'XRP: -');
             setText('sidebar-rlusd', s.balance_rlusd !== undefined ? `RLUSD: ${parseFloat(s.balance_rlusd).toFixed(2)}` : 'RLUSD: -');
             setText('sidebar-inventory', s.inventory_label || '-');
-            const prof = s.active_profile || '-';
             const configSel = document.getElementById('config-profile-select');
             if (configSel) configSel.value = s.active_profile || '';
-            const wqSide = document.getElementById('sidebar-would-quote');
             const qCopy = quoteStatusCopy(s);
-            if (wqSide) {
-                const wqSideChanged = prevValues.wqSide !== s.would_quote;
-                prevValues.wqSide = s.would_quote;
-                wqSide.textContent = qCopy.short;
-                wqSide.style.color = qCopy.good ? '#4ade80' : '#facc15';
-                if (wqSideChanged) {
-                    triggerAnim(wqSide, 'status-pop', 500);
-                }
-            }
-            const restingN = (s.open_offers_count != null) ? parseInt(s.open_offers_count, 10) : 0;
-            setText(
-                'sidebar-resting',
-                `On ledger: ${restingN} · ${qCopy.posture}`
-            );
 
             // Live page cards - ALWAYS update the DOM values (visibility is controlled by CSS on #live container only)
             const bookEl = document.getElementById('book');
@@ -2408,6 +2604,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
 
             renderMetrics(s);
+            renderBook(s);
 
             const recentEl = document.getElementById('recent');
             if (recentEl) {
@@ -2467,6 +2664,344 @@ The A-S strategy itself decides presence via reservation price being inside the 
             });
         }
 
+        function bookNormalizeLevels(s) {
+            let bids = Array.isArray(s.book_bids) ? s.book_bids.slice() : [];
+            let asks = Array.isArray(s.book_asks) ? s.book_asks.slice() : [];
+            const bbRaw = s.best_bid != null ? s.best_bid : s.best_bid_rlusd_per_xrp;
+            const baRaw = s.best_ask != null ? s.best_ask : s.best_ask_rlusd_per_xrp;
+            const bb = bbRaw != null ? parseFloat(bbRaw) : null;
+            const ba = baRaw != null ? parseFloat(baRaw) : null;
+            const mid = sessionMid(s);
+            const hasDepth = bids.length > 0 || asks.length > 0;
+            const touchOnly = !hasDepth;
+            const normSide = (rows, side) => rows
+                .map(r => ({
+                    price: parseFloat(r.price != null ? r.price : r.p),
+                    size: parseFloat(r.size != null ? r.size : (r.sz != null ? r.sz : 0)),
+                    side,
+                }))
+                .filter(r => !Number.isNaN(r.price) && r.price > 0);
+            bids = normSide(bids, 'bid').sort((a, b) => b.price - a.price);
+            asks = normSide(asks, 'ask').sort((a, b) => a.price - b.price);
+            if (touchOnly && bb != null && !Number.isNaN(bb)) {
+                bids = [{ price: bb, size: 0, side: 'bid' }];
+            }
+            if (touchOnly && ba != null && !Number.isNaN(ba)) {
+                asks = [{ price: ba, size: 0, side: 'ask' }];
+            }
+            return { bids, asks, mid, touchOnly, bb, ba, hasDepth };
+        }
+
+        function bookQuoteLadder(s) {
+            const levels = Math.max(1, parseInt(s.order_levels, 10) || 3);
+            const intents = Array.isArray(s.quote_intents) ? s.quote_intents : [];
+            const rows = [];
+            for (let lv = 1; lv <= levels; lv++) {
+                ['bid', 'ask'].forEach(side => {
+                    const row = _intentByLevel(intents, lv, side);
+                    if (!row || row.price == null) return;
+                    const price = parseFloat(row.price);
+                    if (Number.isNaN(price)) return;
+                    const planned = lv > 1 || !!row.planned;
+                    rows.push({
+                        level: lv,
+                        side,
+                        price,
+                        size: row.size_xrp != null ? parseFloat(row.size_xrp) : null,
+                        planned,
+                    });
+                });
+            }
+            return rows;
+        }
+
+        function bookOurQuoteAtPrice(price, side, ladder) {
+            if (price == null || Number.isNaN(price) || !ladder.length) return null;
+            const tol = 0.000002;
+            const hits = ladder.filter(q => q.side === side && Math.abs(q.price - price) <= tol);
+            return hits.length ? hits.sort((a, b) => a.level - b.level)[0] : null;
+        }
+
+        function bookFormatPrice(p) {
+            if (p == null || Number.isNaN(p)) return '—';
+            return p.toFixed(6);
+        }
+
+        function bookFormatSize(sz, touchOnly) {
+            if (sz == null || Number.isNaN(sz) || sz <= 0) {
+                return touchOnly ? 'touch' : '—';
+            }
+            return sz >= 100 ? sz.toFixed(1) : sz.toFixed(2);
+        }
+
+        function renderBookDepthCanvas(s) {
+            const canvas = document.getElementById('book-depth-canvas');
+            const legend = document.getElementById('book-depth-legend');
+            if (!canvas) return;
+            const wrap = canvas.parentElement;
+            const dpr = window.devicePixelRatio || 1;
+            const w = Math.max(300, wrap ? Math.floor(wrap.clientWidth - 8) : 640);
+            const h = 300;
+            canvas.width = Math.floor(w * dpr);
+            canvas.height = Math.floor(h * dpr);
+            canvas.style.width = w + 'px';
+            canvas.style.height = h + 'px';
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, w, h);
+
+            const { bids, asks, mid, touchOnly, bb, ba, hasDepth } = bookNormalizeLevels(s);
+            const prices = [];
+            bids.forEach(r => prices.push(r.price));
+            asks.forEach(r => prices.push(r.price));
+            if (mid != null) prices.push(mid);
+            if (s.as_reservation != null) {
+                const res = parseFloat(s.as_reservation);
+                if (!Number.isNaN(res)) prices.push(res);
+            }
+            if (!prices.length) {
+                ctx.fillStyle = '#64748b';
+                ctx.font = '13px system-ui, sans-serif';
+                ctx.fillText('Waiting for book data…', 16, 28);
+                if (legend) legend.innerHTML = '';
+                return;
+            }
+
+            const padT = 14;
+            const padB = 22;
+            const padL = 12;
+            const padR = 12;
+            const midX = Math.floor(w / 2);
+            const plotH = h - padT - padB;
+            const halfW = midX - padL - 8;
+            let pMin = Math.min(...prices);
+            let pMax = Math.max(...prices);
+            if (pMax - pMin < 1e-8) {
+                pMin -= 0.00005;
+                pMax += 0.00005;
+            } else {
+                const padP = (pMax - pMin) * 0.08;
+                pMin -= padP;
+                pMax += padP;
+            }
+            const yForPrice = (price) => padT + ((pMax - price) / (pMax - pMin)) * plotH;
+
+            const maxSize = Math.max(
+                1,
+                ...bids.map(r => r.size || 0),
+                ...asks.map(r => r.size || 0)
+            );
+
+            // mid vertical
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(midX, padT);
+            ctx.lineTo(midX, h - padB);
+            ctx.stroke();
+
+            const drawBar = (row, isBid) => {
+                const y = yForPrice(row.price);
+                const barH = Math.max(3, Math.min(14, plotH / Math.max(bids.length, asks.length, 8)));
+                const size = row.size > 0 ? row.size : (touchOnly ? maxSize * 0.15 : maxSize * 0.05);
+                const barW = Math.max(4, (size / maxSize) * halfW);
+                ctx.fillStyle = isBid ? 'rgba(34,197,94,0.55)' : 'rgba(248,113,113,0.55)';
+                if (isBid) {
+                    ctx.fillRect(midX - barW, y - barH / 2, barW, barH);
+                } else {
+                    ctx.fillRect(midX, y - barH / 2, barW, barH);
+                }
+            };
+
+            bids.forEach(r => drawBar(r, true));
+            asks.forEach(r => drawBar(r, false));
+
+            const ladder = bookQuoteLadder(s);
+            ladder.forEach(q => {
+                if (q.price < pMin || q.price > pMax) return;
+                const y = yForPrice(q.price);
+                const isBid = q.side === 'bid';
+                ctx.strokeStyle = q.planned ? 'rgba(147,197,253,0.85)' : '#93c5fd';
+                ctx.lineWidth = q.planned ? 1 : 1.5;
+                if (q.planned) ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                if (isBid) {
+                    ctx.moveTo(midX - halfW - 4, y);
+                    ctx.lineTo(midX - 6, y);
+                } else {
+                    ctx.moveTo(midX + 6, y);
+                    ctx.lineTo(midX + halfW + 4, y);
+                }
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = '#93c5fd';
+                ctx.font = '9px ui-monospace, monospace';
+                const label = `L${q.level}${q.planned ? '*' : ''}`;
+                ctx.fillText(label, isBid ? padL : midX + halfW + 8, y + 3);
+            });
+
+            if (s.as_reservation != null) {
+                const res = parseFloat(s.as_reservation);
+                if (!Number.isNaN(res) && res >= pMin && res <= pMax) {
+                    const ry = yForPrice(res);
+                    ctx.strokeStyle = '#fbbf24';
+                    ctx.setLineDash([5, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(padL, ry);
+                    ctx.lineTo(w - padR, ry);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            }
+
+            // price axis labels
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '10px ui-monospace, monospace';
+            ctx.fillText(bookFormatPrice(pMax), padL, padT + 8);
+            ctx.fillText(bookFormatPrice(pMin), padL, h - padB + 4);
+            if (mid != null) {
+                const my = yForPrice(mid);
+                ctx.fillStyle = '#60a5fa';
+                ctx.fillText('mid ' + bookFormatPrice(mid), midX - 36, Math.min(h - padB - 2, my - 4));
+            }
+
+            if (legend) {
+                const depthNote = hasDepth
+                    ? `${bids.length} bids · ${asks.length} asks`
+                    : 'Touch only (BBO) — full depth after ws-engine restart';
+                legend.innerHTML = `
+                    <span><span class="swatch" style="background:#22c55e"></span>Bids</span>
+                    <span><span class="swatch" style="background:#f87171"></span>Asks</span>
+                    <span><span class="swatch" style="background:#60a5fa"></span>Mid</span>
+                    <span><span class="swatch" style="background:#fbbf24"></span>Reservation</span>
+                    <span><span class="swatch" style="background:#93c5fd"></span>Our L1–L3 (* planned)</span>
+                    <span>${depthNote}</span>
+                `;
+            }
+        }
+
+        function renderBookOurLadder(s) {
+            const el = document.getElementById('book-our-ladder');
+            if (!el) return;
+            const levels = Math.max(1, parseInt(s.order_levels, 10) || 3);
+            const ladder = bookQuoteLadder(s);
+            if (!ladder.length) {
+                el.innerHTML = '<div style="color:#64748b;font-size:0.72rem;">Waiting for quote_intents…</div>';
+                return;
+            }
+            let html = '';
+            for (let lv = 1; lv <= levels; lv++) {
+                const bid = ladder.find(q => q.level === lv && q.side === 'bid');
+                const ask = ladder.find(q => q.level === lv && q.side === 'ask');
+                const planned = (bid && bid.planned) || (ask && ask.planned);
+                const status = planned
+                    ? '<span style="color:#94a3b8;font-size:0.58rem;">planned</span>'
+                    : '<span style="color:#4ade80;font-size:0.58rem;">on ledger</span>';
+                const bidTxt = bid
+                    ? `${bookFormatPrice(bid.price)} · ${bid.size != null && !Number.isNaN(bid.size) ? bid.size.toFixed(1) + ' XRP' : '—'}`
+                    : '—';
+                const askTxt = ask
+                    ? `${bookFormatPrice(ask.price)} · ${ask.size != null && !Number.isNaN(ask.size) ? ask.size.toFixed(1) + ' XRP' : '—'}`
+                    : '—';
+                html += `<div class="book-our-lv">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                        <strong>L${lv}</strong>${status}
+                    </div>
+                    <div class="metric-row" style="padding:2px 0;"><span class="label">Bid</span><span class="value good">${bidTxt}</span></div>
+                    <div class="metric-row" style="padding:2px 0;"><span class="label">Ask</span><span class="value warn">${askTxt}</span></div>
+                </div>`;
+            }
+            el.innerHTML = html;
+        }
+
+        function renderBookSplit(s) {
+            const { bids, asks, mid, touchOnly, bb, ba, hasDepth } = bookNormalizeLevels(s);
+            const ladder = bookQuoteLadder(s);
+            const maxRows = 18;
+            const bidRows = bids.slice(0, maxRows);
+            const askRows = asks.slice(0, maxRows);
+
+            const rowHtml = (rows, side) => rows.map((r) => {
+                const hit = bookOurQuoteAtPrice(r.price, side, ladder);
+                const isTouch = (side === 'bid' && bb != null && Math.abs(r.price - bb) < 1e-6)
+                    || (side === 'ask' && ba != null && Math.abs(r.price - ba) < 1e-6);
+                const cls = ['book-level-row'];
+                if (hit) cls.push(hit.planned ? 'ours-planned' : 'ours');
+                if (isTouch) cls.push('touch');
+                const tag = hit ? `<span class="book-lv-tag">L${hit.level}${hit.planned ? '*' : ''}</span>` : '';
+                return `<div class="${cls.join(' ')}"><span>${tag}${bookFormatPrice(r.price)}</span><span>${bookFormatSize(r.size, touchOnly)}</span></div>`;
+            }).join('') || '<div style="color:#64748b;">—</div>';
+
+            const bidsEl = document.getElementById('book-split-bids');
+            const asksEl = document.getElementById('book-split-asks');
+            const midEl = document.getElementById('book-split-mid');
+            if (bidsEl) bidsEl.innerHTML = rowHtml(bidRows, 'bid');
+            if (asksEl) asksEl.innerHTML = rowHtml(askRows, 'ask');
+            if (midEl) {
+                const spread = s.book_spread_pct != null ? parseFloat(s.book_spread_pct) : null;
+                const spreadTxt = spread != null && !Number.isNaN(spread) ? spread.toFixed(3) + '%' : '—';
+                midEl.innerHTML = `
+                    <div style="font-size:0.6rem;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Mid</div>
+                    <div class="mid-val">${mid != null ? bookFormatPrice(mid) : '—'}</div>
+                    <div style="font-size:0.65rem;color:#94a3b8;margin-top:8px;">Spread</div>
+                    <div style="font-weight:600;">${spreadTxt}</div>
+                    ${s.as_reservation != null ? `<div style="font-size:0.65rem;color:#fbbf24;margin-top:8px;">Res ${bookFormatPrice(parseFloat(s.as_reservation))}</div>` : ''}
+                `;
+            }
+
+            setText('book-touch-bid', bb != null ? bookFormatPrice(bb) : '—');
+            setText('book-touch-mid', mid != null ? bookFormatPrice(mid) : '—');
+            setText('book-touch-ask', ba != null ? bookFormatPrice(ba) : '—');
+            const spreadEl = document.getElementById('book-touch-spread');
+            if (spreadEl) {
+                const sp = s.book_spread_pct != null ? parseFloat(s.book_spread_pct) : null;
+                spreadEl.textContent = sp != null && !Number.isNaN(sp) ? sp.toFixed(3) + '%' : '—';
+            }
+            const ageEl = document.getElementById('book-touch-age');
+            if (ageEl) {
+                const liveAge = computeLiveWsAge(s);
+                ageEl.textContent = formatWsAge(s);
+                ageEl.style.color = wsAgeColor(liveAge);
+            }
+
+            setText('book-our-res', s.as_reservation != null ? bookFormatPrice(parseFloat(s.as_reservation)) : '—');
+            const resDeltaEl = document.getElementById('book-our-res-delta');
+            if (resDeltaEl) {
+                const d = s.reservation_to_bbo_delta_bps;
+                if (d != null && !Number.isNaN(parseFloat(d))) {
+                    const bps = parseFloat(d);
+                    const sign = bps >= 0 ? '+' : '';
+                    const side = s.inside_l1 === true ? 'inside ' : (s.inside_l1 === false ? 'outside ' : '');
+                    resDeltaEl.textContent = `${side}${sign}${bps.toFixed(1)} bps`;
+                    resDeltaEl.className = 'value ' + (s.inside_l1 ? 'good' : 'warn');
+                } else {
+                    resDeltaEl.textContent = '—';
+                    resDeltaEl.className = 'value';
+                }
+            }
+            renderBookOurLadder(s);
+            setText(
+                'book-depth-levels',
+                hasDepth ? `${bids.length} / ${asks.length}` : 'BBO only'
+            );
+
+            const hint = document.getElementById('book-depth-hint');
+            if (hint) {
+                const lv = Math.max(1, parseInt(s.order_levels, 10) || 3);
+                hint.textContent = hasDepth
+                    ? `Live WS ladder: ${bids.length} bids · ${asks.length} asks. Our L1–L${lv} from quote_intents (* = planned until multi-level sync).`
+                    : `Touch (BBO) + our L1–L${lv} ladder (* = L2/L3 planned). Full CLOB depth on next ws-engine restart.`;
+            }
+        }
+
+        function renderBook(s) {
+            if (!s) return;
+            renderBookDepthCanvas(s);
+            renderBookSplit(s);
+        }
+
         function renderMetrics(s) {
             const pm = s.performance_metrics || {};
             const gradesEl = document.getElementById('metrics-grades');
@@ -2488,13 +3023,51 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const act = pm.activation || {};
             const tierEl = document.getElementById('metrics-g6-tier');
             const tier = act.tier || 'unknown';
+            const cardEl = document.getElementById('metrics-g6-card');
+            if (cardEl) {
+                cardEl.classList.remove('g6-hold', 'g6-halted', 'g6-watch', 'g6-good');
+                if (tier === 'hold') cardEl.classList.add('g6-hold');
+                else if (tier === 'halted') cardEl.classList.add('g6-halted');
+                else if (tier === 'pilot_watch') cardEl.classList.add('g6-watch');
+                else if (tier === 'active' || tier === 'scale_ready') cardEl.classList.add('g6-good');
+            }
             if (tierEl) {
                 tierEl.textContent = tier.replace(/_/g, ' ');
-                tierEl.className = 'grade-pill grade-' + (tier === 'active' || tier === 'scale_ready' ? 'good' : (tier === 'hold' || tier === 'halted' ? 'attention' : 'neutral'));
+                tierEl.className = 'grade-pill grade-' + g6TierPillClass(tier);
             }
             const sumEl = document.getElementById('metrics-g6-summary');
             if (sumEl) {
-                sumEl.textContent = act.summary || '—';
+                sumEl.textContent = act.summary || (pm.grades && pm.grades.length ? '—' : 'Waiting for activation grade…');
+                if (tier === 'hold' || tier === 'halted') {
+                    sumEl.style.color = '#fca5a5';
+                } else if (tier === 'pilot_watch') {
+                    sumEl.style.color = '#fbbf24';
+                } else {
+                    sumEl.style.color = '#94a3b8';
+                }
+            }
+            const attnEl = document.getElementById('metrics-g6-attention');
+            if (attnEl) {
+                const attentionOn = act.attention_on || (pm.grades || []).filter(g => g.grade === 'attention').map(g => g.label || g.id);
+                if (tier === 'hold' && attentionOn.length) {
+                    attnEl.style.display = 'block';
+                    attnEl.textContent = 'Attention on: ' + attentionOn.join(' · ');
+                } else if (tier === 'pilot_watch' && attentionOn.length) {
+                    attnEl.style.display = 'block';
+                    attnEl.textContent = 'Watching: ' + attentionOn.join(' · ');
+                } else {
+                    attnEl.style.display = 'none';
+                    attnEl.textContent = '';
+                }
+            }
+            const metaEl = document.getElementById('metrics-g6-meta');
+            if (metaEl) {
+                const fills = act.ws_fills != null ? act.ws_fills : cap.ws_fills;
+                const gateTxt = act.gate_pass === false ? 'G6 gate: FAIL' : (act.gate_pass === true ? 'G6 gate: PASS' : '');
+                const parts = [];
+                if (fills != null) parts.push(`${fills} WS fills (CSV)`);
+                if (gateTxt) parts.push(gateTxt);
+                metaEl.textContent = parts.join(' · ');
             }
             setText('metrics-ws-fills', cap.ws_fills != null ? String(cap.ws_fills) : '—');
             setText('metrics-total-cap', cap.total_capture_xrp != null ? (cap.total_capture_xrp >= 0 ? '+' : '') + cap.total_capture_xrp + ' XRP' : '—');

@@ -88,3 +88,13 @@ def enrich_runtime_wealth(runtime: Dict[str, Any]) -> Dict[str, Any]:
         if val is not None:
             runtime[key] = val
     return runtime
+
+
+def wealth_hud_payload(runtime: Mapping[str, Any]) -> Dict[str, Any]:
+    """Fields for /state JSON — computed metrics plus session baselines for UI fallbacks."""
+    out = {k: v for k, v in compute_wealth_metrics(runtime).items() if v is not None}
+    for key in ("session_baseline_xrp", "session_baseline_rlusd", "session_baseline_mid"):
+        val = _f(runtime.get(key))
+        if val is not None:
+            out[key] = val
+    return out
