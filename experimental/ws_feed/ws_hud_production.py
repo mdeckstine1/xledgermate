@@ -255,6 +255,13 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
             # best-effort only
             pass
 
+    try:
+        from core.wealth_metrics import enrich_runtime_wealth
+
+        enrich_runtime_wealth(rt)
+    except Exception:
+        pass
+
     return rt
 
 
