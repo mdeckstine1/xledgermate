@@ -340,7 +340,7 @@ Post-deploy + 60-fill checkpoint: `scripts/post_deploy_snapshot.py` + `live_acti
 |------|-----|
 | **This file** | Critical path + TODO |
 | [`PURE_AS_DEVELOPMENT_LOG.md`](PURE_AS_DEVELOPMENT_LOG.md) | **Posterity** — how we got here, soak learnings, decisions |
-| [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) | Tester + HUD + Grok |
+| [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) | Tester + HUD + Grok (tabs, G6, Book, wealth) |
 | [`PHASE_E_VPS_RUNBOOK.md`](PHASE_E_VPS_RUNBOOK.md) | VPS swap ladder |
 | [`E2_BRANCH_DISCIPLINE.md`](E2_BRANCH_DISCIPLINE.md) | Branch roles |
 | [`../experimental/ws_feed/WS_HANDOFF.md`](../experimental/ws_feed/WS_HANDOFF.md) | Architecture |

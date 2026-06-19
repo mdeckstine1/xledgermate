@@ -2,7 +2,7 @@
 
 *Production path (`Ashigaru`). Pure A-S + WS book feed + on-chain competitor intelligence + advisory Grok.*
 
-**Status (as of 2026-06-10, post cash addition):** Functional + actively running in `experimental/ws_feed/`. Real Grok/xAI competitor analysis via the HUD "Analyze with AI" button is live (grok-3, model fetch dropdown working). Pure A-S + WS BookFeed + competitor pressure (0.41 NEUTRAL in recent run) + 5 on-ledger competitors tracked (including heavy one-sided bidder). HUD (http://127.0.0.1:8765) serving with Intelligence tab re-laid out (AI analysis left, top scraped right). Unlimited runs supported (`--seconds 0`). Cash added to the bot account (portfolio ~252 XRP-equiv reflected in runtime_state). Sacred long-run (HTTP poll + hard gate on VPS) untouched and remains the data generator / validation corpus. All work here is for post-Gate 2 wholesale server replace. AI / Grok is **strictly advisory** — never touches A-S reservation price or quoting decisions.
+**Status (as of 2026-06-18, VPS soak):** Production **`ws-engine`** + **HUD `:8765`** on Ashigaru branch. Pure A-S + WS BookFeed + G2/G4/G7 + competitor/peer intel. HUD tabs: **Live**, **Inventory**, **Intelligence**, **Metrics**, **Book**, **Reports**, **Credentials**, **Config**. RLUSD-stable **wealth sidebar** (session Δ, skim/spot/rebal). **Book** tab: depth chart + L1–L3 ladder (L2/L3 planned until ledger sync). **Metrics**: G3 §7 grades + **G6 activation** tier (`hold` when spread capture needs attention). Grok analyze live when configured. Sacred HTTP-poll long-run untouched (validation corpus). AI / Grok is **strictly advisory** — never overrides A-S reservation.
 
 **Critical path:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) — task checklist. **Run commands:** `groks input/CURSOR_HANDOFF_ROADMAP.md`. Update checkboxes + FOR_AI milestones on progress.
 
@@ -35,12 +35,19 @@ cd xledgermate
 python -m experimental.ws_feed.live_pure_as_tester --serve-hud --seconds 600 --verbose --profile tight_spread
 ```
 
-- Open http://127.0.0.1:8765 (hard refresh after any HTML edit).
-- **Live tab**: WS book + A-S reservation (with bid/ask margins), optimal spread, gamma/kappa, would_quote (pure math), suggested levels, rich decision note (wiring strings + "PURE A-S (built-in protection)"), recent decisions.
-- **Config tab**: Bot wallet balances, L1-L3 commitments (tied to bot), quoting parameters (profile selector + explanatory text moved here from old sidebar), **new Intelligence APIs card** (provider, key, model, enabled — for Grok/xAI competitor address trending).
-- **Inventory tab**: Bot address (copy + real QR via server), live XRP/RLUSD balances (demo deposit/withdraw buttons that update displayed inventory for testing), L1-L3, target ratio.
-- **Intelligence tab** (new): On-chain competitor scraping (active makers, observed market spread, pressure score (0=defensive → opportunity to scrape harder), total depth, top profiles with spreads/activity/sides + domain if set on-ledger). Aggregates feed A-S inputs (pressure as vol/liquidity proxy). "Skim harder" playbook. AI competitor address analyzer (demo button; real Grok when configured).
-- **Credentials tab**: Demo secrets (never real in this surface).
+- Open http://127.0.0.1:8765 (hard refresh after any HTML edit: **Ctrl+Shift+R**).
+- **Live tab**: WS book + A-S reservation, optimal spread, gamma/kappa, `would_quote`, G2/G7 posture, quote ladder (L1–L3), session fills / skim, soak strip (toxic@30s, markout, G6 tier).
+- **Inventory tab**: Bot address (copy + QR), live XRP/RLUSD balances, **Wallet Δ** (portfolio change since session start — includes deposits), target ratio.
+- **Intelligence tab**: Competitor + peer lane scrape, pressure scores, Grok analyze, advisory signals. JSONL: `logs/intel_decisions.jsonl`.
+- **Metrics tab**: Phase E §7 grades (spread capture primary; inventory steering). **G6 activation** card — tier (`warming_up` → `pilot` → `active` → `scale_ready`; **`hold`** when spread capture is attention with ≥8 fills; **`halted`** on kill). Red hold card lists attention triggers + gate FAIL. Capture summary + recent intel tail.
+- **Book tab**: Depth chart (bids left / asks right of mid), split ladder, touch, **our L1–L3** from `quote_intents` (L2/L3 dashed = planned until multi-level ledger sync). Full CLOB depth after ws-engine exports `book_bids`/`book_asks`.
+- **Reports tab**: Soak-safe read-only reports from `logs/` (G6 activation, soak dashboard, fill age, CLOB/AMM monitor, …).
+- **Config tab**: Quoting parameters, Intelligence APIs (Grok key/model), Telegram.
+- **Credentials tab**: Bot wallet secrets (VPS production).
+
+**Wealth sidebar (all pages):** RLUSD-stable portfolio, session Δ, skim / spot / rebal decomposition, XRP @ mid, share %. Distinct from **Skim Δ** on soak strip (engine `session_spread_capture_xrp` — trading edge, not deposits).
+
+**G6 activation (Metrics + soak strip):** Grades from CSV fills + runtime. Spread capture **attention** (e.g. high positive % but &lt;8 bps avg) → tier **`hold`**, gate **FAIL** — keep size conservative; review G2/G4 brakes. CLI: `python -m experimental.ws_feed.live_activation_grading --gate`.
 
 The tester also writes `logs/ws_as_demo_runtime.json` (frequent + at end) so you can load the exact same data into the main Streamlit GUI for deeper side-by-side views (sidebar, tickers, full "Why these quotes?" etc.).
 

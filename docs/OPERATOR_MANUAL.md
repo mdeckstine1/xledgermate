@@ -1,8 +1,8 @@
 # XLedgerMate — Plain-English Operator Manual
 
-*Version 1.4.1 · For humans who remember when “save” meant a floppy disk*
+*Version 1.4.2 · For humans who remember when “save” meant a floppy disk*
 
-> **Production (VPS / live MM, v2.1+):** Market making runs as **`ws-engine`** with the operator **HUD at port 8765** (`http://YOUR_VPS:8765`). Runtime state lives in `logs/runtime_state.json`. The Streamlit panel at **:8501** below is the **legacy lab** UI — still useful for replay analysis, not the live soak path. See [`WS_ONLY_MIGRATION.md`](WS_ONLY_MIGRATION.md).
+> **Production (VPS / live MM, v2.1+):** Market making runs as **`ws-engine`** with the operator **HUD at port 8765** (`http://YOUR_VPS:8765`). Runtime state lives in `logs/runtime_state.json`. **WS HUD** is the live operator surface (Live, Inventory, Intelligence, Metrics, Book, Reports). The Streamlit panel at **:8501** below is the **legacy lab** UI — still useful for replay analysis, not the live soak path. See [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) and [`WS_ONLY_MIGRATION.md`](WS_ONLY_MIGRATION.md).
 
 This guide assumes you are **not** a programmer. You have a **Bot Account** (a separate XRPL wallet just for the bot), some test XRP, and the patience to read one page at a time.
 
@@ -36,7 +36,26 @@ For the legacy Streamlit lab only, use `python main.py --mode gui` and open **ht
 
 ---
 
-## Scrolling ticker (above the command bar)
+## WS HUD (production — port 8765)
+
+Use this surface on VPS or when running `live_pure_as_tester --serve-hud`. Hard refresh after HUD updates (**Ctrl+Shift+R**).
+
+| Tab | What you see |
+|-----|----------------|
+| **Live** | Book, reservation, would-quote, G2/G7, quote ladder, session fills, soak strip |
+| **Inventory** | Balances, **Wallet Δ** (all portfolio change — includes deposits) |
+| **Intelligence** | Competitors, peer lane, Grok analyze |
+| **Metrics** | §7 grades + **G6 activation** (tier, hold/FAIL, attention list) |
+| **Book** | Depth chart, our L1–L3 ladder (L2/L3 planned until ledger sync) |
+| **Reports** | Read-only soak reports from `logs/` |
+
+**Left sidebar — wealth (RLUSD-stable):** Session Δ, skim / spot / rebal split, XRP @ mid. **Skim Δ** on the soak strip is **trading spread capture only** (engine counter) — not the same as Wallet Δ or a deposit.
+
+**G6 `hold`:** On Metrics, red tier means spread capture needs attention (often high win rate but low bps/fill). Gate FAIL — stay conservative; no automatic size-up. See [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md).
+
+**Deploy during soak:** HUD-only changes restart **`xledgermate-ws-hud`** only — leave **`xledgermate`** (ws-engine) running unless planned.
+
+---
 
 When the engine is running, a **marquee** under the logo shows the latest status in plain English:
 
@@ -289,7 +308,7 @@ Leave “notify each cycle” off unless you enjoy constant buzzing.
 
 ## Version & history
 
-- Current version: **1.4.1** (see `VERSION` file).
+- Current version: **1.4.2** (see `VERSION` file). WS HUD operator detail: [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md).
 - Code audit notes (quoting conflicts resolved): **[`AUDIT_REPORT.md`](AUDIT_REPORT.md)**.
 - What changed release-by-release: **`CHANGELOG.md`** in the project folder.
 - Roadmap to “great” MM (checklist): **[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)**.

@@ -266,6 +266,8 @@ The engine now **refuses** that mid for marking, drawdown, and fill capture. It 
 
 **Growing holdings (long-term goal):** The bot should compound **total XRP-equivalent** through **positive balance PnL** sessions, not through inventory luck or bad marks. **Gate 1 is complete** (plumbing validated on mainnet); Gate 2 uses **`tight_spread`** with the same ~250 XRP wallet. Treat toxic spikes on few fills as noise; scoreboard = **balance Δ + capture** over stable runs.
 
+**G6 activation (WS HUD Metrics):** Live soak grades spread capture, toxicity, drawdown, inventory, peer lane. Tier **`hold`** when spread capture is weak (e.g. many positive fills but &lt;8 bps average) — gate FAIL, conservative size. Distinct from toxic refresh pause or kill switch. See [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) and [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md).
+
 ### Example — edge guard
 
 The visible book spread is **0.08%**. Your profile wants **~0.12%** edge after fees. The bot still places quotes but at **~half normal size**. Decisions mention **edge guard**. You earn less per fill but bleed slower when the book is too tight.
