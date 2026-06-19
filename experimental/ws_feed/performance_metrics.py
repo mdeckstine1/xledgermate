@@ -315,6 +315,7 @@ def build_performance_metrics(
         "e15_fills_met": n_fills >= 50,
         "activation": activation,
         "metrics_scope": scope,
+        "g6_version": activation.get("g6_version"),
     }
     if scope == "session":
         out["capture_cumulative"] = cap_cumulative

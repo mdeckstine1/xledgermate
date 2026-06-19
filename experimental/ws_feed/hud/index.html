@@ -687,7 +687,7 @@
                 <div class="soak-pill neutral" id="soak-fills-pill"><div class="soak-label">Fills</div><div class="soak-value" id="soak-fills">—</div></div>
                 <div class="soak-pill neutral" id="soak-presence-pill"><div class="soak-label">Presence</div><div class="soak-value" id="soak-presence">—</div></div>
                 <div class="soak-pill neutral" id="soak-book-pill"><div class="soak-label">Book age</div><div class="soak-value" id="soak-book">—</div></div>
-                <div class="soak-pill neutral" id="soak-g6-pill"><div class="soak-label">G6</div><div class="soak-value" id="soak-g6" style="font-size:0.72rem;">—</div></div>
+                <div class="soak-pill neutral" id="soak-g6-pill"><div class="soak-label" id="soak-g6-label">G6</div><div class="soak-value" id="soak-g6" style="font-size:0.72rem;">—</div></div>
                 <div class="soak-pill neutral" id="soak-status-pill"><div class="soak-label">Status</div><div class="soak-value" id="soak-status" style="font-size:0.72rem;">—</div></div>
             </div>
         </div>
@@ -912,7 +912,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
                 <div id="metrics-g6-card" class="card full-width metrics-g6-card" style="margin-top:8px; margin-bottom:12px;">
                     <div class="metric-row">
-                        <span class="label">G6 activation</span>
+                        <span class="label">G6 activation <span id="metrics-g6-version" style="font-size:0.68rem; color:#64748b; font-weight:normal;">—</span></span>
                         <span id="metrics-g6-tier" class="grade-pill grade-unknown">—</span>
                     </div>
                     <div id="metrics-g6-summary" style="font-size:0.75rem; color:#94a3b8; margin-top:6px;">Waiting for activation grade…</div>
@@ -1905,6 +1905,25 @@ The A-S strategy itself decides presence via reservation price being inside the 
             el.classList.add(kind || 'neutral');
         }
 
+        function g6VersionShort(v) {
+            if (v == null || v === '') return '';
+            const s = String(v).replace(/^v/i, '');
+            const parts = s.split('.');
+            if (parts.length >= 2) return 'v' + parts[0] + '.' + parts[1];
+            return 'v' + s;
+        }
+
+        function resolveG6Fields(s) {
+            const pm = (s && s.performance_metrics) || {};
+            const act = pm.activation || {};
+            return {
+                version: (s && s.g6_version) || act.g6_version || pm.g6_version || '',
+                tier: (s && s.g6_activation_tier) || act.tier || '',
+                gatePass: (s && s.g6_gate_pass != null) ? s.g6_gate_pass : act.gate_pass,
+                summary: (s && s.g6_activation_summary) || act.summary || '',
+            };
+        }
+
         function g6TierPillClass(tier) {
             const t = String(tier || 'unknown');
             if (t === 'active' || t === 'scale_ready' || t === 'pilot') return 'good';
@@ -2078,8 +2097,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const presence = (s.as_presence_pct != null) ? parseFloat(s.as_presence_pct) : null;
             const liveAge = computeLiveWsAge(s);
             const pm = s.performance_metrics || {};
-            const act = pm.activation || {};
-            const g6Tier = act.tier || '—';
+            const g6 = resolveG6Fields(s);
+            const g6Ver = g6VersionShort(g6.version);
             const kill = !!(s.kill_switch_active);
             const qCopy = quoteStatusCopy(s);
 
@@ -2131,8 +2150,12 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 soakPillClass(document.getElementById('soak-book-pill'), 'neutral');
             }
 
-            setText('soak-g6', String(g6Tier).replace(/_/g, ' '));
-            soakPillClass(document.getElementById('soak-g6-pill'), g6SoakPillClass(g6Tier));
+            setText('soak-g6-label', g6Ver ? ('G6 ' + g6Ver) : 'G6');
+            const tierDisplay = g6.tier
+                ? String(g6.tier).replace(/_/g, ' ')
+                : (g6.version ? '…' : 'off');
+            setText('soak-g6', tierDisplay);
+            soakPillClass(document.getElementById('soak-g6-pill'), g6SoakPillClass(g6.tier || ''));
 
             let statusTxt = kill ? 'KILL' : (qCopy.good ? 'LIVE' : 'PAUSE');
             setText('soak-status', statusTxt);
@@ -3172,9 +3195,15 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 }
             }
             const cap = pm.capture || {};
+            const g6 = resolveG6Fields(s);
             const act = pm.activation || {};
             const tierEl = document.getElementById('metrics-g6-tier');
-            const tier = act.tier || 'unknown';
+            const tier = g6.tier || act.tier || 'unknown';
+            const verEl = document.getElementById('metrics-g6-version');
+            if (verEl) {
+                const ver = g6VersionShort(g6.version);
+                verEl.textContent = ver ? ('(' + ver + ')') : '(version unknown)';
+            }
             const cardEl = document.getElementById('metrics-g6-card');
             if (cardEl) {
                 cardEl.classList.remove('g6-hold', 'g6-halted', 'g6-watch', 'g6-good');
@@ -3189,7 +3218,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
             const sumEl = document.getElementById('metrics-g6-summary');
             if (sumEl) {
-                sumEl.textContent = act.summary || (pm.grades && pm.grades.length ? '—' : 'Waiting for activation grade…');
+                sumEl.textContent = g6.summary || act.summary || (pm.grades && pm.grades.length ? '—' : 'Waiting for activation grade…');
                 if (tier === 'hold' || tier === 'halted') {
                     sumEl.style.color = '#fca5a5';
                 } else if (tier === 'pilot_watch' || tier === 'thin_edge') {
@@ -3219,8 +3248,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
             if (metaEl) {
                 const fills = act.ws_fills != null ? act.ws_fills : cap.ws_fills;
                 const scope = pm.metrics_scope || (act.scope === 'session' ? 'session' : 'cumulative');
-                const gateTxt = act.gate_pass === false ? 'G6 gate: FAIL' : (act.gate_pass === true ? 'G6 gate: PASS' : '');
+                const gatePass = g6.gatePass;
+                const gateTxt = gatePass === false ? 'G6 gate: FAIL' : (gatePass === true ? 'G6 gate: PASS' : '');
                 const parts = [];
+                const ver = g6VersionShort(g6.version);
+                if (ver) parts.push(ver);
                 if (fills != null) {
                     parts.push(scope === 'session'
                         ? `${fills} session fills (since boot)`

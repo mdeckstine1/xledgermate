@@ -47,6 +47,7 @@ from experimental.ws_feed.hud_intel_support import (
     shadow_peer_lane_hud_fields,
 )
 
+from experimental.ws_feed.live_activation_grading import G6_VERSION
 from experimental.ws_feed.live_pure_as_tester import _hud_market_payload
 
 from experimental.ws_feed.performance_metrics import build_performance_metrics
@@ -378,6 +379,11 @@ class ProductionHudMirror:
         elif not flags.hud_metrics:
             self._last_metrics = {}
         enriched["performance_metrics"] = self._last_metrics
+        act = (self._last_metrics or {}).get("activation") or {}
+        enriched["g6_version"] = act.get("g6_version") or G6_VERSION
+        enriched["g6_activation_tier"] = act.get("tier")
+        enriched["g6_gate_pass"] = act.get("gate_pass")
+        enriched["g6_activation_summary"] = act.get("summary")
 
         now_amm = time.monotonic()
         if now_amm - self._last_amm_at >= 60.0:

@@ -4,7 +4,7 @@
 **Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live priority stack; this file is the narrative + archaeology.
 
 **Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.22  
-**Last updated:** 2026-06-20
+**Last updated:** 2026-06-20 (acquisition pivot A1→A2→A3)
 
 ---
 
@@ -342,7 +342,13 @@ Operator consensus: stop grading churn; fix false **hold** on thin join-aligned 
 
 **Shipped v1.1.0:** `thin_edge` grade (5–8 bps, ≥70% pos) → tier **`thin_edge`**, gate PASS (yellow); `hold_min_fills=15`; hold = bad economics only (bps&lt;0, pos&lt;50%, or bps&lt;3 and pos&lt;70%); zero-capture neutral for pos%. HUD tier pill + soak strip. **No engine change** — restart `xledgermate-ws-hud` only.
 
-**Next:** one ~50-fill calibration soak on v1.1 labels, then **acquisition phase** — optimize fill acquisition on empty peer band (presence, size, join), not HUD cosmetics. G6 Tier 2/3, G8, peer intel remain deferred.
+**Next:** **A1 SELL-side bleed** (engine) while calibration soak runs — hold expected until economics improve.
+
+### Acquisition pivot (2026-06-20)
+
+Build order locked: **A1 SELL bleed → A2 presence/fill rate → A3 stale quote**. G6 v1.1 shipped; **hold on live session is expected** when session bps &lt;3 and pos &lt;70% (#2 pattern). `thin_edge` requires 5–8 bps at ≥70% pos — fixing SELL bleed is how hold clears, not more grading.
+
+**A1 diagnose:** `scripts/_session_diag_quick.py` (by-side capture), `fill_quote_age_report.py` (ask age at fill).
 
 ---
 

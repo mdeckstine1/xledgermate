@@ -16,12 +16,14 @@ Ordered by what live soaks proved matters. **Do not skip tiers** — finish P0 b
 
 | Pri | Item | Soak signal | Status |
 |-----|------|-------------|--------|
-| **P2** | **G6 v1.1** (HUD-only) | M6 false hold; align gate with macro ops | **[x] shipped** — one 50-fill calibration soak |
-| **P2** | **Acquisition phase** | Solo peer band — optimize fill acquisition, not grading optics | **primary build focus** |
-| **P2** | Next segment (post v1.1 HUD) | ~50 fills on v1.1 labels; then pivot to acquisition work | after HUD deploy |
+| **P2** | **G6 v1.1** (HUD-only) | M6 false hold; align gate with macro ops | **[x] shipped** — calibration soak ongoing |
+| **P1** | **A1 — SELL-side bleed** | #2: BUY +0.067 / SELL −0.043 XRP skim; drags bps → **hold** | **[ ] next engine build** — [spec](#acquisition-build-plan) |
+| **P1** | **A2 — presence / fill rate** | Solo whale book — win by being at touch | after A1 baseline |
+| **P1** | **A3 — stale-quote tail** | #2 fill-age 127s–4876s; toxic stale asks | after A2 |
+| **P2** | G6 calibration soak | ~50 fills on v1.1 labels (engine unchanged) | ongoing — **hold expected** until A1 |
 | **P3** | **G8** spot trend posture | #1 spot pain; #2 spot helped — **defer** | spec only — [stance](#spot--inventory-operator-stance) |
 | **P3** | cancel/fill tune | **2.96** unchanged vs M6 — engine window | deferred |
-| **P3** | Stale-quote guard | Fill-age tail in #2 (127s–4876s) | watch; engine if repeats |
+| **P3** | Stale-quote guard | Folded into **A3** after A1/A2 | see [A3](#a3-stale-quote-tail) |
 | **P3** | G6 Tier 2 (rolling window) | Sticky after bad early fills | after one v1.1 soak |
 | **P3** | G6→G2/G7 coupling (Tier 3) | Hold advisory-only today | deferred until hold is rare |
 | **P4** | L2/L3 ledger sync | Book tab L1 only | post-soak |
@@ -70,18 +72,60 @@ We are **not** building a spot-prediction or directional trading bot. Spot moves
 
 **Next:** Deploy G6 v1.1 HUD → ~50-fill calibration soak → **acquisition phase** build (solo whale book).
 
-### Acquisition phase (primary — post G6 v1.1)
+### Acquisition build plan (engine — ordered)
 
-Peer Cal proved **0 peers in band** (live ~18 XRP, E3 shadow ~424 XRP). We are the only MM at touch on a whale book — **optimize acquisition** (fill rate, quote presence, size, join economics), not grading optics or peer-lane automation.
+**Why G6 still shows `hold`:** v1.1 is working as designed. Segment #2 economics (**1.28 bps**, **67% pos**, n≥15) meet the **bad-economics hold** rule (bps&lt;3 and pos&lt;70%). `thin_edge` (yellow, gate pass) only appears when capture is **join-aligned** (≥70% pos, **5–8 bps**). Weak overall bps driven by **SELL bleed** → hold stays red until **A1** improves economics — not a grading bug.
 
-| Focus | Rationale |
-|-------|-----------|
-| Fill acquisition / presence | Solo band — no queue war; win by being there and sized right |
-| Join + skim on thin book | G7 5 bps floor is the economic reality; G6 `thin_edge` labels it, does not fix it |
-| G8 / peer intel | **Deferred** — no peers to model |
-| G6 Tier 2+ | **Deferred** — one calibration soak then stop grading churn |
+**Operator check:** `python scripts/_session_diag_quick.py` → `by side:` BUY vs SELL capture. HUD Metrics should show `g6_version` **1.1.0** in activation block after HUD restart.
 
-**Discipline:** G6 v1.1 is **last major grading change** for now. Engine work serves acquisition, not HUD cosmetics.
+| Order | Build | Segment signal | Target |
+|-------|-------|----------------|--------|
+| **A1** | SELL-side bleed | #2 SELL −0.043 vs BUY +0.067 XRP | Flatten side skew; lift session bps off hold band |
+| **A2** | Presence / fill rate | Solo band, 0 peers | Raise `as_presence_pct` and fills/hour without more toxic |
+| **A3** | Stale-quote tail | 127s–4876s ask fills in #2 | Cap quote age at fill; cut stale-toxic SELL |
+
+#### A1 — SELL-side bleed (next)
+
+**Diagnose (no engine restart):** `scripts/_session_diag_quick.py`, `scripts/fill_quote_age_report.py` — SELL capture, quote_age on ask fills, worst-8 list.
+
+**Working hypotheses (#2 recovery tape):**
+
+1. **Ask join + rising mid** — G7 puts ask on **join** (5 bps) when xrp_heavy or balanced; mid drifts up → SELL capture measured vs stale `mid_at_quote` understates or realizes adverse.
+2. **Inventory posture asymmetry** — xrp_heavy → ask join / bid passive → more SELL volume at thin edge during spot-led recovery.
+3. **Toxic ask fills** — toxic@30s ~29%; markout@30s negative; SELL-heavy in worst-8.
+4. **Stale ask overlap** — long quote_age on SELL (feeds **A3**).
+
+**Candidate levers (A-S sacred — execution envelope only):**
+
+| Lever | Mechanism | Risk |
+|-------|-----------|------|
+| **G7 ask backoff** when sell-toxic elevated | Widen ask join → passive under G2 cautious + adverse markout | Lower SELL fill rate (trade to A2) |
+| **Side-aware G2 spread_mult** | Apply brake asymmetrically on ask when recent SELL markout bad | Complexity; defer if G7 ask widen enough |
+| **Pause asks** brief on rlusd_heavy + rising mid | Inventory policy already pauses sides — tighten trigger for ask when skew says “don’t sell cheap” | Miss solo-book SELL opportunities |
+| **Fill economics audit** | Confirm `estimate_spread_capture_xrp` SELL vs balance-delta price | Measurement only |
+
+**Done when:** Session `by side` SELL capture ≥ 0 or within 50% of BUY; session bps ≥ 3 with pos ≥ 70% → exit hold band (or `thin_edge` if 5–8 bps).
+
+**Segment end deploy** — engine restart required.
+
+#### A2 — presence / fill rate
+
+Solo whale book — no peer queue war. After A1 stops bleeding on asks:
+
+- Track `as_presence_pct`, `would_quote_pct`, fills/hour (soak strip).
+- Levers: size ladder (G4 neutral today), join vs passive balance when alone at touch, cancel/fill window only if presence already high.
+- **Done when:** Sustained presence ≥75% with toxic@30s ≤30% and improving fill rate.
+
+#### A3 — stale-quote tail
+
+#1 61s stale bid; #2 127s–4876s tail (often **ask**). `OfferAgeTracker` + M6 logs exist; no auto-cancel today.
+
+- Levers: max quote age refresh/cancel (engine), tie to `WS_MID_MOVE_REFRESH_BPS` (8 bps today), ask-side priority (SELL toxic).
+- **Done when:** fill_age p95 &lt; 60s; stale fills no longer in worst-8.
+
+**Discipline:** No G6 Tier 2/3, no G8, no peer intel until A1–A3 addressed or operator reprioritizes.
+
+### Acquisition phase (context)
 
 ### P0 — segment #2 (archived)
 
@@ -100,7 +144,10 @@ Peer Cal proved **0 peers in band** (live ~18 XRP, E3 shadow ~424 XRP). We are t
 | Finding | Segments | Drives |
 |---------|----------|--------|
 | G6 **hold** on good pos% + ~5 bps | M6 only | **P2 G6 v1.1** (M6-style false hold) |
-| G6 **hold** on weak economics | #2 (1.28 bps, 67%) | v1.1 still **hold** — real signal |
+| SELL-side skim bleed | #2 | **A1** (next engine) |
+| Weak session bps → G6 hold | #2 ongoing | **A1** fixes economics; hold is correct until then |
+| Stale-quote fill-age tail | #1, #2 | **A3** |
+| Low presence opportunity | solo book | **A2** |
 | Spot drop; wealth −2.6 RLUSD mostly spot | #1 | P1 review → maybe P3 G8 (not committed) |
 | G2 neutral while skim negative | #1 | P3 G6→G2 (deferred) |
 | 61s stale quote fill | #1 | P3 stale guard if repeats |
