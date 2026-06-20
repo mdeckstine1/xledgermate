@@ -249,7 +249,7 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 
 - **Purpose strip** on Live health bar: **Purpose PASS/FAIL**, **`at_edge`**, **buy cap**, **sell cap**, **Δ XRP**, **skim** — primary pass/fail without scripts.
 - **`purpose_hud.py`** — computes from `fill_quote_age.jsonl` + runtime baselines (same as acquisition report).
-- **Deploy:** `git pull` → `systemctl restart xledgermate-ws-hud` only — **no engine restart**.
+- **Deploy:** [x] HUD restart 2026-06-20 ~23:35 UTC (`325d556`) — engine **not** restarted; Segment #6 continues.
 - **Done when:** operator can glance HUD and see purpose gate without running scripts. [x]
 
 #### Segment #4 — active (v2.1.37)
