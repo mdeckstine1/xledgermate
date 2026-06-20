@@ -135,7 +135,23 @@ def test_build_cycle_intel_record_acquisition_fields() -> None:
     assert row["worst_vs_touch_bps"] == 12.5
 
 
-def test_format_acquisition_report() -> None:
+def test_hud_market_payload_includes_solo_acquisition_fields() -> None:
+    from experimental.ws_feed.live_pure_as_tester import _hud_market_payload
+
+    payload = _hud_market_payload(
+        {
+            "mid_price": 1.15,
+            "g7_solo_acquisition": True,
+            "peer_lane_empty": True,
+            "g4_grade": "solo_acquire",
+            "g7_scaler_label": "bid join 5.0bps · ask join 5.0bps",
+        },
+        ws_as_version="2.1.31",
+    )
+    assert payload["g7_solo_acquisition"] is True
+    assert payload["peer_lane_empty"] is True
+    assert payload["g4_grade"] == "solo_acquire"
+
     metrics = {
         "xrp_per_rlusd_spent": 0.87,
         "buy_cost_vs_mid_bps": 4.2,

@@ -707,6 +707,7 @@
                 <div class="soak-pill neutral" id="soak-presence-pill"><div class="soak-label">Presence</div><div class="soak-value" id="soak-presence">—</div></div>
                 <div class="soak-pill neutral" id="soak-book-pill"><div class="soak-label">Book age</div><div class="soak-value" id="soak-book">—</div></div>
                 <div class="soak-pill neutral" id="soak-g6-pill"><div class="soak-label" id="soak-g6-label">G6</div><div class="soak-value" id="soak-g6" style="font-size:0.72rem;">—</div></div>
+                <div class="soak-pill neutral" id="soak-solo-pill"><div class="soak-label">Solo acq</div><div class="soak-value" id="soak-solo" style="font-size:0.72rem;">—</div></div>
                 <div class="soak-pill neutral" id="soak-status-pill"><div class="soak-label">Status</div><div class="soak-value" id="soak-status" style="font-size:0.72rem;">—</div></div>
             </div>
         </div>
@@ -768,6 +769,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="metric-row"><span class="label">Markout @30s</span> <span id="session-markout" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Toxic ratio @30s</span> <span id="session-toxic" class="value">—</span></div>
                         <div class="metric-row"><span class="label">G2 scaler</span> <span id="g2-scaler" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Solo acquisition <span class="info" title="A2: empty peer lane (0 peers in your size band) — G7 joins touch on both sides for fill rate.">?</span></span> <span id="solo-acquisition" class="value">—</span></div>
                         <div class="metric-row"><span class="label">G7 queue</span> <span id="g7-scaler" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Queue vs touch</span> <span id="queue-visibility" class="value">—</span></div>
                         <small id="fill-quality-note" style="display:block; margin-top:6px; font-size:0.65rem; opacity:0.7;">—</small>
@@ -1223,6 +1225,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="metric-row"><span class="label">Our Lane L2 (touch XRP)</span> <span id="intel-our-lane-l2" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Our Lane L3 (touch XRP)</span> <span id="intel-our-lane-l3" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Peers in Lane</span> <span id="intel-peer-count" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Solo acquisition (A2)</span> <span id="intel-solo-acquisition" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">G4 grade</span> <span id="intel-g4-grade" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Fled Touch (peers)</span> <span id="intel-fled" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Pressure (0=defensive, scrape harder)</span> <span id="intel-pressure" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Peer pressure (in-band)</span> <span id="intel-peer-pressure" class="value">—</span></div>
@@ -2097,6 +2101,12 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 html += ` <span class="info">G4 ${s.g4_grade}</span>`;
             }
 
+            if (s.g7_solo_acquisition) {
+                html += ` <span class="quote">SOLO ACQ</span>`;
+            } else if (s.peer_lane_empty) {
+                html += ` <span class="warn">empty lane</span>`;
+            }
+
             if (s.kill_switch_active) {
                 html += ` <span class="danger">KILL SWITCH</span>`;
             } else if (s.last_note) {
@@ -2320,6 +2330,16 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 : (g6.version ? '…' : 'off');
             setText('soak-g6', tierDisplay);
             soakPillClass(document.getElementById('soak-g6-pill'), g6SoakPillClass(g6.tier || ''));
+
+            const soloOn = !!(s.g7_solo_acquisition);
+            const peerEmpty = !!(s.peer_lane_empty);
+            let soloTxt = soloOn ? 'ON' : (peerEmpty ? 'off' : '—');
+            if (soloOn && s.g4_grade === 'solo_acquire') soloTxt = 'ON · G4';
+            setText('soak-solo', soloTxt);
+            soakPillClass(
+                document.getElementById('soak-solo-pill'),
+                soloOn ? 'good' : (peerEmpty ? 'warn' : 'neutral')
+            );
 
             let statusTxt = kill ? 'KILL' : (qCopy.good ? 'LIVE' : 'PAUSE');
             setText('soak-status', statusTxt);
@@ -2688,6 +2708,19 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 if (s.peer_lane_empty) line += ' · empty lane';
                 return line;
             })());
+            const soloEl = document.getElementById('solo-acquisition');
+            if (soloEl) {
+                if (s.g7_solo_acquisition) {
+                    soloEl.textContent = 'ON — empty peer lane';
+                    soloEl.className = 'value good';
+                } else if (s.peer_lane_empty) {
+                    soloEl.textContent = 'off (G2/toxic brake)';
+                    soloEl.className = 'value warn';
+                } else {
+                    soloEl.textContent = '— (peers in band)';
+                    soloEl.className = 'value';
+                }
+            }
             const qVis = s.quote_visibility_summary
                 || (s.worst_vs_touch_bps != null && s.worst_vs_touch_bps > 0
                     ? `worst ${parseFloat(s.worst_vs_touch_bps).toFixed(1)}bps off touch`
@@ -2880,6 +2913,20 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 ? ` (${parseFloat(s.peer_lane_low_xrp).toFixed(0)}–${parseFloat(s.peer_lane_high_xrp).toFixed(0)})`
                 : '';
             setText('intel-peer-count', s.peer_lane_count != null ? `${s.peer_lane_count}${peerBand}` : '—');
+            const intelSolo = document.getElementById('intel-solo-acquisition');
+            if (intelSolo) {
+                if (s.g7_solo_acquisition) {
+                    intelSolo.textContent = 'ON';
+                    intelSolo.className = 'value good';
+                } else if (s.peer_lane_empty) {
+                    intelSolo.textContent = 'off';
+                    intelSolo.className = 'value warn';
+                } else {
+                    intelSolo.textContent = '—';
+                    intelSolo.className = 'value';
+                }
+            }
+            setText('intel-g4-grade', s.g4_grade || (s.g4_summary ? String(s.g4_summary).split(':')[0] : '—'));
             setText('intel-fled', s.peer_fled_touch_count != null ? s.peer_fled_touch_count : '—');
             setText('intel-pressure', s.competitor_pressure != null ? parseFloat(s.competitor_pressure).toFixed(2) : '—');
             setText(
