@@ -3,7 +3,7 @@
 **Purpose:** Posterity — how we got here, what we learned, and why decisions were made.  
 **Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live priority stack; this file is the narrative + archaeology.
 
-**Version:** v2.1.39 · **Segment #6 deploy pending**
+**Version:** v2.1.39 · **Segment #6 soak active**
 **Last updated:** 2026-06-20 (A2.3b sell edge gate shipped)
 
 ---

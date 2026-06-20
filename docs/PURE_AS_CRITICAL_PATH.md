@@ -66,7 +66,7 @@ Phase 4 — Scale proof           E3 funding · larger L1 — only after at_edge
 | **1** | A3 stale-quote guard | v2.1.27 | [x] deployed |
 | **1** | G7 v1.6 edge-positive acquire | v2.1.36 | [x] deployed — posture only |
 | **2** | **A2.2 buy-side skim gate** | **v2.1.37** | **[x] deployed Segment #4** |
-| **2** | **A2.3b sell-side skim gate** | **v2.1.39** | **[x] built — deploy Segment #6** |
+| **2** | **A2.3b sell-side skim gate** | **v2.1.39** | **[x] deployed Segment #6** |
 | **2** | **A2.3 acquire ask brake** | **v2.1.38** | **[x] deployed Segment #5** |
 | **2** | **A2.4 realized buy-edge feedback** | TBD | [ ] after A2.3 or parallel |
 | **2** | **A2.5 tune MIN_BUY_EDGE / G7 backoffs** | TBD | [ ] after Segment #4 |
@@ -225,7 +225,7 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 - Wired: `effective_pause_asks = inv_policy | acquire_ask_brake | sell_edge_gate`.
 - Observability: `sell_edge_gate_active`, `sell_edge_gate_blocked`, `sell_edge_implied_bps`, `sell_edge_gate_reason`.
 
-**Deploy:** [ ] Segment #6 restart (v2.1.39).
+**Deploy:** [x] Segment #6 restart 2026-06-20 ~23:17 UTC (`1b28e2f`).
 
 **Done when:** soak shows **SELL capture ≥ 0**, `at_edge=True`, buy-funded Δ XRP.
 
