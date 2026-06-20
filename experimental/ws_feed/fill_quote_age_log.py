@@ -38,9 +38,12 @@ def build_fill_quote_age_record(
     fills_session: int,
     capture_xrp: float,
     tracking: str,
+    acquisition: Optional[Dict[str, Any]] = None,
+    fill_price_rlusd_per_xrp: Optional[float] = None,
+    mid_at_quote_rlusd_per_xrp: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Structured M6 fill-age event for JSONL + HUD."""
-    return {
+    row: Dict[str, Any] = {
         "kind": "fill",
         "cycle": int(cycle),
         "side": (side or "").upper(),
@@ -53,6 +56,13 @@ def build_fill_quote_age_record(
         "fills_session": int(fills_session),
         "capture_xrp": round(float(capture_xrp), 6),
     }
+    if fill_price_rlusd_per_xrp is not None and fill_price_rlusd_per_xrp > 0:
+        row["fill_price_rlusd_per_xrp"] = round(float(fill_price_rlusd_per_xrp), 8)
+    if mid_at_quote_rlusd_per_xrp is not None and mid_at_quote_rlusd_per_xrp > 0:
+        row["mid_at_quote_rlusd_per_xrp"] = round(float(mid_at_quote_rlusd_per_xrp), 8)
+    if acquisition:
+        row.update(acquisition)
+    return row
 
 
 def tail_fill_quote_age_records(

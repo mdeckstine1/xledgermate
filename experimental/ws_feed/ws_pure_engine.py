@@ -24,10 +24,12 @@ from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_sync import find_offer_sequence_for_intent, plan_order_sync
 from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter
 from experimental.ws_feed.hud_intel_support import fetch_competitor_quoting_intel
+from core.wealth_metrics import compute_wealth_metrics
 from experimental.ws_feed.intel_decisions_log import (
     append_intel_record,
     build_cycle_intel_record,
     build_peer_scrape_intel_record,
+    tail_intel_records,
 )
 from experimental.ws_feed.fill_quote_age_log import (
     append_fill_quote_age_record,
@@ -36,8 +38,11 @@ from experimental.ws_feed.fill_quote_age_log import (
 )
 from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
 from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
-from experimental.ws_feed.stale_quote_guard import stale_quote_cancel_decisions
+from experimental.ws_feed.acquisition_context import extract_acquisition_fill_context
+from experimental.ws_feed.acquisition_metrics import build_acquisition_metrics
+from experimental.ws_feed.peer_lane_quoting import is_peer_lane_empty
 from experimental.ws_feed.pure_quote_path import current_ws_as_version
+from experimental.ws_feed.stale_quote_guard import stale_quote_cancel_decisions
 from experimental.ws_feed.stale_cross import detect_stale_cross
 from experimental.ws_runtime_analysis import append_runtime_sample
 from experimental.ws_feed.pair_books import RlusdXrpPair
@@ -212,6 +217,7 @@ class WsPureTradingEngine:
         self._offer_age = OfferAgeTracker()
         self._last_fill_quote_age_seconds: Optional[float] = None
         self._recent_fill_quote_ages: List[Dict[str, Any]] = []
+        self._session_fill_records: List[Dict[str, Any]] = []
         self._reservation_crossed_after_ws_sample = False
         self._session_boot_utc = datetime.now(tz=timezone.utc).isoformat()
         self._analysis_bundle: Dict[str, Any] = {"sample_history": []}
@@ -510,7 +516,15 @@ class WsPureTradingEngine:
             )
 
         await self._detect_fills(
-            config, connector, balance_xrp, balance_rlusd, mid, best_bid=bb, best_ask=ba
+            config,
+            connector,
+            balance_xrp,
+            balance_rlusd,
+            mid,
+            best_bid=bb,
+            best_ask=ba,
+            engine_dec=engine_dec,
+            competitor_intel=comp_intel,
         )
 
         execution = self._execution_summary(
@@ -684,6 +698,8 @@ class WsPureTradingEngine:
         *,
         best_bid: Optional[float] = None,
         best_ask: Optional[float] = None,
+        engine_dec: Optional[Dict[str, Any]] = None,
+        competitor_intel: Optional[Dict[str, Any]] = None,
     ) -> None:
         if self._session_baseline_xrp is None and mid:
             self._session_baseline_xrp = balance_xrp
@@ -739,6 +755,9 @@ class WsPureTradingEngine:
         )
         mid_at_fill = mid if is_trustworthy_rlusd_mid(mid) else mid_at_quote
         self._session_fills += 1
+        acq_ctx = extract_acquisition_fill_context(
+            engine_dec, competitor_intel=competitor_intel
+        )
         age_record = build_fill_quote_age_record(
             cycle=self._cycle_count + 1,
             side=side,
@@ -750,9 +769,13 @@ class WsPureTradingEngine:
             fills_session=self._session_fills,
             capture_xrp=cap,
             tracking=tracking,
+            acquisition=acq_ctx,
+            fill_price_rlusd_per_xrp=price,
+            mid_at_quote_rlusd_per_xrp=mid_at_quote,
         )
         age_record["ts_utc"] = fill_detected_utc.isoformat()
         append_fill_quote_age_record(age_record)
+        self._session_fill_records.append(dict(age_record))
         self._recent_fill_quote_ages = push_recent_fill_age(
             self._recent_fill_quote_ages,
             age_record,
@@ -776,6 +799,12 @@ class WsPureTradingEngine:
             notes=(
                 f"WS pure fill (balance delta); capture ~{cap:+.4f} XRP "
                 f"@ mid {mid_at_quote or 'n/a'}"
+                f"; inv={acq_ctx.get('inventory_label') or '?'}"
+                + (
+                    "; solo_acquire"
+                    if acq_ctx.get("g7_solo_acquisition")
+                    else ""
+                )
                 + (
                     f"; quote_age_m6={quote_age:.3f}s"
                     + (f" seq={offer_sequence}" if offer_sequence is not None else "")
@@ -955,6 +984,53 @@ class WsPureTradingEngine:
             },
         )
         presence_pct = self._analysis_bundle.get("as_presence_pct", cycle_presence_pct)
+        peer_lane_empty = is_peer_lane_empty(comp_intel) if comp_intel else False
+        runtime_for_acq: Dict[str, Any] = {
+            "mid_price": mid,
+            "balance_xrp": balance_xrp,
+            "balance_rlusd": balance_rlusd,
+            "session_baseline_xrp": self._session_baseline_xrp,
+            "session_baseline_rlusd": self._session_baseline_rlusd,
+            "session_baseline_mid": self._session_baseline_mid,
+            "session_spread_capture_xrp": self._session_spread_capture,
+            "session_boot_utc": self._session_boot_utc,
+            "ws_as_version": current_ws_as_version(),
+            "fills_session": self._session_fills,
+        }
+        runtime_for_acq.update(
+            {k: v for k, v in compute_wealth_metrics(runtime_for_acq).items() if v is not None}
+        )
+        intel_cycles: List[Dict[str, Any]] = []
+        if flags.intel_log:
+            try:
+                boot_dt = datetime.fromisoformat(
+                    self._session_boot_utc.replace("Z", "+00:00")
+                )
+                if boot_dt.tzinfo is None:
+                    boot_dt = boot_dt.replace(tzinfo=timezone.utc)
+                ws_ver = current_ws_as_version()
+                for row in tail_intel_records(limit=2000):
+                    if row.get("kind") != "cycle":
+                        continue
+                    if ws_ver and str(row.get("ws_as_version") or "") not in ("", ws_ver):
+                        continue
+                    ts_raw = str(row.get("ts_utc") or "")
+                    try:
+                        ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                        if ts.tzinfo is None:
+                            ts = ts.replace(tzinfo=timezone.utc)
+                        if ts < boot_dt:
+                            continue
+                    except ValueError:
+                        pass
+                    intel_cycles.append(row)
+            except (OSError, ValueError):
+                intel_cycles = []
+        acquisition_metrics = build_acquisition_metrics(
+            runtime=runtime_for_acq,
+            session_fills=self._session_fill_records,
+            intel_cycles=intel_cycles,
+        )
         state = RuntimeState(
             version=VERSION,
             network=config.network_name(),
@@ -1066,6 +1142,10 @@ class WsPureTradingEngine:
             book_bids=book_bids,
             book_asks=book_asks,
             session_boot_utc=self._session_boot_utc,
+            g7_solo_acquisition=bool(ed.get("g7_solo_acquisition")),
+            g7_ask_sell_defense=bool(ed.get("g7_ask_sell_defense")),
+            peer_lane_empty=peer_lane_empty,
+            acquisition_metrics=acquisition_metrics,
         )
         self.state_store.save(state)
         if ed and flags.intel_log:
@@ -1089,6 +1169,8 @@ class WsPureTradingEngine:
                             "session_pnl_balance_xrp": session_bal_pnl,
                             "drawdown_pct": drawdown_pct,
                             "ws_as_version": current_ws_as_version(),
+                            "peer_lane_empty": peer_lane_empty,
+                            "worst_vs_touch_bps": float(worst_vs_touch_bps),
                         },
                     )
                 )

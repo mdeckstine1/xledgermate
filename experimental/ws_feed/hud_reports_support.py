@@ -56,6 +56,15 @@ def _gen_fill_quote_age(logs: Path) -> str:
     return format_fill_age_report(build_fill_age_report(logs_dir=logs))
 
 
+def _gen_acquisition_metrics(logs: Path) -> str:
+    from scripts.acquisition_metrics_report import (
+        build_acquisition_report,
+        format_acquisition_report_cli,
+    )
+
+    return format_acquisition_report_cli(build_acquisition_report(logs_dir=logs))
+
+
 def _gen_ws_runtime_analysis(logs: Path) -> str:
     from experimental.ws_runtime_analysis import (
         collect_samples,
@@ -224,6 +233,17 @@ REPORT_SPECS: List[ReportSpec] = [
         phase_ref="Phase M2 prep",
     ),
     ReportSpec(
+        id="acquisition_metrics",
+        title="Acquisition metrics",
+        subtitle="Edge-positive inventory vs spot",
+        category="Soak analysis",
+        description="Session BUY efficiency, solo_acquire fire rate, capture by inventory state (M6 + intel JSONL).",
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="python scripts/acquisition_metrics_report.py",
+        phase_ref="Phase A2 soak",
+    ),
+    ReportSpec(
         id="ws_runtime_analysis",
         title="WS runtime analysis",
         subtitle="Presence, flips, zero_quote breakdown",
@@ -304,6 +324,7 @@ _GENERATORS: Dict[str, ReportGenerator] = {
     "ws_session_e15": _gen_ws_session_e15,
     "g6_activation": _gen_g6_activation,
     "fill_quote_age": _gen_fill_quote_age,
+    "acquisition_metrics": _gen_acquisition_metrics,
     "ws_runtime_analysis": _gen_ws_runtime_analysis,
     "hourly_soak_trend": _gen_hourly_soak_trend,
     "grok_suggestions": _gen_grok_suggestions,

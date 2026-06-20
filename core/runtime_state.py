@@ -154,6 +154,10 @@ class RuntimeState:
     book_bids: List[Dict[str, Any]] = field(default_factory=list)
     book_asks: List[Dict[str, Any]] = field(default_factory=list)
     session_boot_utc: Optional[str] = None
+    g7_solo_acquisition: bool = False
+    g7_ask_sell_defense: bool = False
+    peer_lane_empty: bool = False
+    acquisition_metrics: Dict[str, Any] = field(default_factory=dict)
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -328,4 +332,11 @@ class RuntimeStateStore:
             g7_scaler_label=str(data.get("g7_scaler_label", "")),
             g2_scaler_label=str(data.get("g2_scaler_label", "")),
             execution_brakes_summary=str(data.get("execution_brakes_summary", "")),
+            book_bids=list(data.get("book_bids") or []),
+            book_asks=list(data.get("book_asks") or []),
+            session_boot_utc=data.get("session_boot_utc"),
+            g7_solo_acquisition=bool(data.get("g7_solo_acquisition", False)),
+            g7_ask_sell_defense=bool(data.get("g7_ask_sell_defense", False)),
+            peer_lane_empty=bool(data.get("peer_lane_empty", False)),
+            acquisition_metrics=dict(data.get("acquisition_metrics") or {}),
         )

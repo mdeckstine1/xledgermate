@@ -105,6 +105,14 @@ def build_cycle_intel_record(
         "session_pnl_balance_xrp": extras.get("session_pnl_balance_xrp"),
         "drawdown_pct": extras.get("drawdown_pct"),
         "ws_as_version": extras.get("ws_as_version"),
+        "g7_solo_acquisition": bool(ed.get("g7_solo_acquisition")),
+        "g7_bid_role": str(ed.get("g7_bid_role") or ""),
+        "g7_ask_role": str(ed.get("g7_ask_role") or ""),
+        "g7_ask_sell_defense": bool(ed.get("g7_ask_sell_defense")),
+        "bid_size_xrp": round(bid_sz, 4) if bid_sz else None,
+        "ask_size_xrp": round(ask_sz, 4) if ask_sz else None,
+        "peer_lane_empty": extras.get("peer_lane_empty"),
+        "worst_vs_touch_bps": extras.get("worst_vs_touch_bps"),
     }
 
 

@@ -7,6 +7,18 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.28] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**Theme:** Acquisition metrics — session edge-positive inventory vs spot (A2 soak instrumentation).
+
+### Added
+
+- **`acquisition_metrics.py`** — `xrp_per_rlusd_spent`, `buy_cost_vs_mid_bps`, `solo_acquire_fire_rate`, capture by inventory state, spot vs skim ratio.
+- **Engine** — M6 fill context (`solo_acquire`, inventory), intel cycle `peer_lane_empty` / `worst_vs_touch_bps`, `acquisition_metrics` on `runtime_state.json`.
+- **`scripts/acquisition_metrics_report.py`** — offline session report; HUD Reports tab entry.
+
+---
+
 ## [2.1.27] — 2026-06-20 (`Ashigaru Kaizen II`)
 
 **Theme:** A2+A3 live deploy — solo acquisition + stale-quote guard; A1 segment closed.
