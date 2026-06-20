@@ -10,8 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-G7_VERSION = "1.4.1"
+G7_VERSION = "1.4.2"
 JOIN_BACKOFF_BPS = 5.0
+SOLO_JOIN_BACKOFF_BPS = 3.0
 PASSIVE_BACKOFF_BPS = 8.0
 INVENTORY_SKEW_THRESHOLD = 0.12
 JOIN_HALF_SPREAD_FRAC = 0.45
@@ -118,16 +119,17 @@ def apply_solo_lane_posture(
         return bid_base, ask_base, bid_role, ask_role, False
     if toxic_ratio_30s >= SOLO_ACQUIRE_TOXIC_30S_MAX:
         return bid_base, ask_base, bid_role, ask_role, False
+    solo_join = min(float(join_bps), SOLO_JOIN_BACKOFF_BPS)
     if posture in (
         "balanced",
         "rlusd_heavy",
         "slight_rlusd_heavy",
         "slight_xrp_heavy",
     ):
-        return join_bps, join_bps, "join", "join", True
+        return solo_join, solo_join, "join", "join", True
     if posture == "xrp_heavy":
         # Solo empty lane: ask join to rebalance + fill rate (bid stays passive).
-        return PASSIVE_BACKOFF_BPS, join_bps, "passive", "join", True
+        return PASSIVE_BACKOFF_BPS, solo_join, "passive", "join", True
     return bid_base, ask_base, bid_role, ask_role, False
 
 

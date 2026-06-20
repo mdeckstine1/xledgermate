@@ -23,6 +23,8 @@ WS_TOXIC_ASK_AGE_THRESHOLD = 0.25
 WS_TOXIC_ASK_MAX_AGE_S = 45.0
 
 WS_MID_MOVE_STALE_AGE_S = 30.0
+# A2.2 — solo empty lane: skip mid-move churn; keep max-age tail only when toxic low.
+SOLO_SKIP_MID_MOVE_STALE_TOXIC_MAX = 0.20
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,7 @@ def stale_quote_cancel_decisions(
     move_bps = _mid_move_bps(mid, last_sync_mid)
     mid_move_stale = move_bps >= mid_move_refresh_bps
     toxic = float(toxic_ratio_30s)
+    solo_skip_mid_move = peer_lane_empty and toxic < SOLO_SKIP_MID_MOVE_STALE_TOXIC_MAX
     seen: set[int] = set()
     out: List[StaleQuoteCancelDecision] = []
 
@@ -112,7 +115,7 @@ def stale_quote_cancel_decisions(
             if side == "ask" and toxic >= WS_TOXIC_ASK_AGE_THRESHOLD:
                 cap_label = f"{max_age:.0f}s toxic"
             reason = f"max_age age={age:.0f}s (max={cap_label})"
-        elif mid_move_stale and age > WS_MID_MOVE_STALE_AGE_S:
+        elif mid_move_stale and age > WS_MID_MOVE_STALE_AGE_S and not solo_skip_mid_move:
             reason = (
                 f"mid_move age={age:.0f}s move={move_bps:.1f}bps"
                 f" (>{mid_move_refresh_bps:.0f}bps)"

@@ -4,6 +4,7 @@ from experimental.ws_feed.execution_envelope import (
     ASK_DEFENSE_EXTRA_BPS,
     JOIN_BACKOFF_BPS,
     PASSIVE_BACKOFF_BPS,
+    SOLO_JOIN_BACKOFF_BPS,
     apply_solo_lane_posture,
     compute_execution_envelope,
     resolve_join_backoff_bps,
@@ -124,8 +125,8 @@ def test_solo_acquisition_balanced_bid_join() -> None:
         toxic_ratio_30s=0.05,
     )
     assert env.solo_acquisition is True
-    assert env.bid_touch_backoff_bps == JOIN_BACKOFF_BPS
-    assert env.ask_touch_backoff_bps == JOIN_BACKOFF_BPS
+    assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
     assert env.bid_role == "join"
     assert env.ask_role == "join"
     assert "solo acquire" in env.summary
@@ -140,8 +141,8 @@ def test_solo_acquisition_slight_xrp_heavy_two_sided_join() -> None:
     )
     assert env.solo_acquisition is True
     assert env.inventory_posture == "slight_xrp_heavy"
-    assert env.bid_touch_backoff_bps == JOIN_BACKOFF_BPS
-    assert env.ask_touch_backoff_bps == JOIN_BACKOFF_BPS
+    assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
     assert env.bid_role == "join"
     assert env.ask_role == "join"
 
@@ -155,7 +156,7 @@ def test_solo_acquisition_xrp_heavy_ask_join() -> None:
     )
     assert env.solo_acquisition is True
     assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
-    assert env.ask_touch_backoff_bps == JOIN_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
     assert env.bid_role == "passive"
     assert env.ask_role == "join"
 

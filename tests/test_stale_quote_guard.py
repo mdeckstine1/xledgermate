@@ -136,6 +136,24 @@ def test_solo_lane_ask_at_75s_keeps() -> None:
     assert 75.0 < WS_SOLO_MAX_QUOTE_AGE_ASK_S
 
 
+def test_solo_lane_mid_move_skipped_when_peer_empty_low_toxic() -> None:
+    now = datetime(2026, 6, 20, 12, 0, 0, tzinfo=timezone.utc)
+    tracker = OfferAgeTracker()
+    tracker.record_place("bid", placed_utc=_placed(now, seconds_ago=35.0), sequence=40)
+    offers = [OpenOffer(sequence=40, side="bid", price=1.10, size_xrp=10.0)]
+    last_sync = 1.2750
+    mid = last_sync * (1.0 + (WS_MID_MOVE_REFRESH_BPS + 2.0) / 10_000.0)
+    assert stale_quote_sequences_to_cancel(
+        offers,
+        tracker,
+        now=now,
+        toxic_ratio_30s=0.05,
+        mid=mid,
+        last_sync_mid=last_sync,
+        peer_lane_empty=True,
+    ) == []
+
+
 def test_solo_lane_ask_at_75s_cancels_without_solo_flag() -> None:
     now = datetime(2026, 6, 20, 12, 0, 0, tzinfo=timezone.utc)
     tracker = OfferAgeTracker()
