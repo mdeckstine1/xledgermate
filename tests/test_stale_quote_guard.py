@@ -115,3 +115,38 @@ def test_dedupes_duplicate_sequences() -> None:
     assert stale_quote_sequences_to_cancel(
         offers, tracker, now=now, toxic_ratio_30s=0.0, mid=1.10, last_sync_mid=1.10
     ) == [5]
+
+
+def test_solo_lane_ask_at_75s_keeps() -> None:
+    from experimental.ws_feed.stale_quote_guard import WS_SOLO_MAX_QUOTE_AGE_ASK_S
+
+    now = datetime(2026, 6, 20, 12, 0, 0, tzinfo=timezone.utc)
+    tracker = OfferAgeTracker()
+    tracker.record_place("ask", placed_utc=_placed(now, seconds_ago=75.0), sequence=50)
+    offers = [OpenOffer(sequence=50, side="ask", price=1.11, size_xrp=10.0)]
+    assert stale_quote_sequences_to_cancel(
+        offers,
+        tracker,
+        now=now,
+        toxic_ratio_30s=0.0,
+        mid=1.10,
+        last_sync_mid=1.10,
+        peer_lane_empty=True,
+    ) == []
+    assert 75.0 < WS_SOLO_MAX_QUOTE_AGE_ASK_S
+
+
+def test_solo_lane_ask_at_75s_cancels_without_solo_flag() -> None:
+    now = datetime(2026, 6, 20, 12, 0, 0, tzinfo=timezone.utc)
+    tracker = OfferAgeTracker()
+    tracker.record_place("ask", placed_utc=_placed(now, seconds_ago=75.0), sequence=51)
+    offers = [OpenOffer(sequence=51, side="ask", price=1.11, size_xrp=10.0)]
+    assert stale_quote_sequences_to_cancel(
+        offers,
+        tracker,
+        now=now,
+        toxic_ratio_30s=0.0,
+        mid=1.10,
+        last_sync_mid=1.10,
+        peer_lane_empty=False,
+    ) == [51]

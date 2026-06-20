@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-G7_VERSION = "1.3.0"
+G7_VERSION = "1.4.0"
 JOIN_BACKOFF_BPS = 5.0
 PASSIVE_BACKOFF_BPS = 8.0
 INVENTORY_SKEW_THRESHOLD = 0.12
@@ -85,6 +85,10 @@ def _inventory_posture(*, inventory_label: str, inventory_skew: float) -> str:
         return "xrp_heavy"
     if inventory_skew < -INVENTORY_SKEW_THRESHOLD:
         return "rlusd_heavy"
+    if "slight_rlusd_heavy" in label:
+        return "slight_rlusd_heavy"
+    if "slight_xrp_heavy" in label:
+        return "slight_xrp_heavy"
     if "rlusd_heavy" in label:
         return "rlusd_heavy"
     if "xrp_heavy" in label:
@@ -105,7 +109,7 @@ def apply_solo_lane_posture(
     g2_spread_mult: float = 1.0,
 ) -> tuple[float, float, str, str, bool]:
     """
-    A2: empty peer band — join bid on balanced for acquisition; never ask-join xrp_heavy solo.
+    A2/A2.1: empty peer band — two-sided join for fill rate unless full xrp_heavy.
     Skips when toxicity elevated or G2 braking (presence without adverse flow).
     """
     if not peer_lane_empty:
@@ -114,8 +118,13 @@ def apply_solo_lane_posture(
         return bid_base, ask_base, bid_role, ask_role, False
     if toxic_ratio_30s >= SOLO_ACQUIRE_TOXIC_30S_MAX:
         return bid_base, ask_base, bid_role, ask_role, False
-    if posture == "balanced" or posture == "rlusd_heavy":
-        return join_bps, PASSIVE_BACKOFF_BPS, "join", "passive", True
+    if posture in (
+        "balanced",
+        "rlusd_heavy",
+        "slight_rlusd_heavy",
+        "slight_xrp_heavy",
+    ):
+        return join_bps, join_bps, "join", "join", True
     if posture == "xrp_heavy":
         return PASSIVE_BACKOFF_BPS, PASSIVE_BACKOFF_BPS, "passive", "passive", True
     return bid_base, ask_base, bid_role, ask_role, False
@@ -138,7 +147,7 @@ def compute_execution_envelope(
     Rule B: multiply both sides by max(1, g2.spread_mult).
     Rule C: join side uses resolve_join_backoff_bps (book-aware floor).
     Rule D (A1): ask sell-defense — demote ask join + extra ask backoff on bleed signals.
-    Rule E (A2): solo empty lane — bid join balanced; xrp_heavy passive both.
+    Rule E (A2/A2.1): solo empty lane — two-sided join unless full xrp_heavy.
     """
     join_bps = resolve_join_backoff_bps(book_half_spread_bps=book_half_spread_bps)
     posture = _inventory_posture(inventory_label=inventory_label, inventory_skew=inventory_skew)
@@ -148,6 +157,9 @@ def compute_execution_envelope(
     elif posture == "rlusd_heavy":
         bid_base, ask_base = join_bps, PASSIVE_BACKOFF_BPS
         bid_role, ask_role = "join", "passive"
+    elif posture in ("slight_xrp_heavy", "slight_rlusd_heavy"):
+        bid_base = ask_base = PASSIVE_BACKOFF_BPS
+        bid_role = ask_role = "wide"
     else:
         bid_base = ask_base = PASSIVE_BACKOFF_BPS
         bid_role = ask_role = "wide"

@@ -7,6 +7,18 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.29] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**Theme:** A2.1 solo fill-rate tune — empty-book quotes closer to touch, less A3 churn.
+
+### Changed
+
+- **G7 v1.4** — solo empty lane: two-sided **join** (5 bps) on balanced/slight_*; only full `xrp_heavy` stays passive both. Fixes `slight_xrp_heavy` misclassified as full xrp_heavy.
+- **A3 solo** — max ages 120s ask / 150s bid when `peer_lane_empty` (vs 60/90).
+- **Sync** — solo mode disables `preserve_touch_queue` for faster quote refresh.
+
+---
+
 ## [2.1.28] — 2026-06-20 (`Ashigaru Kaizen II`)
 
 **Theme:** Acquisition metrics — session edge-positive inventory vs spot (A2 soak instrumentation).

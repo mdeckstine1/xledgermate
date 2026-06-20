@@ -100,6 +100,8 @@ def resolve_ws_sync_tolerances(
     g2_active: bool,
     base_price_tolerance_pct: float,
     mid_move_refresh_bps: float = WS_MID_MOVE_REFRESH_BPS,
+    peer_lane_empty: bool = False,
+    solo_acquisition: bool = False,
 ) -> tuple[float, bool]:
     """
     WS quote-sync policy: faster refresh when mid moves or toxicity is elevated.
@@ -116,6 +118,15 @@ def resolve_ws_sync_tolerances(
     ):
         preserve_touch_queue = False
         price_tol = min(price_tol, 0.04)
+
+    if (
+        solo_acquisition
+        and peer_lane_empty
+        and not g2_active
+        and toxic_ratio_30s < 0.20
+    ):
+        preserve_touch_queue = False
+        price_tol = min(price_tol, 0.05)
 
     if mid and last_sync_mid and last_sync_mid > 0:
         move_bps = abs(mid - last_sync_mid) / last_sync_mid * 10_000.0
@@ -512,7 +523,12 @@ class WsPureTradingEngine:
         ):
             sync_intents = intents if would_quote else []
             placed, cancelled = await self._sync_offers(
-                sync_intents, mid=mid, best_bid=bb, best_ask=ba
+                sync_intents,
+                mid=mid,
+                best_bid=bb,
+                best_ask=ba,
+                peer_lane_empty=is_peer_lane_empty(comp_intel),
+                solo_acquisition=bool(engine_dec.get("g7_solo_acquisition")),
             )
 
         await self._detect_fills(
@@ -558,6 +574,8 @@ class WsPureTradingEngine:
         mid: Optional[float],
         best_bid: Optional[float],
         best_ask: Optional[float],
+        peer_lane_empty: bool = False,
+        solo_acquisition: bool = False,
     ) -> tuple[int, int]:
         config = self.config
         connector = self.connector
@@ -585,6 +603,8 @@ class WsPureTradingEngine:
             base_price_tolerance_pct=float(
                 getattr(config, "order_price_tolerance_pct", 0.08)
             ),
+            peer_lane_empty=peer_lane_empty,
+            solo_acquisition=solo_acquisition,
         )
         plan = plan_order_sync(
             intents,
@@ -607,6 +627,7 @@ class WsPureTradingEngine:
             mid=mid,
             last_sync_mid=self._last_sync_mid,
             mid_move_refresh_bps=WS_MID_MOVE_REFRESH_BPS,
+            peer_lane_empty=peer_lane_empty,
         )
         cancel_sequences = list(plan.cancel_sequences)
         stale_seqs = {d.sequence for d in stale_decisions}

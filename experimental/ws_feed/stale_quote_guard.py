@@ -14,6 +14,10 @@ WS_MID_MOVE_REFRESH_BPS = 8.0
 
 WS_MAX_QUOTE_AGE_ASK_S = 60.0
 WS_MAX_QUOTE_AGE_BID_S = 90.0
+# A2.1 — solo empty lane: longer queue life before cancel (fill rate vs toxic tail).
+WS_SOLO_MAX_QUOTE_AGE_ASK_S = 120.0
+WS_SOLO_MAX_QUOTE_AGE_BID_S = 150.0
+WS_SOLO_TOXIC_ASK_MAX_AGE_S = 75.0
 
 WS_TOXIC_ASK_AGE_THRESHOLD = 0.25
 WS_TOXIC_ASK_MAX_AGE_S = 45.0
@@ -38,14 +42,20 @@ def _mid_move_bps(
     return abs(mid - last_sync_mid) / last_sync_mid * 10_000.0
 
 
-def _max_age_for_side(side: str, *, toxic_ratio_30s: float) -> Optional[float]:
+def _max_age_for_side(
+    side: str,
+    *,
+    toxic_ratio_30s: float,
+    peer_lane_empty: bool = False,
+) -> Optional[float]:
     key = (side or "").strip().lower()
+    solo = bool(peer_lane_empty)
     if key == "ask":
         if toxic_ratio_30s >= WS_TOXIC_ASK_AGE_THRESHOLD:
-            return WS_TOXIC_ASK_MAX_AGE_S
-        return WS_MAX_QUOTE_AGE_ASK_S
+            return WS_SOLO_TOXIC_ASK_MAX_AGE_S if solo else WS_TOXIC_ASK_MAX_AGE_S
+        return WS_SOLO_MAX_QUOTE_AGE_ASK_S if solo else WS_MAX_QUOTE_AGE_ASK_S
     if key == "bid":
-        return WS_MAX_QUOTE_AGE_BID_S
+        return WS_SOLO_MAX_QUOTE_AGE_BID_S if solo else WS_MAX_QUOTE_AGE_BID_S
     return None
 
 
@@ -74,6 +84,7 @@ def stale_quote_cancel_decisions(
     mid: Optional[float] = None,
     last_sync_mid: Optional[float] = None,
     mid_move_refresh_bps: float = WS_MID_MOVE_REFRESH_BPS,
+    peer_lane_empty: bool = False,
 ) -> List[StaleQuoteCancelDecision]:
     """Return per-offer stale-quote cancel decisions (deduped by sequence)."""
     move_bps = _mid_move_bps(mid, last_sync_mid)
@@ -90,7 +101,11 @@ def stale_quote_cancel_decisions(
         if age is None:
             continue
         side = (offer.side or "").strip().lower()
-        max_age = _max_age_for_side(side, toxic_ratio_30s=toxic)
+        max_age = _max_age_for_side(
+            side,
+            toxic_ratio_30s=toxic,
+            peer_lane_empty=peer_lane_empty,
+        )
         reason: Optional[str] = None
         if max_age is not None and age > max_age:
             cap_label = f"{max_age:.0f}s"
@@ -125,6 +140,7 @@ def stale_quote_sequences_to_cancel(
     mid: Optional[float] = None,
     last_sync_mid: Optional[float] = None,
     mid_move_refresh_bps: float = WS_MID_MOVE_REFRESH_BPS,
+    peer_lane_empty: bool = False,
 ) -> List[int]:
     """Deduped offer sequence IDs to force-cancel for stale-quote tail (A3)."""
     decisions = stale_quote_cancel_decisions(
@@ -135,5 +151,6 @@ def stale_quote_sequences_to_cancel(
         mid=mid,
         last_sync_mid=last_sync_mid,
         mid_move_refresh_bps=mid_move_refresh_bps,
+        peer_lane_empty=peer_lane_empty,
     )
     return [d.sequence for d in decisions]
