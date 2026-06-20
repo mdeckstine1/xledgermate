@@ -1,6 +1,6 @@
 # Pure A-S Critical Path
 
-**Status:** Live soak — **Segment #4** · **v2.1.37** on VPS · **HUD** `:8765`  
+**Status:** Live soak — **Segment #5** · **v2.1.38** on VPS · **HUD** `:8765`  
 **Version:** v2.1.38 · **Branch:** `Ashigaru-Kaizen-II`  
 **Last updated:** 2026-06-20 (A2.3 acquire ask brake built)
 
@@ -37,7 +37,7 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 | Step | Item | Status | Notes |
 |------|------|--------|-------|
 | **1** | **Segment #4 soak** | **closed** | v2.1.37 — BUY +0.025, both sides positive; `at_edge` still false (Δ XRP ↓) |
-| **2** | **Deploy v2.1.38 + Segment #5** | **next** | A2.3 ask brake — bid-only in solo acquire |
+| **2** | **Deploy v2.1.38 + Segment #5** | **ongoing** | A2.3 ask brake — bid-only in solo acquire |
 | **3** | **M-Purpose HUD strip** | planned | HUD-only: `at_edge`, buy cap, Δ XRP front and center |
 | **4** | **A2.4 — realized buy-edge feedback** | planned | Post-fill brake; implied fill price (M2) |
 | **5** | **A2.5 — tune constants** | planned | `MIN_BUY_EDGE_BPS`, G7 backoffs from Segment #4 |
@@ -66,7 +66,7 @@ Phase 4 — Scale proof           E3 funding · larger L1 — only after at_edge
 | **1** | A3 stale-quote guard | v2.1.27 | [x] deployed |
 | **1** | G7 v1.6 edge-positive acquire | v2.1.36 | [x] deployed — posture only |
 | **2** | **A2.2 buy-side skim gate** | **v2.1.37** | **[x] deployed Segment #4** |
-| **2** | **A2.3 acquire ask brake** | **v2.1.38** | **[x] built — deploy Segment #5** |
+| **2** | **A2.3 acquire ask brake** | **v2.1.38** | **[x] deployed Segment #5** |
 | **2** | **A2.4 realized buy-edge feedback** | TBD | [ ] after A2.3 or parallel |
 | **2** | **A2.5 tune MIN_BUY_EDGE / G7 backoffs** | TBD | [ ] after Segment #4 |
 | **3** | **M-Purpose HUD strip** | HUD-only | [ ] next HUD sprint |
@@ -80,7 +80,7 @@ Phase 4 — Scale proof           E3 funding · larger L1 — only after at_edge
 | Pri | Item | Status |
 |-----|------|--------|
 | **P0** | Segment #4 soak (v2.1.37) | closed — buy gate validated |
-| **P0** | Deploy v2.1.38 + Segment #5 soak | **next** |
+| **P0** | Deploy v2.1.38 + Segment #5 soak | **ongoing** |
 | **P1** | A2.3 acquire ask brake | [x] v2.1.38 built |
 | **P1** | M-Purpose HUD strip | planned |
 | **P1** | A2.4 realized buy-edge feedback | planned |
@@ -209,7 +209,7 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 - Same scope as A2.2; no ask posts while accumulating XRP at edge.
 - Observability: `acquire_ask_brake_active`, `acquire_ask_brake_blocked`, `acquire_ask_brake_reason` on runtime + intel + HUD.
 
-**Deploy:** [ ] Segment #5 fresh boot after engine restart.
+**Deploy:** [x] Segment #5 restart 2026-06-20 ~20:21 UTC (`bd086cc`).
 
 **Done when:** soak shows **buy-funded Δ XRP** — `at_edge=True`, no SELL volume in solo acquire cycles.
 
