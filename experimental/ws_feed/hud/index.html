@@ -340,6 +340,30 @@
         .soak-pill.bad .soak-value { color: #f87171; }
         .soak-pill.neutral { border-color: #475569; }
         .soak-pill.neutral .soak-value { color: #e2e8f0; }
+        .purpose-strip {
+            display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;
+            padding-bottom: 10px; border-bottom: 1px solid #334155;
+        }
+        .purpose-pill {
+            min-width: 72px; padding: 6px 10px; border-radius: 8px;
+            border: 2px solid #475569; background: #0f172a; text-align: center;
+        }
+        .purpose-pill.hero { min-width: 88px; border-width: 2px; }
+        .purpose-pill .purpose-label {
+            font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.04em;
+            color: #94a3b8; margin-bottom: 2px;
+        }
+        .purpose-pill .purpose-value {
+            font-size: 0.82rem; font-weight: 700; font-family: ui-monospace, monospace;
+        }
+        .purpose-pill.good { border-color: #22c55e; }
+        .purpose-pill.good .purpose-value { color: #4ade80; }
+        .purpose-pill.warn { border-color: #facc15; }
+        .purpose-pill.warn .purpose-value { color: #facc15; }
+        .purpose-pill.bad { border-color: #ef4444; }
+        .purpose-pill.bad .purpose-value { color: #f87171; }
+        .purpose-pill.neutral { border-color: #475569; }
+        .purpose-pill.neutral .purpose-value { color: #e2e8f0; }
 
         /* Live tab has UI chrome (marquee + status + button) above the scrollable cards.
            Prevent them from stretching; let only the .content area scroll. */
@@ -698,6 +722,15 @@
         <div class="header">XLedgerMate — Live Market Maker HUD <span id="mode" style="font-size:0.9rem; color:#64748b;"></span> <span id="header-session" style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">v — · cycles — · fills — · presence —</span></div>
 
         <div class="health-bar" id="health-bar">
+            <div class="health-label">Purpose <span>skim-funded inventory growth</span></div>
+            <div class="purpose-strip">
+                <div class="purpose-pill neutral hero" id="purpose-gate-pill"><div class="purpose-label">Purpose</div><div class="purpose-value" id="purpose-gate">—</div></div>
+                <div class="purpose-pill neutral" id="purpose-edge-pill"><div class="purpose-label">at_edge</div><div class="purpose-value" id="purpose-edge">—</div></div>
+                <div class="purpose-pill neutral" id="purpose-buy-pill"><div class="purpose-label">Buy cap</div><div class="purpose-value" id="purpose-buy">—</div></div>
+                <div class="purpose-pill neutral" id="purpose-sell-pill"><div class="purpose-label">Sell cap</div><div class="purpose-value" id="purpose-sell">—</div></div>
+                <div class="purpose-pill neutral" id="purpose-delta-pill"><div class="purpose-label">Δ XRP</div><div class="purpose-value" id="purpose-delta">—</div></div>
+                <div class="purpose-pill neutral" id="purpose-skim-pill"><div class="purpose-label">Skim</div><div class="purpose-value" id="purpose-skim">—</div></div>
+            </div>
             <div class="health-label">Health <span>— live KPIs</span></div>
             <div class="soak-strip">
                 <div class="soak-pill neutral" id="soak-toxic-pill"><div class="soak-label">Toxic @30s</div><div class="soak-value" id="soak-toxic">—</div></div>
@@ -2260,6 +2293,75 @@ The A-S strategy itself decides presence via reservation price being inside the 
             return 'bad';
         }
 
+        function purposePillClass(el, kind) {
+            if (!el) return;
+            el.classList.remove('good', 'warn', 'bad', 'neutral');
+            el.classList.add(kind || 'neutral');
+        }
+
+        function signedCaptureText(v) {
+            if (v == null || Number.isNaN(v)) return '—';
+            const sign = v >= 0 ? '+' : '';
+            return `${sign}${v.toFixed(3)}`;
+        }
+
+        function purposeSignedClass(v) {
+            if (v == null || Number.isNaN(v)) return 'neutral';
+            if (v > 0.0005) return 'good';
+            if (v < -0.0005) return 'bad';
+            return 'warn';
+        }
+
+        function renderPurposeStrip(s) {
+            const status = (s.purpose_gate_status || 'warming').toLowerCase();
+            const gatePass = s.purpose_gate_pass === true;
+            let gateTxt = status.toUpperCase();
+            let gateClass = 'neutral';
+            if (status === 'pass') {
+                gateTxt = 'PASS';
+                gateClass = 'good';
+            } else if (status === 'fail') {
+                gateTxt = 'FAIL';
+                gateClass = 'bad';
+            } else {
+                gateTxt = 'WARM';
+                gateClass = 'warn';
+            }
+            setText('purpose-gate', gateTxt);
+            purposePillClass(document.getElementById('purpose-gate-pill'), gateClass);
+
+            const atEdge = s.purpose_at_edge === true;
+            setText('purpose-edge', atEdge ? 'YES' : 'NO');
+            purposePillClass(document.getElementById('purpose-edge-pill'), atEdge ? 'good' : 'bad');
+
+            const buyCap = s.purpose_buy_capture_xrp != null ? parseFloat(s.purpose_buy_capture_xrp) : null;
+            setText('purpose-buy', signedCaptureText(buyCap));
+            purposePillClass(document.getElementById('purpose-buy-pill'), purposeSignedClass(buyCap));
+
+            const sellCap = s.purpose_sell_capture_xrp != null ? parseFloat(s.purpose_sell_capture_xrp) : null;
+            setText('purpose-sell', signedCaptureText(sellCap));
+            purposePillClass(document.getElementById('purpose-sell-pill'), purposeSignedClass(sellCap));
+
+            const delta = s.purpose_delta_xrp != null ? parseFloat(s.purpose_delta_xrp) : null;
+            if (delta != null && !Number.isNaN(delta)) {
+                setText('purpose-delta', formatSignedXrp(delta, 1));
+            } else {
+                setText('purpose-delta', '—');
+            }
+            purposePillClass(document.getElementById('purpose-delta-pill'), purposeSignedClass(delta));
+
+            const skim = s.purpose_session_skim_xrp != null
+                ? parseFloat(s.purpose_session_skim_xrp)
+                : sessionSkimDeltaXrp(s);
+            setText('purpose-skim', signedCaptureText(skim));
+            purposePillClass(document.getElementById('purpose-skim-pill'), purposeSignedClass(skim));
+
+            const bar = document.getElementById('health-bar');
+            if (bar && s.purpose_gate_summary) {
+                bar.title = String(s.purpose_gate_summary);
+            }
+        }
+
         function renderSoakStrip(s) {
             const toxic30 = (s.toxic_fill_ratio_30s != null) ? parseFloat(s.toxic_fill_ratio_30s) : null;
             const markout30 = (s.mean_markout_30s_pct != null) ? parseFloat(s.mean_markout_30s_pct) : null;
@@ -2386,6 +2488,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 }
             }
             updateEngineControlsUi(s);
+            renderPurposeStrip(s);
             renderSoakStrip(s);
 
             const sampleCount = (s.sample_count != null)

@@ -5,6 +5,16 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.39-hud1] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**M-Purpose HUD strip** — skim-funded inventory growth scoreboard (HUD-only; no engine restart).
+
+- **`purpose_hud.py`** — Purpose PASS/FAIL from session fills + baselines (`at_edge`, buy/sell cap, Δ XRP, skim).
+- Live health bar: purpose strip above existing soak KPIs.
+- Deploy: `systemctl restart xledgermate-ws-hud` only.
+
+---
+
 ## [2.1.39] — 2026-06-20 (`Ashigaru Kaizen II`)
 
 **A2.3b sell-side skim gate** — block sub-edge asks on solo whale book (broader than acquire ask brake).

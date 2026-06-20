@@ -38,7 +38,7 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 |------|------|--------|-------|
 | **1** | **Segment #4 soak** | **closed** | v2.1.37 — BUY +0.025, both sides positive; `at_edge` still false (Δ XRP ↓) |
 | **2** | **Deploy v2.1.38 + Segment #5** | **ongoing** | A2.3 ask brake — bid-only in solo acquire |
-| **3** | **M-Purpose HUD strip** | planned | HUD-only: `at_edge`, buy cap, Δ XRP front and center |
+| **3** | **M-Purpose HUD strip** | **shipped** | HUD-only: `at_edge`, buy cap, Δ XRP front and center |
 | **4** | **A2.4 — realized buy-edge feedback** | planned | Post-fill brake; implied fill price (M2) |
 | **5** | **A2.5 — tune constants** | planned | `MIN_BUY_EDGE_BPS`, G7 backoffs from Segment #4 |
 
@@ -70,7 +70,7 @@ Phase 4 — Scale proof           E3 funding · larger L1 — only after at_edge
 | **2** | **A2.3 acquire ask brake** | **v2.1.38** | **[x] deployed Segment #5** |
 | **2** | **A2.4 realized buy-edge feedback** | TBD | [ ] after A2.3 or parallel |
 | **2** | **A2.5 tune MIN_BUY_EDGE / G7 backoffs** | TBD | [ ] after Segment #4 |
-| **3** | **M-Purpose HUD strip** | HUD-only | [ ] next HUD sprint |
+| **3** | **M-Purpose HUD strip** | HUD-only | **[x] shipped — HUD restart only** |
 | **4** | E3 11k funding | ops | [ ] deferred |
 | — | G8 spot, peer P4–P6, G6 Tier 2/3, arb | — | shelved — [below](#optional-shelf-no-build-unless-signal) |
 
@@ -245,12 +245,12 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 - G7 solo backoffs (8/10 bps) if gate blocks all bids or still bleeds.
 - Soak-driven only — not A-S γ/κ.
 
-#### M-Purpose HUD strip (planned · next HUD sprint · soak-safe)
+#### M-Purpose HUD strip (shipped · HUD-only)
 
-- Soak strip / Live tab: **`at_edge`**, **buy capture**, **Δ XRP** as primary pass/fail — not fills/h or headline skim alone.
-- **Deploy:** `git pull` on VPS → `systemctl restart xledgermate-ws-hud` only — **no engine restart**; Segment #6 soak continues.
-- Computes from existing session data (`runtime_state.json`, fills CSV / `acquisition_metrics`) — display-only, no quote-path change.
-- **Done when:** operator can glance HUD and see purpose gate without running scripts.
+- **Purpose strip** on Live health bar: **Purpose PASS/FAIL**, **`at_edge`**, **buy cap**, **sell cap**, **Δ XRP**, **skim** — primary pass/fail without scripts.
+- **`purpose_hud.py`** — computes from `fill_quote_age.jsonl` + runtime baselines (same as acquisition report).
+- **Deploy:** `git pull` → `systemctl restart xledgermate-ws-hud` only — **no engine restart**.
+- **Done when:** operator can glance HUD and see purpose gate without running scripts. [x]
 
 #### Segment #4 — active (v2.1.37)
 

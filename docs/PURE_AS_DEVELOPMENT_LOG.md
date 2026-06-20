@@ -20,7 +20,9 @@
 4. **Phase 3 (HUD)** — M-Purpose strip so operator sees `at_edge` without scripts.
 5. **Phase 4 (scale)** — E3 funding only after purpose pass on soak.
 
-**Active:** Deploy **v2.1.39** Segment #6 soak. **Next:** M-Purpose HUD (HUD-only).
+**Active:** Segment #6 soak (v2.1.39). **M-Purpose HUD strip shipped** (HUD-only deploy).
+
+**M-Purpose HUD (purpose_hud.py v1.0):** Purpose strip — PASS/FAIL, at_edge, buy/sell cap, Δ XRP, skim. HUD restart only; Segment #6 continues.
 
 **VPS deploy note (2026-06-20 Segment #6):** Windows agents must use `ssh -i $env:USERPROFILE\.ssh\hetzner_xledgermate` — plain `ssh root@188.245.50.229` hangs. Successful deploy: `vps_deploy_ashigaru.sh` → engine + HUD restart @ ~23:17 UTC (`1b28e2f`).
 

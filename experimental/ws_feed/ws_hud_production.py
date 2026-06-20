@@ -51,6 +51,7 @@ from experimental.ws_feed.live_activation_grading import G6_VERSION
 from experimental.ws_feed.live_pure_as_tester import _hud_market_payload
 
 from experimental.ws_feed.performance_metrics import build_performance_metrics
+from experimental.ws_feed.purpose_hud import build_purpose_hud_fields
 from experimental.ws_feed.reservation_metrics import enrich_runtime_reservation_metrics
 from experimental.ws_feed.pure_quote_path import current_ws_as_version
 from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
@@ -422,6 +423,11 @@ class ProductionHudMirror:
         enriched["g6_activation_tier"] = act.get("tier")
         enriched["g6_gate_pass"] = act.get("gate_pass")
         enriched["g6_activation_summary"] = act.get("summary")
+
+        try:
+            enriched.update(build_purpose_hud_fields(enriched))
+        except Exception as exc:
+            logger.debug("purpose HUD fields failed: %s", exc)
 
         now_amm = time.monotonic()
         if now_amm - self._last_amm_at >= 60.0:
