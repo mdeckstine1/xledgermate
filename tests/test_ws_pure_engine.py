@@ -98,6 +98,44 @@ def test_drawdown_kill_cancels_and_persists_same_cycle(monkeypatch) -> None:
     assert persist_kwargs == {"execution": reason, "engine_dec": None}
 
 
+def test_sync_offers_keeps_age_tracking_when_cancel_fails() -> None:
+    from config.settings import BotConfig
+    from datetime import datetime, timedelta, timezone
+
+    class CancelFailsConnector:
+        def __init__(self) -> None:
+            self.offers = [OpenOffer(sequence=44, side="ask", price=1.20, size_xrp=10.0)]
+
+        async def get_open_offers(self):
+            return self.offers
+
+        async def cancel_offer(self, sequence: int) -> None:
+            raise RuntimeError("submit timeout")
+
+        async def place_quote(self, intent) -> None:
+            raise AssertionError("no placement expected")
+
+    config = BotConfig()
+    config.dry_run = False
+    config.bot_secret_key = "test-secret"
+    eng = WsPureTradingEngine(config)
+    eng.connector = CancelFailsConnector()
+    placed_at = datetime(2026, 6, 20, 12, 0, 0, tzinfo=timezone.utc)
+    eng._offer_age.record_place("ask", placed_utc=placed_at, sequence=44)
+
+    placed, cancelled = asyncio.run(
+        eng._sync_offers([], mid=1.10, best_bid=1.00, best_ask=1.10)
+    )
+
+    assert (placed, cancelled) == (0, 0)
+    age = eng._offer_age.age_seconds_at(
+        "ask",
+        sequence=44,
+        detected_utc=placed_at + timedelta(seconds=90),
+    )
+    assert age == 90.0
+
+
 def test_pure_intents_active_l1_only() -> None:
     ladder = [
         {"level": 1, "side": "bid", "price": 1.1, "size_xrp": 12.0, "active": True},

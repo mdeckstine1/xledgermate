@@ -636,9 +636,9 @@ class WsPureTradingEngine:
             )
         cancelled = 0
         for seq in cancel_sequences:
-            self._offer_age.forget_sequence(seq)
             try:
                 await connector.cancel_offer(seq)
+                self._offer_age.forget_sequence(seq)
                 cancelled += 1
             except Exception as exc:
                 self.decision_log.add("execution", f"Cancel seq {seq} failed: {exc}")
