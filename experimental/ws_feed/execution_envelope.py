@@ -10,12 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-G7_VERSION = "1.4.3"
+G7_VERSION = "1.5.0"
 JOIN_BACKOFF_BPS = 5.0
 SOLO_JOIN_BACKOFF_BPS = 3.0
 PASSIVE_BACKOFF_BPS = 8.0
-# Lever 1 (all-4 experiment): solo always forces low 3bps touch for fill rate on empty lane.
-# Ignores inventory base and G2 mult for backoff when solo + low toxic.
 INVENTORY_SKEW_THRESHOLD = 0.12
 JOIN_HALF_SPREAD_FRAC = 0.45
 # A1 — widen ask when SELL-side bleed signals fire (execution only).
@@ -23,8 +21,12 @@ ASK_DEFENSE_EXTRA_BPS = 2.0
 SELL_DEFENSE_TOXIC_30S = 0.15
 SELL_DEFENSE_MARKOUT_PCT = -0.005
 SELL_DEFENSE_MIN_FILLS = 8
-# A2 — solo empty peer lane: bid join on balanced; no ask join on xrp_heavy.
+# A2 — solo empty peer lane.
 SOLO_ACQUIRE_TOXIC_30S_MAX = 0.20
+# Inventory acquire: bid join can stay tight when toxic is from SELL fills (G2 brake).
+SOLO_BID_TOXIC_MAX = 0.35
+ACCUMULATE_POSTURES = frozenset({"balanced", "rlusd_heavy", "slight_rlusd_heavy"})
+HOLD_XRP_POSTURES = frozenset({"xrp_heavy", "slight_xrp_heavy"})
 
 
 def resolve_join_backoff_bps(*, book_half_spread_bps: Optional[float] = None) -> float:
@@ -112,16 +114,25 @@ def apply_solo_lane_posture(
     g2_spread_mult: float = 1.0,
 ) -> tuple[float, float, str, str, bool]:
     """
-    A2/A2.1: empty peer band — two-sided join for fill rate unless full xrp_heavy.
-    Skips when toxicity elevated or G2 braking (presence without adverse flow).
+    Solo empty lane — inventory-aware (v1.5):
+    - Accumulating XRP: bid join @ 3bps, ask passive (storefront for sellers only).
+    - XRP-heavy: both passive — hold bag, don't sell at touch.
     """
+    del join_bps, g2_spread_mult  # join_bps reserved; G2 does not disable solo bid acquire
     if not peer_lane_empty:
         return bid_base, ask_base, bid_role, ask_role, False
-    if toxic_ratio_30s >= SOLO_ACQUIRE_TOXIC_30S_MAX:
-        return bid_base, ask_base, bid_role, ask_role, False
-    # Lever 1: force solo low backoff regardless of G2 mult >1 or inventory posture (experiment to fix 9+ bps)
+
     solo_join = SOLO_JOIN_BACKOFF_BPS
-    return solo_join, solo_join, "join", "join", True
+
+    if posture in ACCUMULATE_POSTURES:
+        if toxic_ratio_30s >= SOLO_BID_TOXIC_MAX:
+            return bid_base, ask_base, bid_role, ask_role, False
+        return solo_join, PASSIVE_BACKOFF_BPS, "join", "passive", True
+
+    if posture in HOLD_XRP_POSTURES:
+        return PASSIVE_BACKOFF_BPS, PASSIVE_BACKOFF_BPS, "passive", "passive", False
+
+    return bid_base, ask_base, bid_role, ask_role, False
 
 
 def compute_execution_envelope(
@@ -138,10 +149,10 @@ def compute_execution_envelope(
 ) -> ExecutionEnvelope:
     """
     Rule A: per-side base backoff from inventory.
-    Rule B: multiply both sides by max(1, g2.spread_mult).
+    Rule B: multiply both sides by max(1, g2.spread_mult) — bid acquire overrides below.
     Rule C: join side uses resolve_join_backoff_bps (book-aware floor).
     Rule D (A1): ask sell-defense — demote ask join + extra ask backoff on bleed signals.
-    Rule E (A2/A2.1): solo empty lane — two-sided join unless full xrp_heavy.
+    Rule E (v1.5): solo acquire — bid join + ask passive when accumulating; hold when xrp_heavy.
     """
     join_bps = resolve_join_backoff_bps(book_half_spread_bps=book_half_spread_bps)
     posture = _inventory_posture(inventory_label=inventory_label, inventory_skew=inventory_skew)
@@ -187,15 +198,22 @@ def compute_execution_envelope(
     bid_bps = round(bid_base * mult, 2)
     ask_bps = round(ask_base * mult, 2)
 
-    # Lever 1 (all-4): solo low-toxic always clamps to 3bps join on both to fix high backoff (e.g. 9/11)
-    if solo and toxic_ratio_30s < 0.20:
+    # v1.5: inventory acquire — bid join ignores G2 widening; ask keeps brake/defense.
+    solo_bid_acquire = (
+        solo
+        and posture in ACCUMULATE_POSTURES
+        and toxic_ratio_30s < SOLO_BID_TOXIC_MAX
+    )
+    if solo_bid_acquire and bid_role == "join":
         bid_bps = SOLO_JOIN_BACKOFF_BPS
-        ask_bps = SOLO_JOIN_BACKOFF_BPS
         bid_role = "join"
-        ask_role = "join"
-        mult = 1.0  # do not show G2 widening the touch distance in solo
+        solo = True
+    elif solo and toxic_ratio_30s >= SOLO_ACQUIRE_TOXIC_30S_MAX:
+        solo = False
 
-    mult_note = f" × G2 {mult:.2f}" if mult > 1.0 else ""
+    mult_note = f" × G2 {mult:.2f}" if mult > 1.0 and not solo_bid_acquire else ""
+    if mult > 1.0 and solo_bid_acquire:
+        mult_note = f" × G2 {mult:.2f} ask-only"
     solo_note = " · solo acquire" if solo else ""
     defense_note = f" · ask defense ({defense_reason})" if defense else ""
     summary = (

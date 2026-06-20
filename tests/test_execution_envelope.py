@@ -126,54 +126,80 @@ def test_solo_acquisition_balanced_bid_join() -> None:
     )
     assert env.solo_acquisition is True
     assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
-    assert env.ask_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
     assert env.bid_role == "join"
-    assert env.ask_role == "join"
+    assert env.ask_role == "passive"
     assert "solo acquire" in env.summary
 
 
-def test_solo_acquisition_slight_xrp_heavy_two_sided_join() -> None:
+def test_solo_acquisition_slight_rlusd_bid_join_ask_passive() -> None:
     env = compute_execution_envelope(
-        inventory_label="slight_xrp_heavy",
+        inventory_label="slight_rlusd_heavy",
         g2_spread_mult=1.0,
         peer_lane_empty=True,
         toxic_ratio_30s=0.05,
     )
     assert env.solo_acquisition is True
-    assert env.inventory_posture == "slight_xrp_heavy"
     assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
-    assert env.ask_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
     assert env.bid_role == "join"
-    assert env.ask_role == "join"
+    assert env.ask_role == "passive"
 
 
-def test_solo_acquisition_xrp_heavy_forced_two_sided_join() -> None:
-    # Lever 1 (all-4): even xrp_heavy solo low-toxic forces 3bps join on *both* (aggressive fill rate)
+def test_solo_acquisition_xrp_heavy_hold_both_passive() -> None:
     env = compute_execution_envelope(
         inventory_label="xrp_heavy",
         g2_spread_mult=1.0,
         peer_lane_empty=True,
         toxic_ratio_30s=0.05,
     )
-    assert env.solo_acquisition is True
-    assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
-    assert env.ask_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
-    assert env.bid_role == "join"
-    assert env.ask_role == "join"
+    assert env.solo_acquisition is False
+    assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.bid_role == "passive"
+    assert env.ask_role == "passive"
+
+
+def test_solo_acquisition_slight_xrp_heavy_hold() -> None:
+    env = compute_execution_envelope(
+        inventory_label="slight_xrp_heavy",
+        g2_spread_mult=1.0,
+        peer_lane_empty=True,
+        toxic_ratio_30s=0.05,
+    )
+    assert env.solo_acquisition is False
+    assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
 
 
 def test_solo_acquisition_skipped_on_toxic() -> None:
     env = compute_execution_envelope(
         inventory_label="balanced",
         peer_lane_empty=True,
-        toxic_ratio_30s=0.25,
+        toxic_ratio_30s=0.40,
     )
     assert env.solo_acquisition is False
     assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
 
 
-def test_solo_acquisition_forced_even_on_g2_brake_low_toxic() -> None:
-    # Lever 1 (all-4): solo low-toxic forces 3bps join even if g2>1 (overrides brake for touch distance)
+def test_solo_bid_acquire_survives_g2_and_toxic_at_20pct() -> None:
+    """SELL toxic + G2 brake must not kill bid join while still accumulating."""
+    env = compute_execution_envelope(
+        inventory_label="slight_rlusd_heavy",
+        peer_lane_empty=True,
+        g2_spread_mult=1.15,
+        g2_grade="stressed",
+        toxic_ratio_30s=0.20,
+    )
+    assert env.solo_acquisition is True
+    assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
+    assert env.bid_role == "join"
+    assert env.ask_touch_backoff_bps > PASSIVE_BACKOFF_BPS
+    assert env.ask_role == "passive"
+    assert "ask-only" in env.summary or env.ask_sell_defense
+
+
+def test_solo_acquisition_bid_join_on_g2_brake_low_toxic() -> None:
     env = compute_execution_envelope(
         inventory_label="balanced",
         peer_lane_empty=True,
@@ -182,8 +208,7 @@ def test_solo_acquisition_forced_even_on_g2_brake_low_toxic() -> None:
     )
     assert env.solo_acquisition is True
     assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
-    assert env.ask_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
-    # G2 may still be recorded but touch distance is clamped
+    assert env.ask_touch_backoff_bps > SOLO_JOIN_BACKOFF_BPS
     assert "solo acquire" in env.summary
 
 

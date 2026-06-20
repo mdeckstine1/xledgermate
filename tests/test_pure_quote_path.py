@@ -152,9 +152,8 @@ def test_g4_peer_lane_in_quote_path() -> None:
         )
         assert balanced_empty.g4_grade == "solo_acquire"
         assert balanced_empty.g7_solo_acquisition is True
-        # Lever 1 (all-4): solo always two-sided 3bps join now (even on xrp_heavy posture)
         assert balanced_empty.g7_bid_role == "join"
-        assert balanced_empty.g7_ask_role == "join"
+        assert balanced_empty.g7_ask_role == "passive"
 
         xrp_empty = await path.compute_decision(
             mid=1.120508,
@@ -169,9 +168,9 @@ def test_g4_peer_lane_in_quote_path() -> None:
             },
         )
         assert xrp_empty.g4_grade == "solo_acquire"
-        assert xrp_empty.g7_solo_acquisition is True
-        assert xrp_empty.g7_bid_role == "join"
-        assert xrp_empty.g7_ask_role == "join"
+        assert xrp_empty.g7_solo_acquisition is False
+        assert xrp_empty.g7_bid_role == "passive"
+        assert xrp_empty.g7_ask_role == "passive"
 
         skim = await path.compute_decision(
             mid=1.120508,
