@@ -158,6 +158,7 @@ class RuntimeState:
     g7_ask_sell_defense: bool = False
     peer_lane_empty: bool = False
     acquisition_metrics: Dict[str, Any] = field(default_factory=dict)
+    g4_peer_lane_count: int = 0
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -339,4 +340,5 @@ class RuntimeStateStore:
             g7_ask_sell_defense=bool(data.get("g7_ask_sell_defense", False)),
             peer_lane_empty=bool(data.get("peer_lane_empty", False)),
             acquisition_metrics=dict(data.get("acquisition_metrics") or {}),
+            g4_peer_lane_count=int(data.get("g4_peer_lane_count") or 0),
         )

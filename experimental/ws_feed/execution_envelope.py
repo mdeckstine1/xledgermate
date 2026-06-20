@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-G7_VERSION = "1.4.0"
+G7_VERSION = "1.4.1"
 JOIN_BACKOFF_BPS = 5.0
 PASSIVE_BACKOFF_BPS = 8.0
 INVENTORY_SKEW_THRESHOLD = 0.12
@@ -126,7 +126,8 @@ def apply_solo_lane_posture(
     ):
         return join_bps, join_bps, "join", "join", True
     if posture == "xrp_heavy":
-        return PASSIVE_BACKOFF_BPS, PASSIVE_BACKOFF_BPS, "passive", "passive", True
+        # Solo empty lane: ask join to rebalance + fill rate (bid stays passive).
+        return PASSIVE_BACKOFF_BPS, join_bps, "passive", "join", True
     return bid_base, ask_base, bid_role, ask_role, False
 
 

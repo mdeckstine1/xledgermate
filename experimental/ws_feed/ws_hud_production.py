@@ -82,8 +82,28 @@ METRICS_INTERVAL_S = 30.0
 
 
 
-def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
+def _peer_lane_intel_from_runtime(rt: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge top-level runtime + competitor_intel for peer-lane empty detection."""
+    ci = rt.get("competitor_intel") if isinstance(rt.get("competitor_intel"), dict) else {}
+    count_raw = (
+        rt.get("g4_peer_lane_count")
+        if rt.get("g4_peer_lane_count") is not None
+        else ci.get("peer_lane_count")
+    )
+    try:
+        count = int(count_raw) if count_raw is not None else None
+    except (TypeError, ValueError):
+        count = None
+    empty_flag = bool(rt.get("peer_lane_empty") or ci.get("peer_lane_empty"))
+    if count is not None and count <= 0:
+        empty_flag = True
+    return {
+        "peer_lane_empty": empty_flag,
+        "peer_lane_count": count if count is not None else 0,
+    }
 
+
+def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
     """Map ws-engine RuntimeState export → HUD/live tester field names."""
 
     rt = dict(runtime)
@@ -188,7 +208,14 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
     # compute_execution_envelope. This makes "G7 queue" in the Session fills card
     # show the correct per-side backoff + roles + G2 coupling immediately.
     g7_scaler = (rt.get("g7_scaler_label") or rt.get("g7_summary") or "").strip()
-    if not g7_scaler or g7_scaler in ("—", "off", ""):
+    peer_intel = _peer_lane_intel_from_runtime(rt)
+    peer_empty = is_peer_lane_empty(peer_intel)
+    needs_g7_synth = (
+        not g7_scaler
+        or g7_scaler in ("—", "off", "")
+        or (peer_empty and not rt.get("g7_solo_acquisition"))
+    )
+    if needs_g7_synth:
         try:
             inv_label = str(rt.get("inventory_label") or "")
             g2_mult = rt.get("g2_spread_mult")
@@ -207,12 +234,7 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
                 toxic_ratio_30s=float(rt.get("toxic_fill_ratio_30s") or 0.0),
                 mean_markout_30s_pct=float(rt.get("mean_markout_30s_pct") or 0.0),
                 recent_fills=int(rt.get("fills_session") or 0),
-                peer_lane_empty=is_peer_lane_empty(
-                    {
-                        "peer_lane_empty": rt.get("peer_lane_empty"),
-                        "peer_lane_count": rt.get("g4_peer_lane_count"),
-                    }
-                ),
+                peer_lane_empty=peer_empty,
             )
             rt["g7_summary"] = env.summary
             rt["g7_scaler_label"] = env.scaler_label
@@ -223,6 +245,7 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
             rt["g7_ask_sell_defense"] = env.ask_sell_defense
             rt["g7_sell_defense_reason"] = env.sell_defense_reason
             rt["g7_solo_acquisition"] = env.solo_acquisition
+            rt["peer_lane_empty"] = peer_empty
             # mark that this came from HUD synthesis so operator can tell
             rt["_g7_synth"] = "inventory+g2+fill_quality"
         except Exception:

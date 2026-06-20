@@ -2682,7 +2682,12 @@ The A-S strategy itself decides presence via reservation price being inside the 
             } else {
                 setText('g2-scaler', s.g2_grade === 'ok' ? 'ok (no chase)' : 'neutral');
             }
-            setText('g7-scaler', s.g7_scaler_label || s.g7_summary || '—');
+            setText('g7-scaler', (() => {
+                let line = s.g7_scaler_label || s.g7_summary || '—';
+                if (s.g7_solo_acquisition && line.indexOf('solo') < 0) line += ' · solo acquire';
+                if (s.peer_lane_empty) line += ' · empty lane';
+                return line;
+            })());
             const qVis = s.quote_visibility_summary
                 || (s.worst_vs_touch_bps != null && s.worst_vs_touch_bps > 0
                     ? `worst ${parseFloat(s.worst_vs_touch_bps).toFixed(1)}bps off touch`

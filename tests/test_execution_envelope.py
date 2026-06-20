@@ -146,7 +146,7 @@ def test_solo_acquisition_slight_xrp_heavy_two_sided_join() -> None:
     assert env.ask_role == "join"
 
 
-def test_solo_acquisition_xrp_heavy_passive_both() -> None:
+def test_solo_acquisition_xrp_heavy_ask_join() -> None:
     env = compute_execution_envelope(
         inventory_label="xrp_heavy",
         g2_spread_mult=1.0,
@@ -155,9 +155,9 @@ def test_solo_acquisition_xrp_heavy_passive_both() -> None:
     )
     assert env.solo_acquisition is True
     assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
-    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == JOIN_BACKOFF_BPS
     assert env.bid_role == "passive"
-    assert env.ask_role == "passive"
+    assert env.ask_role == "join"
 
 
 def test_solo_acquisition_skipped_on_toxic() -> None:

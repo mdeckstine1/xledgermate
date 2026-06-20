@@ -1167,6 +1167,7 @@ class WsPureTradingEngine:
             g7_ask_sell_defense=bool(ed.get("g7_ask_sell_defense")),
             peer_lane_empty=peer_lane_empty,
             acquisition_metrics=acquisition_metrics,
+            g4_peer_lane_count=int(ed.get("g4_peer_lane_count") or 0),
         )
         self.state_store.save(state)
         if ed and flags.intel_log:
