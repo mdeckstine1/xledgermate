@@ -5,7 +5,21 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
-## [2.1.34] — 2026-06-20 (`Ashigaru Kaizen II`)
+## [2.1.36] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**Pivot:** Segment #3 (v2.1.35) stopped early — bid join gave fills/conversion but **negative buy skim** (`at_edge=False`). Goal is skim-funded inventory growth, not RLUSD→XRP at mid.
+
+**G7 v1.6 edge-positive solo acquire:**
+- Accumulate postures: **passive bid @ 8bps**, **ask @ 10bps** (no 3bps join).
+- G2 applies to both sides again (no bid join override).
+- Summary: `solo edge acquire`.
+- Removed solo A-S vol tighten (all-4 lever 2).
+
+**Segment #3 verdict (early stop, ~11 fills):** Fail for skim goal — Δ XRP +67, session skim −0.009, `at_edge=False`, MTM flat.
+
+---
+
+## [2.1.35] — 2026-06-20 (`Ashigaru Kaizen II`)
 
 **Fix:** Add missing `solo_as_tighten` field to `RuntimeState` — v2.1.33 cycles were crashing every loop with `TypeError: unexpected keyword argument 'solo_as_tighten'`, so HUD/runtime stuck on stale v2.1.32 G7 (9/11 bps).
 

@@ -53,7 +53,9 @@ def solo_acquire_fired(*, g7_solo_acquisition: bool) -> bool:
 
 
 def solo_acquire_bid_join_fired(*, g7_solo_acquisition: bool, g7_bid_role: str) -> bool:
-    return bool(g7_solo_acquisition) and (g7_bid_role or "").strip().lower() == "join"
+    """Solo edge acquire: passive bid (v1.6) or legacy join."""
+    role = (g7_bid_role or "").strip().lower()
+    return bool(g7_solo_acquisition) and role in ("join", "passive")
 
 
 def extract_acquisition_fill_context(

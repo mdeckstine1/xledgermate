@@ -1,12 +1,12 @@
 # Pure A-S Critical Path
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
-**Version:** v2.1.33 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-20 (all-4 solo levers deployed: G7 force-3bps + solo A-S tighten + A3 relax + sync preserve)
+**Version:** v2.1.36 · **Branch:** `Ashigaru-Kaizen-II`  
+**Last updated:** 2026-06-20 (Segment #3 stopped early · G7 v1.6 edge-positive acquire pivot)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
-**Soak = timed test run.** **M6 signed off** (2026-06-19). **v2.1.22** on engine. **Segment #2 closed** (Watch). **G6 v1.1** HUD shipped — one ~50-fill calibration soak, then **acquisition phase** (solo band, no peer competition).
+**Soak = timed test run.** **Segment #3 (v2.1.35 join-acquire) stopped @ ~11 fills** — conversion without skim; pivot to **G7 v1.6 edge acquire** (passive bid / wide ask). Pass gate: **`at_edge=True`** + **`session_spread_capture_xrp > 0`**, not fill count alone.
 
 ---
 

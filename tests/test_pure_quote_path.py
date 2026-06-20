@@ -152,7 +152,7 @@ def test_g4_peer_lane_in_quote_path() -> None:
         )
         assert balanced_empty.g4_grade == "solo_acquire"
         assert balanced_empty.g7_solo_acquisition is True
-        assert balanced_empty.g7_bid_role == "join"
+        assert balanced_empty.g7_bid_role == "passive"
         assert balanced_empty.g7_ask_role == "passive"
 
         xrp_empty = await path.compute_decision(

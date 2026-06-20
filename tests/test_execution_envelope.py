@@ -4,6 +4,7 @@ from experimental.ws_feed.execution_envelope import (
     ASK_DEFENSE_EXTRA_BPS,
     JOIN_BACKOFF_BPS,
     PASSIVE_BACKOFF_BPS,
+    SOLO_EDGE_ASK_BACKOFF_BPS,
     SOLO_JOIN_BACKOFF_BPS,
     apply_solo_lane_posture,
     compute_execution_envelope,
@@ -117,7 +118,7 @@ def test_sell_defense_inactive_when_markout_ok() -> None:
     assert env.ask_sell_defense is False
 
 
-def test_solo_acquisition_balanced_bid_join() -> None:
+def test_solo_edge_acquire_balanced_passive_bid() -> None:
     env = compute_execution_envelope(
         inventory_label="balanced",
         g2_spread_mult=1.0,
@@ -125,14 +126,14 @@ def test_solo_acquisition_balanced_bid_join() -> None:
         toxic_ratio_30s=0.05,
     )
     assert env.solo_acquisition is True
-    assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
-    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
-    assert env.bid_role == "join"
+    assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == SOLO_EDGE_ASK_BACKOFF_BPS
+    assert env.bid_role == "passive"
     assert env.ask_role == "passive"
-    assert "solo acquire" in env.summary
+    assert "solo edge acquire" in env.summary
 
 
-def test_solo_acquisition_slight_rlusd_bid_join_ask_passive() -> None:
+def test_solo_edge_acquire_slight_rlusd_passive_both() -> None:
     env = compute_execution_envelope(
         inventory_label="slight_rlusd_heavy",
         g2_spread_mult=1.0,
@@ -140,9 +141,9 @@ def test_solo_acquisition_slight_rlusd_bid_join_ask_passive() -> None:
         toxic_ratio_30s=0.05,
     )
     assert env.solo_acquisition is True
-    assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
-    assert env.ask_touch_backoff_bps == PASSIVE_BACKOFF_BPS
-    assert env.bid_role == "join"
+    assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == SOLO_EDGE_ASK_BACKOFF_BPS
+    assert env.bid_role == "passive"
     assert env.ask_role == "passive"
 
 
@@ -176,40 +177,36 @@ def test_solo_acquisition_skipped_on_toxic() -> None:
     env = compute_execution_envelope(
         inventory_label="balanced",
         peer_lane_empty=True,
-        toxic_ratio_30s=0.40,
+        toxic_ratio_30s=0.25,
     )
     assert env.solo_acquisition is False
     assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
 
 
-def test_solo_bid_acquire_survives_g2_and_toxic_at_20pct() -> None:
-    """SELL toxic + G2 brake must not kill bid join while still accumulating."""
+def test_solo_edge_acquire_g2_widens_both_sides() -> None:
     env = compute_execution_envelope(
         inventory_label="slight_rlusd_heavy",
         peer_lane_empty=True,
         g2_spread_mult=1.15,
         g2_grade="stressed",
-        toxic_ratio_30s=0.20,
-    )
-    assert env.solo_acquisition is True
-    assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
-    assert env.bid_role == "join"
-    assert env.ask_touch_backoff_bps > PASSIVE_BACKOFF_BPS
-    assert env.ask_role == "passive"
-    assert "ask-only" in env.summary or env.ask_sell_defense
-
-
-def test_solo_acquisition_bid_join_on_g2_brake_low_toxic() -> None:
-    env = compute_execution_envelope(
-        inventory_label="balanced",
-        peer_lane_empty=True,
-        g2_spread_mult=1.1,
         toxic_ratio_30s=0.05,
     )
     assert env.solo_acquisition is True
-    assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
-    assert env.ask_touch_backoff_bps > SOLO_JOIN_BACKOFF_BPS
-    assert "solo acquire" in env.summary
+    assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS * 1.15
+    assert env.bid_role == "passive"
+    assert env.ask_touch_backoff_bps == round((SOLO_EDGE_ASK_BACKOFF_BPS + ASK_DEFENSE_EXTRA_BPS) * 1.15, 2)
+    assert env.ask_role == "passive"
+    assert env.ask_sell_defense is True
+
+
+def test_solo_acquisition_off_at_toxic_20pct() -> None:
+    env = compute_execution_envelope(
+        inventory_label="balanced",
+        peer_lane_empty=True,
+        g2_spread_mult=1.0,
+        toxic_ratio_30s=0.20,
+    )
+    assert env.solo_acquisition is False
 
 
 def test_apply_solo_lane_posture_no_intel_fields() -> None:

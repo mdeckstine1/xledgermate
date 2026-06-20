@@ -10,10 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-G7_VERSION = "1.5.0"
+G7_VERSION = "1.6.0"
 JOIN_BACKOFF_BPS = 5.0
 SOLO_JOIN_BACKOFF_BPS = 3.0
 PASSIVE_BACKOFF_BPS = 8.0
+# v1.6 edge-positive acquire: passive bid (below touch), wider ask — skim-funded growth, not join churn.
+SOLO_EDGE_ASK_BACKOFF_BPS = 10.0
 INVENTORY_SKEW_THRESHOLD = 0.12
 JOIN_HALF_SPREAD_FRAC = 0.45
 # A1 — widen ask when SELL-side bleed signals fire (execution only).
@@ -23,8 +25,6 @@ SELL_DEFENSE_MARKOUT_PCT = -0.005
 SELL_DEFENSE_MIN_FILLS = 8
 # A2 — solo empty peer lane.
 SOLO_ACQUIRE_TOXIC_30S_MAX = 0.20
-# Inventory acquire: bid join can stay tight when toxic is from SELL fills (G2 brake).
-SOLO_BID_TOXIC_MAX = 0.35
 ACCUMULATE_POSTURES = frozenset({"balanced", "rlusd_heavy", "slight_rlusd_heavy"})
 HOLD_XRP_POSTURES = frozenset({"xrp_heavy", "slight_xrp_heavy"})
 
@@ -114,20 +114,24 @@ def apply_solo_lane_posture(
     g2_spread_mult: float = 1.0,
 ) -> tuple[float, float, str, str, bool]:
     """
-    Solo empty lane — inventory-aware (v1.5):
-    - Accumulating XRP: bid join @ 3bps, ask passive (storefront for sellers only).
-    - XRP-heavy: both passive — hold bag, don't sell at touch.
+    Solo empty lane — edge-positive acquire (v1.6):
+    - Accumulating: passive bid @ 8bps (buy below touch / seek skim), ask wider @ 10bps.
+    - XRP-heavy: both passive — hold bag.
     """
-    del join_bps, g2_spread_mult  # join_bps reserved; G2 does not disable solo bid acquire
+    del join_bps, g2_spread_mult
     if not peer_lane_empty:
         return bid_base, ask_base, bid_role, ask_role, False
 
-    solo_join = SOLO_JOIN_BACKOFF_BPS
-
     if posture in ACCUMULATE_POSTURES:
-        if toxic_ratio_30s >= SOLO_BID_TOXIC_MAX:
+        if toxic_ratio_30s >= SOLO_ACQUIRE_TOXIC_30S_MAX:
             return bid_base, ask_base, bid_role, ask_role, False
-        return solo_join, PASSIVE_BACKOFF_BPS, "join", "passive", True
+        return (
+            PASSIVE_BACKOFF_BPS,
+            SOLO_EDGE_ASK_BACKOFF_BPS,
+            "passive",
+            "passive",
+            True,
+        )
 
     if posture in HOLD_XRP_POSTURES:
         return PASSIVE_BACKOFF_BPS, PASSIVE_BACKOFF_BPS, "passive", "passive", False
@@ -149,10 +153,10 @@ def compute_execution_envelope(
 ) -> ExecutionEnvelope:
     """
     Rule A: per-side base backoff from inventory.
-    Rule B: multiply both sides by max(1, g2.spread_mult) — bid acquire overrides below.
+    Rule B: multiply both sides by max(1, g2.spread_mult).
     Rule C: join side uses resolve_join_backoff_bps (book-aware floor).
     Rule D (A1): ask sell-defense — demote ask join + extra ask backoff on bleed signals.
-    Rule E (v1.5): solo acquire — bid join + ask passive when accumulating; hold when xrp_heavy.
+    Rule E (v1.6): solo edge acquire — passive bid + wide ask when accumulating; hold when xrp_heavy.
     """
     join_bps = resolve_join_backoff_bps(book_half_spread_bps=book_half_spread_bps)
     posture = _inventory_posture(inventory_label=inventory_label, inventory_skew=inventory_skew)
@@ -198,23 +202,8 @@ def compute_execution_envelope(
     bid_bps = round(bid_base * mult, 2)
     ask_bps = round(ask_base * mult, 2)
 
-    # v1.5: inventory acquire — bid join ignores G2 widening; ask keeps brake/defense.
-    solo_bid_acquire = (
-        solo
-        and posture in ACCUMULATE_POSTURES
-        and toxic_ratio_30s < SOLO_BID_TOXIC_MAX
-    )
-    if solo_bid_acquire and bid_role == "join":
-        bid_bps = SOLO_JOIN_BACKOFF_BPS
-        bid_role = "join"
-        solo = True
-    elif solo and toxic_ratio_30s >= SOLO_ACQUIRE_TOXIC_30S_MAX:
-        solo = False
-
-    mult_note = f" × G2 {mult:.2f}" if mult > 1.0 and not solo_bid_acquire else ""
-    if mult > 1.0 and solo_bid_acquire:
-        mult_note = f" × G2 {mult:.2f} ask-only"
-    solo_note = " · solo acquire" if solo else ""
+    mult_note = f" × G2 {mult:.2f}" if mult > 1.0 else ""
+    solo_note = " · solo edge acquire" if solo else ""
     defense_note = f" · ask defense ({defense_reason})" if defense else ""
     summary = (
         f"G7 {posture}: bid {bid_bps:.1f}bps ({bid_role}) · "
