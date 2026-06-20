@@ -158,6 +158,11 @@ def test_g4_peer_lane_in_quote_path() -> None:
         assert balanced_empty.buy_edge_gate_blocked is False
         assert balanced_empty.buy_edge_implied_bps is not None
         assert balanced_empty.buy_edge_implied_bps >= 1.0
+        assert balanced_empty.acquire_ask_brake_active is True
+        assert balanced_empty.acquire_ask_brake_blocked is True
+        assert balanced_empty.pause_asks is True
+        assert balanced_empty.suggested_ask is None
+        assert balanced_empty.suggested_bid is not None
 
         xrp_empty = await path.compute_decision(
             mid=1.120508,

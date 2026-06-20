@@ -1,39 +1,95 @@
 # Pure A-S Critical Path
 
-**Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
-**Version:** v2.1.37 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-20 (v2.1.36 soak interim assessment @ 16 fills · A2.2 deploy Segment #4)
+**Status:** Live soak — **Segment #4** · **v2.1.37** on VPS · **HUD** `:8765`  
+**Version:** v2.1.38 · **Branch:** `Ashigaru-Kaizen-II`  
+**Last updated:** 2026-06-20 (A2.3 acquire ask brake built)
 
-Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
-
-**Soak = timed test run.** **Segment #3 (v2.1.35 join-acquire) stopped @ ~11 fills** — conversion without skim; pivot to **G7 v1.6 edge acquire** (passive bid / wide ask). **v2.1.37 A2.2 skim gate built** — deploy at Segment #4. Pass gate: **`at_edge=True`** + **`session_spread_capture_xrp > 0`**, not fill count alone.
+Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists. Narrative + archaeology: [`PURE_AS_DEVELOPMENT_LOG.md`](PURE_AS_DEVELOPMENT_LOG.md).
 
 ---
 
-## Priority stack
+## North star (read this first)
 
-Ordered by what live soaks proved matters. **Do not skip tiers** — finish P0 before P2 engine work; ship P2 HUD-only before the next timed segment.
+**Bot purpose:** skim-funded **inventory growth** — buy XRP below fair from a wide whale book, not RLUSD↔XRP conversion at mid.
 
-| Pri | Item | Soak signal | Status |
-|-----|------|-------------|--------|
-| **P2** | **G6 v1.1** (HUD-only) | M6 false hold; align gate with macro ops | **[x] shipped** — calibration soak ongoing |
-| **P1** | **A1 — SELL-side bleed** | 78 fills: BUY +0.096 / SELL **−0.197** XRP | **[x] closed Fail** — G7 v1.2 ran; economics gate not met |
-| **P1** | **A2.2 — buy-side skim gate** | Segment #3 paid ~mid on buys | **[x] v2.1.37 built** — deploy Segment #4 |
-| **P1** | **A2 — presence / fill rate** | Solo whale book — win by being at touch | **[x] v2.1.27 deployed** — G7 v1.3 + G4 solo_acquire |
-| **P1** | **A3 — stale-quote tail** | 127s–4876s ask fills; 201s+ bid tail in A1 | **[x] v2.1.27 deployed** — `stale_quote_guard` |
-| **P2** | **A2+A3 soak** | ~50 fills vs A1 baseline | **ongoing** — no wholesale quote tweaks |
-| **P3** | **G8** spot trend posture | #1 spot pain; #2 spot helped — **defer** | spec only — [stance](#spot--inventory-operator-stance) |
-| **P3** | cancel/fill tune | **2.96** unchanged vs M6 — engine window | deferred |
-| **P3** | Stale-quote guard | Folded into **A3** after A1/A2 | see [A3](#a3-stale-quote-tail) |
-| **P3** | G6 Tier 2 (rolling window) | Sticky after bad early fills | after one v1.1 soak |
-| **P3** | G6→G2/G7 coupling (Tier 3) | Hold advisory-only today | deferred until hold is rare |
-| **P4** | L2/L3 ledger sync | Book tab L1 only | post-soak |
-| **P4** | I1–I4 regime channel | Book-wide; peer lane empty | low priority |
-| **P4** | P7 async submit | 5s loop pressure | M2/M3 review |
-| **P4** | **E3** 11k funding | Operator timeline + warm fuzzy | after consistent skim signal |
-| **P4** | H3–H7 arb | Separate wallet | G6 pass + H1 |
-| **P4** | F4 Grok correlation | Offline | fill depth |
-| — | Peer lane watch | Peer Cal / cal JSONL — **&gt; 0**? | passive (shelved) |
+| Layer | Role |
+|-------|------|
+| **G7 posture** | *Where* to quote (solo edge acquire: passive bid / wide ask) |
+| **A2 enforcement** | *Whether* to quote (min edge on bids; ask brake next) |
+| **G2 / A3** | Brakes (toxic, stale age) — never override A-S reservation |
+| **G6** | Measurement only (HUD) — not a kill switch |
+
+**Purpose pass gate (soak verdict):** all required — fill count is diagnostic only.
+
+| # | Metric | Meaning |
+|---|--------|---------|
+| 1 | `session_spread_capture_xrp > 0` | MM added value |
+| 2 | **`buy_capture_xrp > 0`** | growth funded by buy skim, not sells |
+| 3 | **`at_edge: True`** | Δ XRP &gt; 0 **and** buy capture &gt; 0 |
+| 4 | MTM Δ &gt; 0 (spot aside) | wealth actually up |
+
+**Anti-pattern:** positive session skim with **SELL-led** capture and `at_edge=False` — v2.1.36 @ 18 fills (+0.029 skim, BUY −0.013 / SELL +0.042). Do **not** stop a soak on headline skim alone; check `by side:` in `_session_diag_quick.py`.
+
+---
+
+## Active sprint (NOW)
+
+| Step | Item | Status | Notes |
+|------|------|--------|-------|
+| **1** | **Segment #4 soak** | **closed** | v2.1.37 — BUY +0.025, both sides positive; `at_edge` still false (Δ XRP ↓) |
+| **2** | **Deploy v2.1.38 + Segment #5** | **next** | A2.3 ask brake — bid-only in solo acquire |
+| **3** | **M-Purpose HUD strip** | planned | HUD-only: `at_edge`, buy cap, Δ XRP front and center |
+| **4** | **A2.4 — realized buy-edge feedback** | planned | Post-fill brake; implied fill price (M2) |
+| **5** | **A2.5 — tune constants** | planned | `MIN_BUY_EDGE_BPS`, G7 backoffs from Segment #4 |
+
+**Soak stop rule:** 50 fills **or** 2–3h · no mid-soak engine tweaks unless kill-switch.
+
+**Segment #4 baseline to beat:** v2.1.36 final — BUY **−0.013**, SELL **+0.042**, `at_edge=False`.
+
+---
+
+## Skim-funded inventory roadmap (cohesive path)
+
+One line of development — each phase unlocks the next. Do not skip ahead to scale (E3) or spot (G8) until **purpose pass** on live size.
+
+```
+Phase 1 — Hygiene (shipped)     A1 sell-defense · A2 presence · A3 stale guard
+Phase 2 — Edge enforcement      A2.2 buy gate [x] → A2.3 ask brake → A2.4 realized edge → A2.5 tune
+Phase 3 — Operator clarity      M-Purpose HUD (at_edge scoreboard)
+Phase 4 — Scale proof           E3 funding · larger L1 — only after at_edge on soak
+```
+
+| Phase | Build | Version | Status |
+|-------|-------|---------|--------|
+| **1** | A1 G7 sell-defense | v2.1.23 | [x] closed Fail (economics) |
+| **1** | A2 G7 solo + G4 solo_acquire | v2.1.27 | [x] deployed |
+| **1** | A3 stale-quote guard | v2.1.27 | [x] deployed |
+| **1** | G7 v1.6 edge-positive acquire | v2.1.36 | [x] deployed — posture only |
+| **2** | **A2.2 buy-side skim gate** | **v2.1.37** | **[x] deployed Segment #4** |
+| **2** | **A2.3 acquire ask brake** | **v2.1.38** | **[x] built — deploy Segment #5** |
+| **2** | **A2.4 realized buy-edge feedback** | TBD | [ ] after A2.3 or parallel |
+| **2** | **A2.5 tune MIN_BUY_EDGE / G7 backoffs** | TBD | [ ] after Segment #4 |
+| **3** | **M-Purpose HUD strip** | HUD-only | [ ] next HUD sprint |
+| **4** | E3 11k funding | ops | [ ] deferred |
+| — | G8 spot, peer P4–P6, G6 Tier 2/3, arb | — | shelved — [below](#optional-shelf-no-build-unless-signal) |
+
+---
+
+## Priority stack (backlog)
+
+| Pri | Item | Status |
+|-----|------|--------|
+| **P0** | Segment #4 soak (v2.1.37) | closed — buy gate validated |
+| **P0** | Deploy v2.1.38 + Segment #5 soak | **next** |
+| **P1** | A2.3 acquire ask brake | [x] v2.1.38 built |
+| **P1** | M-Purpose HUD strip | planned |
+| **P1** | A2.4 realized buy-edge feedback | planned |
+| **P2** | G6 v1.1 (HUD-only) | [x] shipped |
+| **P3** | G8 spot trend posture | deferred — [stance](#spot--inventory-operator-stance) |
+| **P3** | cancel/fill tune | deferred |
+| **P3** | G6 Tier 2 / G6→G2 coupling | deferred |
+| **P4** | L2/L3 ledger sync, I1–I4, P7 async, E3, H3–H7, F4 | post purpose-pass |
+| — | Peer lane P4–P6 | shelved |
 
 ### Optional shelf (no build unless signal)
 
@@ -73,17 +129,22 @@ We are **not** building a spot-prediction or directional trading bot. Spot moves
 
 **Next:** Deploy G6 v1.1 HUD → ~50-fill calibration soak → **acquisition phase** build (solo whale book).
 
-### Acquisition build plan (engine — ordered)
+### Acquisition phase — detail (reference)
 
-**Why G6 still shows `hold`:** v1.1 is working as designed. Segment #2 economics (**1.28 bps**, **67% pos**, n≥15) meet the **bad-economics hold** rule (bps&lt;3 and pos&lt;70%). `thin_edge` (yellow, gate pass) only appears when capture is **join-aligned** (≥70% pos, **5–8 bps**). Weak overall bps driven by **SELL bleed** → hold stays red until **A1** improves economics — not a grading bug.
+Full ordered roadmap: [Skim-funded inventory roadmap](#skim-funded-inventory-roadmap-cohesive-path). Legacy A1–A3 detail below.
 
-**Operator check:** `python scripts/_session_diag_quick.py` → `by side:` BUY vs SELL capture. HUD Metrics should show `g6_version` **1.1.0** in activation block after HUD restart.
+**Operator check:** `python scripts/_session_diag_quick.py` → `by side:` BUY vs SELL capture. HUD Metrics: `g6_version` **1.1.0**.
 
-| Order | Build | Segment signal | Target |
-|-------|-------|----------------|--------|
-| **A1** | SELL-side bleed | #2 SELL −0.043 vs BUY +0.067 XRP | Flatten side skew; lift session bps off hold band |
-| **A2** | Presence / fill rate | Solo band, 0 peers | Raise `as_presence_pct` and fills/hour without more toxic | **[x] v2.1.27 deployed** |
-| **A3** | Stale-quote tail | 127s–4876s ask fills in #2 | Cap quote age at fill; cut stale-toxic SELL | **[x] v2.1.27 deployed** |
+| Order | Build | Status |
+|-------|-------|--------|
+| A1 | SELL-side bleed (G7 v1.2) | [x] closed Fail |
+| A2 | Presence / fill rate | [x] v2.1.27 |
+| A3 | Stale-quote tail | [x] v2.1.27 |
+| A2.2 | Buy-side skim gate | [x] v2.1.37 |
+| A2.3 | Acquire ask brake | [x] v2.1.38 |
+| A2.4 | Realized buy-edge feedback | [ ] planned |
+| A2.5 | Tune constants | [ ] after Segment #4 |
+| M-Purpose | HUD purpose strip | [ ] next HUD |
 
 #### A1 — SELL-side bleed (shipped v2.1.23 / G7 v1.2)
 
@@ -134,9 +195,51 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 - Action: `pause_bids=True` on ladder; ask side unchanged.
 - Observability: `buy_edge_gate_blocked`, `buy_edge_implied_bps`, `buy_edge_gate_reason` on runtime + intel JSONL + HUD.
 
-**Deploy:** [ ] segment-end restart at **Segment #4** (deploy after v2.1.36 soak close @ 18 fills).
+**Deploy:** [x] Segment #4 restart 2026-06-20 ~18:05 UTC (`2ec5c36`).
 
-**Done when (soak):** `at_edge=True`, `session_spread_capture_xrp > 0`, MTM Δ &gt; 0 — fill count secondary.
+**Done when (soak):** `at_edge=True`, `buy_capture_xrp > 0`, `session_spread_capture_xrp > 0` — fill count secondary.
+
+#### A2.3 — acquire ask brake (shipped v2.1.38)
+
+**Problem:** Segment #4 — positive skim on both sides but **Δ XRP still falling** (sells leak inventory). A2.2 fixed buys; asks still posted in solo acquire.
+
+**Shipped — `acquire_ask_brake.py`:**
+
+- When `g7_solo_acquisition` + accumulate postures → **`pause_asks=True`** (bid-only acquire).
+- Same scope as A2.2; no ask posts while accumulating XRP at edge.
+- Observability: `acquire_ask_brake_active`, `acquire_ask_brake_blocked`, `acquire_ask_brake_reason` on runtime + intel + HUD.
+
+**Deploy:** [ ] Segment #5 fresh boot after engine restart.
+
+**Done when:** soak shows **buy-funded Δ XRP** — `at_edge=True`, no SELL volume in solo acquire cycles.
+
+#### A2.4 — realized buy-edge feedback (planned)
+
+**Problem:** A2.2 checks **posted** bid vs mid; fills can be worse (adverse selection, balance-delta lag). v2.1.36 worst leg: BUY 20.7 XRP @ **−0.051** capture.
+
+**Spec (draft):**
+
+- Rolling realized buy bps from session fills → tighten gate or extend session buy brake after bad streak.
+- Tie-in: implied fill price (`fill_detection.py` / M2) for accurate capture at fill time.
+- **Done when:** post-fill bleed triggers bid pause within one cycle.
+
+#### A2.5 — tune constants (planned · after Segment #4)
+
+- `MIN_BUY_EDGE_BPS` (1.0 today — may need 2–3 bps).
+- G7 solo backoffs (8/10 bps) if gate blocks all bids or still bleeds.
+- Soak-driven only — not A-S γ/κ.
+
+#### M-Purpose HUD strip (planned · next HUD sprint · soak-safe)
+
+- Soak strip / Live tab: **`at_edge`**, **buy capture**, **Δ XRP** as primary pass/fail — not fills/h or headline skim alone.
+- HUD-only restart — no engine deploy required.
+- **Done when:** operator can glance HUD and see purpose gate without running scripts.
+
+#### Segment #4 — active (v2.1.37)
+
+**Boot:** 2026-06-20 ~18:05 UTC · **A2.2 buy gate live** · compare to v2.1.36 baseline above.
+
+**Verdict:** pending — stop at 50 fills / 2–3h; run `_session_diag_quick.py` + `acquisition_metrics_report.py`.
 
 #### Segment #3 verdict (2026-06-20) — closed Fail (skim goal)
 
@@ -174,7 +277,7 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 
 **vs interim @ 16 fills:** skim +0.026→+0.029, toxic 27%→22%, BUY cap −0.016→−0.013 — same shape, stable enough to stop.
 
-**Deploy:** [ ] **v2.1.37** Segment #4 fresh boot after engine restart.
+**Deploy:** [x] **v2.1.37** Segment #4 fresh boot 2026-06-20 ~18:05 UTC.
 
 #### A3 — stale-quote tail (deployed v2.1.27)
 

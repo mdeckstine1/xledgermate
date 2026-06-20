@@ -1183,6 +1183,9 @@ class WsPureTradingEngine:
             buy_edge_gate_blocked=bool(ed.get("buy_edge_gate_blocked")),
             buy_edge_implied_bps=ed.get("buy_edge_implied_bps"),
             buy_edge_gate_reason=str(ed.get("buy_edge_gate_reason") or ""),
+            acquire_ask_brake_active=bool(ed.get("acquire_ask_brake_active")),
+            acquire_ask_brake_blocked=bool(ed.get("acquire_ask_brake_blocked")),
+            acquire_ask_brake_reason=str(ed.get("acquire_ask_brake_reason") or ""),
         )
         self.state_store.save(state)
         if ed and flags.intel_log:

@@ -5,6 +5,16 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.38] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**A2.3 acquire-mode ask brake** — pause asks in solo edge acquire + accumulate postures so inventory growth is bid-funded, not SELL-led.
+
+- **`acquire_ask_brake.py`** — same scope as A2.2; `pause_asks=True` when active.
+- Wired in `pure_quote_path.py` alongside buy edge gate.
+- Observability: `acquire_ask_brake_active`, `acquire_ask_brake_blocked`, `acquire_ask_brake_reason`.
+
+---
+
 ## [2.1.37] — 2026-06-20 (`Ashigaru Kaizen II`)
 
 **Theme:** A2.2 buy-side skim gate — enforce positive buy edge before posting bids in solo edge acquire.

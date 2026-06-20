@@ -3,8 +3,26 @@
 **Purpose:** Posterity — how we got here, what we learned, and why decisions were made.  
 **Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live priority stack; this file is the narrative + archaeology.
 
-**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.37 (built; VPS v2.1.36 until Segment #4 deploy)  
-**Last updated:** 2026-06-20 (v2.1.36 soak interim assessment recorded)
+**Version:** v2.1.38 · **Segment #5 deploy pending**  
+**Last updated:** 2026-06-20 (A2.3 acquire ask brake shipped)
+
+---
+
+## Cohesive development path (2026-06-20)
+
+**Problem we fixed in docs:** priority stack, acquisition builds, segment verdicts, and “what’s next” were scattered — easy to lose the thread.
+
+**Single thread now:**
+
+1. **North star** — skim-funded inventory growth; purpose gate in [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md#north-star-read-this-first).
+2. **Phase 1 (hygiene)** — A1/A2/A3 + G7 v1.6 posture — shipped; proved posture alone fails (#3, v2.1.36).
+3. **Phase 2 (enforcement)** — A2.2 buy gate [x] → **A2.3 ask brake [x]** → A2.4 realized edge → A2.5 tune.
+4. **Phase 3 (HUD)** — M-Purpose strip so operator sees `at_edge` without scripts.
+5. **Phase 4 (scale)** — E3 funding only after purpose pass on soak.
+
+**Active:** Deploy **v2.1.38** Segment #5 soak. **Next:** M-Purpose HUD (HUD-only).
+
+**A2.3 acquire ask brake (v2.1.38):** `acquire_ask_brake.py` — pause asks in solo edge acquire; bid-only while accumulating. Built after Segment #4 showed positive buy skim but Δ XRP still falling from sells.
 
 ---
 
@@ -24,7 +42,8 @@ We moved from a **sacred HTTP-poll Gate 2 engine** (replay corpus, economics gat
 | 2026-06-16 | Kaizen soak hardening: kill-switch decoupled from sacred session-balance trip; lean MM (ws-engine + ws-hud only); feature flags; HUD auth |
 | 2026-06-16–17 | **Live soak segment** on VPS; soak-safe operator batch (see below) |
 | 2026-06-19 | **M6 signed off** (50 fills v2.1.21); **v2.1.22** deployed; session-scoped G6; spot-drop segment + operator halt; fresh soak segment #2 |
-| 2026-06-20 | v2.1.36 soak **closed** @ 18 fills (Watch) · **v2.1.37 Segment #4 deploy** |
+| 2026-06-20 | **Roadmap lock** — Phase 2 enforcement path (A2.2→A2.5 + M-Purpose); Segment #4 live |
+| 2026-06-20 | v2.1.36 closed @ 18 fills (Watch) · v2.1.37 deployed Segment #4 (`2ec5c36`) |
 | 2026-06-19 | **G8 Spot Trend Posture** spec — STRATEGY_MANUAL (future offensive overlay for XRP volatility) |
 
 ---
@@ -362,9 +381,21 @@ Operator clarified success criteria: **low fills acceptable** if portfolio XRP-e
 
 **G7 v1.6 (v2.1.36):** passive bid @ 8bps, ask @ 10bps on accumulate; xrp_heavy hold. Posture change only — still no enforcement.
 
-**A2.2 buy-side skim gate (v2.1.37):** `buy_edge_gate.py` — do not post bid unless implied fill is ≥1 bps below mid; session buy-capture brake when capture &lt; 0. Scope: solo edge acquire postures only. Built locally; **deploy at Segment #4 soak** (VPS remains v2.1.36 until operator restart).
+**A2.2 buy-side skim gate (v2.1.37):** `buy_edge_gate.py` — block bids below min edge; session buy-capture brake. **[x] deployed Segment #4** ~18:05 UTC.
 
-**Deferred until skim proves:** G8 spot, peer P4–P6, G6 Tier 2/3, E3 11k funding.
+**Next sprint (2026-06-20 planning):**
+
+| ID | Build | Why |
+|----|-------|-----|
+| — | **Segment #4 soak** | Prove A2.2; baseline vs v2.1.36 BUY −0.013 |
+| **A2.3** | Acquire ask brake | Fix SELL-led false-positive skim (`at_edge=False` with +session skim) |
+| **M-Purpose** | HUD purpose strip | Operator scoreboard: `at_edge`, buy cap, Δ XRP |
+| **A2.4** | Realized buy-edge feedback | Posted vs fill capture; post-fill bid pause |
+| **A2.5** | Tune `MIN_BUY_EDGE_BPS` / G7 backoffs | After Segment #4 data only |
+
+**Deferred until purpose pass:** G8 spot, peer P4–P6, G6 Tier 2/3, E3 11k funding, cancel/fill tune, arb.
+
+**Evaluation rule (locked):** positive `session_spread_capture_xrp` alone is **insufficient**. See critical path [North star](PURE_AS_CRITICAL_PATH.md#north-star-read-this-first).
 
 ### v2.1.36 soak — interim assessment (2026-06-20 ~17:38 UTC)
 
@@ -404,7 +435,7 @@ Operator clarified success criteria: **low fills acceptable** if portfolio XRP-e
 | SELL capture | +0.042 | +0.042 |
 | `at_edge` | False | **False** |
 
-**Verdict: Watch / purpose Fail** — deploy **v2.1.37 A2.2** for Segment #4; compare buy-side capture against this baseline. See [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) v2.1.36 closed table.
+**Verdict: Watch / purpose Fail** — deploy **v2.1.37 A2.2** for Segment #4. See [Segment #4 active](PURE_AS_CRITICAL_PATH.md#segment-4--active-v2137) in critical path.
 
 ---
 

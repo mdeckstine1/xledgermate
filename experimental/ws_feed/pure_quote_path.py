@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from experimental.competitor_pressure import apply_competitor_pressure, from_intel_dict
+from experimental.ws_feed.acquire_ask_brake import resolve_acquire_ask_brake
 from experimental.ws_feed.buy_edge_gate import resolve_buy_edge_gate
 from experimental.ws_feed.execution_envelope import (
     compute_execution_envelope,
@@ -147,6 +148,9 @@ class PureQuoteDecision:
     buy_edge_gate_blocked: bool = False
     buy_edge_implied_bps: Optional[float] = None
     buy_edge_gate_reason: str = ""
+    acquire_ask_brake_active: bool = False
+    acquire_ask_brake_blocked: bool = False
+    acquire_ask_brake_reason: str = ""
 
     def to_runtime_dict(self, *, competitor_intel: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -198,6 +202,9 @@ class PureQuoteDecision:
             "buy_edge_gate_blocked": self.buy_edge_gate_blocked,
             "buy_edge_implied_bps": self.buy_edge_implied_bps,
             "buy_edge_gate_reason": self.buy_edge_gate_reason,
+            "acquire_ask_brake_active": self.acquire_ask_brake_active,
+            "acquire_ask_brake_blocked": self.acquire_ask_brake_blocked,
+            "acquire_ask_brake_reason": self.acquire_ask_brake_reason,
         }
         if competitor_intel:
             out.update({k: v for k, v in competitor_intel.items() if k != "top_competitors"})
@@ -265,6 +272,8 @@ def _build_summary(
         parts.append(decision.g7_summary)
     if decision.buy_edge_gate_blocked and decision.buy_edge_gate_reason:
         parts.append(f"A2.2 buy-edge gate: {decision.buy_edge_gate_reason}")
+    if decision.acquire_ask_brake_blocked and decision.acquire_ask_brake_reason:
+        parts.append(f"A2.3 ask brake: {decision.acquire_ask_brake_reason}")
     if decision.g4_active and decision.g4_summary:
         parts.append(decision.g4_summary)
     if decision.inventory_limits_summary:
@@ -523,12 +532,17 @@ class PureQuotePath:
             inventory_posture=g7.inventory_posture,
             session_buy_capture_xrp=session_buy_capture_xrp,
         )
+        acquire_ask_brake = resolve_acquire_ask_brake(
+            g7_solo_acquisition=g7.solo_acquisition,
+            inventory_posture=g7.inventory_posture,
+        )
         effective_pause_bids = inv_policy.pause_bids or buy_edge_gate.blocked
+        effective_pause_asks = inv_policy.pause_asks or acquire_ask_brake.blocked
         quote_bid, quote_ask, quote_posture = effective_quote_sides(
             allow_bid=allow_bid,
             allow_ask=allow_ask,
             pause_bids=effective_pause_bids,
-            pause_asks=inv_policy.pause_asks,
+            pause_asks=effective_pause_asks,
         )
         brake_panel = format_execution_brake_panel(
             g2,
@@ -543,6 +557,10 @@ class PureQuotePath:
         if buy_edge_gate.active and buy_edge_gate.blocked:
             execution_brakes_summary = (
                 f"{execution_brakes_summary} | A2.2 {buy_edge_gate.reason}"
+            )
+        if acquire_ask_brake.active and acquire_ask_brake.blocked:
+            execution_brakes_summary = (
+                f"{execution_brakes_summary} | A2.3 {acquire_ask_brake.reason}"
             )
 
         ladder = build_pure_quote_ladder(
@@ -563,7 +581,7 @@ class PureQuotePath:
         ladder = apply_pause_to_ladder(
             ladder,
             pause_bids=effective_pause_bids,
-            pause_asks=inv_policy.pause_asks,
+            pause_asks=effective_pause_asks,
             min_order_size_xrp=self.min_order_size_xrp,
         )
         active_quotes = count_active_l1_quotes(ladder)
@@ -578,7 +596,7 @@ class PureQuotePath:
             optimal_spread_pct=as_quote.optimal_spread_pct,
             min_spread_floor_pct=self.min_spread_floor_pct,
             pause_bids=effective_pause_bids,
-            pause_asks=inv_policy.pause_asks,
+            pause_asks=effective_pause_asks,
         )
         policy_labels = {
             "inside": "PURE A-S (inside L1)",
@@ -635,7 +653,7 @@ class PureQuotePath:
             size_rationale=size_rationale,
             quote_intents=ladder,
             pause_bids=effective_pause_bids,
-            pause_asks=inv_policy.pause_asks,
+            pause_asks=effective_pause_asks,
             inventory_limits_summary=inv_policy.limits_summary,
             g2_size_mult=g2.size_mult,
             g2_spread_mult=g2.spread_mult,
@@ -668,6 +686,9 @@ class PureQuotePath:
             buy_edge_gate_blocked=buy_edge_gate.blocked,
             buy_edge_implied_bps=buy_edge_gate.implied_edge_bps,
             buy_edge_gate_reason=buy_edge_gate.reason,
+            acquire_ask_brake_active=acquire_ask_brake.active,
+            acquire_ask_brake_blocked=acquire_ask_brake.blocked,
+            acquire_ask_brake_reason=acquire_ask_brake.reason,
         )
         skim = (competitor_intel or {}).get("competitor_skim_advice", "") or ""
         decision.quote_decision_summary = _build_summary(

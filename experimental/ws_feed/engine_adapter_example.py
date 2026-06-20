@@ -174,6 +174,9 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "buy_edge_gate_blocked": decision.buy_edge_gate_blocked,
         "buy_edge_implied_bps": decision.buy_edge_implied_bps,
         "buy_edge_gate_reason": decision.buy_edge_gate_reason,
+        "acquire_ask_brake_active": decision.acquire_ask_brake_active,
+        "acquire_ask_brake_blocked": decision.acquire_ask_brake_blocked,
+        "acquire_ask_brake_reason": decision.acquire_ask_brake_reason,
     }
 
 
