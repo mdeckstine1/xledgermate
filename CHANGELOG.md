@@ -5,6 +5,21 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.33] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**Theme:** "Do all 4" solo experiment — force G7 3bps, conditional solo A-S tighten, A3 max-age relax, sync preserve relax. Triggered by observed G7 9.2/11.5 bps despite solo mode + low fills.
+
+### The 4 levers (all activated for this soak)
+
+1. **G7 solo force low backoff** — empty lane + low toxic always posts at 3bps join/join (overrides posture + G2 mult on touch distance).
+2. **Solo A-S tighten** — lower effective vol (tighter spreads/reservation) only when solo.
+3. **Solo A3 relax** — 240/300s max ages (less age churn).
+4. **Solo sync relax** — preserve_touch_queue=True + looser tol when solo low toxic (less flip, more rest time for hits).
+
+Goal: measure if this combo raises fills/h while keeping toxic low and SELL capture non-negative. Easy to dial back.
+
+---
+
 ---
 
 ## [2.1.29] — 2026-06-20 (`Ashigaru Kaizen II`)

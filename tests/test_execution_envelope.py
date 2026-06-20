@@ -147,7 +147,8 @@ def test_solo_acquisition_slight_xrp_heavy_two_sided_join() -> None:
     assert env.ask_role == "join"
 
 
-def test_solo_acquisition_xrp_heavy_ask_join() -> None:
+def test_solo_acquisition_xrp_heavy_forced_two_sided_join() -> None:
+    # Lever 1 (all-4): even xrp_heavy solo low-toxic forces 3bps join on *both* (aggressive fill rate)
     env = compute_execution_envelope(
         inventory_label="xrp_heavy",
         g2_spread_mult=1.0,
@@ -155,9 +156,9 @@ def test_solo_acquisition_xrp_heavy_ask_join() -> None:
         toxic_ratio_30s=0.05,
     )
     assert env.solo_acquisition is True
-    assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
+    assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
     assert env.ask_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
-    assert env.bid_role == "passive"
+    assert env.bid_role == "join"
     assert env.ask_role == "join"
 
 
@@ -171,14 +172,19 @@ def test_solo_acquisition_skipped_on_toxic() -> None:
     assert env.bid_touch_backoff_bps == PASSIVE_BACKOFF_BPS
 
 
-def test_solo_acquisition_skipped_on_g2_brake() -> None:
+def test_solo_acquisition_forced_even_on_g2_brake_low_toxic() -> None:
+    # Lever 1 (all-4): solo low-toxic forces 3bps join even if g2>1 (overrides brake for touch distance)
     env = compute_execution_envelope(
         inventory_label="balanced",
         peer_lane_empty=True,
         g2_spread_mult=1.1,
         toxic_ratio_30s=0.05,
     )
-    assert env.solo_acquisition is False
+    assert env.solo_acquisition is True
+    assert env.bid_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
+    assert env.ask_touch_backoff_bps == SOLO_JOIN_BACKOFF_BPS
+    # G2 may still be recorded but touch distance is clamped
+    assert "solo acquire" in env.summary
 
 
 def test_apply_solo_lane_posture_no_intel_fields() -> None:

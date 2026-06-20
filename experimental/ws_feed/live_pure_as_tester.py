@@ -218,6 +218,7 @@ def _hud_market_payload(runtime: dict, **extra: Any) -> dict[str, Any]:
         "g7_solo_acquisition": runtime.get("g7_solo_acquisition"),
         "g7_ask_sell_defense": runtime.get("g7_ask_sell_defense"),
         "peer_lane_empty": runtime.get("peer_lane_empty"),
+        "solo_as_tighten": runtime.get("solo_as_tighten"),
         "g4_grade": runtime.get("g4_grade"),
         "g4_active": runtime.get("g4_active"),
         "g4_summary": runtime.get("g4_summary"),

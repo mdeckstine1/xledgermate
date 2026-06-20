@@ -125,8 +125,11 @@ def resolve_ws_sync_tolerances(
         and not g2_active
         and toxic_ratio_30s < 0.20
     ):
-        preserve_touch_queue = False
-        price_tol = min(price_tol, 0.05)
+        # Lever 4 (all-4 experiment): solo relax sync — preserve queue more, looser tol.
+        # Reduce "kept/cancel/place" flipping and churn on empty low-toxic lane.
+        # Opposite of previous "refresh hard" — let quotes rest to get hit.
+        preserve_touch_queue = True
+        price_tol = max(price_tol, 0.08)
 
     if mid and last_sync_mid and last_sync_mid > 0:
         move_bps = abs(mid - last_sync_mid) / last_sync_mid * 10_000.0
@@ -1166,6 +1169,7 @@ class WsPureTradingEngine:
             g7_solo_acquisition=bool(ed.get("g7_solo_acquisition")),
             g7_ask_sell_defense=bool(ed.get("g7_ask_sell_defense")),
             peer_lane_empty=peer_lane_empty,
+            solo_as_tighten=bool(ed.get("solo_as_tighten")),
             acquisition_metrics=acquisition_metrics,
             g4_peer_lane_count=int(ed.get("g4_peer_lane_count") or 0),
         )

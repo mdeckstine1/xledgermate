@@ -10,6 +10,8 @@ config/credentials.local.yaml
 config/*.local.yaml
 config/*.bak
 .env
+.env.*
+.env*.txt
 logs/
 logs/engine.pid
 *.log

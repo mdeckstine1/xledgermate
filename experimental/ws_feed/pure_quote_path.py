@@ -139,6 +139,7 @@ class PureQuoteDecision:
     g7_ask_sell_defense: bool = False
     g7_sell_defense_reason: str = ""
     g7_solo_acquisition: bool = False
+    solo_as_tighten: bool = False
     g2_scaler_label: str = ""
     execution_brakes_summary: str = ""
 
@@ -374,6 +375,15 @@ class PureQuotePath:
             )
             effective_vol *= g2.spread_mult
             pressure_size_mult *= g2.size_mult
+
+        # Lever 2 (all-4 experiment): solo A-S tighten.
+        # When peer lane empty + low toxic/G2, scale vol down -> tighter reservation/opt spread for more fills.
+        # Does not change global A-S when peers present.
+        solo_tighten = False
+        if is_peer_lane_empty(quoting_intel) and g2.spread_mult <= 1.05 and (fill_quality.toxic_ratio_30s if fill_quality else 0.0) < 0.15:
+            solo_tighten = True
+            effective_vol *= 0.75
+            pressure_size_mult *= 1.05  # modest size help for presence on solo whale book
 
         if g4_enabled:
             g4 = compute_g4_adjustments(
@@ -633,6 +643,7 @@ class PureQuotePath:
             g7_ask_sell_defense=g7.ask_sell_defense,
             g7_sell_defense_reason=g7.sell_defense_reason,
             g7_solo_acquisition=g7.solo_acquisition,
+            solo_as_tighten=solo_tighten,
             g2_scaler_label=brake_panel["g2_scaler_label"],
             execution_brakes_summary=brake_panel["execution_brakes_summary"],
         )

@@ -10,10 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-G7_VERSION = "1.4.2"
+G7_VERSION = "1.4.3"
 JOIN_BACKOFF_BPS = 5.0
 SOLO_JOIN_BACKOFF_BPS = 3.0
 PASSIVE_BACKOFF_BPS = 8.0
+# Lever 1 (all-4 experiment): solo always forces low 3bps touch for fill rate on empty lane.
+# Ignores inventory base and G2 mult for backoff when solo + low toxic.
 INVENTORY_SKEW_THRESHOLD = 0.12
 JOIN_HALF_SPREAD_FRAC = 0.45
 # A1 — widen ask when SELL-side bleed signals fire (execution only).
@@ -115,22 +117,11 @@ def apply_solo_lane_posture(
     """
     if not peer_lane_empty:
         return bid_base, ask_base, bid_role, ask_role, False
-    if float(g2_spread_mult) > 1.0:
-        return bid_base, ask_base, bid_role, ask_role, False
     if toxic_ratio_30s >= SOLO_ACQUIRE_TOXIC_30S_MAX:
         return bid_base, ask_base, bid_role, ask_role, False
-    solo_join = min(float(join_bps), SOLO_JOIN_BACKOFF_BPS)
-    if posture in (
-        "balanced",
-        "rlusd_heavy",
-        "slight_rlusd_heavy",
-        "slight_xrp_heavy",
-    ):
-        return solo_join, solo_join, "join", "join", True
-    if posture == "xrp_heavy":
-        # Solo empty lane: ask join to rebalance + fill rate (bid stays passive).
-        return PASSIVE_BACKOFF_BPS, solo_join, "passive", "join", True
-    return bid_base, ask_base, bid_role, ask_role, False
+    # Lever 1: force solo low backoff regardless of G2 mult >1 or inventory posture (experiment to fix 9+ bps)
+    solo_join = SOLO_JOIN_BACKOFF_BPS
+    return solo_join, solo_join, "join", "join", True
 
 
 def compute_execution_envelope(
@@ -195,6 +186,14 @@ def compute_execution_envelope(
     mult = max(1.0, float(g2_spread_mult))
     bid_bps = round(bid_base * mult, 2)
     ask_bps = round(ask_base * mult, 2)
+
+    # Lever 1 (all-4): solo low-toxic always clamps to 3bps join on both to fix high backoff (e.g. 9/11)
+    if solo and toxic_ratio_30s < 0.20:
+        bid_bps = SOLO_JOIN_BACKOFF_BPS
+        ask_bps = SOLO_JOIN_BACKOFF_BPS
+        bid_role = "join"
+        ask_role = "join"
+        mult = 1.0  # do not show G2 widening the touch distance in solo
 
     mult_note = f" × G2 {mult:.2f}" if mult > 1.0 else ""
     solo_note = " · solo acquire" if solo else ""

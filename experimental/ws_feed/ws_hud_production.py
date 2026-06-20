@@ -246,6 +246,7 @@ def _enrich_runtime_for_hud(runtime: Dict[str, Any]) -> Dict[str, Any]:
             rt["g7_sell_defense_reason"] = env.sell_defense_reason
             rt["g7_solo_acquisition"] = env.solo_acquisition
             rt["peer_lane_empty"] = peer_empty
+            rt["solo_as_tighten"] = bool(rt.get("solo_as_tighten"))
             # mark that this came from HUD synthesis so operator can tell
             rt["_g7_synth"] = "inventory+g2+fill_quality"
         except Exception:

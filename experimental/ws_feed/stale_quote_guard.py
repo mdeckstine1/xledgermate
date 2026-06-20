@@ -14,10 +14,11 @@ WS_MID_MOVE_REFRESH_BPS = 8.0
 
 WS_MAX_QUOTE_AGE_ASK_S = 60.0
 WS_MAX_QUOTE_AGE_BID_S = 90.0
-# A2.1 — solo empty lane: longer queue life before cancel (fill rate vs toxic tail).
-WS_SOLO_MAX_QUOTE_AGE_ASK_S = 120.0
-WS_SOLO_MAX_QUOTE_AGE_BID_S = 150.0
-WS_SOLO_TOXIC_ASK_MAX_AGE_S = 75.0
+# Lever 3 (all-4 experiment): solo A3 even more relaxed to reduce churn/flip while low toxic.
+# Longer rest on empty lane to let quotes get hit.
+WS_SOLO_MAX_QUOTE_AGE_ASK_S = 240.0
+WS_SOLO_MAX_QUOTE_AGE_BID_S = 300.0
+WS_SOLO_TOXIC_ASK_MAX_AGE_S = 120.0
 
 WS_TOXIC_ASK_AGE_THRESHOLD = 0.25
 WS_TOXIC_ASK_MAX_AGE_S = 45.0

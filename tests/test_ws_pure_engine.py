@@ -103,6 +103,22 @@ def test_resolve_ws_sync_tolerances_calm_keeps_queue() -> None:
     assert tol == 0.08
 
 
+def test_resolve_ws_sync_tolerances_solo_low_toxic_preserves_and_looser() -> None:
+    # Lever 4 (all-4): solo relax keeps preserve=True + looser tol to reduce flip and let quotes rest.
+    tol, preserve = resolve_ws_sync_tolerances(
+        mid=1.2751,
+        last_sync_mid=1.2750,
+        toxic_ratio_30s=0.05,
+        recent_fills=5,
+        g2_active=False,
+        base_price_tolerance_pct=0.06,
+        solo_acquisition=True,
+        peer_lane_empty=True,
+    )
+    assert preserve is True
+    assert tol >= 0.08
+
+
 def test_fill_side_to_offer_age_side() -> None:
     assert fill_side_to_offer_age_side("BUY") == "bid"
     assert fill_side_to_offer_age_side("SELL") == "ask"
