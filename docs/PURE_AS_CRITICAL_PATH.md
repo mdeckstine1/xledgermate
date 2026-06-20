@@ -248,7 +248,8 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 #### M-Purpose HUD strip (planned · next HUD sprint · soak-safe)
 
 - Soak strip / Live tab: **`at_edge`**, **buy capture**, **Δ XRP** as primary pass/fail — not fills/h or headline skim alone.
-- HUD-only restart — no engine deploy required.
+- **Deploy:** `git pull` on VPS → `systemctl restart xledgermate-ws-hud` only — **no engine restart**; Segment #6 soak continues.
+- Computes from existing session data (`runtime_state.json`, fills CSV / `acquisition_metrics`) — display-only, no quote-path change.
 - **Done when:** operator can glance HUD and see purpose gate without running scripts.
 
 #### Segment #4 — active (v2.1.37)
@@ -656,8 +657,26 @@ HUD-only deploys (`xledgermate-ws-hud` restart OK). No further soak-safe code re
 | `fill_detection.py` / `fill_economics.py` / balance-delta coherence guard | `xledgermate` (engine) + `xledgermate-ws-hud` for CSV skim display | Yes (HUD-only until engine pull) |
 | `ws_pure_engine.py` (M2–M5, fill age, `session_spread_capture_xrp`) | `xledgermate` | **No** — segment end |
 | `vps_deploy_ashigaru.sh` full | ws-engine + HUD | **No** unless planned |
+| **M-Purpose HUD strip** | `xledgermate-ws-hud` only | **Yes** — soak continues |
 
 **Sacred rule:** `would_quote` = reservation inside live BBO. Measurement and HUD never override A-S math.
+
+### VPS restart notes (operator)
+
+**Segment #6 (v2.1.39, 2026-06-20 ~23:17 UTC):** A2.3b sell edge gate — `git pull` + `systemctl restart xledgermate` + `xledgermate-ws-hud` via `vps_deploy_ashigaru.sh`. Commit `1b28e2f`. **Resets soak** (new segment).
+
+**Windows deploy (use every time — plain `ssh root@…` hangs):**
+
+```powershell
+ssh -i $env:USERPROFILE\.ssh\hetzner_xledgermate -o BatchMode=yes root@188.245.50.229 "bash /root/xledgermate/scripts/vps_deploy_ashigaru.sh"
+```
+
+- **Key:** `$env:USERPROFILE\.ssh\hetzner_xledgermate` — without `-i`, SSH waits for password and the agent session hangs (no output).
+- **On VPS directly:** `cd /root/xledgermate && bash scripts/vps_deploy_ashigaru.sh`
+- **HUD-only (soak-safe):** `ssh … "systemctl restart xledgermate-ws-hud"` — does **not** reset fills/skim/session baselines.
+- **Engine restart:** required for `ws_pure_engine.py`, quote-path gates (A2.x), G7, fill detection — **always** starts a new soak segment.
+- **After HUD deploy:** hard refresh browser (`index.html` loaded at HUD process start).
+- **Avoid:** `ssh root@188.245.50.229 "python -c '…'"` from PowerShell — quoting breaks; use `grep`, deploy script, or `.venv/bin/python scripts/_session_diag_quick.py` on VPS.
 
 ---
 

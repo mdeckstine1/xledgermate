@@ -22,6 +22,8 @@
 
 **Active:** Deploy **v2.1.39** Segment #6 soak. **Next:** M-Purpose HUD (HUD-only).
 
+**VPS deploy note (2026-06-20 Segment #6):** Windows agents must use `ssh -i $env:USERPROFILE\.ssh\hetzner_xledgermate` — plain `ssh root@188.245.50.229` hangs. Successful deploy: `vps_deploy_ashigaru.sh` → engine + HUD restart @ ~23:17 UTC (`1b28e2f`).
+
 **A2.3b sell edge gate (v2.1.39):** `sell_edge_gate.py` — min sell edge on solo whale book; session sell-capture brake. Built after Segment #4 SELL-led skim bleed in skew ask-only.
 
 **A2.3 acquire ask brake (v2.1.38):** `acquire_ask_brake.py` — pause asks in solo edge acquire; bid-only while accumulating. Built after Segment #4 showed positive buy skim but Δ XRP still falling from sells.

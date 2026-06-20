@@ -40,9 +40,25 @@ This runbook is the operator ladder for **E1–E3** in [`PURE_AS_CRITICAL_PATH.m
 cd /root/xledgermate
 bash scripts/vps_deploy_ashigaru.sh
 # Or manually:
-git fetch && git checkout Ashigaru-Kaizen && git pull
+git fetch && git checkout Ashigaru-Kaizen-II && git pull
 systemctl restart xledgermate xledgermate-ws-hud
 ```
+
+### Commands (Windows → VPS deploy)
+
+**Always pass the Hetzner key** — bare `ssh root@188.245.50.229` hangs (password prompt, no output in agent):
+
+```powershell
+ssh -i $env:USERPROFILE\.ssh\hetzner_xledgermate -o BatchMode=yes root@188.245.50.229 "bash /root/xledgermate/scripts/vps_deploy_ashigaru.sh"
+```
+
+**HUD-only (soak-safe, e.g. M-Purpose strip):**
+
+```powershell
+ssh -i $env:USERPROFILE\.ssh\hetzner_xledgermate root@188.245.50.229 "cd /root/xledgermate && git pull origin Ashigaru-Kaizen-II && systemctl restart xledgermate-ws-hud"
+```
+
+Hard refresh browser after HUD restart (`index.html` read at process start).
 
 After deploy, HUD shows `ws_as_version` from `experimental/ws_feed/WS_AS_VERSION` (re-read on each `/state` poll). Engine logs `WsPureTradingEngine v…` on restart.
 
