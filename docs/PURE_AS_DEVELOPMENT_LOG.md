@@ -3,8 +3,8 @@
 **Purpose:** Posterity — how we got here, what we learned, and why decisions were made.  
 **Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live priority stack; this file is the narrative + archaeology.
 
-**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.25 (built; VPS still v2.1.23 A1 soak)
-**Last updated:** 2026-06-20 (A3 stale-quote guard built; deploy after A2 bundle)
+**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.37 (built; VPS v2.1.36 until Segment #4 deploy)  
+**Last updated:** 2026-06-20 (v2.1.36 soak interim assessment recorded)
 
 ---
 
@@ -24,7 +24,7 @@ We moved from a **sacred HTTP-poll Gate 2 engine** (replay corpus, economics gat
 | 2026-06-16 | Kaizen soak hardening: kill-switch decoupled from sacred session-balance trip; lean MM (ws-engine + ws-hud only); feature flags; HUD auth |
 | 2026-06-16–17 | **Live soak segment** on VPS; soak-safe operator batch (see below) |
 | 2026-06-19 | **M6 signed off** (50 fills v2.1.21); **v2.1.22** deployed; session-scoped G6; spot-drop segment + operator halt; fresh soak segment #2 |
-| 2026-06-20 | Peer Cal empty lane → P4–P6 shelved; segment #2 closed (57 fills, Watch); **G6 v1.1** HUD shipped; **acquisition phase** primary |
+| 2026-06-20 | v2.1.36 soak **closed** @ 18 fills (Watch) · **v2.1.37 Segment #4 deploy** |
 | 2026-06-19 | **G8 Spot Trend Posture** spec — STRATEGY_MANUAL (future offensive overlay for XRP volatility) |
 
 ---
@@ -353,6 +353,58 @@ Operator consensus: stop grading churn; fix false **hold** on thin join-aligned 
 ### Acquisition pivot (2026-06-20)
 
 Build order: **A1 → A2 → A3**. **A1 closed Fail.** **A2+A3 deployed** v2.1.27 at segment end 2026-06-20.
+
+### Skim-funded inventory — north star lock (2026-06-20)
+
+Operator clarified success criteria: **low fills acceptable** if portfolio XRP-equiv grows from **positive skim**, not mid-price RLUSD↔XRP conversion. Pass gate: `session_spread_capture_xrp > 0`, `at_edge=True`, MTM Δ &gt; 0.
+
+**Segment #3 (v2.1.35 G7 v1.5 join-acquire):** stopped @ ~11 fills. Δ XRP +67 but session skim **−0.009**, buy capture negative, `at_edge=False`, MTM flat — **Fail** for skim goal. Six buys paying ~mid = conversion bot, not storefront for sellers at a discount.
+
+**G7 v1.6 (v2.1.36):** passive bid @ 8bps, ask @ 10bps on accumulate; xrp_heavy hold. Posture change only — still no enforcement.
+
+**A2.2 buy-side skim gate (v2.1.37):** `buy_edge_gate.py` — do not post bid unless implied fill is ≥1 bps below mid; session buy-capture brake when capture &lt; 0. Scope: solo edge acquire postures only. Built locally; **deploy at Segment #4 soak** (VPS remains v2.1.36 until operator restart).
+
+**Deferred until skim proves:** G8 spot, peer P4–P6, G6 Tier 2/3, E3 11k funding.
+
+### v2.1.36 soak — interim assessment (2026-06-20 ~17:38 UTC)
+
+**Context:** Operator noted **positive session skim** with **~21% toxic@30s** and asked whether the soak looked good. Cursor pulled VPS diagnostics (`_session_diag_quick.py`, `acquisition_metrics_report.py`) at **16 fills** (boot 16:33 UTC, v2.1.36). **Not a segment close** — recorded for future evaluation vs Segment #4 (v2.1.37 + A2.2 gate).
+
+| Metric | Value | Purpose gate |
+|--------|-------|--------------|
+| Session skim | **+0.026 XRP** | Pass (headline) |
+| toxic@30s | **~21–27%** | Borderline (solo acquire off ≥20%; soak ≤30% OK) |
+| Spread bps (nonzero) | mean **2.31**, median **~4** | OK vs A1 |
+| **BUY capture** | **−0.016** (10 fills) | **Fail** |
+| **SELL capture** | **+0.042** (6 fills) | carrying session |
+| Δ XRP (session) | **−5.9** | **Fail** (inventory ↓, not accumulate) |
+| `at_edge` | **False** | **Fail** |
+| `buy_cost_vs_mid_bps` (mean) | **+1.10** | **Fail** (paying above mid on buys) |
+| Worst leg | BUY 20.7 XRP **−0.051** cap | one toxic buy wiped most sell gains |
+
+**Assessment (lock for later):**
+
+1. **Positive session skim is real and better than Segment #3** (−0.009) — net MM economics improved.
+2. **Wrong shape for north star** — skim is **SELL-led**, not buy-funded XRP growth. Pattern resembles A1/BUY-bleed but net positive because sells were large enough to offset.
+3. **Do not declare victory on skim alone** — purpose pass requires `at_edge=True`, positive **buy** capture, and inventory growth at edge, not just `session_spread_capture_xrp > 0`.
+4. **Toxic ~21–27% with positive skim is not contradictory** — spread capture at fill ≠ 30s markout; G2 cautious / solo acquire off is expected at this toxic level.
+5. **v2.1.37 A2.2 gate is the intended fix** for buy-at/above-mid legs still visible on v2.1.36; compare Segment #4 against this baseline.
+
+**Operator takeaway:** cautiously positive on net economics direction; **purpose gate still fails** at this snapshot. Continue soak to term (50 fills / 2–3h) unless kill-switch territory — do not stop early for “positive skim” without checking `by side:` and `at_edge`.
+
+### v2.1.36 soak — segment close (2026-06-20 ~18:03 UTC)
+
+**Stopped @ 18 fills / ~1h 30m** (operator: long enough). Final VPS diag matches interim shape — stable, not improving toward purpose pass.
+
+| Metric | Interim (16 fills) | Final (18 fills) |
+|--------|-------------------|------------------|
+| Session skim | +0.026 | **+0.029** |
+| toxic@30s | ~27% | **22%** |
+| BUY capture | −0.016 | **−0.013** |
+| SELL capture | +0.042 | +0.042 |
+| `at_edge` | False | **False** |
+
+**Verdict: Watch / purpose Fail** — deploy **v2.1.37 A2.2** for Segment #4; compare buy-side capture against this baseline. See [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) v2.1.36 closed table.
 
 ---
 

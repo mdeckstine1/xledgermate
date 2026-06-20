@@ -71,6 +71,7 @@ class WSBookFeedAdapter:
         g2_enabled: bool = True,
         g4_enabled: bool = True,
         competitor_pressure_enabled: bool = True,
+        session_buy_capture_xrp: Optional[float] = None,
     ) -> Dict[str, Any]:
         book_age = ws_book_age_s
         if book_age is None and hasattr(self.book_feed, "age_seconds"):
@@ -96,6 +97,7 @@ class WSBookFeedAdapter:
             g2_enabled=g2_enabled,
             g4_enabled=g4_enabled,
             competitor_pressure_enabled=competitor_pressure_enabled,
+            session_buy_capture_xrp=session_buy_capture_xrp,
         )
         if inventory_skew_override is not None:
             pass  # reserved for future override hook
@@ -168,6 +170,10 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "g7_scaler_label": decision.g7_scaler_label,
         "g2_scaler_label": decision.g2_scaler_label,
         "execution_brakes_summary": decision.execution_brakes_summary,
+        "buy_edge_gate_active": decision.buy_edge_gate_active,
+        "buy_edge_gate_blocked": decision.buy_edge_gate_blocked,
+        "buy_edge_implied_bps": decision.buy_edge_implied_bps,
+        "buy_edge_gate_reason": decision.buy_edge_gate_reason,
     }
 
 

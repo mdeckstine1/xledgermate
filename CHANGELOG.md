@@ -5,6 +5,21 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.37] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**Theme:** A2.2 buy-side skim gate — enforce positive buy edge before posting bids in solo edge acquire.
+
+### Added
+
+- **`buy_edge_gate.py`** — blocks bids when implied fill edge &lt; `MIN_BUY_EDGE_BPS` (1.0) or session buy capture &lt; 0.
+- Scope: solo empty lane + accumulate postures (`balanced`, `rlusd_heavy`, `slight_rlusd_heavy`) when `g7_solo_acquisition`.
+- Wired in `pure_quote_path.py` after G7 touch prices; sets `pause_bids` on ladder.
+- Observability: `buy_edge_gate_active`, `buy_edge_gate_blocked`, `buy_edge_implied_bps`, `buy_edge_gate_reason` on runtime, intel JSONL, HUD payload.
+
+**Deploy:** built locally — **Segment #4 soak** after operator restart (VPS still on v2.1.36 until then).
+
+---
+
 ## [2.1.36] — 2026-06-20 (`Ashigaru Kaizen II`)
 
 **Pivot:** Segment #3 (v2.1.35) stopped early — bid join gave fills/conversion but **negative buy skim** (`at_edge=False`). Goal is skim-funded inventory growth, not RLUSD→XRP at mid.

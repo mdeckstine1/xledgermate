@@ -160,6 +160,10 @@ class RuntimeState:
     solo_as_tighten: bool = False
     acquisition_metrics: Dict[str, Any] = field(default_factory=dict)
     g4_peer_lane_count: int = 0
+    buy_edge_gate_active: bool = False
+    buy_edge_gate_blocked: bool = False
+    buy_edge_implied_bps: Optional[float] = None
+    buy_edge_gate_reason: str = ""
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -343,4 +347,8 @@ class RuntimeStateStore:
             solo_as_tighten=bool(data.get("solo_as_tighten", False)),
             acquisition_metrics=dict(data.get("acquisition_metrics") or {}),
             g4_peer_lane_count=int(data.get("g4_peer_lane_count") or 0),
+            buy_edge_gate_active=bool(data.get("buy_edge_gate_active", False)),
+            buy_edge_gate_blocked=bool(data.get("buy_edge_gate_blocked", False)),
+            buy_edge_implied_bps=data.get("buy_edge_implied_bps"),
+            buy_edge_gate_reason=str(data.get("buy_edge_gate_reason") or ""),
         )

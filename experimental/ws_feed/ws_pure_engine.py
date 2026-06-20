@@ -208,6 +208,7 @@ class WsPureTradingEngine:
         self._cycle_count = 0
         self._session_fills = 0
         self._session_spread_capture = 0.0
+        self._last_session_buy_capture_xrp: Optional[float] = None
         self._session_baseline_xrp: Optional[float] = None
         self._session_baseline_rlusd: Optional[float] = None
         self._session_baseline_mid: Optional[float] = None
@@ -485,6 +486,7 @@ class WsPureTradingEngine:
             g2_enabled=flags.g2_scaler,
             g4_enabled=flags.g4_peer_lane and flags.competitor_intel,
             competitor_pressure_enabled=flags.competitor_intel,
+            session_buy_capture_xrp=self._last_session_buy_capture_xrp,
         )
         reservation = engine_dec.get("as_reservation")
         self._reservation_crossed_after_ws_sample = detect_stale_cross(
@@ -1055,6 +1057,11 @@ class WsPureTradingEngine:
             session_fills=self._session_fill_records,
             intel_cycles=intel_cycles,
         )
+        buy_cap = (acquisition_metrics.get("inventory_growth_at_edge") or {}).get(
+            "buy_capture_xrp"
+        )
+        if buy_cap is not None:
+            self._last_session_buy_capture_xrp = float(buy_cap)
         state = RuntimeState(
             version=VERSION,
             network=config.network_name(),
@@ -1172,6 +1179,10 @@ class WsPureTradingEngine:
             solo_as_tighten=bool(ed.get("solo_as_tighten")),
             acquisition_metrics=acquisition_metrics,
             g4_peer_lane_count=int(ed.get("g4_peer_lane_count") or 0),
+            buy_edge_gate_active=bool(ed.get("buy_edge_gate_active")),
+            buy_edge_gate_blocked=bool(ed.get("buy_edge_gate_blocked")),
+            buy_edge_implied_bps=ed.get("buy_edge_implied_bps"),
+            buy_edge_gate_reason=str(ed.get("buy_edge_gate_reason") or ""),
         )
         self.state_store.save(state)
         if ed and flags.intel_log:

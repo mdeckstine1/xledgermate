@@ -1,12 +1,12 @@
 # Pure A-S Critical Path
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
-**Version:** v2.1.36 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-20 (Segment #3 stopped early · G7 v1.6 edge-positive acquire pivot)
+**Version:** v2.1.37 · **Branch:** `Ashigaru-Kaizen-II`  
+**Last updated:** 2026-06-20 (v2.1.36 soak interim assessment @ 16 fills · A2.2 deploy Segment #4)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
-**Soak = timed test run.** **Segment #3 (v2.1.35 join-acquire) stopped @ ~11 fills** — conversion without skim; pivot to **G7 v1.6 edge acquire** (passive bid / wide ask). Pass gate: **`at_edge=True`** + **`session_spread_capture_xrp > 0`**, not fill count alone.
+**Soak = timed test run.** **Segment #3 (v2.1.35 join-acquire) stopped @ ~11 fills** — conversion without skim; pivot to **G7 v1.6 edge acquire** (passive bid / wide ask). **v2.1.37 A2.2 skim gate built** — deploy at Segment #4. Pass gate: **`at_edge=True`** + **`session_spread_capture_xrp > 0`**, not fill count alone.
 
 ---
 
@@ -18,6 +18,7 @@ Ordered by what live soaks proved matters. **Do not skip tiers** — finish P0 b
 |-----|------|-------------|--------|
 | **P2** | **G6 v1.1** (HUD-only) | M6 false hold; align gate with macro ops | **[x] shipped** — calibration soak ongoing |
 | **P1** | **A1 — SELL-side bleed** | 78 fills: BUY +0.096 / SELL **−0.197** XRP | **[x] closed Fail** — G7 v1.2 ran; economics gate not met |
+| **P1** | **A2.2 — buy-side skim gate** | Segment #3 paid ~mid on buys | **[x] v2.1.37 built** — deploy Segment #4 |
 | **P1** | **A2 — presence / fill rate** | Solo whale book — win by being at touch | **[x] v2.1.27 deployed** — G7 v1.3 + G4 solo_acquire |
 | **P1** | **A3 — stale-quote tail** | 127s–4876s ask fills; 201s+ bid tail in A1 | **[x] v2.1.27 deployed** — `stale_quote_guard` |
 | **P2** | **A2+A3 soak** | ~50 fills vs A1 baseline | **ongoing** — no wholesale quote tweaks |
@@ -120,6 +121,60 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 **Deploy:** [x] segment-end `systemctl restart xledgermate` 2026-06-20 (bundled with A3).
 
 **Done when:** Sustained presence ≥75% with toxic@30s ≤30% and improving fill rate vs A1 baseline (~7.6/h).
+
+#### A2.2 — buy-side skim gate (built v2.1.37 · deploy Segment #4)
+
+**North star:** skim-funded inventory growth — not RLUSD↔XRP conversion at mid. G7 v1.6 posture alone cannot enforce this; pure path had no min-edge gate (Segment #3: +67 XRP, **−0.009 skim**, `at_edge=False`).
+
+**Shipped — `buy_edge_gate.py`:**
+
+- After G7 `touch_prices_from_backoff`, block bids when implied buy edge &lt; **`MIN_BUY_EDGE_BPS`** (1.0 bps default).
+- **Scope:** `g7_solo_acquisition` + accumulate postures (`balanced`, `rlusd_heavy`, `slight_rlusd_heavy`) only — not `xrp_heavy` hold, not peer-present lane.
+- **Session brake (layer 2):** if session `buy_capture_xrp` &lt; 0, pause bids until capture recovers.
+- Action: `pause_bids=True` on ladder; ask side unchanged.
+- Observability: `buy_edge_gate_blocked`, `buy_edge_implied_bps`, `buy_edge_gate_reason` on runtime + intel JSONL + HUD.
+
+**Deploy:** [ ] segment-end restart at **Segment #4** (deploy after v2.1.36 soak close @ 18 fills).
+
+**Done when (soak):** `at_edge=True`, `session_spread_capture_xrp > 0`, MTM Δ &gt; 0 — fill count secondary.
+
+#### Segment #3 verdict (2026-06-20) — closed Fail (skim goal)
+
+**Boot:** ~15:54 UTC · **~11 fills** · v2.1.35 G7 v1.5 join-acquire · stopped early.
+
+| Metric | Result | Gate |
+|--------|--------|------|
+| Δ XRP | **+67** | inventory up |
+| Session skim | **−0.009 XRP** | **Fail** |
+| Buy capture | **−0.009** | **Fail** |
+| `at_edge` | **False** | **Fail** |
+| MTM | flat (~373.7 XRP-equiv) | **Fail** |
+| Side mix | 6 BUY / 2 SELL | better than prior, but paying ~mid on buys |
+
+**Verdict:** conversion soak, not skim. Pivot → G7 v1.6 edge acquire (v2.1.36) + A2.2 gate (v2.1.37).
+
+#### v2.1.36 soak — closed (2026-06-20) · **Watch** (purpose Fail)
+
+**Boot:** 2026-06-20 16:33 UTC · **~1h 30m** · **18 fills** · v2.1.36 G7 v1.6 edge acquire · stopped for Segment #4 deploy.
+
+| Metric | Result | Purpose gate |
+|--------|--------|--------------|
+| Session skim | **+0.029 XRP** | Pass (headline) |
+| Spread bps (nonzero) | mean **2.75**, median **~4** | OK |
+| toxic@30s | **22%** | Borderline (solo off ≥20%) |
+| **BUY capture** | **−0.013** (12 fills) | **Fail** |
+| **SELL capture** | **+0.042** (6 fills) | SELL carries session |
+| Δ XRP | **+4.8** | inventory up, but not at edge |
+| `at_edge` | **False** | **Fail** |
+| `buy_cost_vs_mid_bps` | **+1.97** mean | **Fail** |
+| MTM Δ (approx) | **~flat / slight +** | inconclusive |
+| Worst leg | BUY 20.7 XRP **−0.051** | toxic buy dominated BUY P&amp;L |
+
+**Verdict: Watch** — net MM economics improved vs Segment #3 (positive skim, decent bps). **Purpose gate Fail:** SELL-led skim, buys still above/below fair wrong way on net, `at_edge=False`. G7 v1.6 posture alone insufficient — **deploy v2.1.37 A2.2 gate** for Segment #4.
+
+**vs interim @ 16 fills:** skim +0.026→+0.029, toxic 27%→22%, BUY cap −0.016→−0.013 — same shape, stable enough to stop.
+
+**Deploy:** [ ] **v2.1.37** Segment #4 fresh boot after engine restart.
 
 #### A3 — stale-quote tail (deployed v2.1.27)
 

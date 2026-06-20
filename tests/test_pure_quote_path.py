@@ -154,6 +154,10 @@ def test_g4_peer_lane_in_quote_path() -> None:
         assert balanced_empty.g7_solo_acquisition is True
         assert balanced_empty.g7_bid_role == "passive"
         assert balanced_empty.g7_ask_role == "passive"
+        assert balanced_empty.buy_edge_gate_active is True
+        assert balanced_empty.buy_edge_gate_blocked is False
+        assert balanced_empty.buy_edge_implied_bps is not None
+        assert balanced_empty.buy_edge_implied_bps >= 1.0
 
         xrp_empty = await path.compute_decision(
             mid=1.120508,
