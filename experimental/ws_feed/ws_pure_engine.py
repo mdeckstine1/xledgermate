@@ -36,6 +36,7 @@ from experimental.ws_feed.fill_quote_age_log import (
 )
 from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
 from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
+from experimental.ws_feed.stale_quote_guard import stale_quote_cancel_decisions
 from experimental.ws_feed.pure_quote_path import current_ws_as_version
 from experimental.ws_feed.stale_cross import detect_stale_cross
 from experimental.ws_runtime_analysis import append_runtime_sample
@@ -583,6 +584,29 @@ class WsPureTradingEngine:
             max_improve_touch_pct=float(getattr(config, "max_quote_improve_touch_pct", 0.15)),
             preserve_touch_queue=preserve_touch,
         )
+        now_utc = datetime.now(tz=timezone.utc)
+        stale_decisions = stale_quote_cancel_decisions(
+            open_offers,
+            self._offer_age,
+            now=now_utc,
+            toxic_ratio_30s=float(fq.toxic_ratio_30s),
+            mid=mid,
+            last_sync_mid=self._last_sync_mid,
+            mid_move_refresh_bps=WS_MID_MOVE_REFRESH_BPS,
+        )
+        cancel_sequences = list(plan.cancel_sequences)
+        stale_seqs = {d.sequence for d in stale_decisions}
+        for seq in stale_seqs:
+            if seq not in cancel_sequences:
+                cancel_sequences.append(seq)
+        for decision in stale_decisions:
+            self.decision_log.add(
+                "execution",
+                (
+                    f"A3 stale-quote: cancel seq {decision.sequence} "
+                    f"{decision.side} age={decision.age_seconds:.0f}s ({decision.reason})"
+                ),
+            )
         if not preserve_touch or price_tol < float(
             getattr(config, "order_price_tolerance_pct", 0.08)
         ):
@@ -591,7 +615,7 @@ class WsPureTradingEngine:
                 f"WS refresh mode: tol={price_tol:.3f}% preserve_touch={preserve_touch}",
             )
         cancelled = 0
-        for seq in plan.cancel_sequences:
+        for seq in cancel_sequences:
             self._offer_age.forget_sequence(seq)
             try:
                 await connector.cancel_offer(seq)

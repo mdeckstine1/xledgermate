@@ -3,8 +3,8 @@
 **Purpose:** Posterity — how we got here, what we learned, and why decisions were made.  
 **Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live priority stack; this file is the narrative + archaeology.
 
-**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.24 (built; VPS still v2.1.23 A1 soak)  
-**Last updated:** 2026-06-20 (A2 G7 solo + G4 solo_acquire built; deploy after A1 ~50-fill soak)
+**Branch:** `Ashigaru-Kaizen-II` · **VPS:** `188.245.50.229` `/root/xledgermate` · **Version:** v2.1.25 (built; VPS still v2.1.23 A1 soak)
+**Last updated:** 2026-06-20 (A3 stale-quote guard built; deploy after A2 bundle)
 
 ---
 
@@ -344,9 +344,15 @@ Operator consensus: stop grading churn; fix false **hold** on thin join-aligned 
 
 **Next:** **A1 SELL-side bleed** (engine) while calibration soak runs — hold expected until economics improve.
 
+### A2+A3 deploy + A1 segment close (2026-06-20)
+
+**A1 segment verdict: Fail** — boot 2026-06-19 20:57 UTC · **78 fills** / ~10.3h · BUY **+0.096** / SELL **−0.197** XRP · bps **0.43** · toxic@30s **20%**. G7 ask defense active; economics gate not met.
+
+**Deployed v2.1.27** (engine + HUD): **A2** G7 v1.3 solo acquisition + G4 `solo_acquire`; **A3** `stale_quote_guard.py`; HUD fixes (marquee, favicon, `_check_hud_js.py`). Fresh soak — compare to A1 baseline; no wholesale Grok quote tweaks.
+
 ### Acquisition pivot (2026-06-20)
 
-Build order: **A1 → A2 → A3**. **A1 deployed** v2.1.23 / G7 v1.2 ask sell-defense (A1 segment soak ~50 fills). **A2 built** v2.1.24 / G7 v1.3 solo acquisition + G4 v1.1 `solo_acquire` — **not deployed** until A1 soak analysis.
+Build order: **A1 → A2 → A3**. **A1 closed Fail.** **A2+A3 deployed** v2.1.27 at segment end 2026-06-20.
 
 ---
 

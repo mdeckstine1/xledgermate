@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional
 
 try:
     from fastapi import FastAPI, Request
-    from fastapi.responses import HTMLResponse, Response
+    from fastapi.responses import FileResponse, HTMLResponse, Response
     import uvicorn
 except ImportError:
     FastAPI = None
@@ -86,6 +86,7 @@ app = FastAPI(title="WS + Pure A-S Real-Time HUD") if FastAPI else None
 if app:
     _HUD_DIR = Path(__file__).parent / "hud"
     _INDEX_HTML = _HUD_DIR / "index.html"
+    _FAVICON = _HUD_DIR / "favicon.png"
 
     def _render_index_html() -> str:
         from experimental.ws_feed.pure_quote_path import current_ws_as_version
@@ -119,6 +120,16 @@ if app:
     @app.get("/hud", response_class=HTMLResponse)
     async def hud_alias():
         return _index_response()
+
+    @app.get("/favicon.png")
+    async def favicon():
+        if not _FAVICON.is_file():
+            return Response(status_code=404)
+        return FileResponse(
+            _FAVICON,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
 
 

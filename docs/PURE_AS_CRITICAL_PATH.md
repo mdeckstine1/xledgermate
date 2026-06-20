@@ -1,8 +1,8 @@
 # Pure A-S Critical Path
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
-**Version:** v2.1.24 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-20 (A2 built v2.1.24 · VPS A1 soak on v2.1.23)
+**Version:** v2.1.27 · **Branch:** `Ashigaru-Kaizen-II`  
+**Last updated:** 2026-06-20 (A2+A3 deployed · A1 segment closed Fail · fresh soak)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 
@@ -17,10 +17,10 @@ Ordered by what live soaks proved matters. **Do not skip tiers** — finish P0 b
 | Pri | Item | Soak signal | Status |
 |-----|------|-------------|--------|
 | **P2** | **G6 v1.1** (HUD-only) | M6 false hold; align gate with macro ops | **[x] shipped** — calibration soak ongoing |
-| **P1** | **A1 — SELL-side bleed** | VPS 83 fills: BUY +0.072 / SELL −0.035 XRP | **[x] v2.1.23** — G7 v1.2 ask defense · **deploy at segment end** |
-| **P1** | **A2 — presence / fill rate** | Solo whale book — win by being at touch | **[x] v2.1.24 built** — deploy after A1 ~50-fill soak |
-| **P1** | **A3 — stale-quote tail** | #2 fill-age 127s–4876s; toxic stale asks | after A2 |
-| **P2** | G6 calibration soak | ~50 fills on v1.1 labels (engine unchanged) | ongoing — **hold expected** until A1 |
+| **P1** | **A1 — SELL-side bleed** | 78 fills: BUY +0.096 / SELL **−0.197** XRP | **[x] closed Fail** — G7 v1.2 ran; economics gate not met |
+| **P1** | **A2 — presence / fill rate** | Solo whale book — win by being at touch | **[x] v2.1.27 deployed** — G7 v1.3 + G4 solo_acquire |
+| **P1** | **A3 — stale-quote tail** | 127s–4876s ask fills; 201s+ bid tail in A1 | **[x] v2.1.27 deployed** — `stale_quote_guard` |
+| **P2** | **A2+A3 soak** | ~50 fills vs A1 baseline | **ongoing** — no wholesale quote tweaks |
 | **P3** | **G8** spot trend posture | #1 spot pain; #2 spot helped — **defer** | spec only — [stance](#spot--inventory-operator-stance) |
 | **P3** | cancel/fill tune | **2.96** unchanged vs M6 — engine window | deferred |
 | **P3** | Stale-quote guard | Folded into **A3** after A1/A2 | see [A3](#a3-stale-quote-tail) |
@@ -81,8 +81,8 @@ We are **not** building a spot-prediction or directional trading bot. Spot moves
 | Order | Build | Segment signal | Target |
 |-------|-------|----------------|--------|
 | **A1** | SELL-side bleed | #2 SELL −0.043 vs BUY +0.067 XRP | Flatten side skew; lift session bps off hold band |
-| **A2** | Presence / fill rate | Solo band, 0 peers | Raise `as_presence_pct` and fills/hour without more toxic | **[x] v2.1.24 built** — deploy after A1 ~50-fill soak |
-| **A3** | Stale-quote tail | 127s–4876s ask fills in #2 | Cap quote age at fill; cut stale-toxic SELL |
+| **A2** | Presence / fill rate | Solo band, 0 peers | Raise `as_presence_pct` and fills/hour without more toxic | **[x] v2.1.27 deployed** |
+| **A3** | Stale-quote tail | 127s–4876s ask fills in #2 | Cap quote age at fill; cut stale-toxic SELL | **[x] v2.1.27 deployed** |
 
 #### A1 — SELL-side bleed (shipped v2.1.23 / G7 v1.2)
 
@@ -96,11 +96,13 @@ We are **not** building a spot-prediction or directional trading bot. Spot moves
 
 **Deploy:** segment-end `systemctl restart xledgermate` (engine). HUD synth picks up defense from runtime fill-quality fields without engine restart.
 
-**Done when:** Session `by side` SELL capture ≥ 0; session bps ≥ 3 with pos ≥ 70% → G6 off `hold`.
+**A1 segment verdict (2026-06-20):** **Fail** — 78 fills / ~10.3h · BUY **+0.096** / SELL **−0.197** XRP · bps **0.43** · pos **69%** · toxic@30s **20%** (pass). Defense ran; SELL bleed worsened vs pre-A1 baseline. Proceed to A2+A3.
 
-#### A2 — presence / fill rate (built v2.1.24 / G7 v1.3 + G4 v1.1)
+**Done when:** Session `by side` SELL capture ≥ 0; session bps ≥ 3 with pos ≥ 70% → G6 off `hold`. *(Not met — segment closed.)*
 
-Solo whale book — no peer queue war. **Built locally; deploy after A1 ~50-fill soak + analysis.**
+#### A2 — presence / fill rate (deployed v2.1.27 / G7 v1.3 + G4 v1.1)
+
+Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 
 **G7 v1.3 solo acquisition** (`execution_envelope.py`):
 
@@ -115,16 +117,20 @@ Solo whale book — no peer queue war. **Built locally; deploy after A1 ~50-fill
 - Empty lane + low toxic + G2 not defensive → bid size **+6%**, ask **+2%** (`grade=solo_acquire`).
 - Falls back to neutral `empty_lane` when toxic ≥20% or G2 size brake.
 
-**Deploy:** segment-end `systemctl restart xledgermate` after A1 soak verdict (bundled with A1 on VPS today).
+**Deploy:** [x] segment-end `systemctl restart xledgermate` 2026-06-20 (bundled with A3).
 
-**Done when:** Sustained presence ≥75% with toxic@30s ≤30% and improving fill rate.
+**Done when:** Sustained presence ≥75% with toxic@30s ≤30% and improving fill rate vs A1 baseline (~7.6/h).
 
-#### A3 — stale-quote tail
+#### A3 — stale-quote tail (deployed v2.1.27)
 
-#1 61s stale bid; #2 127s–4876s tail (often **ask**). `OfferAgeTracker` + M6 logs exist; no auto-cancel today.
+#1 61s stale bid; #2 127s–4876s tail (often **ask**). `OfferAgeTracker` + M6 logs exist.
 
-- Levers: max quote age refresh/cancel (engine), tie to `WS_MID_MOVE_REFRESH_BPS` (8 bps today), ask-side priority (SELL toxic).
-- **Done when:** fill_age p95 &lt; 60s; stale fills no longer in worst-8.
+**Deployed 2026-06-20** with A2 bundle.
+
+- **`stale_quote_guard.py`** — max ask age **60s** ( **45s** when toxic@30s ≥ 25%), bid **90s**, mid-move coupling (≥8 bps + age >30s).
+- Wired in `_sync_offers`: stale cancels merge into cancel path even when `preserve_touch_queue=True`.
+- Observability: `A3 stale-quote: cancel seq …` in decision log.
+- **Done when (soak):** fill_age p95 &lt; 60s; stale fills no longer in worst-8.
 
 **Discipline:** No G6 Tier 2/3, no G8, no peer intel until A1–A3 addressed or operator reprioritizes.
 

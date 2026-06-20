@@ -5,6 +5,39 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+---
+
+## [2.1.27] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**Theme:** A2+A3 live deploy — solo acquisition + stale-quote guard; A1 segment closed.
+
+### Deployed (VPS)
+
+- **A2** — G7 v1.3 solo lane posture + G4 `solo_acquire` (empty peer band, low toxic).
+- **A3** — `stale_quote_guard.py` auto-cancel (ask 60s / bid 90s / mid-move stale).
+- **HUD** — marquee readability, favicon, boot hardening, `_check_hud_js.py` pre-deploy check.
+
+### A1 segment
+
+Closed **Fail**: 78 fills — SELL **−0.197** XRP vs BUY +0.096; session bps 0.43. Fresh A2+A3 soak ~50 fills vs baseline.
+
+---
+
+## [2.1.25] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**Theme:** A3 stale-quote tail — auto-cancel aged quotes before toxic SELL fills (built; deploy after A2).
+
+### Added
+
+- **`stale_quote_guard.py`** — ask max age 60s (45s when toxic@30s ≥ 25%), bid 90s, mid-move stale cancel (≥8 bps + age >30s).
+- **Engine** — `_sync_offers` merges stale cancels even when `preserve_touch_queue=True`; `A3 stale-quote:` decision log lines.
+
+### Note
+
+VPS remains on **v2.1.23** (A1 segment soak). Deploy **v2.1.25** bundled with A1/A2 after ~50-fill A1 analysis.
+
+---
+
 ## [2.1.24] — 2026-06-20 (`Ashigaru Kaizen II`)
 
 **Theme:** A2 solo acquisition — presence/fill rate on empty peer lane (built; deploy after A1 soak).

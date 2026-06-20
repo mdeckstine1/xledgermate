@@ -9,13 +9,15 @@
     <!-- xlg-hud-build:__HUD_BUILD__ -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self';">
     <title>XLedgerMate — Live WS Market Maker HUD</title>
+    <link rel="icon" type="image/png" href="/favicon.png" sizes="32x32">
+    <link rel="apple-touch-icon" href="/favicon.png">
     <script>
     (function () {
         const nativeFetch = window.fetch.bind(window);
         window.fetch = async function (...args) {
             const response = await nativeFetch(...args);
             const url = String(args[0] || '');
-            if (response.status === 401 && !url.includes('/login')) {
+            if (response.status === 401 && !url.includes('/login') && !url.includes('/state')) {
                 const next = encodeURIComponent(location.pathname + location.search);
                 location.href = '/login?next=' + next;
             }
@@ -31,21 +33,38 @@
         .sidebar .label { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 2px; }
         .sidebar .value { font-size: 1rem; font-weight: 600; }
         .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .marquee-container { background: #0f172a; border-bottom: 1px solid #334155; padding: 6px 12px; overflow: hidden; white-space: nowrap; }
-        .marquee { display: inline-block; animation: marquee 60s linear infinite; font-size: 0.85rem; color: #cbd5e1; }
+        .marquee-container { background: #1e293b; border-bottom: 1px solid #475569; padding: 8px 14px; overflow: hidden; white-space: nowrap; }
+        .marquee { display: inline-block; animation: marquee 60s linear infinite; font-size: 0.85rem; color: #e2e8f0; }
         @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
 
+        /* Top operator posture strip — readable at a glance via tunnel */
+        #marquee.operator-marquee {
+            animation: marquee-seamless 150s linear infinite;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: #f1f5f9;
+            letter-spacing: 0.02em;
+        }
+        #live > .marquee-container {
+            background: #0f172a;
+            border-bottom: 1px solid #64748b;
+            padding: 10px 16px;
+        }
+
         .market-ticker {
-            animation: marquee-seamless 90s linear infinite;
+            animation: marquee-seamless 120s linear infinite;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #e2e8f0;
         }
         @keyframes marquee-seamless {
             0% { transform: translateX(0); }
             100% { transform: translateX(-50%); }
         }
-        .marquee span.quote { color: #4ade80; font-weight: 500; }
-        .marquee span.warn { color: #facc15; }
-        .marquee span.danger { color: #f87171; }
-        .marquee span.info { color: #60a5fa; }
+        .marquee span.quote { color: #86efac; font-weight: 600; }
+        .marquee span.warn { color: #fde047; font-weight: 500; }
+        .marquee span.danger { color: #fca5a5; font-weight: 600; }
+        .marquee span.info { color: #93c5fd; font-weight: 500; }
         .header { font-size: 1.3rem; padding: 12px 16px; color: #60a5fa; background: #1e2937; border-bottom: 1px solid #334155; flex-shrink: 0; }
         .health-bar {
             flex-shrink: 0;
@@ -706,7 +725,7 @@
 
         <div id="live" class="page active">
             <div class="marquee-container">
-                <div class="marquee" id="marquee">Live engine · WS book feed · loading quote decisions…</div>
+                <div class="marquee operator-marquee" id="marquee">Live engine · WS book feed · loading quote decisions…</div>
             </div>
             <div id="hud-poll-status" style="font-size:0.65rem; color:#64748b; padding:2px 16px 6px; font-family: ui-monospace, monospace; background:#0f172a; display:inline-block;">polling /state every 800ms...</div>
             <button id="btn-force-poll" style="font-size:0.55rem; padding:1px 5px; margin-left:4px; vertical-align:middle; cursor:pointer;">↻</button>
@@ -778,7 +797,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
-                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                    <div class="marquee market-ticker" style="animation-duration: 120s;">Loading live market data...</div>
                 </div>
             </div>
         </div>
@@ -802,7 +821,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             </label>
                         </div>
                         <div style="margin-top:6px;">
-                            <label style="font-size:0.7rem; color:#94a3b8;">HUD link in reports (optional)</label>
+                            <label for="tg-hud-url" style="font-size:0.7rem; color:#94a3b8;">HUD link in reports (optional)</label>
                             <input type="text" id="tg-hud-url" placeholder="http://YOUR_VPS:8765" style="width:100%; font-family:monospace; font-size:0.8rem; margin:2px 0;">
                         </div>
                         <div style="margin-top:8px; border-top:1px solid #334155; padding-top:8px;">
@@ -812,11 +831,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         </div>
                         <div style="margin-top:6px; display:flex; gap:8px;">
                             <div style="flex:1;">
-                                <label style="font-size:0.7rem; color:#94a3b8;">From (inclusive)</label>
+                                <label for="tg-quiet-start" style="font-size:0.7rem; color:#94a3b8;">From (inclusive)</label>
                                 <select id="tg-quiet-start" style="width:100%; font-size:0.8rem; margin-top:2px;"></select>
                             </div>
                             <div style="flex:1;">
-                                <label style="font-size:0.7rem; color:#94a3b8;">Until (exclusive)</label>
+                                <label for="tg-quiet-end" style="font-size:0.7rem; color:#94a3b8;">Until (exclusive)</label>
                                 <select id="tg-quiet-end" style="width:100%; font-size:0.8rem; margin-top:2px;"></select>
                             </div>
                         </div>
@@ -847,7 +866,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     <div class="card">
                         <div class="label">Quoting Parameters</div>
                         <div>
-                            <label style="font-size:0.7rem; color:#94a3b8;">Profile (A-S tuning preset)</label>
+                            <label for="config-profile-select" style="font-size:0.7rem; color:#94a3b8;">Profile (A-S tuning preset)</label>
                             <select id="config-profile-select" style="width:100%; font-size:0.85rem; margin-top:2px;">
                                 <option value="tight_spread">tight_spread (A-S tuned)</option>
                                 <option value="safe">safe</option>
@@ -864,8 +883,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     <!-- Intelligence APIs for AI competitor analysis (advisory only, does not affect core A-S reservation math) -->
                     <div class="card">
                         <div class="label">Intelligence APIs (AI for Competitor Analysis)</div>
+                        <form autocomplete="off" onsubmit="return false;">
                         <div>
-                            <label style="font-size:0.7rem; color:#94a3b8;">AI Provider</label>
+                            <label for="intel-ai-provider" style="font-size:0.7rem; color:#94a3b8;">AI Provider</label>
                             <select id="intel-ai-provider" style="width:100%; font-size:0.85rem; margin-top:2px;">
                                 <option value="stub">Stub (local heuristic)</option>
                                 <option value="ollama">Ollama (local)</option>
@@ -875,11 +895,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             </select>
                         </div>
                         <div style="margin-top:6px;">
-                            <label style="font-size:0.7rem; color:#94a3b8;">Grok / xAI API key</label>
-                            <input type="password" id="intel-ai-key" placeholder="xai-... for Grok or ollama key" style="width:100%; font-family:monospace; font-size:0.8rem; margin:2px 0;">
+                            <label for="intel-ai-key" style="font-size:0.7rem; color:#94a3b8;">Grok / xAI API key</label>
+                            <input type="password" id="intel-ai-key" autocomplete="new-password" placeholder="xai-... for Grok or ollama key" style="width:100%; font-family:monospace; font-size:0.8rem; margin:2px 0;">
                         </div>
                         <div style="margin-top:4px;">
-                            <label style="font-size:0.7rem; color:#94a3b8;">Model / Endpoint</label>
+                            <label for="intel-ai-model" style="font-size:0.7rem; color:#94a3b8;">Model / Endpoint</label>
                             <input type="text" id="intel-ai-model" value="grok-3" style="width:100%; font-family:monospace; font-size:0.8rem;" placeholder="grok-3 (recommended) or grok-3-mini. Use the Fetch button or check console.x.ai">
                             <button type="button" id="btn-fetch-models" style="margin-top:4px; font-size:0.65rem; padding:2px 8px;">Fetch available models for this key</button>
                             <div id="model-list-result" style="font-size:0.65rem; margin-top:3px; color:#64748b; min-height:1.1em;"></div>
@@ -894,13 +914,14 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <strong>Recommended:</strong> grok-3 — use Fetch models to verify your key.
                             The dropdown auto-applies when you change selection. AI is advisory only.
                         </small>
+                        </form>
                     </div>
 
                     <button id="btn-apply-config" class="full-width" style="margin-top:12px;">Apply intelligence settings</button>
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
-                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                    <div class="marquee market-ticker" style="animation-duration: 120s;">Loading live market data...</div>
                 </div>
             </div>
         </div>
@@ -951,7 +972,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
-                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                    <div class="marquee market-ticker" style="animation-duration: 120s;">Loading live market data...</div>
                 </div>
             </div>
         </div>
@@ -996,7 +1017,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
-                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                    <div class="marquee market-ticker" style="animation-duration: 120s;">Loading live market data...</div>
                 </div>
             </div>
         </div>
@@ -1020,7 +1041,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     </div>
                 </div>
                 <div class="marquee-container" style="margin-top:12px;">
-                    <div class="marquee market-ticker" style="animation-duration: 90s;">Reports read logs only — MM quoting unchanged</div>
+                    <div class="marquee market-ticker" style="animation-duration: 120s;">Reports read logs only — MM quoting unchanged</div>
                 </div>
             </div>
         </div>
@@ -1072,7 +1093,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
-                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                    <div class="marquee market-ticker" style="animation-duration: 120s;">Loading live market data...</div>
                 </div>
             </div>
         </div>
@@ -1145,25 +1166,25 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
                         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:0.85rem;">
                             <div>
-                                <label class="label" style="display:block; margin-bottom:2px;">Asset</label>
+                                <label for="send-asset" class="label" style="display:block; margin-bottom:2px;">Asset</label>
                                 <select id="send-asset" style="width:100%; padding:3px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:3px;">
                                     <option value="XRP">XRP</option>
                                     <option value="RLUSD">RLUSD</option>
                                 </select>
                             </div>
                             <div>
-                                <label class="label" style="display:block; margin-bottom:2px;">Amount</label>
+                                <label for="send-amount" class="label" style="display:block; margin-bottom:2px;">Amount</label>
                                 <input id="send-amount" type="number" step="0.01" min="0" value="" placeholder="0.00" style="width:100%; padding:3px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:3px; font-family:monospace;">
                             </div>
                             <div style="grid-column: 1 / -1;">
-                                <label class="label" style="display:block; margin-bottom:2px;">Destination (your wallet)</label>
+                                <label for="send-dest" class="label" style="display:block; margin-bottom:2px;">Destination (your wallet)</label>
                                 <input id="send-dest" type="text" value="" placeholder="r..." style="width:100%; padding:3px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:3px; font-family:monospace;">
                             </div>
                             <div style="grid-column: 1 / -1;">
                                 <label style="font-size:0.65rem; display:block; margin-bottom:4px;">
                                     <input type="checkbox" id="send-confirm-running"> Engine may be running — I accept sending while MM is live
                                 </label>
-                                <label class="label" style="display:block; margin-bottom:2px;">Type SEND to confirm</label>
+                                <label for="send-confirm-text" class="label" style="display:block; margin-bottom:2px;">Type SEND to confirm</label>
                                 <input id="send-confirm-text" type="text" placeholder="SEND" autocomplete="off" style="width:100%; padding:3px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:3px; font-family:monospace; text-transform:uppercase;">
                             </div>
                         </div>
@@ -1182,7 +1203,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
-                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                    <div class="marquee market-ticker" style="animation-duration: 120s;">Loading live market data...</div>
                 </div>
             </div>
         </div>
@@ -1293,7 +1314,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
-                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                    <div class="marquee market-ticker" style="animation-duration: 120s;">Loading live market data...</div>
                 </div>
             </div>
         </div>
@@ -1365,7 +1386,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 </div>
 
                 <div class="marquee-container" style="margin-top:12px;">
-                    <div class="marquee market-ticker" style="animation-duration: 90s;">Loading live market data...</div>
+                    <div class="marquee market-ticker" style="animation-duration: 120s;">Loading live market data...</div>
                 </div>
             </div>
         </div>
@@ -1383,17 +1404,31 @@ The A-S strategy itself decides presence via reservation price being inside the 
     </div>
 
     <script>
+        window.addEventListener('error', (ev) => {
+            console.error('[HUD] uncaught error', ev.error || ev.message);
+            const st = document.getElementById('hud-poll-status');
+            if (st && (st.textContent === 'connecting...' || st.textContent.indexOf('polling /state') >= 0)) {
+                st.textContent = 'JS ERROR — hard refresh (Ctrl+Shift+R); check F12 console';
+                st.style.color = '#f87171';
+            }
+        });
+
         let lastState = null;
         let pinnedIntelAiResult = null;  // keep full Grok analysis across /state polls
         let competitorNicknames = {};
         const HUD_BUILD = '__HUD_BUILD__';
 
         function ensureCacheBustUrl() {
-            if (!HUD_BUILD || HUD_BUILD.indexOf('__HUD_BUILD__') >= 0) return;
+            if (!HUD_BUILD || HUD_BUILD.indexOf('__HUD_BUILD__') >= 0) return false;
             const params = new URLSearchParams(window.location.search);
-            if (params.get('b') === HUD_BUILD) return;
+            if (params.get('b') === HUD_BUILD) return false;
+            // One redirect per build token — avoids reload loop if ?b= never sticks
+            const bustKey = 'xlg_hud_bust_' + HUD_BUILD;
+            if (sessionStorage.getItem(bustKey) === '1') return false;
+            sessionStorage.setItem(bustKey, '1');
             params.set('b', HUD_BUILD);
             window.location.replace(window.location.pathname + '?' + params.toString());
+            return true;
         }
 
         function applyProductionLabels() {
@@ -2937,7 +2972,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     const sep = '   |   ';
                     const unit = base + sep + base + sep + base + sep + base;
                     marqueeEl.innerHTML = unit + unit;
-                    marqueeEl.style.animation = 'marquee-seamless 60s linear infinite';
+                    marqueeEl.style.animation = 'marquee-seamless 150s linear infinite';
                 } catch (e) {
                     console.error('[HUD] marquee error', e);
                     marqueeEl.textContent = 'PURE A-S WS — marquee recover; fills ' + (s.fills_session != null ? s.fills_session : '—');
@@ -2971,7 +3006,6 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
             let base = `Mid <span style="${lastMidDirectionStyle}">${midDisplay}</span>   Bid ${bidVal}   Ask ${askVal}   Spread ${spreadVal}   WS ${ageVal}`;
             const spotPct = spotMidChangePct(s);
-            const spotR = spotDeltaRlusd(s);
             if (spotPct != null && !Number.isNaN(spotPct)) {
                 const sign = spotPct >= 0 ? '+' : '';
                 const spotStyle = spotPct >= 0 ? 'color:#4ade80;' : 'color:#facc15;';
@@ -2986,7 +3020,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const full = unit + unit;  // duplicate the block for seamless constant scroll (4 total instances)
             document.querySelectorAll('.market-ticker').forEach(el => {
                 el.innerHTML = full;
-                el.style.animation = 'marquee-seamless 90s linear infinite';
+                el.style.animation = 'marquee-seamless 120s linear infinite';
             });
         }
 
@@ -4558,12 +4592,50 @@ The A-S strategy itself decides presence via reservation price being inside the 
             });
         }
 
+        function startHudPolling() {
+            const forceBtn = document.getElementById('btn-force-poll');
+            if (forceBtn && !forceBtn.dataset.hudWired) {
+                forceBtn.dataset.hudWired = '1';
+                forceBtn.addEventListener('click', () => {
+                    const st = document.getElementById('hud-poll-status');
+                    if (st) {
+                        st.textContent = 'fetching...';
+                        st.style.color = '#64748b';
+                    }
+                    poll();
+                });
+            }
+
+            const statusEl = document.getElementById('hud-poll-status');
+            if (statusEl) {
+                statusEl.textContent = 'connecting...';
+                statusEl.style.color = '#64748b';
+            }
+
+            poll();
+
+            setTimeout(() => {
+                if (!lastState) poll();
+            }, 250);
+
+            if (!window.__hudAgeTicker) {
+                window.__hudAgeTicker = setInterval(() => {
+                    if (!lastState || lastState.ws_book_last_update_unix == null) return;
+                    const ageEl = document.getElementById('age');
+                    if (!ageEl) return;
+                    const liveAge = computeLiveWsAge(lastState);
+                    if (liveAge == null) return;
+                    ageEl.textContent = liveAge.toFixed(1) + 's';
+                    ageEl.style.color = wsAgeColor(liveAge);
+                }, 250);
+            }
+        }
+
         // Boot: attach nav (data-page driven), show Live, kick off immediate poll + recurring
         function bootHud() {
-            ensureCacheBustUrl();
             applyProductionLabels();
 
-            // Nav clicks
+            // Nav clicks — wire before cache-bust redirect so sidebar works on every load
             document.querySelectorAll('.nav a').forEach(link => {
                 link.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -4579,58 +4651,27 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 });
             });
 
-            // Attach the remaining demo-only button / select handlers (removes inline onclick/onchange)
-            attachDemoHandlers();
-            loadTelegramConfig();
-            loadCompetitorNicknames();
-
-            // Initialize collapsible sections (Last Decision Note + Recent Decisions)
-            initCollapsibles();
-
-            // Start on Live page (ensure class is set even if HTML had it)
-            showPage('live');
-
-            // Attach force poll button
-            const forceBtn = document.getElementById('btn-force-poll');
-            if (forceBtn) {
-                forceBtn.addEventListener('click', () => {
-                    const st = document.getElementById('hud-poll-status');
-                    if (st) {
-                        st.textContent = 'fetching...';
-                        st.style.color = '#64748b';
-                    }
-                    poll();
-                });
-            }
-
-            // Immediate status feedback
-            const statusEl = document.getElementById('hud-poll-status');
-            if (statusEl) {
-                statusEl.textContent = 'connecting...';
-                statusEl.style.color = '#64748b';
-            }
-
-            // Fire first poll immediately so data appears as soon as server has state
-            poll();
-
-            // Extra safety kick in case first fetch was racing server startup
-            setTimeout(() => {
-                if (!lastState) {
-                    // one more fast attempt
-                    poll();
+            let cacheBustRedirect = false;
+            try {
+                attachDemoHandlers();
+                loadTelegramConfig();
+                loadCompetitorNicknames();
+                initCollapsibles();
+                showPage('live');
+            } catch (e) {
+                console.error('[HUD] bootHud init error', e);
+                const st = document.getElementById('hud-poll-status');
+                if (st) {
+                    st.textContent = 'BOOT ERROR — nav works; check F12 console';
+                    st.style.color = '#facc15';
                 }
-            }, 250);
+            }
 
-            // Tick WS age upward between /state polls (uses ws_book_last_update_unix anchor)
-            setInterval(() => {
-                if (!lastState || lastState.ws_book_last_update_unix == null) return;
-                const ageEl = document.getElementById('age');
-                if (!ageEl) return;
-                const liveAge = computeLiveWsAge(lastState);
-                if (liveAge == null) return;
-                ageEl.textContent = liveAge.toFixed(1) + 's';
-                ageEl.style.color = wsAgeColor(liveAge);
-            }, 250);
+            // Cache-bust after UI handlers are wired; reload once if build token stale
+            cacheBustRedirect = ensureCacheBustUrl();
+            if (!cacheBustRedirect) {
+                startHudPolling();
+            }
         }
 
         if (document.readyState === 'loading') {

@@ -46,6 +46,7 @@ _PUBLIC_PREFIXES = (
     "/login",
     "/auth/passkey/login",
     "/auth/passkey/register",
+    "/favicon.png",
 )
 
 
