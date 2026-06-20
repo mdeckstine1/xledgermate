@@ -3,8 +3,8 @@
 **Purpose:** Posterity — how we got here, what we learned, and why decisions were made.  
 **Companion:** [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) is the live priority stack; this file is the narrative + archaeology.
 
-**Version:** v2.1.38 · **Segment #5 deploy pending**  
-**Last updated:** 2026-06-20 (A2.3 acquire ask brake shipped)
+**Version:** v2.1.39 · **Segment #6 deploy pending**
+**Last updated:** 2026-06-20 (A2.3b sell edge gate shipped)
 
 ---
 
@@ -16,11 +16,13 @@
 
 1. **North star** — skim-funded inventory growth; purpose gate in [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md#north-star-read-this-first).
 2. **Phase 1 (hygiene)** — A1/A2/A3 + G7 v1.6 posture — shipped; proved posture alone fails (#3, v2.1.36).
-3. **Phase 2 (enforcement)** — A2.2 buy gate [x] → **A2.3 ask brake [x]** → A2.4 realized edge → A2.5 tune.
+3. **Phase 2 (enforcement)** — A2.2 buy gate [x] → A2.3 ask brake [x] → **A2.3b sell gate [x]** → A2.4 realized edge → A2.5 tune.
 4. **Phase 3 (HUD)** — M-Purpose strip so operator sees `at_edge` without scripts.
 5. **Phase 4 (scale)** — E3 funding only after purpose pass on soak.
 
-**Active:** Deploy **v2.1.38** Segment #5 soak. **Next:** M-Purpose HUD (HUD-only).
+**Active:** Deploy **v2.1.39** Segment #6 soak. **Next:** M-Purpose HUD (HUD-only).
+
+**A2.3b sell edge gate (v2.1.39):** `sell_edge_gate.py` — min sell edge on solo whale book; session sell-capture brake. Built after Segment #4 SELL-led skim bleed in skew ask-only.
 
 **A2.3 acquire ask brake (v2.1.38):** `acquire_ask_brake.py` — pause asks in solo edge acquire; bid-only while accumulating. Built after Segment #4 showed positive buy skim but Δ XRP still falling from sells.
 

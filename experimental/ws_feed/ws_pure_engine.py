@@ -209,6 +209,7 @@ class WsPureTradingEngine:
         self._session_fills = 0
         self._session_spread_capture = 0.0
         self._last_session_buy_capture_xrp: Optional[float] = None
+        self._last_session_sell_capture_xrp: Optional[float] = None
         self._session_baseline_xrp: Optional[float] = None
         self._session_baseline_rlusd: Optional[float] = None
         self._session_baseline_mid: Optional[float] = None
@@ -487,6 +488,7 @@ class WsPureTradingEngine:
             g4_enabled=flags.g4_peer_lane and flags.competitor_intel,
             competitor_pressure_enabled=flags.competitor_intel,
             session_buy_capture_xrp=self._last_session_buy_capture_xrp,
+            session_sell_capture_xrp=self._last_session_sell_capture_xrp,
         )
         reservation = engine_dec.get("as_reservation")
         self._reservation_crossed_after_ws_sample = detect_stale_cross(
@@ -1062,6 +1064,11 @@ class WsPureTradingEngine:
         )
         if buy_cap is not None:
             self._last_session_buy_capture_xrp = float(buy_cap)
+        sell_states = acquisition_metrics.get("sell_capture_by_state") or {}
+        if sell_states:
+            self._last_session_sell_capture_xrp = sum(
+                float(v.get("cap") or 0) for v in sell_states.values()
+            )
         state = RuntimeState(
             version=VERSION,
             network=config.network_name(),
@@ -1186,6 +1193,10 @@ class WsPureTradingEngine:
             acquire_ask_brake_active=bool(ed.get("acquire_ask_brake_active")),
             acquire_ask_brake_blocked=bool(ed.get("acquire_ask_brake_blocked")),
             acquire_ask_brake_reason=str(ed.get("acquire_ask_brake_reason") or ""),
+            sell_edge_gate_active=bool(ed.get("sell_edge_gate_active")),
+            sell_edge_gate_blocked=bool(ed.get("sell_edge_gate_blocked")),
+            sell_edge_implied_bps=ed.get("sell_edge_implied_bps"),
+            sell_edge_gate_reason=str(ed.get("sell_edge_gate_reason") or ""),
         )
         self.state_store.save(state)
         if ed and flags.intel_log:

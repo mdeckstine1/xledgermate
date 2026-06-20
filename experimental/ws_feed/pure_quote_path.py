@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from experimental.competitor_pressure import apply_competitor_pressure, from_intel_dict
 from experimental.ws_feed.acquire_ask_brake import resolve_acquire_ask_brake
+from experimental.ws_feed.sell_edge_gate import resolve_sell_edge_gate
 from experimental.ws_feed.buy_edge_gate import resolve_buy_edge_gate
 from experimental.ws_feed.execution_envelope import (
     compute_execution_envelope,
@@ -151,6 +152,10 @@ class PureQuoteDecision:
     acquire_ask_brake_active: bool = False
     acquire_ask_brake_blocked: bool = False
     acquire_ask_brake_reason: str = ""
+    sell_edge_gate_active: bool = False
+    sell_edge_gate_blocked: bool = False
+    sell_edge_implied_bps: Optional[float] = None
+    sell_edge_gate_reason: str = ""
 
     def to_runtime_dict(self, *, competitor_intel: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -205,6 +210,10 @@ class PureQuoteDecision:
             "acquire_ask_brake_active": self.acquire_ask_brake_active,
             "acquire_ask_brake_blocked": self.acquire_ask_brake_blocked,
             "acquire_ask_brake_reason": self.acquire_ask_brake_reason,
+            "sell_edge_gate_active": self.sell_edge_gate_active,
+            "sell_edge_gate_blocked": self.sell_edge_gate_blocked,
+            "sell_edge_implied_bps": self.sell_edge_implied_bps,
+            "sell_edge_gate_reason": self.sell_edge_gate_reason,
         }
         if competitor_intel:
             out.update({k: v for k, v in competitor_intel.items() if k != "top_competitors"})
@@ -274,6 +283,8 @@ def _build_summary(
         parts.append(f"A2.2 buy-edge gate: {decision.buy_edge_gate_reason}")
     if decision.acquire_ask_brake_blocked and decision.acquire_ask_brake_reason:
         parts.append(f"A2.3 ask brake: {decision.acquire_ask_brake_reason}")
+    if decision.sell_edge_gate_blocked and decision.sell_edge_gate_reason:
+        parts.append(f"A2.3b sell-edge gate: {decision.sell_edge_gate_reason}")
     if decision.g4_active and decision.g4_summary:
         parts.append(decision.g4_summary)
     if decision.inventory_limits_summary:
@@ -336,6 +347,7 @@ class PureQuotePath:
         g4_enabled: bool = True,
         competitor_pressure_enabled: bool = True,
         session_buy_capture_xrp: Optional[float] = None,
+        session_sell_capture_xrp: Optional[float] = None,
     ) -> PureQuoteDecision:
         book_spread_pct = (best_ask - best_bid) / mid * 100.0 if mid else 0.0
         raw_vol = (
@@ -536,8 +548,18 @@ class PureQuotePath:
             g7_solo_acquisition=g7.solo_acquisition,
             inventory_posture=g7.inventory_posture,
         )
+        sell_edge_gate = resolve_sell_edge_gate(
+            l1_ask_price=l1_ask_price,
+            mid=mid,
+            peer_lane_empty=is_peer_lane_empty(quoting_intel),
+            session_sell_capture_xrp=session_sell_capture_xrp,
+        )
         effective_pause_bids = inv_policy.pause_bids or buy_edge_gate.blocked
-        effective_pause_asks = inv_policy.pause_asks or acquire_ask_brake.blocked
+        effective_pause_asks = (
+            inv_policy.pause_asks
+            or acquire_ask_brake.blocked
+            or sell_edge_gate.blocked
+        )
         quote_bid, quote_ask, quote_posture = effective_quote_sides(
             allow_bid=allow_bid,
             allow_ask=allow_ask,
@@ -561,6 +583,10 @@ class PureQuotePath:
         if acquire_ask_brake.active and acquire_ask_brake.blocked:
             execution_brakes_summary = (
                 f"{execution_brakes_summary} | A2.3 {acquire_ask_brake.reason}"
+            )
+        if sell_edge_gate.active and sell_edge_gate.blocked:
+            execution_brakes_summary = (
+                f"{execution_brakes_summary} | A2.3b {sell_edge_gate.reason}"
             )
 
         ladder = build_pure_quote_ladder(
@@ -689,6 +715,10 @@ class PureQuotePath:
             acquire_ask_brake_active=acquire_ask_brake.active,
             acquire_ask_brake_blocked=acquire_ask_brake.blocked,
             acquire_ask_brake_reason=acquire_ask_brake.reason,
+            sell_edge_gate_active=sell_edge_gate.active,
+            sell_edge_gate_blocked=sell_edge_gate.blocked,
+            sell_edge_implied_bps=sell_edge_gate.implied_edge_bps,
+            sell_edge_gate_reason=sell_edge_gate.reason,
         )
         skim = (competitor_intel or {}).get("competitor_skim_advice", "") or ""
         decision.quote_decision_summary = _build_summary(

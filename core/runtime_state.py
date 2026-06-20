@@ -167,6 +167,10 @@ class RuntimeState:
     acquire_ask_brake_active: bool = False
     acquire_ask_brake_blocked: bool = False
     acquire_ask_brake_reason: str = ""
+    sell_edge_gate_active: bool = False
+    sell_edge_gate_blocked: bool = False
+    sell_edge_implied_bps: Optional[float] = None
+    sell_edge_gate_reason: str = ""
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -357,4 +361,8 @@ class RuntimeStateStore:
             acquire_ask_brake_active=bool(data.get("acquire_ask_brake_active", False)),
             acquire_ask_brake_blocked=bool(data.get("acquire_ask_brake_blocked", False)),
             acquire_ask_brake_reason=str(data.get("acquire_ask_brake_reason") or ""),
+            sell_edge_gate_active=bool(data.get("sell_edge_gate_active", False)),
+            sell_edge_gate_blocked=bool(data.get("sell_edge_gate_blocked", False)),
+            sell_edge_implied_bps=data.get("sell_edge_implied_bps"),
+            sell_edge_gate_reason=str(data.get("sell_edge_gate_reason") or ""),
         )

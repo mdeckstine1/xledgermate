@@ -5,6 +5,18 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.39] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**A2.3b sell-side skim gate** — block sub-edge asks on solo whale book (broader than acquire ask brake).
+
+- **`sell_edge_gate.py`** — scope `peer_lane_empty`; min edge 1.0 bps; session sell-capture brake when capture &lt; 0.
+- Wired in `pure_quote_path.py`: `effective_pause_asks` ORs acquire brake + sell gate.
+- Observability: `sell_edge_gate_active`, `sell_edge_gate_blocked`, `sell_edge_implied_bps`, `sell_edge_gate_reason`.
+
+**Deploy:** Segment #6 fresh boot after operator deploy.
+
+---
+
 ## [2.1.38] — 2026-06-20 (`Ashigaru Kaizen II`)
 
 **A2.3 acquire-mode ask brake** — pause asks in solo edge acquire + accumulate postures so inventory growth is bid-funded, not SELL-led.

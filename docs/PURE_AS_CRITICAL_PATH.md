@@ -15,7 +15,7 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 | Layer | Role |
 |-------|------|
 | **G7 posture** | *Where* to quote (solo edge acquire: passive bid / wide ask) |
-| **A2 enforcement** | *Whether* to quote (min edge on bids; ask brake next) |
+| **A2 enforcement** | *Whether* to quote (min edge on bids **and asks**; acquire ask brake) |
 | **G2 / A3** | Brakes (toxic, stale age) — never override A-S reservation |
 | **G6** | Measurement only (HUD) — not a kill switch |
 
@@ -54,7 +54,7 @@ One line of development — each phase unlocks the next. Do not skip ahead to sc
 
 ```
 Phase 1 — Hygiene (shipped)     A1 sell-defense · A2 presence · A3 stale guard
-Phase 2 — Edge enforcement      A2.2 buy gate [x] → A2.3 ask brake → A2.4 realized edge → A2.5 tune
+Phase 2 — Edge enforcement      A2.2 buy gate [x] → A2.3 ask brake [x] → A2.3b sell gate → A2.4 realized edge → A2.5 tune
 Phase 3 — Operator clarity      M-Purpose HUD (at_edge scoreboard)
 Phase 4 — Scale proof           E3 funding · larger L1 — only after at_edge on soak
 ```
@@ -66,6 +66,7 @@ Phase 4 — Scale proof           E3 funding · larger L1 — only after at_edge
 | **1** | A3 stale-quote guard | v2.1.27 | [x] deployed |
 | **1** | G7 v1.6 edge-positive acquire | v2.1.36 | [x] deployed — posture only |
 | **2** | **A2.2 buy-side skim gate** | **v2.1.37** | **[x] deployed Segment #4** |
+| **2** | **A2.3b sell-side skim gate** | **v2.1.39** | **[x] built — deploy Segment #6** |
 | **2** | **A2.3 acquire ask brake** | **v2.1.38** | **[x] deployed Segment #5** |
 | **2** | **A2.4 realized buy-edge feedback** | TBD | [ ] after A2.3 or parallel |
 | **2** | **A2.5 tune MIN_BUY_EDGE / G7 backoffs** | TBD | [ ] after Segment #4 |
@@ -212,6 +213,21 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 **Deploy:** [x] Segment #5 restart 2026-06-20 ~20:21 UTC (`bd086cc`).
 
 **Done when:** soak shows **buy-funded Δ XRP** — `at_edge=True`, no SELL volume in solo acquire cycles.
+
+#### A2.3b — sell-side skim gate (shipped v2.1.39)
+
+**Problem:** Segment #4 — SELL +0.042 while BUY −0.013; skew `xrp_heavy` ask-only outside solo acquire still leaked inventory at sub-edge asks.
+
+**Shipped — `sell_edge_gate.py`:**
+
+- When `peer_lane_empty=True` (solo whale book) → block asks if implied sell edge &lt; `MIN_SELL_EDGE_BPS` (1.0) or session sell capture &lt; 0.
+- Broader scope than A2.3 (covers skew ask-only, not just solo acquire postures).
+- Wired: `effective_pause_asks = inv_policy | acquire_ask_brake | sell_edge_gate`.
+- Observability: `sell_edge_gate_active`, `sell_edge_gate_blocked`, `sell_edge_implied_bps`, `sell_edge_gate_reason`.
+
+**Deploy:** [ ] Segment #6 restart (v2.1.39).
+
+**Done when:** soak shows **SELL capture ≥ 0**, `at_edge=True`, buy-funded Δ XRP.
 
 #### A2.4 — realized buy-edge feedback (planned)
 
