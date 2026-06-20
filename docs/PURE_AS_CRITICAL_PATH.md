@@ -1,8 +1,8 @@
 # Pure A-S Critical Path
 
 **Status:** Live soak on VPS — **WS + pure A-S** (`ws-engine`) · **HUD** `:8765`  
-**Version:** v2.1.27 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-20 (A2+A3 deployed · A1 segment closed Fail · fresh soak)
+**Version:** v2.1.33 · **Branch:** `Ashigaru-Kaizen-II`  
+**Last updated:** 2026-06-20 (all-4 solo levers deployed: G7 force-3bps + solo A-S tighten + A3 relax + sync preserve)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists.
 

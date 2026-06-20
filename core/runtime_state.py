@@ -157,6 +157,7 @@ class RuntimeState:
     g7_solo_acquisition: bool = False
     g7_ask_sell_defense: bool = False
     peer_lane_empty: bool = False
+    solo_as_tighten: bool = False
     acquisition_metrics: Dict[str, Any] = field(default_factory=dict)
     g4_peer_lane_count: int = 0
 
@@ -339,6 +340,7 @@ class RuntimeStateStore:
             g7_solo_acquisition=bool(data.get("g7_solo_acquisition", False)),
             g7_ask_sell_defense=bool(data.get("g7_ask_sell_defense", False)),
             peer_lane_empty=bool(data.get("peer_lane_empty", False)),
+            solo_as_tighten=bool(data.get("solo_as_tighten", False)),
             acquisition_metrics=dict(data.get("acquisition_metrics") or {}),
             g4_peer_lane_count=int(data.get("g4_peer_lane_count") or 0),
         )

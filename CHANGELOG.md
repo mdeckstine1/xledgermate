@@ -5,7 +5,11 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
-## [2.1.33] — 2026-06-20 (`Ashigaru Kaizen II`)
+## [2.1.34] — 2026-06-20 (`Ashigaru Kaizen II`)
+
+**Fix:** Add missing `solo_as_tighten` field to `RuntimeState` — v2.1.33 cycles were crashing every loop with `TypeError: unexpected keyword argument 'solo_as_tighten'`, so HUD/runtime stuck on stale v2.1.32 G7 (9/11 bps).
+
+---
 
 **Theme:** "Do all 4" solo experiment — force G7 3bps, conditional solo A-S tighten, A3 max-age relax, sync preserve relax. Triggered by observed G7 9.2/11.5 bps despite solo mode + low fills.
 
