@@ -126,6 +126,12 @@ def _gen_clob_amm_monitor(logs: Path) -> str:
     return format_clob_amm_report(logs_dir=logs)
 
 
+def _gen_qd_final_diagnostics(logs: Path) -> str:
+    from scripts.qd_final_report import build_qd_final_report, format_qd_final_report
+
+    return format_qd_final_report(build_qd_final_report(logs_dir=logs))
+
+
 def _gen_soak_dashboard(logs: Path, *, narrative: bool = False, grok_config: Optional[GrokConfig] = None) -> str:
     from scripts.soak_dashboard_report import build_soak_dashboard_report
 
@@ -198,6 +204,20 @@ REPORT_SPECS: List[ReportSpec] = [
         engine_restart=False,
         cli_command="(HUD report only)",
         phase_ref="Phase M1",
+    ),
+    ReportSpec(
+        id="qd_final_diagnostics",
+        title="QD L5 final permissions",
+        subtitle="QD_FINAL log tail + runtime snapshot",
+        category="Operator",
+        description=(
+            "Temporary L5 debug: final bid/ask allowed flags, block causes (edge/intent/inventory/"
+            "tape/bleed), solo accumulate stats, and recent QD_FINAL lines from xledgermate.log."
+        ),
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="python scripts/qd_final_report.py",
+        phase_ref="QD debug",
     ),
     ReportSpec(
         id="ws_session_e15",
@@ -321,6 +341,7 @@ REPORT_SPECS: List[ReportSpec] = [
 _GENERATORS: Dict[str, ReportGenerator] = {
     "hourly_telegram": _gen_hourly_telegram,
     "reservation_snapshot": _gen_reservation_snapshot,
+    "qd_final_diagnostics": _gen_qd_final_diagnostics,
     "ws_session_e15": _gen_ws_session_e15,
     "g6_activation": _gen_g6_activation,
     "fill_quote_age": _gen_fill_quote_age,

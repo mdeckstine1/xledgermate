@@ -18,6 +18,7 @@ from strategy.quote_decision_layers.edge import edge_size_mult
 from strategy.quote_decision_layers.ops_log import (
     log_inventory_cb_block,
     log_inventory_cb_skipped_solo,
+    log_qd_final,
 )
 from strategy.quote_decision_layers.types import (
     BookMode,
@@ -380,6 +381,35 @@ def build_layer_decision(
     bid = merge_bleed(bid, allowed_override=bleed.bid_allowed_override, bleed_note=bleed.bid_note)
     ask = merge_bleed(ask, allowed_override=bleed.ask_allowed_override, bleed_note=bleed.ask_note)
 
+    inv_cb_mode, inv_cb_note, heavy_deferred = resolve_inventory_cb_status(
+        posture,
+        bid_cb_ok=bid_cb_ok,
+        ask_cb_ok=ask_cb_ok,
+        inventory_max_deviation=inventory_max_deviation,
+        inventory_mode=inventory_mode,
+    )
+
+    log_qd_final(
+        intent=intent.intent,
+        posture=posture,
+        bid_edge=bid_edge,
+        ask_edge=ask_edge,
+        bid_allowed=bid.allowed,
+        ask_allowed=ask.allowed,
+        bid_block_reason=bid.block_reason,
+        ask_block_reason=ask.block_reason,
+        bid_pause_cause=bid.pause_cause,
+        ask_pause_cause=ask.pause_cause,
+        bid_cb_ok=bid_cb_ok,
+        ask_cb_ok=ask_cb_ok,
+        inventory_cb_mode=inv_cb_mode,
+        bid_bleed_override=bleed.bid_allowed_override,
+        ask_bleed_override=bleed.ask_allowed_override,
+        bid_pre_bleed_allowed=bid_allowed,
+        ask_pre_bleed_allowed=ask_allowed,
+        path=ops_path,
+    )
+
     sides: list[str] = []
     if bid.allowed:
         sides.append(f"bid@{bid.implied_edge_pct:.3f}%×{bid.size_mult:.2f}")
@@ -406,14 +436,6 @@ def build_layer_decision(
     )
     if solo_or_blocked:
         summary += f" | {trace.compact()}"
-
-    inv_cb_mode, inv_cb_note, heavy_deferred = resolve_inventory_cb_status(
-        posture,
-        bid_cb_ok=bid_cb_ok,
-        ask_cb_ok=ask_cb_ok,
-        inventory_max_deviation=inventory_max_deviation,
-        inventory_mode=inventory_mode,
-    )
 
     return LayerQuotingDecision(
         bid=bid,

@@ -1,4 +1,4 @@
-"""QD_OPS logging for crowded/sparse inventory paths."""
+"""QD_OPS and QD_FINAL logging for quote decision layers."""
 
 from __future__ import annotations
 
@@ -9,10 +9,11 @@ from strategy.quote_decision_layers.ops_log import (
     log_heavy_drift_l5_deferred,
     log_inventory_cb_block,
     log_inventory_unload_intent,
+    log_qd_final,
 )
 from strategy.quote_decision_layers.pipeline import run_layered_quote_decision
 from strategy.quote_decision_layers.posture import build_posture
-from strategy.quote_decision_layers.types import BookMode, DriftBand, QuoteIntent
+from strategy.quote_decision_layers.types import BookMode, DriftBand, EdgeViability, QuoteIntent
 
 
 def test_log_inventory_cb_block_format(caplog) -> None:
@@ -153,3 +154,92 @@ def test_pipeline_crowded_heavy_drift_skims_not_unload(caplog) -> None:
     assert "intent=INVENTORY_UNLOAD" not in caplog.text
     assert "heavy_drift_l5_deferred=true" in caplog.text
     assert "inventory_cb_block=true" in caplog.text
+
+
+def test_log_qd_final_format(caplog) -> None:
+    posture = build_posture(
+        xrp_ratio=0.72,
+        inventory_label="xrp_heavy",
+        fill_quality=FillQualityState(),
+        target_xrp_ratio=0.55,
+        market_condition="favorable",
+        mid_momentum_pct=0.0,
+        peer_lane_empty=True,
+        peer_lane_count=0,
+    )
+    bid_edge = EdgeViability(
+        implied_edge_pct=2.15,
+        min_edge_pct=0.08,
+        viable=True,
+        reason="",
+    )
+    ask_edge = EdgeViability(
+        implied_edge_pct=-0.5,
+        min_edge_pct=0.08,
+        viable=False,
+        reason="edge_gate",
+    )
+    with caplog.at_level(logging.INFO):
+        log_qd_final(
+            intent=QuoteIntent.SOLO_ACCUMULATE_ON_EDGE,
+            posture=posture,
+            bid_edge=bid_edge,
+            ask_edge=ask_edge,
+            bid_allowed=True,
+            ask_allowed=False,
+            bid_block_reason="",
+            ask_block_reason="edge_gate",
+            bid_pause_cause="",
+            ask_pause_cause="edge",
+            bid_cb_ok=True,
+            ask_cb_ok=True,
+            inventory_cb_mode="skipped_solo",
+            bid_bleed_override=None,
+            ask_bleed_override=None,
+            bid_pre_bleed_allowed=True,
+            ask_pre_bleed_allowed=False,
+            path="test",
+        )
+    line = caplog.text
+    assert "QD_FINAL" in line
+    assert "intent=solo_accumulate_on_edge" in line
+    assert "solo_mode=true" in line
+    assert "bid_allowed=true" in line
+    assert "ask_allowed=false" in line
+    assert "ask_cause=edge" in line
+    assert "bid_edge_viable=true" in line
+    assert "ask_edge_viable=false" in line
+    assert "inventory_cb_mode=skipped_solo" in line
+    assert "bid_cb_ok=true" in line
+    assert "path=test" in line
+
+
+def test_pipeline_emits_qd_final_solo_accumulate(caplog) -> None:
+    with caplog.at_level(logging.INFO):
+        layer = run_layered_quote_decision(
+            xrp_ratio=0.72,
+            inventory_label="xrp_heavy",
+            fill_quality=FillQualityState(),
+            target_xrp_ratio=0.55,
+            market_condition="favorable",
+            mid_momentum_pct=0.0,
+            book_spread_pct=0.07,
+            bid_half_spread_pct=0.015,
+            ask_half_spread_pct=0.03,
+            min_edge_pct=0.0,
+            market_edge_met=True,
+            inventory_max_deviation=0.12,
+            inventory_mode="market_make",
+            acquiring_rlusd=False,
+            mm_mode=True,
+            momentum_pause_vulnerable=False,
+            peer_lane_empty=True,
+            peer_lane_count=0,
+            ops_path="test",
+        )
+    assert layer.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
+    assert layer.bid.allowed
+    assert "QD_FINAL" in caplog.text
+    assert "intent=solo_accumulate_on_edge" in caplog.text
+    assert "bid_allowed=true" in caplog.text
+    assert "inventory_cb_mode=skipped_solo" in caplog.text

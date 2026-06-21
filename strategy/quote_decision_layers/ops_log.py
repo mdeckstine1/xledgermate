@@ -11,12 +11,14 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping, Optional
 
-from strategy.quote_decision_layers.types import BookMode, DriftBand, Posture, QuoteIntent
+from strategy.quote_decision_layers.types import BookMode, DriftBand, EdgeViability, Posture, QuoteIntent
 
 logger = logging.getLogger(__name__)
 
 # Stable grep tokens (documented in docs/QUOTE_DECISION_LAYERS.md).
 LOG_PREFIX = "QD_OPS"
+# Temporary L5 permission diagnostic — grep ``QD_FINAL`` (remove after soak debug).
+QD_FINAL_PREFIX = "QD_FINAL"
 
 
 def intel_has_peer_fields(intel: Optional[Mapping[str, Any]]) -> bool:
@@ -376,3 +378,80 @@ def maybe_log_heavy_drift_l5_deferred(
         sell_edge_viable=sell_edge_viable,
         path=path,
     )
+
+
+def _bleed_override_token(value: bool | None) -> str:
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    return "none"
+
+
+def log_qd_final(
+    *,
+    intent: QuoteIntent,
+    posture: Posture,
+    bid_edge: EdgeViability,
+    ask_edge: EdgeViability,
+    bid_allowed: bool,
+    ask_allowed: bool,
+    bid_block_reason: str,
+    ask_block_reason: str,
+    bid_pause_cause: str,
+    ask_pause_cause: str,
+    bid_cb_ok: bool,
+    ask_cb_ok: bool,
+    inventory_cb_mode: str,
+    bid_bleed_override: bool | None,
+    ask_bleed_override: bool | None,
+    bid_pre_bleed_allowed: bool,
+    ask_pre_bleed_allowed: bool,
+    path: str = "",
+) -> None:
+    """
+    Temporary L5 permission diagnostic — grep ``QD_FINAL``.
+
+    Emitted at the end of ``build_layer_decision`` with final bid/ask permissions,
+    primary block cause per side, and gate inputs (edge, bleed, inventory CB, solo).
+    """
+    solo = posture.book.mode == BookMode.SOLO
+    bid_bleed_blocked = bid_bleed_override is False and bid_pre_bleed_allowed
+    ask_bleed_blocked = ask_bleed_override is False and ask_pre_bleed_allowed
+
+    parts = [
+        QD_FINAL_PREFIX,
+        f"intent={intent.value}",
+        f"solo_mode={str(solo).lower()}",
+        f"book_mode={posture.book.mode.value}",
+        f"drift_band={posture.inventory.band.value}",
+        f"dev={posture.inventory.deviation:+.0%}",
+        f"bid_allowed={str(bid_allowed).lower()}",
+        f"ask_allowed={str(ask_allowed).lower()}",
+    ]
+    if not bid_allowed:
+        parts.append(f"bid_block={bid_block_reason or 'unknown'}")
+        parts.append(f"bid_cause={bid_pause_cause or 'unknown'}")
+    if not ask_allowed:
+        parts.append(f"ask_block={ask_block_reason or 'unknown'}")
+        parts.append(f"ask_cause={ask_pause_cause or 'unknown'}")
+    parts.extend(
+        [
+            f"bid_edge_viable={str(bid_edge.viable).lower()}",
+            f"ask_edge_viable={str(ask_edge.viable).lower()}",
+            f"bid_edge_pct={bid_edge.implied_edge_pct:.3f}",
+            f"ask_edge_pct={ask_edge.implied_edge_pct:.3f}",
+            f"bid_pre_bleed={str(bid_pre_bleed_allowed).lower()}",
+            f"ask_pre_bleed={str(ask_pre_bleed_allowed).lower()}",
+            f"bid_bleed_override={_bleed_override_token(bid_bleed_override)}",
+            f"ask_bleed_override={_bleed_override_token(ask_bleed_override)}",
+            f"bid_bleed_blocked={str(bid_bleed_blocked).lower()}",
+            f"ask_bleed_blocked={str(ask_bleed_blocked).lower()}",
+            f"bid_cb_ok={str(bid_cb_ok).lower()}",
+            f"ask_cb_ok={str(ask_cb_ok).lower()}",
+            f"inventory_cb_mode={inventory_cb_mode}",
+        ]
+    )
+    if path:
+        parts.append(f"path={path}")
+    logger.info(" | ".join(parts))
