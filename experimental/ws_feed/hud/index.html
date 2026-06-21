@@ -4180,11 +4180,8 @@
                 byCategory[cat].push(r);
             });
             const order = ['Quote Decision', 'Operator', 'Soak analysis', 'Intelligence', 'Phase H', 'Archive', 'Gates', 'Other'];
-            let html = '';
-            order.forEach(cat => {
-                const rows = byCategory[cat];
-                if (!rows || !rows.length) return;
-                html += `<div class="card full-width" style="margin-bottom:10px;"><div class="label">${cat}</div>`;
+            const renderCategory = (cat, rows) => {
+                let block = `<div class="card full-width" style="margin-bottom:10px;"><div class="label">${cat}</div>`;
                 rows.forEach(r => {
                     const soak = r.soak_safe
                         ? '<span style="background:#14532d;color:#86efac;font-size:0.65rem;padding:2px 6px;border-radius:3px;margin-right:6px;">Soak-safe</span>'
@@ -4192,7 +4189,7 @@
                     const restart = r.engine_restart
                         ? '<span style="color:#fbbf24;font-size:0.68rem;">Requires ws-engine restart</span>'
                         : '<span style="color:#93c5fd;font-size:0.68rem;">No ws-engine restart</span>';
-                    html += `<div style="border-top:1px solid #334155;padding:10px 0;">
+                    block += `<div style="border-top:1px solid #334155;padding:10px 0;">
                         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between;">
                             <div>
                                 <strong style="color:#f1f5f9;">${r.title}</strong>
@@ -4209,7 +4206,20 @@
                         <div style="font-size:0.68rem;color:#64748b;margin-top:4px;">${r.phase_ref ? r.phase_ref + ' · ' : ''}CLI: <code>${r.cli_command}</code></div>
                     </div>`;
                 });
-                html += '</div>';
+                block += '</div>';
+                return block;
+            };
+            let html = '';
+            const rendered = new Set();
+            order.forEach(cat => {
+                const rows = byCategory[cat];
+                if (!rows || !rows.length) return;
+                rendered.add(cat);
+                html += renderCategory(cat, rows);
+            });
+            Object.keys(byCategory).sort().forEach(cat => {
+                if (rendered.has(cat)) return;
+                html += renderCategory(cat, byCategory[cat]);
             });
             container.innerHTML = html;
             container.querySelectorAll('.report-open-btn').forEach(btn => {
