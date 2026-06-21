@@ -169,6 +169,23 @@ class RuntimeState:
     qd_ask_block_reason: str = ""
     qd_bid_size_mult: float = 0.0
     qd_ask_size_mult: float = 0.0
+    # Layered QD v2.3 — posture / edge / bleed observability for HUD
+    peer_lane_count: int = 0
+    solo_mode: bool = False
+    posture_reason: str = ""
+    qd_peer_lane_token: str = ""
+    qd_book_mode: str = ""
+    qd_drift_band: str = ""
+    qd_intent_reason: str = ""
+    qd_bid_edge_viable: bool = False
+    qd_ask_edge_viable: bool = False
+    qd_bid_min_edge_bps: Optional[float] = None
+    qd_ask_min_edge_bps: Optional[float] = None
+    qd_bid_pause_cause: str = ""
+    qd_ask_pause_cause: str = ""
+    qd_bid_bleeding: bool = False
+    qd_ask_bleeding: bool = False
+    qd_layer_trace: str = ""
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -361,4 +378,20 @@ class RuntimeStateStore:
             qd_ask_block_reason=str(data.get("qd_ask_block_reason") or ""),
             qd_bid_size_mult=float(data.get("qd_bid_size_mult") or 0.0),
             qd_ask_size_mult=float(data.get("qd_ask_size_mult") or 0.0),
+            peer_lane_count=int(data.get("peer_lane_count") or data.get("g4_peer_lane_count") or 0),
+            solo_mode=bool(data.get("solo_mode", False)),
+            posture_reason=str(data.get("posture_reason") or ""),
+            qd_peer_lane_token=str(data.get("qd_peer_lane_token") or ""),
+            qd_book_mode=str(data.get("qd_book_mode") or ""),
+            qd_drift_band=str(data.get("qd_drift_band") or ""),
+            qd_intent_reason=str(data.get("qd_intent_reason") or ""),
+            qd_bid_edge_viable=bool(data.get("qd_bid_edge_viable", False)),
+            qd_ask_edge_viable=bool(data.get("qd_ask_edge_viable", False)),
+            qd_bid_min_edge_bps=data.get("qd_bid_min_edge_bps"),
+            qd_ask_min_edge_bps=data.get("qd_ask_min_edge_bps"),
+            qd_bid_pause_cause=str(data.get("qd_bid_pause_cause") or ""),
+            qd_ask_pause_cause=str(data.get("qd_ask_pause_cause") or ""),
+            qd_bid_bleeding=bool(data.get("qd_bid_bleeding", False)),
+            qd_ask_bleeding=bool(data.get("qd_ask_bleeding", False)),
+            qd_layer_trace=str(data.get("qd_layer_trace") or ""),
         )

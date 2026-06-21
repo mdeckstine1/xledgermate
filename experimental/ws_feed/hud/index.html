@@ -364,6 +364,43 @@
         .purpose-pill.bad .purpose-value { color: #f87171; }
         .purpose-pill.neutral { border-color: #475569; }
         .purpose-pill.neutral .purpose-value { color: #e2e8f0; }
+        .purpose-pill.info { border-color: #3b82f6; }
+        .purpose-pill.info .purpose-value { color: #93c5fd; }
+
+        /* Layered QD v2.3 stack */
+        .qd-stack-card { margin-top: 12px; border-color: #2563eb; }
+        .qd-sections {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 8px;
+        }
+        .qd-section {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+        .qd-section .qd-section-title {
+            font-size: 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+            margin-bottom: 6px;
+        }
+        .qd-section.good { border-color: #22c55e; }
+        .qd-section.warn { border-color: #facc15; }
+        .qd-section.info { border-color: #3b82f6; }
+        .qd-section.bad { border-color: #ef4444; }
+        .qd-section .value { font-size: 0.78rem; }
+        .qd-trace {
+            margin-top: 10px;
+            font-family: ui-monospace, monospace;
+            font-size: 0.68rem;
+            color: #94a3b8;
+            word-break: break-word;
+        }
+        .qd-strip { border-bottom: none; margin-bottom: 6px; padding-bottom: 0; }
 
         /* Live tab has UI chrome (marquee + status + button) above the scrollable cards.
            Prevent them from stretching; let only the .content area scroll. */
@@ -731,6 +768,15 @@
                 <div class="purpose-pill neutral" id="purpose-delta-pill"><div class="purpose-label">Δ XRP</div><div class="purpose-value" id="purpose-delta">—</div></div>
                 <div class="purpose-pill neutral" id="purpose-skim-pill"><div class="purpose-label">Skim</div><div class="purpose-value" id="purpose-skim">—</div></div>
             </div>
+            <div class="health-label">QD Stack <span>5-layer quote decision · v2.3</span></div>
+            <div class="purpose-strip qd-strip">
+                <div class="purpose-pill neutral" id="qd-book-pill"><div class="purpose-label">Book</div><div class="purpose-value" id="qd-book-mode">—</div></div>
+                <div class="purpose-pill neutral" id="qd-lane-pill"><div class="purpose-label">Peer lane</div><div class="purpose-value" id="qd-peer-lane">—</div></div>
+                <div class="purpose-pill neutral" id="qd-intent-pill"><div class="purpose-label">Intent</div><div class="purpose-value" id="qd-intent-short">—</div></div>
+                <div class="purpose-pill neutral" id="qd-bid-pill"><div class="purpose-label">Bid</div><div class="purpose-value" id="qd-bid-perm">—</div></div>
+                <div class="purpose-pill neutral" id="qd-ask-pill"><div class="purpose-label">Ask</div><div class="purpose-value" id="qd-ask-perm">—</div></div>
+                <div class="purpose-pill neutral" id="qd-drift-pill"><div class="purpose-label">Drift</div><div class="purpose-value" id="qd-drift-band">—</div></div>
+            </div>
             <div class="health-label">Health <span>— live KPIs</span></div>
             <div class="soak-strip">
                 <div class="soak-pill neutral" id="soak-toxic-pill"><div class="soak-label">Toxic @30s</div><div class="soak-value" id="soak-toxic">—</div></div>
@@ -812,6 +858,54 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="label" id="ladder-card-label">Quote ladder (L1–L3)</div>
                         <div id="suggested-ladder"></div>
                         <small id="ladder-hint" style="display:block; margin-top:6px; font-size:0.65rem; opacity:0.7;">Waiting for engine quote cycle…</small>
+                    </div>
+                </div>
+
+                <div class="card qd-stack-card full-width">
+                    <div class="label collapsible-header" data-target="qd-stack-body">
+                        Layered Quote Decision (L1–L5) <span class="chevron">▼</span>
+                    </div>
+                    <div id="qd-stack-body" class="collapsible-content">
+                        <div class="qd-sections">
+                            <div class="qd-section neutral" id="qd-sec-posture">
+                                <div class="qd-section-title">1 · Posture &amp; Solo</div>
+                                <div class="metric-row"><span class="label">Book mode</span> <span id="qd-posture-book" class="value">—</span></div>
+                                <div class="metric-row"><span class="label">Drift band</span> <span id="qd-posture-drift" class="value">—</span></div>
+                                <div class="metric-row"><span class="label">Peer lane</span> <span id="qd-posture-lane" class="value">—</span></div>
+                                <div class="metric-row"><span class="label">Solo mode</span> <span id="qd-posture-solo" class="value">—</span></div>
+                                <div class="metric-row"><span class="label">Reason</span> <span id="qd-posture-reason" class="value" style="font-size:0.72rem;">—</span></div>
+                            </div>
+                            <div class="qd-section neutral" id="qd-sec-intent">
+                                <div class="qd-section-title">2 · Current Intent</div>
+                                <div class="metric-row"><span class="label">Intent</span> <span id="qd-intent-full" class="value">—</span></div>
+                                <div class="metric-row"><span class="label">Why</span> <span id="qd-intent-reason" class="value" style="font-size:0.72rem;">—</span></div>
+                            </div>
+                            <div class="qd-section neutral" id="qd-sec-edge">
+                                <div class="qd-section-title">3 · Edge Status</div>
+                                <div class="metric-row"><span class="label">Bid capture</span> <span id="qd-edge-bid" class="value">—</span></div>
+                                <div class="metric-row"><span class="label">Ask capture</span> <span id="qd-edge-ask" class="value">—</span></div>
+                                <div class="metric-row"><span class="label">Min edge (bid/ask)</span> <span id="qd-edge-min" class="value" style="font-size:0.72rem;">—</span></div>
+                            </div>
+                            <div class="qd-section neutral" id="qd-sec-bleed">
+                                <div class="qd-section-title">4 · Bleed</div>
+                                <div class="metric-row"><span class="label">Buy side</span> <span id="qd-bleed-bid" class="value">—</span></div>
+                                <div class="metric-row"><span class="label">Sell side</span> <span id="qd-bleed-ask" class="value">—</span></div>
+                            </div>
+                            <div class="qd-section neutral" id="qd-sec-perms">
+                                <div class="qd-section-title">5 · Final Permissions</div>
+                                <div class="metric-row"><span class="label">qd_bid_allowed</span> <span id="qd-perm-bid" class="value">—</span></div>
+                                <div class="metric-row"><span class="label">qd_ask_allowed</span> <span id="qd-perm-ask" class="value">—</span></div>
+                                <div class="metric-row"><span class="label">Size mult</span> <span id="qd-perm-size" class="value">—</span></div>
+                                <div class="metric-row"><span class="label">Block reason</span> <span id="qd-perm-block" class="value" style="font-size:0.68rem;">—</span></div>
+                            </div>
+                        </div>
+                        <div class="label collapsible-header collapsed" data-target="qd-trace-body" style="margin-top:10px;">
+                            6 · Decision Trace <span class="chevron">▼</span>
+                        </div>
+                        <div id="qd-trace-body" class="collapsible-content collapsed">
+                            <div id="qd-layer-summary" class="metric-row" style="font-size:0.75rem;"><span class="label">Summary</span> <span id="qd-summary-text" class="value">—</span></div>
+                            <div id="qd-layer-trace" class="qd-trace">—</div>
+                        </div>
                     </div>
                 </div>
 
@@ -1930,28 +2024,35 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 } else if (active) {
                     hint.textContent = 'L1 live on ledger. L2/L3 are planned depth (config sizes; WS path places L1 today).';
                 } else {
-                    hint.textContent = 'No live quotes — reservation outside book or inventory pause.';
+                    hint.textContent = 'No live quotes — QD blocked both sides or reservation outside book.';
                 }
             }
         }
 
         function quoteStatusCopy(s) {
             const prod = isProductionHud(s);
-            const quoting = !!s.would_quote;
+            const qdActive = s.qd_would_quote === true
+                || s.qd_bid_allowed === true
+                || s.qd_ask_allowed === true;
+            const quoting = s.qd_would_quote != null ? qdActive : !!s.would_quote;
             const offers = (s.open_offers_count != null) ? parseInt(s.open_offers_count, 10) : 0;
+            const bidTag = s.qd_bid_allowed ? 'B' : '—';
+            const askTag = s.qd_ask_allowed ? 'A' : '—';
+            const qdSide = `QD ${bidTag}/${askTag}`;
             if (prod) {
                 if (quoting) {
                     return {
-                        headline: offers > 0 ? `QUOTING — ${offers} offer(s) on ledger ✓` : 'QUOTING — placing offers ✓',
+                        headline: offers > 0 ? `QUOTING ${qdSide} — ${offers} offer(s) ✓` : `QUOTING ${qdSide} — placing ✓`,
                         short: 'QUOTING ✓',
-                        posture: offers > 0 ? `${offers} resting · cycle active` : 'cycle active · syncing offers',
+                        posture: offers > 0 ? `${qdSide} · ${offers} resting` : `${qdSide} · cycle active`,
                         good: true,
                     };
                 }
+                const blockHint = s.qd_layer_summary || s.qd_bid_block_reason || s.qd_ask_block_reason || 'QD blocked';
                 return {
-                    headline: offers > 0 ? `PAUSED — ${offers} offer(s) still on ledger` : 'PAUSED — no live quotes',
+                    headline: offers > 0 ? `PAUSED ${qdSide} — ${offers} offer(s) on ledger` : `PAUSED ${qdSide} — no live quotes`,
                     short: 'PAUSED',
-                    posture: offers > 0 ? `${offers} resting · cycle blocked` : 'reservation outside book or inventory pause',
+                    posture: offers > 0 ? `${qdSide} · resting · ${blockHint}` : blockHint,
                     good: false,
                 };
             }
@@ -2115,6 +2216,14 @@ The A-S strategy itself decides presence via reservation price being inside the 
             html += ` <span class="${g2MarqueeKind(s)}">${g2MarqueeText(s)}</span>`;
             html += ` <span class="${g6MarqueeKind(g6.tier)}">${g6Label} ${g6Tier}</span>`;
             html += ` <span class="${g7MarqueeKind(s)}">${g7MarqueeText(s)}</span>`;
+            if (s.qd_intent) {
+                const qdKind = (s.qd_posture_class || 'info');
+                const qdSpanClass = qdKind === 'good' ? 'quote' : (qdKind === 'bad' ? 'danger' : (qdKind === 'warn' ? 'warn' : 'info'));
+                const intentTxt = qdIntentShort(s.qd_intent);
+                const bidT = s.qd_bid_allowed ? 'B' : '—';
+                const askT = s.qd_ask_allowed ? 'A' : '—';
+                html += ` <span class="${qdSpanClass}">QD ${intentTxt} ${bidT}/${askT}</span>`;
+            }
             html += ` <span class="${spotMarqueeKind(s)}">${spotMarqueeText(s)}</span>`;
 
             const toxic30 = s.toxic_fill_ratio_30s != null ? parseFloat(s.toxic_fill_ratio_30s) : null;
@@ -2295,8 +2404,139 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
         function purposePillClass(el, kind) {
             if (!el) return;
-            el.classList.remove('good', 'warn', 'bad', 'neutral');
+            el.classList.remove('good', 'warn', 'bad', 'neutral', 'info');
             el.classList.add(kind || 'neutral');
+        }
+
+        function qdSectionClass(el, kind) {
+            if (!el) return;
+            el.classList.remove('good', 'warn', 'bad', 'neutral', 'info');
+            el.classList.add(kind || 'neutral');
+        }
+
+        function qdIntentShort(intent) {
+            const raw = String(intent || '').toLowerCase();
+            if (!raw) return '—';
+            if (raw.includes('solo_accumulate')) return 'ACCUM';
+            if (raw.includes('patient')) return 'PATIENT';
+            if (raw.includes('two_sided')) return 'SKIM';
+            if (raw.includes('unload')) return 'UNLOAD';
+            if (raw.includes('hold')) return 'HOLD';
+            return raw.replace(/_/g, ' ').slice(0, 12).toUpperCase();
+        }
+
+        function qdEdgeLine(side, s) {
+            const bps = side === 'bid' ? s.qd_bid_implied_bps : s.qd_ask_implied_bps;
+            const viable = side === 'bid' ? s.qd_bid_edge_viable : s.qd_ask_edge_viable;
+            const minBps = side === 'bid' ? s.qd_bid_min_edge_bps : s.qd_ask_min_edge_bps;
+            if (bps == null || Number.isNaN(parseFloat(bps))) return '—';
+            const gate = viable === true ? 'PASS' : (viable === false ? 'FAIL' : '?');
+            const minTxt = (minBps != null && !Number.isNaN(parseFloat(minBps)))
+                ? ` ≥${parseFloat(minBps).toFixed(1)}bps`
+                : '';
+            return `${parseFloat(bps).toFixed(1)} bps · ${gate}${minTxt}`;
+        }
+
+        function qdBleedLine(side, s) {
+            const bleeding = side === 'bid' ? s.qd_bid_bleeding : s.qd_ask_bleeding;
+            const pause = side === 'bid' ? s.qd_bid_pause_cause : s.qd_ask_pause_cause;
+            if (bleeding) return `BLEED · pause=${pause || 'bleed'}`;
+            if (pause === 'bleed') return 'paused (bleed)';
+            return 'clear';
+        }
+
+        function renderQdHud(s) {
+            const postureClass = s.qd_posture_class || 'neutral';
+            const bookMode = (s.qd_book_mode || '—').toUpperCase();
+            const laneToken = s.qd_peer_lane_token || '—';
+            const laneCount = s.peer_lane_count != null ? parseInt(s.peer_lane_count, 10) : null;
+            const laneDisplay = laneCount != null && !Number.isNaN(laneCount)
+                ? `${laneToken} (${laneCount})`
+                : laneToken;
+            const intentFull = s.qd_intent ? String(s.qd_intent).replace(/_/g, ' ').toUpperCase() : '—';
+            const intentShort = qdIntentShort(s.qd_intent);
+            const drift = s.qd_drift_band ? String(s.qd_drift_band).replace(/_/g, ' ') : '—';
+            const solo = s.solo_mode === true ? 'YES' : (s.solo_mode === false ? 'no' : '—');
+            const reason = s.posture_reason || '—';
+
+            setText('qd-book-mode', bookMode);
+            setText('qd-peer-lane', laneDisplay);
+            setText('qd-intent-short', intentShort);
+            setText('qd-drift-band', drift);
+
+            const bidOn = s.qd_bid_allowed === true;
+            const askOn = s.qd_ask_allowed === true;
+            setText('qd-bid-perm', bidOn ? 'ON' : 'OFF');
+            setText('qd-ask-perm', askOn ? 'ON' : 'OFF');
+
+            purposePillClass(document.getElementById('qd-book-pill'), postureClass === 'info' ? 'info' : postureClass);
+            purposePillClass(document.getElementById('qd-lane-pill'), laneToken === 'empty' ? 'good' : (laneToken === 'missing' ? 'warn' : 'info'));
+            purposePillClass(document.getElementById('qd-intent-pill'), postureClass);
+            purposePillClass(document.getElementById('qd-bid-pill'), bidOn ? 'good' : (s.qd_bid_pause_cause === 'bleed' ? 'bad' : 'warn'));
+            purposePillClass(document.getElementById('qd-ask-pill'), askOn ? 'good' : (s.qd_ask_pause_cause === 'bleed' ? 'bad' : 'warn'));
+            purposePillClass(document.getElementById('qd-drift-pill'), 'neutral');
+
+            setText('qd-posture-book', bookMode);
+            setText('qd-posture-drift', drift);
+            setText('qd-posture-lane', laneDisplay);
+            setText('qd-posture-solo', solo);
+            setText('qd-posture-reason', reason);
+            qdSectionClass(document.getElementById('qd-sec-posture'), postureClass);
+
+            setText('qd-intent-full', intentFull);
+            setText('qd-intent-reason', s.qd_intent_reason || '—');
+            qdSectionClass(document.getElementById('qd-sec-intent'), postureClass);
+
+            const bidEdgeEl = document.getElementById('qd-edge-bid');
+            const askEdgeEl = document.getElementById('qd-edge-ask');
+            if (bidEdgeEl) {
+                bidEdgeEl.textContent = qdEdgeLine('bid', s);
+                bidEdgeEl.className = 'value ' + (s.qd_bid_edge_viable ? 'good' : 'warn');
+            }
+            if (askEdgeEl) {
+                askEdgeEl.textContent = qdEdgeLine('ask', s);
+                askEdgeEl.className = 'value ' + (s.qd_ask_edge_viable ? 'good' : 'warn');
+            }
+            const minBid = s.qd_bid_min_edge_bps;
+            const minAsk = s.qd_ask_min_edge_bps;
+            setText('qd-edge-min', (minBid != null || minAsk != null)
+                ? `${minBid != null ? parseFloat(minBid).toFixed(1) : '—'} / ${minAsk != null ? parseFloat(minAsk).toFixed(1) : '—'} bps`
+                : '—');
+            qdSectionClass(document.getElementById('qd-sec-edge'), (s.qd_bid_edge_viable || s.qd_ask_edge_viable) ? 'good' : 'warn');
+
+            const bidBleedEl = document.getElementById('qd-bleed-bid');
+            const askBleedEl = document.getElementById('qd-bleed-ask');
+            if (bidBleedEl) {
+                bidBleedEl.textContent = qdBleedLine('bid', s);
+                bidBleedEl.className = 'value ' + (s.qd_bid_bleeding ? 'warn' : '');
+            }
+            if (askBleedEl) {
+                askBleedEl.textContent = qdBleedLine('ask', s);
+                askBleedEl.className = 'value ' + (s.qd_ask_bleeding ? 'warn' : '');
+            }
+            qdSectionClass(document.getElementById('qd-sec-bleed'), (s.qd_bid_bleeding || s.qd_ask_bleeding) ? 'bad' : 'good');
+
+            const bidPermEl = document.getElementById('qd-perm-bid');
+            const askPermEl = document.getElementById('qd-perm-ask');
+            if (bidPermEl) {
+                bidPermEl.textContent = bidOn ? 'allowed' : 'blocked';
+                bidPermEl.className = 'value ' + (bidOn ? 'good' : 'warn');
+            }
+            if (askPermEl) {
+                askPermEl.textContent = askOn ? 'allowed' : 'blocked';
+                askPermEl.className = 'value ' + (askOn ? 'good' : 'warn');
+            }
+            const bidMult = s.qd_bid_size_mult != null ? parseFloat(s.qd_bid_size_mult) : 0;
+            const askMult = s.qd_ask_size_mult != null ? parseFloat(s.qd_ask_size_mult) : 0;
+            setText('qd-perm-size', `bid×${bidMult.toFixed(2)} · ask×${askMult.toFixed(2)}`);
+            const blockParts = [];
+            if (s.qd_bid_block_reason) blockParts.push(`bid: ${s.qd_bid_block_reason}`);
+            if (s.qd_ask_block_reason) blockParts.push(`ask: ${s.qd_ask_block_reason}`);
+            setText('qd-perm-block', blockParts.length ? blockParts.join(' · ') : '—');
+            qdSectionClass(document.getElementById('qd-sec-perms'), (bidOn || askOn) ? 'good' : 'warn');
+
+            setText('qd-summary-text', s.qd_layer_summary || s.qd_permissions_summary || '—');
+            setText('qd-layer-trace', s.qd_layer_trace || '—');
         }
 
         function signedCaptureText(v) {
@@ -2433,10 +2673,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setText('soak-g6', tierDisplay);
             soakPillClass(document.getElementById('soak-g6-pill'), g6SoakPillClass(g6.tier || ''));
 
-            const soloOn = !!(s.g7_solo_acquisition);
+            const soloOn = !!(s.solo_mode || s.g7_solo_acquisition);
             const peerEmpty = !!(s.peer_lane_empty);
-            let soloTxt = soloOn ? 'ON' : (peerEmpty ? 'off' : '—');
-            if (soloOn && s.g4_grade === 'solo_acquire') soloTxt = 'ON · G4';
+            let soloTxt = soloOn ? 'ON' : (peerEmpty ? 'lane empty' : '—');
+            if (soloOn && s.qd_book_mode === 'solo') soloTxt = 'ON · QD solo';
+            else if (soloOn && s.g4_grade === 'solo_acquire') soloTxt = 'ON · G4';
             setText('soak-solo', soloTxt);
             soakPillClass(
                 document.getElementById('soak-solo-pill'),
@@ -2489,6 +2730,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
             updateEngineControlsUi(s);
             renderPurposeStrip(s);
+            renderQdHud(s);
             renderSoakStrip(s);
 
             const sampleCount = (s.sample_count != null)

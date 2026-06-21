@@ -34,7 +34,11 @@ from experimental.ws_feed.peer_lane_quoting import (
     prepare_quoting_intel,
     resolve_peer_lane_params,
 )
-from strategy.quote_decision_layers.ops_log import intel_has_peer_fields
+from strategy.quote_decision_layers.ops_log import (
+    intel_has_peer_fields,
+    peer_lane_token,
+    posture_reason,
+)
 from experimental.ws_feed.spread_quality_scaler import (
     G2Adjustments,
     compute_g2_adjustments,
@@ -160,6 +164,22 @@ class PureQuoteDecision:
     qd_ask_block_reason: str = ""
     qd_bid_size_mult: float = 0.0
     qd_ask_size_mult: float = 0.0
+    peer_lane_count: int = 0
+    solo_mode: bool = False
+    posture_reason: str = ""
+    qd_peer_lane_token: str = ""
+    qd_book_mode: str = ""
+    qd_drift_band: str = ""
+    qd_intent_reason: str = ""
+    qd_bid_edge_viable: bool = False
+    qd_ask_edge_viable: bool = False
+    qd_bid_min_edge_bps: Optional[float] = None
+    qd_ask_min_edge_bps: Optional[float] = None
+    qd_bid_pause_cause: str = ""
+    qd_ask_pause_cause: str = ""
+    qd_bid_bleeding: bool = False
+    qd_ask_bleeding: bool = False
+    qd_layer_trace: str = ""
 
     def to_runtime_dict(self, *, competitor_intel: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -216,6 +236,22 @@ class PureQuoteDecision:
             "qd_ask_block_reason": self.qd_ask_block_reason,
             "qd_bid_size_mult": self.qd_bid_size_mult,
             "qd_ask_size_mult": self.qd_ask_size_mult,
+            "peer_lane_count": self.peer_lane_count,
+            "solo_mode": self.solo_mode,
+            "posture_reason": self.posture_reason,
+            "qd_peer_lane_token": self.qd_peer_lane_token,
+            "qd_book_mode": self.qd_book_mode,
+            "qd_drift_band": self.qd_drift_band,
+            "qd_intent_reason": self.qd_intent_reason,
+            "qd_bid_edge_viable": self.qd_bid_edge_viable,
+            "qd_ask_edge_viable": self.qd_ask_edge_viable,
+            "qd_bid_min_edge_bps": self.qd_bid_min_edge_bps,
+            "qd_ask_min_edge_bps": self.qd_ask_min_edge_bps,
+            "qd_bid_pause_cause": self.qd_bid_pause_cause,
+            "qd_ask_pause_cause": self.qd_ask_pause_cause,
+            "qd_bid_bleeding": self.qd_bid_bleeding,
+            "qd_ask_bleeding": self.qd_ask_bleeding,
+            "qd_layer_trace": self.qd_layer_trace,
         }
         if competitor_intel:
             out.update({k: v for k, v in competitor_intel.items() if k != "top_competitors"})
@@ -255,6 +291,62 @@ def _quote_posture_label(
     if quote_ask:
         return "ask_only_skew" if allow_ask else "below_bid"
     return "blocked"
+
+
+def _qd_observability_fields(
+    qd: Any,
+    *,
+    peer_lane_empty: bool,
+    peer_lane_count: int,
+    peer_intel_present: bool,
+    low_book_pressure: bool = False,
+) -> Dict[str, Any]:
+    """Map QuotingDecision → runtime/HUD observability (v2.3 layered QD)."""
+    p = qd.posture
+    tr = qd.trace
+    solo = bool(p.book.solo)
+    lane_token = peer_lane_token(
+        peer_lane_empty=peer_lane_empty,
+        peer_lane_count=peer_lane_count,
+        intel_present=peer_intel_present,
+    )
+    reason = posture_reason(
+        solo=solo,
+        peer_lane_empty=peer_lane_empty,
+        peer_lane_count=peer_lane_count,
+        intel_present=peer_intel_present,
+        low_book_pressure=low_book_pressure,
+    )
+    bid_cap = float(tr.bid_edge.implied_edge_bps or 0.0) if tr.bid_edge.implied_edge_bps else 0.0
+    ask_cap = float(tr.ask_edge.implied_edge_bps or 0.0) if tr.ask_edge.implied_edge_bps else 0.0
+    bid_e = "✓" if tr.bid_edge.viable else "✗"
+    ask_e = "✓" if tr.ask_edge.viable else "✗"
+    bid_p = qd.bid.pause_cause or "—"
+    ask_p = qd.ask.pause_cause or "—"
+    layer_trace = (
+        f"trace book={p.book.mode.value} drift={p.inventory.band.value} "
+        f"intent={qd.intent.value} "
+        f"bid_e={bid_cap:.1f}bps{bid_e} ask_e={ask_cap:.1f}bps{ask_e} "
+        f"pause_bid={bid_p} pause_ask={ask_p}"
+    )
+    return {
+        "peer_lane_count": int(peer_lane_count),
+        "solo_mode": solo,
+        "posture_reason": reason,
+        "qd_peer_lane_token": lane_token,
+        "qd_book_mode": p.book.mode.value,
+        "qd_drift_band": p.inventory.band.value,
+        "qd_intent_reason": tr.intent_reason,
+        "qd_bid_edge_viable": bool(tr.bid_edge.viable),
+        "qd_ask_edge_viable": bool(tr.ask_edge.viable),
+        "qd_bid_min_edge_bps": tr.bid_edge.min_edge_bps,
+        "qd_ask_min_edge_bps": tr.ask_edge.min_edge_bps,
+        "qd_bid_pause_cause": bid_p if bid_p != "—" else "",
+        "qd_ask_pause_cause": ask_p if ask_p != "—" else "",
+        "qd_bid_bleeding": bool(p.buy_quality.bleeding),
+        "qd_ask_bleeding": bool(p.sell_quality.bleeding),
+        "qd_layer_trace": layer_trace,
+    }
 
 
 def _build_summary(
@@ -638,6 +730,18 @@ class PureQuotePath:
         if qd.summary:
             execution_brakes_summary = f"{execution_brakes_summary} | {qd.summary}"
 
+        try:
+            cp_val = float(competitor_pressure or 0)
+        except (TypeError, ValueError):
+            cp_val = 0.0
+        qd_obs = _qd_observability_fields(
+            qd,
+            peer_lane_empty=peer_lane_empty,
+            peer_lane_count=peer_lane_count,
+            peer_intel_present=peer_intel_present,
+            low_book_pressure=cp_val < 0.35,
+        )
+
         ladder = build_pure_quote_ladder(
             mid=mid,
             l1_bid_price=l1_bid_price,
@@ -766,6 +870,7 @@ class PureQuotePath:
             qd_ask_block_reason=qd.ask.block_reason,
             qd_bid_size_mult=qd.bid.size_mult,
             qd_ask_size_mult=qd.ask.size_mult,
+            **qd_obs,
         )
         skim = (competitor_intel or {}).get("competitor_skim_advice", "") or ""
         decision.quote_decision_summary = _build_summary(

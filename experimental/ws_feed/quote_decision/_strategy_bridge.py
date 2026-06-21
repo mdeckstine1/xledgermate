@@ -94,6 +94,7 @@ def _side_to_ws(perm) -> SidePermission:
         size_mult=perm.size_mult,
         implied_edge_bps=_pct_to_bps(perm.implied_edge_pct),
         block_reason=perm.block_reason,
+        pause_cause=str(getattr(perm, "pause_cause", "") or ""),
     )
 
 

@@ -185,6 +185,22 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "qd_ask_block_reason": decision.qd_ask_block_reason,
         "qd_bid_size_mult": decision.qd_bid_size_mult,
         "qd_ask_size_mult": decision.qd_ask_size_mult,
+        "peer_lane_count": decision.peer_lane_count,
+        "solo_mode": decision.solo_mode,
+        "posture_reason": decision.posture_reason,
+        "qd_peer_lane_token": decision.qd_peer_lane_token,
+        "qd_book_mode": decision.qd_book_mode,
+        "qd_drift_band": decision.qd_drift_band,
+        "qd_intent_reason": decision.qd_intent_reason,
+        "qd_bid_edge_viable": decision.qd_bid_edge_viable,
+        "qd_ask_edge_viable": decision.qd_ask_edge_viable,
+        "qd_bid_min_edge_bps": decision.qd_bid_min_edge_bps,
+        "qd_ask_min_edge_bps": decision.qd_ask_min_edge_bps,
+        "qd_bid_pause_cause": decision.qd_bid_pause_cause,
+        "qd_ask_pause_cause": decision.qd_ask_pause_cause,
+        "qd_bid_bleeding": decision.qd_bid_bleeding,
+        "qd_ask_bleeding": decision.qd_ask_bleeding,
+        "qd_layer_trace": decision.qd_layer_trace,
     }
 
 

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from strategy.fill_quality import FillQualityState
 
 
-QUOTE_DECISION_VERSION = "2.2.0"
+QUOTE_DECISION_VERSION = "2.3.0"
 
 
 class BookMode(str, Enum):
@@ -114,6 +114,7 @@ class SidePermission:
     size_mult: float
     implied_edge_bps: Optional[float] = None
     block_reason: str = ""
+    pause_cause: str = ""  # edge | bleed | inventory | tape | intent | operator | ""
 
 
 @dataclass(frozen=True)

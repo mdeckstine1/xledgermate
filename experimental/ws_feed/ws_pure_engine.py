@@ -1211,6 +1211,22 @@ class WsPureTradingEngine:
             qd_ask_block_reason=str(ed.get("qd_ask_block_reason") or ""),
             qd_bid_size_mult=float(ed.get("qd_bid_size_mult") or 0.0),
             qd_ask_size_mult=float(ed.get("qd_ask_size_mult") or 0.0),
+            peer_lane_count=int(ed.get("peer_lane_count") or ed.get("g4_peer_lane_count") or 0),
+            solo_mode=bool(ed.get("solo_mode")),
+            posture_reason=str(ed.get("posture_reason") or ""),
+            qd_peer_lane_token=str(ed.get("qd_peer_lane_token") or ""),
+            qd_book_mode=str(ed.get("qd_book_mode") or ""),
+            qd_drift_band=str(ed.get("qd_drift_band") or ""),
+            qd_intent_reason=str(ed.get("qd_intent_reason") or ""),
+            qd_bid_edge_viable=bool(ed.get("qd_bid_edge_viable")),
+            qd_ask_edge_viable=bool(ed.get("qd_ask_edge_viable")),
+            qd_bid_min_edge_bps=ed.get("qd_bid_min_edge_bps"),
+            qd_ask_min_edge_bps=ed.get("qd_ask_min_edge_bps"),
+            qd_bid_pause_cause=str(ed.get("qd_bid_pause_cause") or ""),
+            qd_ask_pause_cause=str(ed.get("qd_ask_pause_cause") or ""),
+            qd_bid_bleeding=bool(ed.get("qd_bid_bleeding")),
+            qd_ask_bleeding=bool(ed.get("qd_ask_bleeding")),
+            qd_layer_trace=str(ed.get("qd_layer_trace") or ""),
         )
         self.state_store.save(state)
         if ed and flags.intel_log:
