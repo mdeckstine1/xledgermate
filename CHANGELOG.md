@@ -5,6 +5,18 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.1.40] — 2026-06-21 (`Ashigaru Kaizen II`)
+
+**Segment #6 diagnosis fix** — gates were too narrow; stale asks leaked inventory.
+
+- **A2.2 scope** — buy edge gate on **all** `peer_lane_empty` bids (was solo-acquire accumulate only).
+- **A2.3 scope** — ask brake also on **XRP-heavy** postures on solo whale book (`slight_xrp_heavy`, `xrp_heavy`).
+- **A2.3c** — `ask_brake_cancel.py` — force-cancel resting asks when `pause_asks` (no 240s A3 wait).
+
+**Segment #6 verdict (11 fills, ~11h):** Purpose **FAIL** — skim +0.052 but SELL-led (BUY −0.0005 / SELL +0.053), Δ XRP −50, `at_edge=False`. Root cause: 8/11 fills in xrp-heavy postures outside gate scope + stale asks.
+
+---
+
 ## [2.1.39-hud1] — 2026-06-20 (`Ashigaru Kaizen II`)
 
 **M-Purpose HUD strip** — skim-funded inventory growth scoreboard (HUD-only; no engine restart).

@@ -536,6 +536,7 @@ class WsPureTradingEngine:
                 best_ask=ba,
                 peer_lane_empty=is_peer_lane_empty(comp_intel),
                 solo_acquisition=bool(engine_dec.get("g7_solo_acquisition")),
+                pause_asks=bool(engine_dec.get("pause_asks")),
             )
 
         await self._detect_fills(
@@ -583,6 +584,7 @@ class WsPureTradingEngine:
         best_ask: Optional[float],
         peer_lane_empty: bool = False,
         solo_acquisition: bool = False,
+        pause_asks: bool = False,
     ) -> tuple[int, int]:
         config = self.config
         connector = self.connector
@@ -641,6 +643,15 @@ class WsPureTradingEngine:
         for seq in stale_seqs:
             if seq not in cancel_sequences:
                 cancel_sequences.append(seq)
+        from experimental.ws_feed.ask_brake_cancel import ask_brake_cancel_sequences
+
+        for seq in ask_brake_cancel_sequences(open_offers, pause_asks=pause_asks):
+            if seq not in cancel_sequences:
+                cancel_sequences.append(seq)
+                self.decision_log.add(
+                    "execution",
+                    f"A2.3c ask-brake: cancel seq {seq} (pause_asks)",
+                )
         for decision in stale_decisions:
             self.decision_log.add(
                 "execution",

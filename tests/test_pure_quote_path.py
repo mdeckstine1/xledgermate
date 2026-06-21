@@ -179,7 +179,10 @@ def test_g4_peer_lane_in_quote_path() -> None:
         assert xrp_empty.g4_grade == "solo_acquire"
         assert xrp_empty.g7_solo_acquisition is False
         assert xrp_empty.sell_edge_gate_active is True
-        assert xrp_empty.acquire_ask_brake_active is False
+        assert xrp_empty.acquire_ask_brake_active is True
+        assert xrp_empty.acquire_ask_brake_blocked is True
+        assert xrp_empty.buy_edge_gate_active is True
+        assert xrp_empty.pause_asks is True
 
         skim = await path.compute_decision(
             mid=1.120508,

@@ -245,6 +245,22 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 - G7 solo backoffs (8/10 bps) if gate blocks all bids or still bleeds.
 - Soak-driven only — not A-S γ/κ.
 
+#### Segment #6 — closed Fail (v2.1.39, 11 fills ~11h)
+
+**Boot:** 2026-06-20 ~23:17 UTC · **v2.1.39** (A2.3b sell gate + M-Purpose HUD).
+
+| Metric | Result | Gate |
+|--------|--------|------|
+| Session skim | **+0.052 XRP** | pass (misleading) |
+| BUY capture | **−0.0005** | **Fail** |
+| SELL capture | **+0.053** | SELL-led |
+| Δ XRP | **−50** (229→179) | **Fail** |
+| `at_edge` | **False** | **Fail** |
+
+**Root cause:** A2.2/A2.3 scope = solo-acquire + accumulate postures only. **8/11 fills** in `slight_xrp_heavy`/`xrp_heavy` (`g7_solo_acquisition=false`) — asks still posted, sells at +edge drained inventory. Stale asks (up to 6000s) filled after acquire brake engaged (A3 solo max-age 240s).
+
+**Fix (v2.1.40):** buy gate on all solo-empty bids; ask brake on xrp-heavy solo empty; A2.3c immediate ask cancel on `pause_asks`.
+
 #### M-Purpose HUD strip (shipped · HUD-only)
 
 - **Purpose strip** on Live health bar: **Purpose PASS/FAIL**, **`at_edge`**, **buy cap**, **sell cap**, **Δ XRP**, **skim** — primary pass/fail without scripts.

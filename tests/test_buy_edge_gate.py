@@ -20,18 +20,27 @@ def test_bid_implied_edge_bps_at_mid_is_zero() -> None:
 
 def test_should_apply_solo_accumulate_only() -> None:
     assert should_apply_buy_edge_gate(
+        peer_lane_empty=True,
+        g7_solo_acquisition=False,
+        inventory_posture="xrp_heavy",
+    )
+    assert should_apply_buy_edge_gate(
+        peer_lane_empty=True,
         g7_solo_acquisition=True,
         inventory_posture="balanced",
     )
     assert should_apply_buy_edge_gate(
+        peer_lane_empty=True,
         g7_solo_acquisition=True,
         inventory_posture="rlusd_heavy",
     )
     assert not should_apply_buy_edge_gate(
+        peer_lane_empty=False,
         g7_solo_acquisition=False,
         inventory_posture="balanced",
     )
     assert not should_apply_buy_edge_gate(
+        peer_lane_empty=False,
         g7_solo_acquisition=True,
         inventory_posture="xrp_heavy",
     )
@@ -41,6 +50,7 @@ def test_gate_blocks_bid_too_close_to_mid() -> None:
     result = resolve_buy_edge_gate(
         l1_bid_price=1.09995,
         mid=1.10,
+        peer_lane_empty=True,
         g7_solo_acquisition=True,
         inventory_posture="balanced",
         min_buy_edge_bps=MIN_BUY_EDGE_BPS,
@@ -54,6 +64,7 @@ def test_gate_allows_bid_with_edge() -> None:
     result = resolve_buy_edge_gate(
         l1_bid_price=1.098,
         mid=1.10,
+        peer_lane_empty=True,
         g7_solo_acquisition=True,
         inventory_posture="balanced",
     )
@@ -67,6 +78,7 @@ def test_session_buy_capture_brake() -> None:
     result = resolve_buy_edge_gate(
         l1_bid_price=1.098,
         mid=1.10,
+        peer_lane_empty=True,
         g7_solo_acquisition=True,
         inventory_posture="balanced",
         session_buy_capture_xrp=-0.01,
@@ -79,8 +91,21 @@ def test_gate_inactive_outside_solo_acquire() -> None:
     result = resolve_buy_edge_gate(
         l1_bid_price=1.09995,
         mid=1.10,
+        peer_lane_empty=False,
         g7_solo_acquisition=False,
         inventory_posture="balanced",
     )
     assert result.active is False
     assert result.blocked is False
+
+
+def test_gate_active_xrp_heavy_solo_empty() -> None:
+    result = resolve_buy_edge_gate(
+        l1_bid_price=1.09995,
+        mid=1.10,
+        peer_lane_empty=True,
+        g7_solo_acquisition=False,
+        inventory_posture="xrp_heavy",
+    )
+    assert result.active is True
+    assert result.blocked is True

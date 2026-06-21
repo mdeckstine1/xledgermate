@@ -540,11 +540,13 @@ class PureQuotePath:
         buy_edge_gate = resolve_buy_edge_gate(
             l1_bid_price=l1_bid_price,
             mid=mid,
+            peer_lane_empty=is_peer_lane_empty(quoting_intel),
             g7_solo_acquisition=g7.solo_acquisition,
             inventory_posture=g7.inventory_posture,
             session_buy_capture_xrp=session_buy_capture_xrp,
         )
         acquire_ask_brake = resolve_acquire_ask_brake(
+            peer_lane_empty=is_peer_lane_empty(quoting_intel),
             g7_solo_acquisition=g7.solo_acquisition,
             inventory_posture=g7.inventory_posture,
         )

@@ -34,9 +34,13 @@ def bid_implied_edge_bps(*, l1_bid_price: float, mid: float) -> Optional[float]:
 
 def should_apply_buy_edge_gate(
     *,
-    g7_solo_acquisition: bool,
-    inventory_posture: str,
+    peer_lane_empty: bool,
+    g7_solo_acquisition: bool = False,
+    inventory_posture: str = "",
 ) -> bool:
+    """Solo whale book: all bids need min edge (v2.1.40 — was solo-acquire accumulate only)."""
+    if peer_lane_empty:
+        return True
     return bool(g7_solo_acquisition) and inventory_posture in ACCUMULATE_POSTURES
 
 
@@ -44,6 +48,7 @@ def resolve_buy_edge_gate(
     *,
     l1_bid_price: float,
     mid: float,
+    peer_lane_empty: bool,
     g7_solo_acquisition: bool,
     inventory_posture: str,
     session_buy_capture_xrp: Optional[float] = None,
@@ -51,6 +56,7 @@ def resolve_buy_edge_gate(
     session_buy_capture_brake_xrp: float = SESSION_BUY_CAPTURE_BRAKE_XRP,
 ) -> BuyEdgeGateResult:
     if not should_apply_buy_edge_gate(
+        peer_lane_empty=peer_lane_empty,
         g7_solo_acquisition=g7_solo_acquisition,
         inventory_posture=inventory_posture,
     ):
