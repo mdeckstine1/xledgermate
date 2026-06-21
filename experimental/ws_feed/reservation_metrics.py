@@ -28,38 +28,6 @@ def reservation_quote_sides(
     return False, False, "invalid"
 
 
-def effective_quote_sides(
-    *,
-    allow_bid: bool,
-    allow_ask: bool,
-    pause_bids: bool,
-    pause_asks: bool,
-) -> tuple[bool, bool, str]:
-    """
-    Merge reservation posture with inventory one-sided bailout.
-
-    Inventory rebalancing (pause one side) must still quote on book when reservation
-    sits outside touch on the opposite side — e.g. rlusd_heavy → bid-only even if
-    reservation is below bid (A-S would otherwise ask-only into wrong direction).
-    """
-    inv_bid_only = pause_asks and not pause_bids
-    inv_ask_only = pause_bids and not pause_asks
-    eff_bid = (allow_bid or inv_bid_only) and not pause_bids
-    eff_ask = (allow_ask or inv_ask_only) and not pause_asks
-    if eff_bid and eff_ask:
-        if allow_bid and allow_ask:
-            label = "inside"
-        else:
-            label = "two_sided"
-    elif eff_bid:
-        label = "bid_only_rebalance" if inv_bid_only else "bid_only_skew"
-    elif eff_ask:
-        label = "ask_only_rebalance" if inv_ask_only else "ask_only_skew"
-    else:
-        label = "blocked"
-    return eff_bid, eff_ask, label
-
-
 def reservation_bbo_metrics(
     *,
     reservation: Optional[float],

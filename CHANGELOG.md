@@ -5,6 +5,15 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.2.1] — 2026-06-21 (`Ashigaru Kaizen II`)
+
+**Phase 2a — retire dead gate modules.**
+
+- Deleted `buy_edge_gate.py`, `acquire_ask_brake.py`, `sell_edge_gate.py` and their unit tests.
+- Removed `effective_quote_sides()` bailout from `reservation_metrics.py`.
+
+---
+
 ## [2.2.0] — 2026-06-21 (`Ashigaru Kaizen II`)
 
 **Layered quote decision stack (Phase 1 live)** — replaces overlapping A2 gates + inventory `pause_*` merge.
