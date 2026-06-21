@@ -1,6 +1,6 @@
 # E2 — Branch discipline (WS + pure A-S vs sacred corpus)
 
-**Status:** `Ashigaru` → **`Ashigaru-Kaizen`** → **`Ashigaru-Kaizen-II`** (archived v2.1.40) → **`Ashigaru-Shoshin`** (2026-06-20, v2.2.4) · **Production MM:** v2.2.4
+**Status:** `Ashigaru` → **`Ashigaru-Kaizen`** → **`Ashigaru-Kaizen-II`** (archived v2.1.40) → **`Ashigaru-Shoshin`** (2026-06-21, v2.3.0) · **Production MM:** v2.3.0
 
 ---
 

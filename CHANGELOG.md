@@ -5,6 +5,19 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.3.0] — 2026-06-21 (`Ashigaru Shoshin`)
+
+**QD stack convergence + peer/solo wiring (minor release).**
+
+- **`strategy/quote_decision_layers/`** — canonical five-layer QD stack (posture → intent → edge → bleed → final); shared by engine and replay.
+- **`_strategy_bridge.py`** — WS `quote_decision` adapter translates `CycleQuoteInputs` ↔ strategy params; single decision path for live + replay.
+- **Solo edge gate tightening** — stricter accumulate-on-edge rules for empty-lane books.
+- **Peer lane wiring** — engine passes peer intel into QD; replay validation for peer-lane rows.
+- **`QD_OPS` logging** — grep-friendly ops tokens (`peer_lane=`, `solo_mode=`, `posture_reason=`, etc.).
+- **`LayerTrace`** — per-layer trace on quote decisions; 46+ unit tests on QD layers + bridge.
+
+---
+
 ## [2.2.4] — 2026-06-21 (`Ashigaru Shoshin`)
 
 Hotfix: duplicate `qd_bid_allowed` kwarg in runtime save (startup crash on 2.2.3).

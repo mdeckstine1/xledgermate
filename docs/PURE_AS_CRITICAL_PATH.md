@@ -1,7 +1,7 @@
 # Pure A-S Critical Path
 
-**Status:** Live soak — **Ashigaru Shoshin** · **Segment #1** · **v2.2.4** on VPS · **HUD** `:8765`  
-**Version:** v2.2.4 · **Branch:** `Ashigaru-Shoshin`  
+**Status:** Live soak — **Ashigaru Shoshin** · **Segment #1** · **v2.3.0** on VPS · **HUD** `:8765`
+**Version:** v2.3.0 · **Branch:** `Ashigaru-Shoshin`
 **Last updated:** 2026-06-21 (layered QD stack cutover complete)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists. Narrative + archaeology: [`PURE_AS_DEVELOPMENT_LOG.md`](PURE_AS_DEVELOPMENT_LOG.md).
@@ -261,11 +261,11 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 
 **Fix (v2.1.40):** buy gate on all solo-empty bids; ask brake on xrp-heavy solo empty; A2.3c immediate ask cancel on `pause_asks`.
 
-#### Ashigaru Shoshin — Segment #1 (v2.2.4, active)
+#### Ashigaru Shoshin — Segment #1 (v2.3.0, active)
 
 **Line:** `Ashigaru-Shoshin` — fresh start on layered quote decision (初心 · beginner's mind). Kaizen II gate stack retired.
 
-**Boot:** 2026-06-21 ~12:23 UTC · **v2.2.4** · QD layers 1–5 live; A2 gates deleted; `pause_*` retired.
+**Boot:** 2026-06-21 ~12:23 UTC · **v2.3.0** · QD stack converged via `strategy/quote_decision_layers` + `_strategy_bridge`; peer/solo wiring live.
 
 | Change | Detail |
 |--------|--------|
