@@ -10,6 +10,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+from scripts.qd_report_common import (
+    fmt_bool,
+    fmt_on_off,
+    intent_mix_compact,
+    operating_mode,
+    side_permission_block,
+)
+
 QD_FINAL_MARKER = "QD_FINAL"
 
 
@@ -168,105 +176,101 @@ def build_qd_final_report(
     }
 
 
-def _fmt_bool(value: Any) -> str:
-    if value is True or value == "true":
-        return "true"
-    if value is False or value == "false":
-        return "false"
-    return str(value) if value not in (None, "") else "—"
-
-
 def _format_runtime_section(runtime: Mapping[str, Any]) -> List[str]:
-    lines = ["--- Current cycle (runtime_state.json) ---"]
     if not runtime.get("present"):
-        lines.append(f"No runtime snapshot ({runtime.get('path', 'logs/runtime_state.json')}).")
-        if runtime.get("error"):
-            lines.append(f"Read error: {runtime['error']}")
-        return lines
-
-    lines.extend(
-        [
-            f"cycle: {runtime.get('cycle_count')} | updated: {runtime.get('updated_utc') or '—'}",
-            f"intent: {runtime.get('intent') or '—'}",
-            (
-                f"book_mode: {runtime.get('book_mode') or '—'} | solo_mode: "
-                f"{_fmt_bool(runtime.get('solo_mode'))} | drift: {runtime.get('drift_band') or '—'}"
-            ),
-            (
-                f"L5 bid_allowed: {_fmt_bool(runtime.get('bid_allowed'))}"
-                f" (cause: {runtime.get('bid_pause_cause') or '—'})"
-                f" | ask_allowed: {_fmt_bool(runtime.get('ask_allowed'))}"
-                f" (cause: {runtime.get('ask_pause_cause') or '—'})"
-            ),
+        return [
+            "CURRENT CYCLE",
+            f"  No runtime snapshot ({runtime.get('path', 'logs/runtime_state.json')}).",
+            *( [f"  Read error: {runtime['error']}"] if runtime.get("error") else [] ),
         ]
+
+    mode_label, mode_hint = operating_mode(
+        intent=str(runtime.get("intent") or ""),
+        book_mode=str(runtime.get("book_mode") or ""),
+        solo_mode=bool(runtime.get("solo_mode")),
+        bid_allowed=runtime.get("bid_allowed"),
+        ask_allowed=runtime.get("ask_allowed"),
+        protection_active=bool(runtime.get("bid_bleeding") or runtime.get("ask_bleeding")),
+        would_quote=runtime.get("would_quote"),
     )
-    if runtime.get("bid_block_reason") or runtime.get("ask_block_reason"):
-        lines.append(
-            f"blocks: bid={runtime.get('bid_block_reason') or '—'}"
-            f" | ask={runtime.get('ask_block_reason') or '—'}"
-        )
-    lines.append(
-        "edge: "
-        f"bid viable={_fmt_bool(runtime.get('bid_edge_viable'))}"
-        f" @{runtime.get('bid_edge_bps') or '—'}bps"
-        f" | ask viable={_fmt_bool(runtime.get('ask_edge_viable'))}"
-        f" @{runtime.get('ask_edge_bps') or '—'}bps"
-    )
-    lines.append(
-        f"inventory_cb: {runtime.get('inventory_cb_mode') or '—'}"
-        + (f" — {runtime['inventory_cb_note']}" if runtime.get("inventory_cb_note") else "")
-    )
-    lines.append(
-        f"bleed: bid={_fmt_bool(runtime.get('bid_bleeding'))}"
-        f" | ask={_fmt_bool(runtime.get('ask_bleeding'))}"
-    )
+
+    lines = [
+        "CURRENT CYCLE (runtime_state.json)",
+        f"  cycle: {runtime.get('cycle_count')} | updated: {runtime.get('updated_utc') or '—'}",
+        f"  mode: {mode_label} — {mode_hint}",
+        "",
+        "L5 PERMISSIONS",
+    ]
+    lines.extend(side_permission_block(
+        "bid",
+        allowed=runtime.get("bid_allowed"),
+        pause_cause=str(runtime.get("bid_pause_cause") or ""),
+        block_reason=str(runtime.get("bid_block_reason") or ""),
+        edge_viable=runtime.get("bid_edge_viable"),
+        edge_bps=runtime.get("bid_edge_bps"),
+        bleeding=runtime.get("bid_bleeding"),
+    ))
+    lines.append("")
+    lines.extend(side_permission_block(
+        "ask",
+        allowed=runtime.get("ask_allowed"),
+        pause_cause=str(runtime.get("ask_pause_cause") or ""),
+        block_reason=str(runtime.get("ask_block_reason") or ""),
+        edge_viable=runtime.get("ask_edge_viable"),
+        edge_bps=runtime.get("ask_edge_bps"),
+        bleeding=runtime.get("ask_bleeding"),
+    ))
+    lines.extend([
+        "",
+        "CIRCUIT BREAKER & BLEED",
+        f"  inventory_cb_mode: {runtime.get('inventory_cb_mode') or '—'}",
+    ])
+    if runtime.get("inventory_cb_note"):
+        lines.append(f"  inventory_cb_note: {runtime['inventory_cb_note']}")
+    if runtime.get("inventory_cb_mode") == "skipped_solo":
+        lines.append("  inventory_cb_skipped_solo: yes")
+    lines.extend([
+        "",
+        "DOWNSTREAM",
+        f"  would_quote: {fmt_on_off(runtime.get('would_quote'))}",
+        f"  zero_quote_reason: {runtime.get('zero_quote_reason') or '—'}",
+        f"  status: {runtime.get('status_hint') or '—'}",
+    ])
     if runtime.get("permissions_summary"):
-        lines.append(f"permissions: {runtime['permissions_summary']}")
-    if runtime.get("would_quote") is not None:
-        lines.append(f"would_quote: {_fmt_bool(runtime.get('would_quote'))}")
-    if runtime.get("zero_quote_reason"):
-        lines.append(f"zero_quote_reason: {runtime['zero_quote_reason']}")
-    if runtime.get("status_hint"):
-        lines.append(f"status_hint: {runtime['status_hint']}")
-    if runtime.get("primary_block"):
-        lines.append(f"primary_block: {runtime['primary_block']}")
+        lines.append(f"  permissions: {runtime['permissions_summary']}")
     if runtime.get("layer_trace"):
-        lines.append(f"layer_trace: {runtime['layer_trace']}")
+        lines.append(f"  trace: {runtime['layer_trace']}")
     return lines
 
 
 def _format_summary_section(summary: Mapping[str, Any]) -> List[str]:
-    lines = ["--- Log tail summary ---"]
+    lines = ["LOG TAIL SUMMARY (QD_FINAL)"]
     if not summary:
-        lines.append("No QD_FINAL rows in log tail — deploy engine with L5 debug logging enabled.")
+        lines.append("  No QD_FINAL rows — engine needs v2.3.1+ with L5 logging.")
         return lines
 
-    lines.append(f"rows parsed: {summary.get('total', 0)}")
-    intents = summary.get("intent_counts") or {}
-    if intents:
-        intent_line = ", ".join(f"{k}={v}" for k, v in sorted(intents.items(), key=lambda kv: -kv[1]))
-        lines.append(f"intents: {intent_line}")
+    mix = intent_mix_compact(summary)
+    if mix:
+        lines.append(f"  intent mix: {mix}")
     lines.append(
-        f"bid_allowed=true: {summary.get('bid_allowed_true', 0)}/{summary.get('total', 0)}"
+        f"  bid_allowed=true: {summary.get('bid_allowed_true', 0)}/{summary.get('total', 0)}"
         f" | ask_allowed=true: {summary.get('ask_allowed_true', 0)}/{summary.get('total', 0)}"
     )
     acc_total = summary.get("solo_accumulate_total", 0)
     if acc_total:
         lines.append(
-            "solo_accumulate_on_edge: "
-            f"bid_on {summary.get('solo_accumulate_bid_on', 0)}/{acc_total}"
-            f" | ask_on {summary.get('solo_accumulate_ask_on', 0)}/{acc_total}"
+            f"  solo_accumulate: bid_on {summary.get('solo_accumulate_bid_on', 0)}/{acc_total}"
         )
     bid_causes = summary.get("bid_block_causes") or {}
     ask_causes = summary.get("ask_block_causes") or {}
     if bid_causes:
-        lines.append("top bid blocks: " + ", ".join(f"{k}={v}" for k, v in bid_causes.items()))
+        lines.append("  top bid blocks: " + ", ".join(f"{k}={v}" for k, v in bid_causes.items()))
     if ask_causes:
-        lines.append("top ask blocks: " + ", ".join(f"{k}={v}" for k, v in ask_causes.items()))
+        lines.append("  top ask blocks: " + ", ".join(f"{k}={v}" for k, v in ask_causes.items()))
     if summary.get("bleed_blocked_rows"):
-        lines.append(f"bleed_blocked rows: {summary['bleed_blocked_rows']}")
+        lines.append(f"  bleed_blocked: {summary['bleed_blocked_rows']} cycles")
     if summary.get("inventory_cb_skipped_solo_rows"):
-        lines.append(f"inventory_cb skipped_solo rows: {summary['inventory_cb_skipped_solo_rows']}")
+        lines.append(f"  inventory_cb_skipped_solo: {summary['inventory_cb_skipped_solo_rows']} cycles")
     return lines
 
 
@@ -306,7 +310,9 @@ def _format_record_line(record: Mapping[str, str]) -> str:
 
 def format_qd_final_report(report: Mapping[str, Any]) -> str:
     lines = [
-        "=== QD L5 final permissions (QD_FINAL debug) ===",
+        "╔══════════════════════════════════════════════════════════════╗",
+        "║  L5 PERMISSION MONITOR (QD_FINAL)                            ║",
+        "╚══════════════════════════════════════════════════════════════╝",
         f"generated: {report.get('generated_utc')}",
         f"log: {report.get('log_path')} | exists: {report.get('log_exists')}",
         "",
@@ -315,26 +321,20 @@ def format_qd_final_report(report: Mapping[str, Any]) -> str:
     lines.append("")
     lines.extend(_format_summary_section(report.get("summary") or {}))
     lines.append("")
-    lines.append("--- Recent QD_FINAL lines (oldest → newest) ---")
+    lines.append("RECENT CYCLES (oldest → newest)")
 
     records: List[Mapping[str, str]] = report.get("records") or []
     if not records:
-        lines.append(
-            "No QD_FINAL lines found. Grep locally: Select-String 'QD_FINAL' logs\\xledgermate.log"
-        )
+        lines.append("  No QD_FINAL lines. Grep: Select-String 'QD_FINAL' logs\\xledgermate.log")
     else:
         for record in records:
-            lines.append(_format_record_line(record))
+            lines.append("  " + _format_record_line(record))
 
-    lines.extend(
-        [
-            "",
-            "Interpretation:",
-            "  • bid_allowed=true in QD_FINAL but no quotes → check reservation / pure path / size mult.",
-            "  • bid_allowed=false → read bid_cause (edge | intent | inventory | tape | bleed).",
-            "  • Temporary diagnostic — remove after soak debug.",
-        ]
-    )
+    lines.extend([
+        "",
+        "Block cause key: edge | intent | inventory | tape | bleed",
+        "  bid ON + no offers → reservation / pure path / size mult",
+    ])
     return "\n".join(lines)
 
 

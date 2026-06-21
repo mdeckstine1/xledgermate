@@ -50,14 +50,15 @@ def test_qd_layered_report_runtime_sections(tmp_path: Path) -> None:
     (logs / "xledgermate.log").write_text("", encoding="utf-8")
 
     text = format_qd_layered_report(build_qd_layered_report(logs_dir=logs))
-    assert "Layer 1 · Posture" in text
-    assert "Layer 2 · Intent" in text
-    assert "Layer 3 · Edge" in text
-    assert "Layer 4 · Bleed" in text
-    assert "Layer 5 · Final permissions" in text
+    assert "L1 · POSTURE" in text
+    assert "L2 · INTENT" in text
+    assert "L3 · EDGE" in text
+    assert "L4 · BLEED" in text
+    assert "L5 · FINAL PERMISSIONS" in text
+    assert "OPERATING MODE" in text
     assert "solo_accumulate_on_edge" in text
     assert "skipped_solo" in text
-    assert "solo_edge_mult: 0.65" in text
+    assert "×0.65" in text or "min_edge×0.65" in text
 
 
 def test_generate_qd_layered_via_hud_support(tmp_path: Path) -> None:
@@ -65,4 +66,4 @@ def test_generate_qd_layered_via_hud_support(tmp_path: Path) -> None:
     logs.mkdir()
     (logs / "runtime_state.json").write_text('{"qd_intent":"patient_solo"}', encoding="utf-8")
     text = generate_report_text("qd_layered_decision", logs_dir=logs)
-    assert "Layered Quote Decision" in text
+    assert "LAYERED QUOTE DECISION" in text

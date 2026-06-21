@@ -65,7 +65,7 @@ def test_qd_final_report_from_log_and_runtime(tmp_path: Path) -> None:
 
     assert report["record_count"] == 1
     assert "solo_accumulate_on_edge" in text
-    assert "bid_allowed: true" in text
+    assert "[BID] allowed: ON" in text
     assert "zero_quote_reason: reservation_inside_l1" in text
     assert report["summary"]["solo_accumulate_bid_on"] == 1
 
@@ -83,5 +83,5 @@ def test_generate_qd_final_diagnostics_report(tmp_path: Path) -> None:
     logs.mkdir()
     (logs / "xledgermate.log").write_text(SAMPLE_LINE + "\n", encoding="utf-8")
     text = generate_report_text("qd_final_diagnostics", logs_dir=logs)
-    assert "QD L5 final permissions (QD_FINAL debug)" in text
+    assert "L5 PERMISSION MONITOR" in text
     assert "solo_accumulate_on_edge" in text

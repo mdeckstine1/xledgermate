@@ -2,8 +2,8 @@
 """
 Layered quote decision operator report (L1–L5).
 
-Acquisition-centered view: posture, intent, edge gate, bleed, L5 permissions,
-inventory CB, and recent cycle mix from QD_FINAL log tail.
+Primary HUD report for acquisition-centered monitoring: posture, intent,
+edge, bleed, L5 permissions, and recent cycle mix.
 """
 
 from __future__ import annotations
@@ -15,6 +15,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from scripts.qd_final_report import build_qd_final_report
+from scripts.qd_report_common import (
+    fmt_bool,
+    fmt_on_off,
+    intent_mix_compact,
+    operating_mode,
+    side_permission_block,
+)
 from strategy.quote_decision_layers.edge import (
     SOLO_EDGE_ABSOLUTE_FLOOR_PCT,
     SOLO_EDGE_MULT,
@@ -30,31 +37,6 @@ def _load_runtime(logs_dir: Path) -> Dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
-
-
-def _fmt_bool(value: Any) -> str:
-    if value is True or value == "true":
-        return "yes"
-    if value is False or value == "false":
-        return "no"
-    return str(value) if value not in (None, "") else "—"
-
-
-def _side_line(label: str, side: Mapping[str, Any]) -> str:
-    allowed = side.get("allowed")
-    on_off = "ON" if allowed else "OFF"
-    cause = side.get("block_cause") or "—"
-    reason = side.get("block_reason") or "—"
-    edge_v = _fmt_bool(side.get("edge_viable"))
-    edge_bps = side.get("implied_bps")
-    edge_txt = f"{edge_bps:.1f}bps" if isinstance(edge_bps, (int, float)) else "—"
-    mult = side.get("size_mult")
-    mult_txt = f"×{mult:.2f}" if isinstance(mult, (int, float)) else "—"
-    bleed = "BLEEDING" if side.get("bleeding") else "clear"
-    return (
-        f"  {label}: {on_off} | cause={cause} | edge={edge_v} @{edge_txt} | size {mult_txt} | {bleed}"
-        + (f"\n         block: {reason}" if reason and reason != "—" and not allowed else "")
-    )
 
 
 def build_qd_layered_report(
@@ -94,115 +76,148 @@ def format_qd_layered_report(report: Mapping[str, Any]) -> str:
     final = report.get("final_tail") or {}
     tail_summary = final.get("summary") or {}
 
+    intent = str(snap.get("intent") or rt.get("qd_intent") or "")
+    book_mode = str(snap.get("book_mode") or rt.get("qd_book_mode") or "")
+    solo_mode = bool(snap.get("solo_mode", rt.get("solo_mode")))
+    bid_allowed = rt.get("qd_bid_allowed", bid.get("allowed"))
+    ask_allowed = rt.get("qd_ask_allowed", ask.get("allowed"))
+    would_quote = rt.get("qd_would_quote", snap.get("would_quote"))
+
+    mode_label, mode_hint = operating_mode(
+        intent=intent,
+        book_mode=book_mode,
+        solo_mode=solo_mode,
+        bid_allowed=bid_allowed,
+        ask_allowed=ask_allowed,
+        protection_active=bool(summary.get("protection_active")),
+        would_quote=would_quote,
+    )
+
     lines: List[str] = [
-        "=== Layered Quote Decision — operator report (L1–L5) ===",
+        "╔══════════════════════════════════════════════════════════════╗",
+        "║  LAYERED QUOTE DECISION — operator view (L1→L5)              ║",
+        "╚══════════════════════════════════════════════════════════════╝",
         f"generated: {report.get('generated_utc')}",
-        f"ws_as_version: {rt.get('ws_as_version') or '—'}",
-        f"cycle: {rt.get('cycle_count') or '—'} | updated: {rt.get('updated_utc') or '—'}",
+        f"ws_as_version: {rt.get('ws_as_version') or '—'} | cycle: {rt.get('cycle_count') or '—'}",
+        f"updated: {rt.get('updated_utc') or '—'}",
         "",
-        "--- Layer 1 · Posture ---",
-        f"  book_mode: {snap.get('book_mode') or rt.get('qd_book_mode') or '—'}",
-        f"  solo_mode: {_fmt_bool(snap.get('solo_mode', rt.get('solo_mode')))}",
-        f"  peer_lane: {snap.get('peer_lane_token') or rt.get('qd_peer_lane_token') or '—'}"
-        f" (count={snap.get('peer_lane_count', rt.get('peer_lane_count', '—'))})",
-        f"  posture_reason: {snap.get('posture_reason') or rt.get('posture_reason') or '—'}",
-        f"  drift_band: {snap.get('drift_band') or rt.get('qd_drift_band') or '—'}"
-        f" ({snap.get('drift_label') or '—'})",
-        f"  headline: {snap.get('posture_headline') or summary.get('posture_detail') or '—'}",
-        "",
-        "--- Layer 2 · Intent ---",
-        f"  intent: {snap.get('intent') or rt.get('qd_intent') or '—'}",
-        f"  label: {snap.get('intent_label') or '—'}",
-        f"  reason: {snap.get('intent_reason') or rt.get('qd_intent_reason') or '—'}",
-        f"  subtext: {snap.get('intent_subtext') or summary.get('intent_subtext') or '—'}",
-        "",
-        "--- Layer 3 · Edge (solo hard gate) ---",
-        f"  solo_edge_mult: {report.get('solo_edge_mult')} (pass if capture >= min_edge × mult)",
-        f"  solo_absolute_floor: {report.get('solo_edge_floor_pct')}%",
-        f"  crowded/sparse: no hard gate — edge scales size only",
-        _side_line("bid", bid),
-        _side_line("ask", ask),
-        "",
-        "--- Layer 4 · Bleed protection (side-local) ---",
-        f"  bid_bleeding: {_fmt_bool(bid.get('bleeding', rt.get('qd_bid_bleeding')))}",
-        f"  ask_bleeding: {_fmt_bool(ask.get('bleeding', rt.get('qd_ask_bleeding')))}",
-        f"  protection_active: {_fmt_bool(summary.get('protection_active'))}",
-        "",
-        "--- Layer 5 · Final permissions ---",
-        f"  qd_bid_allowed: {_fmt_bool(rt.get('qd_bid_allowed', bid.get('allowed')))}",
-        f"  qd_ask_allowed: {_fmt_bool(rt.get('qd_ask_allowed', ask.get('allowed')))}",
+        "▶ OPERATING MODE",
+        f"  {mode_label}",
+        f"  {mode_hint}",
         f"  permissions: {hud.get('qd_permissions_summary') or summary.get('quoting_short') or '—'}",
-        f"  inventory_cb: {snap.get('inventory_cb_mode') or rt.get('qd_inventory_cb_mode') or '—'}",
+        f"  status: {summary.get('status_hint') or '—'}",
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "L1 · POSTURE",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"  book_mode: {book_mode or '—'} | solo_mode: {fmt_bool(solo_mode)}",
+        f"  peer_lane: {snap.get('peer_lane_token') or rt.get('qd_peer_lane_token') or '—'}"
+        f" (n={snap.get('peer_lane_count', rt.get('peer_lane_count', '—'))})",
+        f"  drift: {snap.get('drift_label') or snap.get('drift_band') or rt.get('qd_drift_band') or '—'}",
+        f"  reason: {snap.get('posture_reason') or rt.get('posture_reason') or '—'}",
+        f"  {snap.get('posture_headline') or summary.get('posture_detail') or ''}",
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "L2 · INTENT",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"  intent: {intent or '—'}",
+        f"  label: {snap.get('intent_label') or '—'}",
+        f"  why: {snap.get('intent_reason') or rt.get('qd_intent_reason') or '—'}",
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "L3 · EDGE (solo hard gate)",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"  solo gate: capture ≥ min_edge×{report.get('solo_edge_mult')} OR ≥ {report.get('solo_edge_floor_pct')}%",
+        f"  crowded/sparse: size scales only — no hard gate",
     ]
+    lines.extend(side_permission_block(
+        "bid",
+        allowed=bid_allowed,
+        pause_cause=str(rt.get("qd_bid_pause_cause") or bid.get("block_cause") or ""),
+        block_reason=str(rt.get("qd_bid_block_reason") or bid.get("block_reason") or ""),
+        edge_viable=bid.get("edge_viable", rt.get("qd_bid_edge_viable")),
+        edge_bps=bid.get("implied_bps") or rt.get("qd_bid_implied_bps"),
+        bleeding=bid.get("bleeding", rt.get("qd_bid_bleeding")),
+        size_mult=bid.get("size_mult"),
+    ))
+    lines.append("")
+    lines.extend(side_permission_block(
+        "ask",
+        allowed=ask_allowed,
+        pause_cause=str(rt.get("qd_ask_pause_cause") or ask.get("block_cause") or ""),
+        block_reason=str(rt.get("qd_ask_block_reason") or ask.get("block_reason") or ""),
+        edge_viable=ask.get("edge_viable", rt.get("qd_ask_edge_viable")),
+        edge_bps=ask.get("implied_bps") or rt.get("qd_ask_implied_bps"),
+        bleeding=ask.get("bleeding", rt.get("qd_ask_bleeding")),
+        size_mult=ask.get("size_mult"),
+    ))
+    lines.extend([
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "L4 · BLEED (side-local)",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"  bid_bleeding: {fmt_bool(bid.get('bleeding', rt.get('qd_bid_bleeding')))}"
+        f" | ask_bleeding: {fmt_bool(ask.get('bleeding', rt.get('qd_ask_bleeding')))}",
+        f"  protection_active: {fmt_bool(summary.get('protection_active'))}",
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "L5 · FINAL PERMISSIONS",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"  qd_bid_allowed: {fmt_on_off(bid_allowed)} | qd_ask_allowed: {fmt_on_off(ask_allowed)}",
+        f"  inventory_cb: {snap.get('inventory_cb_label') or snap.get('inventory_cb_mode') or rt.get('qd_inventory_cb_mode') or '—'}",
+    ])
     inv_note = snap.get("inventory_cb_note") or rt.get("qd_inventory_cb_note") or ""
     if inv_note:
-        lines.append(f"  inventory_cb_note: {inv_note}")
-    if snap.get("heavy_drift_l5_deferred") or rt.get("qd_heavy_drift_l5_deferred"):
-        lines.append("  heavy_drift_l5_deferred: yes (crowded/sparse — L5 owns permission)")
-    lines.extend(
-        [
-            f"  status: {summary.get('status_hint') or '—'}",
-            f"  layer_trace: {snap.get('layer_trace_raw') or rt.get('qd_layer_trace') or '—'}",
-            "",
-            "--- Downstream quote path ---",
-            f"  would_quote: {_fmt_bool(rt.get('qd_would_quote', snap.get('would_quote')))}",
-            f"  zero_quote_reason: {rt.get('zero_quote_reason') or rt.get('edge_resolution_summary') or '—'}",
-            f"  market_edge_met: {_fmt_bool(rt.get('market_edge_met'))}",
-        ]
-    )
+        lines.append(f"  note: {inv_note}")
+    if snap.get("inventory_cb_mode") == "skipped_solo" or rt.get("qd_inventory_cb_mode") == "skipped_solo":
+        lines.append("  inventory_cb_skipped_solo: yes — solo defers to L2 intent")
+    lines.extend([
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "DOWNSTREAM · quote path",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"  would_quote: {fmt_on_off(would_quote)}",
+        f"  zero_quote_reason: {rt.get('zero_quote_reason') or rt.get('edge_resolution_summary') or '—'}",
+        f"  open_offers: {rt.get('open_offers_count') or len(rt.get('open_offers') or [])}",
+    ])
     res_delta = rt.get("reservation_to_bbo_delta_bps")
     if res_delta is not None:
-        lines.append(f"  reservation_to_bbo: {res_delta} bps | inside_l1: {_fmt_bool(rt.get('inside_l1'))}")
-
-    lines.extend(["", "--- Recent cycles (QD_FINAL tail) ---"])
-    if not tail_summary:
-        lines.append("  No QD_FINAL rows — engine needs v2.3.1+ with L5 debug logging.")
-    else:
-        total = tail_summary.get("total", 0)
-        intents = tail_summary.get("intent_counts") or {}
-        intent_line = ", ".join(f"{k}={v}" for k, v in sorted(intents.items(), key=lambda kv: -kv[1]))
-        lines.append(f"  rows: {total} | intents: {intent_line}")
+        lines.append(f"  reservation→BBO: {res_delta} bps | inside_l1: {fmt_bool(rt.get('inside_l1'))}")
+    lines.append(f"  trace: {snap.get('layer_trace_raw') or rt.get('qd_layer_trace') or '—'}")
+    lines.extend([
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "RECENT CYCLES (QD_FINAL tail)",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    ])
+    mix = intent_mix_compact(tail_summary)
+    if mix:
+        lines.append(f"  mix: {mix}")
+    if tail_summary:
         acc = tail_summary.get("solo_accumulate_total", 0)
+        total = tail_summary.get("total", 0)
         if acc:
             pct = 100.0 * tail_summary.get("solo_accumulate_bid_on", 0) / acc
             lines.append(
-                f"  solo_accumulate_on_edge: {acc} cycles | bid_on {tail_summary.get('solo_accumulate_bid_on', 0)}"
-                f" ({pct:.0f}%) | ask_on {tail_summary.get('solo_accumulate_ask_on', 0)}"
+                f"  accumulate cycles: {acc} | bid_on {tail_summary.get('solo_accumulate_bid_on', 0)} ({pct:.0f}%)"
             )
-        unload = intents.get("inventory_unload", 0)
-        if unload and total:
-            lines.append(f"  inventory_unload (trim): {unload} cycles ({100.0 * unload / total:.0f}% of tail)")
         lines.append(
             f"  bid_allowed: {tail_summary.get('bid_allowed_true', 0)}/{total}"
             f" | ask_allowed: {tail_summary.get('ask_allowed_true', 0)}/{total}"
         )
-        if tail_summary.get("bleed_blocked_rows"):
-            lines.append(f"  bleed_blocks (L4→L5): {tail_summary['bleed_blocked_rows']}")
-        if tail_summary.get("inventory_cb_skipped_solo_rows"):
-            lines.append(f"  inventory_cb_skipped_solo: {tail_summary['inventory_cb_skipped_solo_rows']}/{total}")
-
     records = final.get("records") or []
-    if records:
-        lines.append("")
-        lines.append("  last 8 cycles:")
-        for rec in records[-8:]:
-            ts = rec.get("_ts", "?")
-            intent = rec.get("intent", "?")
-            bid_a = rec.get("bid_allowed", "?")
-            ask_a = rec.get("ask_allowed", "?")
-            be = rec.get("bid_edge_pct", "?")
-            lines.append(f"    [{ts}] {intent} | bid={bid_a} ask={ask_a} | edge={be}%")
-
-    lines.extend(
-        [
-            "",
-            "Operator notes:",
-            "  • Accumulate cycles should show bid=ON when edge clears solo gate (≥ floor or ≥ min×mult).",
-            "  • Unload trim cycles block both sides when no edge — expected idle on solo heavy drift.",
-            "  • L5 inventory CB skipped on solo; crowded/sparse use L5 CB instead of L2 unload.",
-            "  • Deep L5 debug: Reports → QD L5 final permissions (QD_FINAL grep).",
-        ]
-    )
+    for rec in records[-6:]:
+        ts = rec.get("_ts", "?")
+        lines.append(
+            f"  [{ts}] {rec.get('intent', '?')} | bid={rec.get('bid_allowed')} ask={rec.get('ask_allowed')}"
+            f" | edge={rec.get('bid_edge_pct')}%"
+        )
+    if not records:
+        lines.append("  (no QD_FINAL rows yet)")
+    lines.extend([
+        "",
+        "See also: Reports → L5 permission monitor (qd_final_diagnostics)",
+    ])
     return "\n".join(lines)
 
 

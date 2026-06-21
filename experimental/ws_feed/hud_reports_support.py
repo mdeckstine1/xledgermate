@@ -156,6 +156,7 @@ def _gen_reservation_snapshot(logs: Path) -> str:
         enrich_runtime_reservation_metrics,
         format_reservation_bbo_delta,
     )
+    from scripts.qd_report_common import fmt_on_off, operating_mode, side_permission_block
 
     path = logs / "runtime_state.json"
     if not path.exists():
@@ -166,51 +167,98 @@ def _gen_reservation_snapshot(logs: Path) -> str:
         return "Could not read runtime_state.json"
 
     rs = enrich_runtime_reservation_metrics(rs)
+    hud: dict = {}
+    try:
+        from experimental.ws_feed.qd_hud import build_qd_hud_fields
+
+        hud = build_qd_hud_fields(rs)
+    except Exception:
+        hud = {}
+    snap = hud.get("qd_snapshot") or {}
+    bid = snap.get("bid") or {}
+
+    mode_label, mode_hint = operating_mode(
+        intent=str(rs.get("qd_intent") or snap.get("intent") or ""),
+        book_mode=str(rs.get("qd_book_mode") or snap.get("book_mode") or ""),
+        solo_mode=bool(rs.get("solo_mode", snap.get("solo_mode"))),
+        bid_allowed=rs.get("qd_bid_allowed", bid.get("allowed")),
+        ask_allowed=rs.get("qd_ask_allowed"),
+        protection_active=bool(rs.get("qd_bid_bleeding") or rs.get("qd_ask_bleeding")),
+        would_quote=rs.get("qd_would_quote"),
+    )
+
     delta = rs.get("reservation_to_bbo_delta_bps")
     inside = rs.get("inside_l1")
-    qd_intent = rs.get("qd_intent") or "—"
-    qd_bid = rs.get("qd_bid_allowed")
-    qd_ask = rs.get("qd_ask_allowed")
     lines = [
-        "=== Reservation + QD snapshot (current runtime) ===",
+        "╔══════════════════════════════════════════════════════════════╗",
+        "║  RESERVATION → QUOTE PATH (L5 permissions + A-S reservation)  ║",
+        "╚══════════════════════════════════════════════════════════════╝",
         f"generated: {datetime.now(tz=timezone.utc).isoformat()}",
+        f"cycle: {rs.get('cycle_count')} | ws: {rs.get('ws_as_version') or '—'}",
         "",
-        "--- Layered QD (L5 permissions) ---",
-        f"qd_intent: {qd_intent}",
-        f"qd_book_mode: {rs.get('qd_book_mode') or '—'} | solo_mode: {rs.get('solo_mode')}",
-        f"qd_bid_allowed: {qd_bid} | qd_ask_allowed: {qd_ask}",
-        f"qd_bid_block: {rs.get('qd_bid_block_reason') or '—'}",
-        f"qd_ask_block: {rs.get('qd_ask_block_reason') or '—'}",
-        f"qd_inventory_cb: {rs.get('qd_inventory_cb_mode') or '—'}",
-        f"qd_would_quote: {rs.get('qd_would_quote')}",
+        "▶ OPERATING MODE",
+        f"  {mode_label}",
+        f"  {mode_hint}",
         "",
-        "--- Reservation vs BBO ---",
-        f"mid: {rs.get('mid_price')}",
-        f"best_bid: {rs.get('best_bid_rlusd_per_xrp')}",
-        f"best_ask: {rs.get('best_ask_rlusd_per_xrp')}",
-        f"as_reservation: {rs.get('as_reservation')}",
-        f"Res→BBO: {format_reservation_bbo_delta(delta, inside_l1=inside)}",
-        f"inside_l1: {inside}",
-        f"zero_quote_reason: {rs.get('zero_quote_reason') or rs.get('edge_resolution_summary') or '—'}",
-        f"as_presence_pct: {rs.get('as_presence_pct')}",
-        f"cycle_count: {rs.get('cycle_count')}",
+        "L2 · INTENT",
+        f"  qd_intent: {rs.get('qd_intent') or snap.get('intent') or '—'}",
+        f"  reason: {rs.get('qd_intent_reason') or snap.get('intent_reason') or '—'}",
+        f"  book: {rs.get('qd_book_mode') or '—'} | solo: {rs.get('solo_mode')} | drift: {rs.get('qd_drift_band') or '—'}",
         "",
-        "Soak-safe: runtime_state.json each request (no engine restart).",
-        "Full L1–L5 report: Reports → Layered quote decision.",
+        "L5 · PERMISSIONS → QUOTE",
     ]
+    lines.extend(side_permission_block(
+        "bid",
+        allowed=rs.get("qd_bid_allowed"),
+        pause_cause=str(rs.get("qd_bid_pause_cause") or ""),
+        block_reason=str(rs.get("qd_bid_block_reason") or ""),
+        edge_viable=rs.get("qd_bid_edge_viable"),
+        edge_bps=rs.get("qd_bid_implied_bps"),
+        bleeding=rs.get("qd_bid_bleeding"),
+    ))
+    lines.append("")
+    lines.extend(side_permission_block(
+        "ask",
+        allowed=rs.get("qd_ask_allowed"),
+        pause_cause=str(rs.get("qd_ask_pause_cause") or ""),
+        block_reason=str(rs.get("qd_ask_block_reason") or ""),
+        edge_viable=rs.get("qd_ask_edge_viable"),
+        edge_bps=rs.get("qd_ask_implied_bps"),
+        bleeding=rs.get("qd_ask_bleeding"),
+    ))
+    lines.extend([
+        "",
+        "INVENTORY CB",
+        f"  mode: {rs.get('qd_inventory_cb_mode') or '—'}",
+        f"  note: {rs.get('qd_inventory_cb_note') or '—'}",
+        "",
+        "RESERVATION vs BBO",
+        f"  mid: {rs.get('mid_price')}",
+        f"  best_bid / best_ask: {rs.get('best_bid_rlusd_per_xrp')} / {rs.get('best_ask_rlusd_per_xrp')}",
+        f"  as_reservation: {rs.get('as_reservation')}",
+        f"  Res→BBO: {format_reservation_bbo_delta(delta, inside_l1=inside)}",
+        f"  inside_l1: {inside}",
+        "",
+        "OUTCOME",
+        f"  qd_would_quote: {fmt_on_off(rs.get('qd_would_quote'))}",
+        f"  zero_quote_reason: {rs.get('zero_quote_reason') or rs.get('edge_resolution_summary') or '—'}",
+        f"  open_offers: {rs.get('open_offers_count') or len(rs.get('open_offers') or [])}",
+        f"  as_presence_pct: {rs.get('as_presence_pct')}",
+        "",
+        "Soak-safe · runtime_state.json · Full stack: Reports → Layered quote decision",
+    ])
     return "\n".join(lines)
 
 
 REPORT_SPECS: List[ReportSpec] = [
     ReportSpec(
         id="qd_layered_decision",
-        title="Layered quote decision",
-        subtitle="L1–L5 operator view (posture → permissions)",
+        title="QD stack overview",
+        subtitle="Operating mode + L1–L5 (primary monitor)",
         category="Quote Decision",
         description=(
-            "Acquisition-centered layered QD report: posture, intent + reason, solo edge gate, "
-            "bleed, L5 bid/ask permissions, inventory CB, cycle mix (accumulate vs trim), "
-            "and downstream would_quote status."
+            "Start here. Shows ACCUMULATING / TRIM / QUOTING mode, posture, intent, edge gate, "
+            "bleed, L5 qd_bid/ask_allowed, inventory CB, and recent accumulate vs trim mix."
         ),
         soak_safe=True,
         engine_restart=False,
@@ -219,17 +267,17 @@ REPORT_SPECS: List[ReportSpec] = [
     ),
     ReportSpec(
         id="qd_final_diagnostics",
-        title="QD L5 final permissions",
-        subtitle="QD_FINAL log tail (deep debug)",
+        title="L5 permission monitor",
+        subtitle="Per-cycle permissions + QD_FINAL tail",
         category="Quote Decision",
         description=(
-            "L5 permission deep-dive: QD_FINAL log tail, block causes per side, "
-            "solo accumulate stats, bleed/inventory CB inputs. Companion to Layered quote decision."
+            "Live L5 monitor: bid/ask allowed, block causes (edge/intent/bleed/inventory/tape), "
+            "edge bps, inventory_cb_skipped_solo, and recent QD_FINAL cycle log."
         ),
         soak_safe=True,
         engine_restart=False,
         cli_command="python scripts/qd_final_report.py",
-        phase_ref="QD L5 debug",
+        phase_ref="QD L5",
     ),
     ReportSpec(
         id="hourly_telegram",
@@ -244,39 +292,45 @@ REPORT_SPECS: List[ReportSpec] = [
     ),
     ReportSpec(
         id="reservation_snapshot",
-        title="Reservation + QD snapshot",
-        subtitle="Res→BBO + L5 permissions from runtime",
+        title="Reservation → quote path",
+        subtitle="L5 permissions flowing into A-S reservation",
         category="Quote Decision",
         description=(
-            "Current reservation vs BBO delta plus qd_intent, qd_bid/ask_allowed, "
-            "inventory CB mode, and would_quote from runtime_state.json."
+            "How L5 qd_bid/ask_allowed and intent connect to reservation vs BBO and actual "
+            "would_quote / open offers. Quick check when permissions say ON but no quotes appear."
         ),
         soak_safe=True,
         engine_restart=False,
         cli_command="(HUD report only)",
-        phase_ref="QD + M1",
+        phase_ref="QD + A-S",
     ),
     ReportSpec(
         id="ws_session_e15",
         title="E1.5 WS session gate",
-        subtitle="Fills + markout progress",
-        category="Gates",
-        description="WS-path fill count from trades CSV vs E1.5 gates (50+ fills, toxicity, markout).",
+        subtitle="Legacy soak gate — fills + markout",
+        category="Archive",
+        description=(
+            "Pre-layered soak milestone gate (50+ fills, toxicity, markout). Still useful for "
+            "long-run session review; not part of live QD decision path."
+        ),
         soak_safe=True,
         engine_restart=False,
         cli_command="python scripts/ws_path_session_report.py",
-        phase_ref="Phase E1.5",
+        phase_ref="Archive · E1.5",
     ),
     ReportSpec(
         id="g6_activation",
         title="G6 activation grade",
-        subtitle="Live posture tier",
-        category="Gates",
-        description="Activation tier (pilot → active), portfolio block, grade failures from runtime + intel log.",
+        subtitle="Legacy soak gate — pilot tier",
+        category="Archive",
+        description=(
+            "Pre-layered activation tier (pilot → active). Portfolio/fill grading still useful "
+            "for soak milestones; orthogonal to L5 qd_bid/ask_allowed."
+        ),
         soak_safe=True,
         engine_restart=False,
         cli_command="python -m experimental.ws_feed.live_activation_grading",
-        phase_ref="Phase G6",
+        phase_ref="Archive · G6",
     ),
     ReportSpec(
         id="fill_quote_age",
