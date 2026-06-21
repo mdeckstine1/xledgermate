@@ -1135,8 +1135,6 @@ class WsPureTradingEngine:
             quote_decision_summary=str(ed.get("quote_decision_summary") or ""),
             quoting_policy_label=str(ed.get("quoting_policy_label") or "ws_pure_as"),
             inventory_label=str(ed.get("inventory_label") or ""),
-            qd_bid_allowed=bool(ed.get("qd_bid_allowed")),
-            qd_ask_allowed=bool(ed.get("qd_ask_allowed")),
             as_reservation=ed.get("as_reservation"),
             as_optimal_spread_pct=ed.get("as_optimal_spread_pct"),
             as_gamma=ed.get("as_gamma"),
