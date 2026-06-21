@@ -15,7 +15,10 @@ from __future__ import annotations
 from core.market_conditions import CONDITION_HOSTILE
 from strategy.quote_decision_layers.bleed import BleedAdjustment, merge_bleed
 from strategy.quote_decision_layers.edge import edge_size_mult
-from strategy.quote_decision_layers.ops_log import log_inventory_cb_skipped_solo
+from strategy.quote_decision_layers.ops_log import (
+    log_inventory_cb_block,
+    log_inventory_cb_skipped_solo,
+)
 from strategy.quote_decision_layers.types import (
     BookMode,
     DriftBand,
@@ -60,9 +63,19 @@ def _inventory_circuit_breaker(
     acquiring_rlusd: bool,
 ) -> tuple[bool, str]:
     """
-    Hard pause on crowded books when drift exceeds max_deviation.
+    Layer 5 hard permission — pause the inventory-vulnerable side on crowded/sparse.
 
-    Solo books defer to intent (accumulate on edge when drifted).
+    Thresholds (intentionally different):
+      - **This CB** uses ``inventory_max_deviation`` (default **±12%**) — sets
+        ``SidePermission.allowed`` when exceeded on crowded/sparse.
+      - **L1 drift bands** (``DRIFT_HEAVY`` = **±16%**) feed L2 intent only; a book
+        can be ``mild_xrp`` in L1 but still have bids paused here at +13% drift.
+
+    Solo books **skip** this CB entirely (``inventory_cb_skipped_solo`` is logged);
+    solo accumulation / patient intent owns permissions there.
+
+    L2 ``INVENTORY_UNLOAD`` may also favor one side at HEAVY drift — that is
+    secondary; this function is the authoritative hard block for crowded/sparse.
     """
     if posture.book.mode == BookMode.SOLO:
         return True, ""
@@ -245,6 +258,23 @@ def build_layer_decision(
         inventory_mode=inventory_mode,
         acquiring_rlusd=acquiring_rlusd,
     )
+    if posture.book.mode != BookMode.SOLO:
+        if not bid_cb_ok:
+            log_inventory_cb_block(
+                posture=posture,
+                side="bid",
+                inventory_max_deviation=inventory_max_deviation,
+                inventory_mode=inventory_mode,
+                path=ops_path,
+            )
+        if not ask_cb_ok:
+            log_inventory_cb_block(
+                posture=posture,
+                side="ask",
+                inventory_max_deviation=inventory_max_deviation,
+                inventory_mode=inventory_mode,
+                path=ops_path,
+            )
 
     bid_tape_ok, bid_tape = _adverse_tape_block(
         posture,

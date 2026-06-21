@@ -109,7 +109,16 @@ def select_intent(
             allow_two_sided=False,
         )
 
-    # Crowded / sparse — inventory unload when far from target on the bleeding side.
+    # Crowded / sparse — INVENTORY_UNLOAD intent (L2 policy hint, not hard permission).
+    #
+    # Fires only at HEAVY drift (L1 band >= ±16%, DRIFT_HEAVY) when the unload
+    # side has viable edge. Sets one-sided favor_bid/favor_ask for L5 intent gate.
+    #
+    # Note: L5 ``_inventory_circuit_breaker`` may already pause the vulnerable
+    # side at ±12% (inventory_max_deviation) — a mild_xrp book (+13%) can be
+    # bid-blocked by L5 while L2 still selects TWO_SIDED_SKIM. At HEAVY drift
+    # both mechanisms align on one-sided unload; grep ``inventory_cb_block`` vs
+    # ``intent=INVENTORY_UNLOAD`` to see which layer drove the cycle.
     if inv.band in (DriftBand.HEAVY_XRP, DriftBand.HEAVY_RLUSD):
         if inv.band == DriftBand.HEAVY_XRP and sell_edge_viable:
             return IntentSelection(

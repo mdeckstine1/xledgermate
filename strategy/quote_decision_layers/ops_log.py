@@ -226,3 +226,102 @@ def maybe_log_solo_accumulate(
             ask_edge_pct=ask_edge_pct,
             path=path,
         )
+
+
+def log_inventory_cb_block(
+    *,
+    posture: Posture,
+    side: str,
+    inventory_max_deviation: float,
+    inventory_mode: str,
+    path: str = "",
+) -> None:
+    """
+    Log when L5 inventory circuit breaker blocks a side on crowded/sparse books.
+
+    Hard permission only — solo books skip CB (see ``log_inventory_cb_skipped_solo``).
+    """
+    inv = posture.inventory
+    cap = max(0.05, float(inventory_max_deviation))
+    mm = (inventory_mode or "market_make").strip().lower() == "market_make"
+    tag = "inventory bailout" if mm else "inventory limit"
+    parts = [
+        f"{LOG_PREFIX} inventory_cb_block=true",
+        f"book_mode={posture.book.mode.value}",
+        f"drift_band={inv.band.value}",
+        f"side={side}",
+        f"dev={inv.deviation:+.0%}",
+        f"cap={cap:.0%}",
+        f"xrp_ratio={inv.xrp_ratio:.0%}",
+        f"target={inv.target_xrp_ratio:.0%}",
+        f"layer=L5",
+        f"rule={tag}",
+    ]
+    if path:
+        parts.append(f"path={path}")
+    logger.info(" | ".join(parts))
+
+
+def log_inventory_unload_intent(
+    *,
+    posture: Posture,
+    intent_reason: str,
+    favor_bid: bool,
+    favor_ask: bool,
+    buy_edge_viable: bool,
+    sell_edge_viable: bool,
+    path: str = "",
+) -> None:
+    """
+    Log when L2 selects INVENTORY_UNLOAD on crowded/sparse (not solo).
+
+    Intent is informational — L5 circuit breaker remains the hard permission layer.
+    """
+    if favor_bid and not favor_ask:
+        favor = "bid"
+    elif favor_ask and not favor_bid:
+        favor = "ask"
+    else:
+        favor = "none"
+    inv = posture.inventory
+    parts = [
+        f"{LOG_PREFIX} intent=INVENTORY_UNLOAD",
+        f"book_mode={posture.book.mode.value}",
+        f"drift_band={inv.band.value}",
+        f"favor={favor}",
+        f"dev={inv.deviation:+.0%}",
+        f"layer=L2",
+        f"buy_edge_viable={str(buy_edge_viable).lower()}",
+        f"sell_edge_viable={str(sell_edge_viable).lower()}",
+        f"reason={intent_reason}",
+    ]
+    if path:
+        parts.append(f"path={path}")
+    logger.info(" | ".join(parts))
+
+
+def maybe_log_inventory_unload_intent(
+    intent_value: QuoteIntent,
+    *,
+    posture: Posture,
+    intent_reason: str,
+    favor_bid: bool,
+    favor_ask: bool,
+    buy_edge_viable: bool,
+    sell_edge_viable: bool,
+    path: str = "",
+) -> None:
+    """Crowded/sparse INVENTORY_UNLOAD only — solo trim uses a separate L2 branch."""
+    if intent_value != QuoteIntent.INVENTORY_UNLOAD:
+        return
+    if posture.book.mode == BookMode.SOLO:
+        return
+    log_inventory_unload_intent(
+        posture=posture,
+        intent_reason=intent_reason,
+        favor_bid=favor_bid,
+        favor_ask=favor_ask,
+        buy_edge_viable=buy_edge_viable,
+        sell_edge_viable=sell_edge_viable,
+        path=path,
+    )

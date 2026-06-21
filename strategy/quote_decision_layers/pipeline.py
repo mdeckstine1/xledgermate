@@ -14,6 +14,7 @@ from strategy.quote_decision_layers.edge import evaluate_side_edge
 from strategy.quote_decision_layers.intent import select_intent
 from strategy.quote_decision_layers.ops_log import (
     log_posture_ops,
+    maybe_log_inventory_unload_intent,
     maybe_log_solo_accumulate,
 )
 from strategy.quote_decision_layers.posture import build_posture
@@ -105,6 +106,16 @@ def run_layered_quote_decision(
         sell_edge_viable=ask_edge.viable,
         bid_edge_pct=bid_edge.implied_edge_pct,
         ask_edge_pct=ask_edge.implied_edge_pct,
+        path=ops_path,
+    )
+    maybe_log_inventory_unload_intent(
+        intent.intent,
+        posture=posture,
+        intent_reason=intent.reason,
+        favor_bid=intent.favor_bid,
+        favor_ask=intent.favor_ask,
+        buy_edge_viable=bid_edge.viable,
+        sell_edge_viable=ask_edge.viable,
         path=ops_path,
     )
 
