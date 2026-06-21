@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.soak_dashboard_report import (
+    build_operator_summary,
     build_soak_dashboard_facts,
     build_soak_dashboard_report,
     fetch_grok_soak_narrative,
@@ -16,8 +17,8 @@ from scripts.soak_dashboard_report import (
 
 def _write_min_runtime(logs: Path) -> None:
     rt = {
-        "version": "2.1.17",
-        "ws_as_version": "2.1.17",
+        "version": "2.3.1",
+        "ws_as_version": "2.3.1",
         "fills_session": 12,
         "session_spread_capture_xrp": 0.05,
         "portfolio_value_xrp": 100.5,
@@ -25,10 +26,28 @@ def _write_min_runtime(logs: Path) -> None:
         "g2_grade": "B",
         "g2_spread_mult": 1.15,
         "inventory_label": "xrp_heavy",
+        "inventory_xrp_ratio_pct": 73.5,
+        "inventory_target_xrp_ratio": 0.55,
         "g6_activation_tier": "pilot_watch",
         "dry_run": False,
         "trading_enabled": True,
         "cycle_count": 500,
+        "qd_book_mode": "solo",
+        "solo_mode": True,
+        "posture_reason": "confirmed_empty",
+        "qd_intent": "inventory_unload",
+        "qd_intent_reason": "solo + heavy_xrp_drift + no viable edge",
+        "qd_bid_allowed": False,
+        "qd_ask_allowed": False,
+        "qd_bid_pause_cause": "edge",
+        "qd_ask_pause_cause": "edge",
+        "qd_bid_implied_bps": 1.05,
+        "qd_ask_implied_bps": 1.05,
+        "qd_bid_edge_viable": False,
+        "qd_ask_edge_viable": False,
+        "qd_inventory_cb_mode": "skipped_solo",
+        "mean_markout_30s_pct": 0.0,
+        "toxic_fill_ratio_30s": 0.0,
     }
     (logs / "runtime_state.json").write_text(json.dumps(rt), encoding="utf-8")
 
@@ -46,9 +65,22 @@ def test_facts_bundle_with_runtime(tmp_path: Path) -> None:
     _write_min_runtime(logs)
     text = build_soak_dashboard_facts(logs_dir=logs)
     assert "SOAK DASHBOARD — facts" in text
-    assert "g7_summary" in text
-    assert "Discipline note" in text
+    assert "1. Runtime & Session Overview" in text
+    assert "2. Current Decision State" in text
+    assert "inventory_unload" in text
+    assert "edge_gate" in text
+    assert "Technical appendix" in text
     assert "G6 gate:" in text
+
+
+def test_operator_summary_narrative_header(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    _write_min_runtime(logs)
+    text = build_operator_summary(logs_dir=logs, report_id="soak_dashboard_narrative")
+    assert "SOAK DASHBOARD + NARRATIVE" in text
+    assert "3. Soak & Health Metrics" in text
+    assert "Skipped (solo_book)" in text
 
 
 def test_narrative_without_key_shows_help(tmp_path: Path) -> None:
@@ -56,7 +88,7 @@ def test_narrative_without_key_shows_help(tmp_path: Path) -> None:
     logs.mkdir()
     _write_min_runtime(logs)
     text = build_soak_dashboard_report(logs_dir=logs, narrative=True, grok_key="")
-    assert "Grok soak narrative" in text
+    assert "Grok Narrative (Advisory)" in text
     assert "No Grok API key configured" in text
 
 

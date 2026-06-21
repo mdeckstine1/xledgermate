@@ -404,11 +404,11 @@ REPORT_SPECS: List[ReportSpec] = [
     ReportSpec(
         id="soak_dashboard",
         title="Soak dashboard",
-        subtitle="Facts — runtime, gates, G7, 24h trend",
+        subtitle="Operator summary + technical appendix",
         category="Soak analysis",
         description=(
-            "Deterministic soak bundle: runtime + G7/G2, fill age, C2/G6 gates, hourly trend, "
-            "intel queue review. No Grok API call."
+            "Sections 1–3: runtime, layered QD decision state (L5/edge/bleed), soak metrics. "
+            "Appendix: C2/G6 gates, hourly trend, fill age detail. No Grok."
         ),
         soak_safe=True,
         engine_restart=False,

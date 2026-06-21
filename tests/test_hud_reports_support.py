@@ -53,6 +53,7 @@ def test_soak_dashboard_facts_only(tmp_path: Path) -> None:
     (logs / "runtime_state.json").write_text(json.dumps(rt), encoding="utf-8")
     text = generate_report_text("soak_dashboard", logs_dir=logs)
     assert "SOAK DASHBOARD — facts" in text
+    assert "Grok Narrative (Advisory)" not in text
     assert "Grok soak narrative" not in text
 
 
@@ -65,7 +66,7 @@ def test_soak_dashboard_narrative_no_key(tmp_path: Path) -> None:
         logs_dir=logs,
         grok_config={"intel_ai_key": "", "grok_enabled": True},
     )
-    assert "Grok soak narrative" in text
+    assert "Grok Narrative (Advisory)" in text
     assert "No Grok API key configured" in text
 
 
