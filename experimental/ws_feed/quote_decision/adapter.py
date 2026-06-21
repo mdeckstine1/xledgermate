@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Optional, Sequence
 
+from strategy.quote_decision_layers.edge import SOLO_EDGE_ABSOLUTE_FLOOR_PCT, SOLO_EDGE_MULT
 from experimental.ws_feed.quote_decision.pipeline import run_quote_decision_pipeline
 from experimental.ws_feed.quote_decision.types import CycleQuoteInputs, QuotingDecision
 
@@ -77,6 +78,8 @@ def build_cycle_inputs(
     mid_momentum_pct: float = 0.0,
     min_edge_pct: float = 0.0,
     market_edge_met: bool = True,
+    solo_edge_mult: float = SOLO_EDGE_MULT,
+    solo_edge_absolute_floor_pct: float = SOLO_EDGE_ABSOLUTE_FLOOR_PCT,
     inventory_max_deviation: float = 0.12,
     inventory_mode: str = "market_make",
     acquiring_rlusd: bool = False,
@@ -118,6 +121,8 @@ def build_cycle_inputs(
         mid_momentum_pct=mid_momentum_pct,
         min_edge_pct=min_edge_pct,
         market_edge_met=market_edge_met,
+        solo_edge_mult=solo_edge_mult,
+        solo_edge_absolute_floor_pct=solo_edge_absolute_floor_pct,
         inventory_max_deviation=inventory_max_deviation,
         inventory_mode=inventory_mode,
         acquiring_rlusd=acquiring_rlusd,
@@ -156,6 +161,8 @@ def compute_quoting_decision(
     mid_momentum_pct: float = 0.0,
     min_edge_pct: float = 0.0,
     market_edge_met: bool = True,
+    solo_edge_mult: float = SOLO_EDGE_MULT,
+    solo_edge_absolute_floor_pct: float = SOLO_EDGE_ABSOLUTE_FLOOR_PCT,
     inventory_max_deviation: float = 0.12,
     inventory_mode: str = "market_make",
     acquiring_rlusd: bool = False,
@@ -192,6 +199,8 @@ def compute_quoting_decision(
         mid_momentum_pct=mid_momentum_pct,
         min_edge_pct=min_edge_pct,
         market_edge_met=market_edge_met,
+        solo_edge_mult=solo_edge_mult,
+        solo_edge_absolute_floor_pct=solo_edge_absolute_floor_pct,
         inventory_max_deviation=inventory_max_deviation,
         inventory_mode=inventory_mode,
         acquiring_rlusd=acquiring_rlusd,

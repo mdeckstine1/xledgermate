@@ -10,7 +10,11 @@ from __future__ import annotations
 from strategy.fill_quality import FillQualityState
 from strategy.quote_decision_layers.bleed import apply_bleed_protection
 from strategy.quote_decision_layers.decision import build_layer_decision
-from strategy.quote_decision_layers.edge import evaluate_side_edge
+from strategy.quote_decision_layers.edge import (
+    SOLO_EDGE_ABSOLUTE_FLOOR_PCT,
+    SOLO_EDGE_MULT,
+    evaluate_side_edge,
+)
 from strategy.quote_decision_layers.intent import select_intent
 from strategy.quote_decision_layers.ops_log import (
     log_posture_ops,
@@ -46,6 +50,8 @@ def run_layered_quote_decision(
     peer_intel_present: bool = True,
     peer_intel_stale: bool = False,
     ops_path: str = "",
+    solo_edge_mult: float | None = None,
+    solo_edge_absolute_floor_pct: float | None = None,
 ) -> LayerQuotingDecision:
     """
     Execute the full layered stack for one cycle.
@@ -78,6 +84,13 @@ def run_layered_quote_decision(
         path=ops_path,
     )
 
+    edge_mult = SOLO_EDGE_MULT if solo_edge_mult is None else solo_edge_mult
+    edge_floor = (
+        SOLO_EDGE_ABSOLUTE_FLOOR_PCT
+        if solo_edge_absolute_floor_pct is None
+        else solo_edge_absolute_floor_pct
+    )
+
     bid_edge = evaluate_side_edge(
         side="bid",
         book_spread_pct=book_spread_pct,
@@ -85,6 +98,8 @@ def run_layered_quote_decision(
         profile_min_edge_pct=min_edge_pct,
         book_mode=posture.book.mode,
         market_edge_met=market_edge_met,
+        solo_edge_mult=edge_mult,
+        solo_edge_absolute_floor_pct=edge_floor,
     )
     ask_edge = evaluate_side_edge(
         side="ask",
@@ -93,6 +108,8 @@ def run_layered_quote_decision(
         profile_min_edge_pct=min_edge_pct,
         book_mode=posture.book.mode,
         market_edge_met=market_edge_met,
+        solo_edge_mult=edge_mult,
+        solo_edge_absolute_floor_pct=edge_floor,
     )
 
     intent = select_intent(

@@ -174,6 +174,8 @@ class BotConfig:
     inventory_overshoot_slack: float = 0.03  # MM: max ratio beyond target one fill may reach
     min_edge_pct: float = 0.10                 # Legacy; migrated to edge_strictness on load
     edge_strictness: float = 1.0                 # Scales profile min edge: 0.85 low, 1.0 normal, 1.15 strict
+    solo_edge_mult: float = 0.65                 # Solo L3 gate: pass if capture >= min_edge * this
+    solo_edge_absolute_floor_pct: float = 0.012  # Solo L3 gate: pass if capture >= this (pct points)
     dynamic_min_edge_enabled: bool = True        # Adapt min edge to live book spread each cycle
     book_pressure_sensitivity: float = 1.0   # How strongly book depth imbalance steers quotes
     selective_order_refresh: bool = True     # Keep matching offers; cancel/replace only when quotes move

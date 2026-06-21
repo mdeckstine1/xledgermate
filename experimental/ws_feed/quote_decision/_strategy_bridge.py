@@ -175,6 +175,8 @@ def run_strategy_layers(inputs: CycleQuoteInputs) -> LayerQuotingDecision:
         ask_half_spread_pct=ask_half,
         min_edge_pct=float(inputs.min_edge_pct),
         market_edge_met=bool(inputs.market_edge_met),
+        solo_edge_mult=float(inputs.solo_edge_mult),
+        solo_edge_absolute_floor_pct=float(inputs.solo_edge_absolute_floor_pct),
         inventory_max_deviation=float(inputs.inventory_max_deviation),
         inventory_mode=inputs.inventory_mode,
         acquiring_rlusd=bool(inputs.acquiring_rlusd),

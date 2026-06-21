@@ -155,22 +155,81 @@ def test_solo_edge_allows_at_min_edge() -> None:
     assert result.viable
 
 
-def test_solo_edge_allows_soft_floor_with_market_edge_met() -> None:
+def test_solo_edge_allows_marginal_capture_via_acquire_threshold() -> None:
+    """Solo acquisition gate: 1.3% capture passes when full min_edge is 2.5%."""
     min_edge = min_net_edge_pct(book_mode=BookMode.SOLO, profile_min_edge_pct=0.0)
-    soft_floor = min_edge * 0.75
+    assert min_edge == 0.025
+    # capture = 0.035 - 0.022 = 0.013 (above 1.2% absolute floor, below full min_edge)
+    result = evaluate_side_edge(
+        side="bid",
+        book_spread_pct=0.07,
+        our_half_spread_pct=0.022,
+        profile_min_edge_pct=0.0,
+        book_mode=BookMode.SOLO,
+        market_edge_met=False,
+    )
+    assert result.implied_edge_pct == pytest.approx(0.013)
+    assert result.implied_edge_pct < min_edge
+    assert result.viable
+
+
+def test_solo_edge_allows_via_scaled_mult() -> None:
+    min_edge = min_net_edge_pct(book_mode=BookMode.SOLO, profile_min_edge_pct=0.0)
+    scaled = min_edge * 0.65
     result = evaluate_side_edge(
         side="bid",
         book_spread_pct=0.07,
         our_half_spread_pct=0.015,
         profile_min_edge_pct=0.0,
         book_mode=BookMode.SOLO,
-        market_edge_met=True,
+        market_edge_met=False,
     )
     assert result.implied_edge_pct == pytest.approx(0.02)
-    assert soft_floor == pytest.approx(0.01875)
-    assert result.implied_edge_pct >= soft_floor
+    assert result.implied_edge_pct >= scaled
     assert result.implied_edge_pct < min_edge
     assert result.viable
+
+
+def test_solo_edge_still_blocks_sub_floor_capture() -> None:
+    """Clearly sub-floor capture (e.g. VPS 1.0% vs 1.2% floor) stays blocked."""
+    result = evaluate_side_edge(
+        side="bid",
+        book_spread_pct=0.07,
+        our_half_spread_pct=0.025,
+        profile_min_edge_pct=0.0,
+        book_mode=BookMode.SOLO,
+        market_edge_met=True,
+    )
+    assert result.implied_edge_pct == pytest.approx(0.010)
+    assert not result.viable
+    assert "edge_gate" in result.reason
+    assert "floor@0.012" in result.reason
+
+
+def test_crowded_marginal_capture_still_viable() -> None:
+    """Crowded/sparse: no hard gate — weak capture remains viable for size scaling."""
+    result = evaluate_side_edge(
+        side="bid",
+        book_spread_pct=0.07,
+        our_half_spread_pct=0.034,
+        profile_min_edge_pct=0.0,
+        book_mode=BookMode.CROWDED,
+        market_edge_met=False,
+    )
+    assert result.implied_edge_pct == pytest.approx(0.001)
+    assert result.viable
+
+
+def test_solo_layer_marginal_edge_now_accumulates() -> None:
+    """Pipeline: solo + marginal positive capture → SOLO_ACCUMULATE_ON_EDGE + bid on."""
+    layer = _solo_layer(
+        bid_half_spread_pct=0.022,
+        ask_half_spread_pct=0.03,
+        market_edge_met=False,
+    )
+    assert layer.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
+    assert layer.bid.allowed
+    assert not layer.ask.allowed
 
 
 def test_crowded_heavy_xrp_pauses_bids() -> None:

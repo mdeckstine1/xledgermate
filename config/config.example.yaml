@@ -42,6 +42,9 @@ inventory_hard_pause_deviation: 0.22
 max_leg_size_pct_of_capital: 0.12
 inventory_overshoot_slack: 0.03
 edge_strictness: 1.0
+# Solo L3 hard gate (crowded/sparse unchanged): pass if capture >= min_edge * mult OR >= floor
+solo_edge_mult: 0.65
+solo_edge_absolute_floor_pct: 0.012
 dynamic_min_edge_enabled: true
 book_pressure_sensitivity: 1.0
 selective_order_refresh: true

@@ -14,6 +14,8 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from strategy.fill_quality import FillQualityState
 
+from strategy.quote_decision_layers.edge import SOLO_EDGE_ABSOLUTE_FLOOR_PCT, SOLO_EDGE_MULT
+
 
 QUOTE_DECISION_VERSION = "2.3.0"
 
@@ -195,6 +197,8 @@ class CycleQuoteInputs:
     mid_momentum_pct: float = 0.0
     min_edge_pct: float = 0.0
     market_edge_met: bool = True
+    solo_edge_mult: float = SOLO_EDGE_MULT
+    solo_edge_absolute_floor_pct: float = SOLO_EDGE_ABSOLUTE_FLOOR_PCT
     inventory_max_deviation: float = 0.12
     inventory_mode: str = "market_make"
     acquiring_rlusd: bool = False
