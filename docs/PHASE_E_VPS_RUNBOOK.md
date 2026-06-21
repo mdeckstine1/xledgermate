@@ -1,6 +1,6 @@
 # Phase E — VPS swap runbook
 
-**Branch:** `Ashigaru-Kaizen` · **Engine:** `python main.py --mode ws-engine`  
+**Branch:** `Ashigaru-Shoshin` (production VPS) · **`Ashigaru-Kaizen-II`** archived at v2.1.40 · **Engine:** `python main.py --mode ws-engine`  
 **HUD:** `xledgermate-ws-hud` → `:8765` (production; retire Streamlit `:8502` for MM ops)  
 **Sacred corpus:** `grok-tier-2-collab` (Gate 2 labeled data + replay; **E2 merged** 2026-06-15)
 
@@ -40,7 +40,7 @@ This runbook is the operator ladder for **E1–E3** in [`PURE_AS_CRITICAL_PATH.m
 cd /root/xledgermate
 bash scripts/vps_deploy_ashigaru.sh
 # Or manually:
-git fetch && git checkout Ashigaru-Kaizen-II && git pull
+git fetch && git checkout Ashigaru-Shoshin && git pull
 systemctl restart xledgermate xledgermate-ws-hud
 ```
 
@@ -55,7 +55,7 @@ ssh -i $env:USERPROFILE\.ssh\hetzner_xledgermate -o BatchMode=yes root@188.245.5
 **HUD-only (soak-safe, e.g. M-Purpose strip):**
 
 ```powershell
-ssh -i $env:USERPROFILE\.ssh\hetzner_xledgermate root@188.245.50.229 "cd /root/xledgermate && git pull origin Ashigaru-Kaizen-II && systemctl restart xledgermate-ws-hud"
+ssh -i $env:USERPROFILE\.ssh\hetzner_xledgermate root@188.245.50.229 "cd /root/xledgermate && git pull origin Ashigaru-Shoshin && systemctl restart xledgermate-ws-hud"
 ```
 
 Hard refresh browser after HUD restart (`index.html` read at process start).
@@ -119,7 +119,7 @@ Post-live: run with `--live` (expects `dry_run: false`).
 
 **Discipline after E2:**
 
-- **VPS live MM:** always deploy **`Ashigaru-Kaizen`** — `ws-engine` + HUD `:8765`
+- **VPS live MM:** always deploy **`Ashigaru-Shoshin`** — `ws-engine` + HUD `:8765`
 - **Sacred replay / economics:** run on either branch (same WS code); corpus labels stay on collab
 - **Do not** switch VPS to legacy `--mode engine` poll path for production quoting
 

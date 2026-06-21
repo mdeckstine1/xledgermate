@@ -1,8 +1,8 @@
 # Pure A-S Critical Path
 
-**Status:** Live soak — **Segment #5** · **v2.1.38** on VPS · **HUD** `:8765`  
-**Version:** v2.1.38 · **Branch:** `Ashigaru-Kaizen-II`  
-**Last updated:** 2026-06-20 (A2.3 acquire ask brake built)
+**Status:** Live soak — **Ashigaru Shoshin** · **Segment #1** · **v2.2.4** on VPS · **HUD** `:8765`  
+**Version:** v2.2.4 · **Branch:** `Ashigaru-Shoshin`  
+**Last updated:** 2026-06-21 (layered QD stack cutover complete)
 
 Single checklist for WS + pure A-S. Other docs link here — do not duplicate task lists. Narrative + archaeology: [`PURE_AS_DEVELOPMENT_LOG.md`](PURE_AS_DEVELOPMENT_LOG.md).
 
@@ -14,8 +14,8 @@ Single checklist for WS + pure A-S. Other docs link here — do not duplicate ta
 
 | Layer | Role |
 |-------|------|
-| **G7 posture** | *Where* to quote (solo edge acquire: passive bid / wide ask) |
-| **A2 enforcement** | *Whether* to quote (min edge on bids **and asks**; acquire ask brake) |
+| **G7 posture** | *Where* to quote (touch backoff, solo acquire) |
+| **QD stack (v2.2+)** | *Whether* to quote — layered edge/intent/bleed (replaces A2 gates) |
 | **G2 / A3** | Brakes (toxic, stale age) — never override A-S reservation |
 | **G6** | Measurement only (HUD) — not a kill switch |
 
@@ -261,23 +261,25 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 
 **Fix (v2.1.40):** buy gate on all solo-empty bids; ask brake on xrp-heavy solo empty; A2.3c immediate ask cancel on `pause_asks`.
 
-#### Segment #8 — v2.2.0 layered quote decision (Phase 1 live)
+#### Ashigaru Shoshin — Segment #1 (v2.2.4, active)
 
-**Boot:** pending deploy · **v2.2.0** · replaces A2 gate + inventory pause merge with five-layer QD stack.
+**Line:** `Ashigaru-Shoshin` — fresh start on layered quote decision (初心 · beginner's mind). Kaizen II gate stack retired.
+
+**Boot:** 2026-06-21 ~12:23 UTC · **v2.2.4** · QD layers 1–5 live; A2 gates deleted; `pause_*` retired.
 
 | Change | Detail |
 |--------|--------|
 | **QD live** | `quote_decision/` layers 1–5 sole authority on bid/ask permissions |
-| **Inv limits** | Size caps only — no `pause_bids`/`pause_asks` on pure path |
-| **Deadlock fix** | Solo xrp-heavy + buy edge → bid on (no both-sides paused) |
-| **Side-brake** | Symmetric cancel when QD pauses bid or ask |
+| **Inv limits** | Size caps only — no side pauses on pure path |
+| **Deadlock fix** | Solo xrp-heavy + buy edge → bid on (no both-sides blocked) |
+| **Side-brake** | Cancel when `qd_bid_allowed` / `qd_ask_allowed` false |
 | **Bleed** | Last 12 session fills → Layer 4 |
 
-**Verdict:** pending — fresh soak; purpose gate + no deadlock.
-
-**v2.2.3:** Phase 3 — `pause_bids`/`pause_asks` retired; QD `allowed` flags only.
+**Verdict:** pending — purpose gate soak on clean architecture.
 
 See [`QUOTE_DECISION_LAYERS.md`](QUOTE_DECISION_LAYERS.md).
+
+#### Segment #8 — v2.2.0 layered quote decision (archived label → Shoshin S#1)
 
 #### M-Purpose HUD strip (shipped · HUD-only)
 

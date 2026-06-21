@@ -5,7 +5,15 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
-## [2.2.3] — 2026-06-21 (`Ashigaru Kaizen II`)
+## [2.2.4] — 2026-06-21 (`Ashigaru Shoshin`)
+
+Hotfix: duplicate `qd_bid_allowed` kwarg in runtime save (startup crash on 2.2.3).
+
+**Branch rename:** production line **`Ashigaru-Kaizen-II` → `Ashigaru-Shoshin`** — layered QD architecture, gate stack removed.
+
+---
+
+## [2.2.3] — 2026-06-21 (`Ashigaru Shoshin`)
 
 **Phase 3 — retire `pause_bids`/`pause_asks` from WS path.**
 
@@ -15,7 +23,7 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
-## [2.2.2] — 2026-06-21 (`Ashigaru Kaizen II`)
+## [2.2.2] — 2026-06-21 (`Ashigaru Shoshin`)
 
 **Phase 2b — QD-only observability.**
 
@@ -24,7 +32,7 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
-## [2.2.1] — 2026-06-21 (`Ashigaru Kaizen II`)
+## [2.2.1] — 2026-06-21 (`Ashigaru Shoshin`)
 
 **Phase 2a — retire dead gate modules.**
 
@@ -33,7 +41,7 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
-## [2.2.0] — 2026-06-21 (`Ashigaru Kaizen II`)
+## [2.2.0] — 2026-06-21 (`Ashigaru Shoshin`)
 
 **Layered quote decision stack (Phase 1 live)** — replaces overlapping A2 gates + inventory `pause_*` merge.
 

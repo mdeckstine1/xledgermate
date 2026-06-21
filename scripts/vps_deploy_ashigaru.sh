@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Pull Ashigaru-Kaizen on VPS, verify version files, restart ws-engine + HUD.
+# Pull Ashigaru-Shoshin on VPS, verify version files, restart ws-engine + HUD.
 set -euo pipefail
 cd /root/xledgermate
 
-BRANCH="Ashigaru-Kaizen-II"
+BRANCH="Ashigaru-Shoshin"
 
 echo "=== git pull ${BRANCH} ==="
 git fetch origin "${BRANCH}"
