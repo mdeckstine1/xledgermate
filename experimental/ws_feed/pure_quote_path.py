@@ -124,8 +124,6 @@ class PureQuoteDecision:
     g4_summary: str = ""
     g4_peer_lane_count: int = 0
     g4_peer_pressure: Optional[float] = None
-    pause_bids: bool = False
-    pause_asks: bool = False
     inventory_limits_summary: str = ""
     inside_l1: bool = False
     reservation_to_bbo_delta_bps: Optional[float] = None
@@ -174,8 +172,6 @@ class PureQuoteDecision:
             "as_gamma": self.as_gamma,
             "as_kappa": self.as_kappa,
             "as_protected": True,
-            "pause_bids": self.pause_bids,
-            "pause_asks": self.pause_asks,
             "ai_edge_quality": self.ai_edge_quality,
             "ai_is_skimmable": self.ai_is_skimmable,
             "ai_rationale": self.ai_rationale,
@@ -577,8 +573,6 @@ class PureQuotePath:
         # v2.2.0 — Layer 5 is sole authority on side permissions (no inv/gate pause merge).
         quote_bid = qd.bid.allowed
         quote_ask = qd.ask.allowed
-        pause_bids = not qd.bid.allowed
-        pause_asks = not qd.ask.allowed
         quote_posture = _quote_posture_label(
             quote_bid=quote_bid,
             quote_ask=quote_ask,
@@ -627,8 +621,8 @@ class PureQuotePath:
         )
         ladder = apply_pause_to_ladder(
             ladder,
-            pause_bids=pause_bids,
-            pause_asks=pause_asks,
+            block_bids=not qd.bid.allowed,
+            block_asks=not qd.ask.allowed,
             min_order_size_xrp=self.min_order_size_xrp,
         )
         active_quotes = count_active_l1_quotes(ladder)
@@ -642,8 +636,8 @@ class PureQuotePath:
             book_spread_pct=book_spread_pct,
             optimal_spread_pct=as_quote.optimal_spread_pct,
             min_spread_floor_pct=self.min_spread_floor_pct,
-            pause_bids=pause_bids,
-            pause_asks=pause_asks,
+            bid_allowed=qd.bid.allowed,
+            ask_allowed=qd.ask.allowed,
         )
         policy_labels = {
             "inside": "PURE A-S (inside L1)",
@@ -699,8 +693,6 @@ class PureQuotePath:
             l1_xrp=sizes.l1_xrp,
             size_rationale=size_rationale,
             quote_intents=ladder,
-            pause_bids=pause_bids,
-            pause_asks=pause_asks,
             inventory_limits_summary=inv_policy.limits_summary,
             g2_size_mult=g2.size_mult,
             g2_spread_mult=g2.spread_mult,

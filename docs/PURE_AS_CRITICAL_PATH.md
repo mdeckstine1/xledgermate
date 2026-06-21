@@ -273,7 +273,9 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 | **Side-brake** | Symmetric cancel when QD pauses bid or ask |
 | **Bleed** | Last 12 session fills → Layer 4 |
 
-**Verdict:** pending — fresh soak after engine restart; purpose gate + no deadlock.
+**Verdict:** pending — fresh soak; purpose gate + no deadlock.
+
+**v2.2.3:** Phase 3 — `pause_bids`/`pause_asks` retired; QD `allowed` flags only.
 
 See [`QUOTE_DECISION_LAYERS.md`](QUOTE_DECISION_LAYERS.md).
 

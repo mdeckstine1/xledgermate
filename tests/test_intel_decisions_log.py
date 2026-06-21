@@ -24,7 +24,7 @@ def test_append_and_tail_intel_records(tmp_path: Path) -> None:
     assert rows[1]["peer_lane_count"] == 2
 
 
-def test_build_cycle_intel_record_pause_flags() -> None:
+def test_build_cycle_intel_record_qd_flags() -> None:
     row = build_cycle_intel_record(
         cycle=5,
         mid=1.28,
@@ -32,8 +32,8 @@ def test_build_cycle_intel_record_pause_flags() -> None:
         balance_rlusd=200.0,
         portfolio_xrp=230.0,
         engine_dec={
-            "pause_asks": True,
-            "pause_bids": False,
+            "qd_ask_allowed": False,
+            "qd_bid_allowed": True,
             "inventory_label": "rlusd_heavy",
             "would_quote": True,
             "bid_size_xrp": 9.0,
@@ -42,7 +42,8 @@ def test_build_cycle_intel_record_pause_flags() -> None:
         },
         runtime_extras={"inventory_target_xrp_ratio": 0.55},
     )
-    assert row["pause_asks"] is True
+    assert row["qd_ask_allowed"] is False
+    assert row["qd_bid_allowed"] is True
     assert row["our_lane_xrp"] == 9.0
     assert row["xrp_ratio_pct"] is not None
 

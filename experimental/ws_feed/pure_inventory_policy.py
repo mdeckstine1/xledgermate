@@ -99,21 +99,21 @@ def apply_pure_inventory_policy(
 def apply_pause_to_ladder(
     ladder: List[Dict[str, Any]],
     *,
-    pause_bids: bool,
-    pause_asks: bool,
+    block_bids: bool,
+    block_asks: bool,
     min_order_size_xrp: float,
 ) -> List[Dict[str, Any]]:
-    """Deactivate L1 legs for paused sides; drop sub-min sizes."""
+    """Deactivate L1 legs for blocked sides; drop sub-min sizes."""
     out: List[Dict[str, Any]] = []
     for row in ladder:
         item = dict(row)
         side = str(item.get("side") or "").lower()
         size = float(item.get("size_xrp") or 0)
         if item.get("level") == 1 and item.get("active"):
-            if side == "bid" and (pause_bids or size < min_order_size_xrp):
+            if side == "bid" and (block_bids or size < min_order_size_xrp):
                 item["active"] = False
                 item["planned"] = True
-            if side == "ask" and (pause_asks or size < min_order_size_xrp):
+            if side == "ask" and (block_asks or size < min_order_size_xrp):
                 item["active"] = False
                 item["planned"] = True
         out.append(item)

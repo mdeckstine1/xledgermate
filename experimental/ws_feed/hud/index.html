@@ -3656,7 +3656,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         if (k === 'advisory_signal') {
                             return `<div class="intel-log-line">[${ts}] advisory vol×=${r.vol_mult} size×=${r.size_mult} skim=${r.skim_harder}</div>`;
                         }
-                        return `<div class="intel-log-line">[${ts}] cycle ${r.cycle} inv=${r.inventory_label} pause_a=${r.pause_asks} g2=${r.g2_grade}</div>`;
+                        return `<div class="intel-log-line">[${ts}] cycle ${r.cycle} inv=${r.inventory_label} qd_bid=${r.qd_bid_allowed} qd_ask=${r.qd_ask_allowed} g2=${r.g2_grade}</div>`;
                     }).join('');
                 }
             }

@@ -5,6 +5,16 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.2.3] — 2026-06-21 (`Ashigaru Kaizen II`)
+
+**Phase 3 — retire `pause_bids`/`pause_asks` from WS path.**
+
+- Runtime, intel JSONL, and engine sync use `qd_bid_allowed` / `qd_ask_allowed` only.
+- Side-brake cancel keyed on QD allowed flags (not pause inversion).
+- `apply_pause_to_ladder` renamed params to `block_bids`/`block_asks`.
+
+---
+
 ## [2.2.2] — 2026-06-21 (`Ashigaru Kaizen II`)
 
 **Phase 2b — QD-only observability.**

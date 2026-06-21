@@ -60,7 +60,7 @@ def test_pause_to_ladder_deactivates_ask_l1() -> None:
         {"level": 1, "side": "bid", "price": 1.1, "size_xrp": 5.0, "active": True, "planned": False},
         {"level": 1, "side": "ask", "price": 1.11, "size_xrp": 5.0, "active": True, "planned": False},
     ]
-    out = apply_pause_to_ladder(ladder, pause_bids=False, pause_asks=True, min_order_size_xrp=1.0)
+    out = apply_pause_to_ladder(ladder, block_bids=False, block_asks=True, min_order_size_xrp=1.0)
     bid = next(i for i in out if i["side"] == "bid")
     ask = next(i for i in out if i["side"] == "ask")
     assert bid["active"] is True
@@ -80,8 +80,8 @@ def test_pure_quote_path_rlusd_heavy_bid_only_intents() -> None:
             target_ratio=0.55,
             inventory_max_deviation=0.12,
         )
-        assert dec.pause_asks is True
-        assert dec.pause_bids is False
+        assert dec.qd_bid_allowed is True
+        assert dec.qd_ask_allowed is False
         active = [i for i in dec.quote_intents if i.get("active")]
         assert all(i["side"] == "bid" for i in active)
         assert dec.ask_size == 0.0

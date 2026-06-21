@@ -493,12 +493,12 @@ def build_self_bot_profile(state: Mapping[str, Any], address: str) -> Dict[str, 
     ask_n = sum(1 for i in intents if isinstance(i, dict) and i.get("side") == "ask")
     if bid_n or ask_n:
         sides = f"b{bid_n}/a{ask_n}"
-    elif state.get("pause_bids") or state.get("pause_asks"):
+    elif state.get("qd_bid_allowed") is False or state.get("qd_ask_allowed") is False:
         parts = []
-        if state.get("pause_bids"):
-            parts.append("bid paused")
-        if state.get("pause_asks"):
-            parts.append("ask paused")
+        if state.get("qd_bid_allowed") is False:
+            parts.append("bid blocked")
+        if state.get("qd_ask_allowed") is False:
+            parts.append("ask blocked")
         sides = ", ".join(parts)
     else:
         sides = f"live×{open_offers}" if open_offers else "—"

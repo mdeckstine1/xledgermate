@@ -6,7 +6,7 @@ Migration:
   Phase 0 (done): shadow log QD vs legacy.
   Phase 1 (v2.2.0): QD bid/ask.allowed active on ladder.
   Phase 2 (v2.2.1–2.2.2): removed gate modules; QD-only observability.
-  Phase 3: retire pause_bids/pause_asks from RuntimeState intel fields.
+  Phase 3 (v2.2.3): pause_bids/pause_asks retired — use qd_bid_allowed/qd_ask_allowed.
 """
 
 from __future__ import annotations

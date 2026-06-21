@@ -99,8 +99,8 @@ def classify_and_explain_pure_zero_quote(
     book_spread_pct: float,
     optimal_spread_pct: float,
     min_spread_floor_pct: float,
-    pause_bids: bool = False,
-    pause_asks: bool = False,
+    bid_allowed: bool = True,
+    ask_allowed: bool = True,
 ) -> tuple[str, str, str]:
     """
     Returns (reason, detail, operator_note).
@@ -112,8 +112,8 @@ def classify_and_explain_pure_zero_quote(
         reservation=reservation,
         book_spread_pct=book_spread_pct,
         optimal_spread_pct=optimal_spread_pct,
-        pause_bids=pause_bids,
-        pause_asks=pause_asks,
+        bid_allowed=bid_allowed,
+        ask_allowed=ask_allowed,
     )
 
     detail = _detail_for_reason(

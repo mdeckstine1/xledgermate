@@ -1,4 +1,4 @@
-"""QD v2.2 — cancel resting offers immediately when a side is paused (stale ledger leak)."""
+"""QD v2.2 — cancel resting offers when a side is not allowed (stale ledger leak)."""
 
 from __future__ import annotations
 
@@ -10,19 +10,19 @@ from connectors.xrpl_connector import OpenOffer
 def side_brake_cancel_sequences(
     open_offers: Sequence[OpenOffer],
     *,
-    pause_bids: bool,
-    pause_asks: bool,
+    bid_allowed: bool,
+    ask_allowed: bool,
 ) -> List[int]:
-    """Force-cancel resting bids/asks when that side is paused (do not wait for A3 max-age)."""
-    if not pause_bids and not pause_asks:
+    """Force-cancel resting bids/asks when QD blocks that side."""
+    if bid_allowed and ask_allowed:
         return []
     out: List[int] = []
     seen: set[int] = set()
     for offer in open_offers:
         side = (offer.side or "").strip().lower()
-        if side == "bid" and not pause_bids:
+        if side == "bid" and bid_allowed:
             continue
-        if side == "ask" and not pause_asks:
+        if side == "ask" and ask_allowed:
             continue
         if side not in ("bid", "ask"):
             continue
@@ -34,15 +34,4 @@ def side_brake_cancel_sequences(
     return out
 
 
-def ask_brake_cancel_sequences(
-    open_offers: Sequence[OpenOffer],
-    *,
-    pause_asks: bool,
-) -> List[int]:
-    """Backward-compatible wrapper — prefer side_brake_cancel_sequences."""
-    return side_brake_cancel_sequences(
-        open_offers, pause_bids=False, pause_asks=pause_asks
-    )
-
-
-__all__ = ["ask_brake_cancel_sequences", "side_brake_cancel_sequences"]
+__all__ = ["side_brake_cancel_sequences"]

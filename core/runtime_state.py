@@ -88,8 +88,6 @@ class RuntimeState:
     fill_quality_summary: str = ""
     rebalance_action: str = ""
     rebalance_summary: str = ""
-    pause_bids: bool = False
-    pause_asks: bool = False
     inventory_mode: str = "market_make"
     effective_min_edge_pct: float = 0.0
     edge_resolution_summary: str = ""
@@ -278,8 +276,6 @@ class RuntimeStateStore:
             fill_quality_summary=str(data.get("fill_quality_summary", "")),
             rebalance_action=str(data.get("rebalance_action", "")),
             rebalance_summary=str(data.get("rebalance_summary", "")),
-            pause_bids=bool(data.get("pause_bids", False)),
-            pause_asks=bool(data.get("pause_asks", False)),
             inventory_mode=str(data.get("inventory_mode", "market_make")),
             effective_min_edge_pct=float(data.get("effective_min_edge_pct", 0.0)),
             edge_resolution_summary=str(data.get("edge_resolution_summary", "")),

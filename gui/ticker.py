@@ -106,12 +106,18 @@ def build_ticker_items(
     if policy_label:
         _add(items, seen, text=policy_label, kind="quote", priority=1)
 
-    if runtime.get("pause_bids") or runtime.get("pause_asks"):
+    bid_ok = runtime.get("qd_bid_allowed")
+    ask_ok = runtime.get("qd_ask_allowed")
+    if bid_ok is None:
+        bid_ok = not bool(runtime.get("pause_bids"))
+    if ask_ok is None:
+        ask_ok = not bool(runtime.get("pause_asks"))
+    if bid_ok is False or ask_ok is False:
         flags = []
-        if runtime.get("pause_bids"):
-            flags.append("bids paused")
-        if runtime.get("pause_asks"):
-            flags.append("asks paused")
+        if bid_ok is False:
+            flags.append("bids blocked")
+        if ask_ok is False:
+            flags.append("asks blocked")
         _add(
             items,
             seen,

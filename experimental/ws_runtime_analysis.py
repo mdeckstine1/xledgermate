@@ -82,10 +82,17 @@ def classify_zero_quote_reason(
     optimal_spread_pct: Optional[float],
     pause_bids: bool = False,
     pause_asks: bool = False,
+    bid_allowed: bool | None = None,
+    ask_allowed: bool | None = None,
 ) -> str:
     if would_quote:
         return "quoted"
-    if pause_bids and pause_asks:
+    if bid_allowed is not None and ask_allowed is not None:
+        if not bid_allowed and not ask_allowed:
+            return "paused_both_sides"
+        if not bid_allowed or not ask_allowed:
+            return "paused_one_side"
+    elif pause_bids and pause_asks:
         return "paused_both_sides"
     if pause_bids or pause_asks:
         return "paused_one_side"
@@ -183,8 +190,16 @@ def compact_sample_from_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
     optimal = _f(runtime.get("as_optimal_spread_pct"))
     reservation = _f(runtime.get("as_reservation"))
     would_quote = bool(runtime.get("market_edge_met"))
-    pause_bids = bool(runtime.get("pause_bids"))
-    pause_asks = bool(runtime.get("pause_asks"))
+    bid_allowed = runtime.get("qd_bid_allowed")
+    ask_allowed = runtime.get("qd_ask_allowed")
+    if bid_allowed is None:
+        bid_allowed = not bool(runtime.get("pause_bids"))
+    else:
+        bid_allowed = bool(bid_allowed)
+    if ask_allowed is None:
+        ask_allowed = not bool(runtime.get("pause_asks"))
+    else:
+        ask_allowed = bool(ask_allowed)
     ts = None
     recent = runtime.get("recent_decisions") or []
     if recent:
@@ -212,8 +227,8 @@ def compact_sample_from_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
             reservation=reservation,
             book_spread_pct=book_spread,
             optimal_spread_pct=optimal,
-            pause_bids=pause_bids,
-            pause_asks=pause_asks,
+            bid_allowed=bid_allowed,
+            ask_allowed=ask_allowed,
         ),
         "inside_l1": runtime.get("inside_l1"),
         "reservation_to_bbo_delta_bps": runtime.get("reservation_to_bbo_delta_bps"),

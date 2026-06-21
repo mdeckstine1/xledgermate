@@ -151,9 +151,9 @@ class QuotingDecision:
             "ask_size_mult": self.ask.size_mult,
             "bid_block_reason": self.bid.block_reason,
             "ask_block_reason": self.ask.block_reason,
-            # Legacy compat — only for shadow/compare mode
-            "pause_bids": not self.bid.allowed,
-            "pause_asks": not self.ask.allowed,
+            # Legacy compat — prefer bid/ask.allowed in new integrations
+            "bid_allowed": self.bid.allowed,
+            "ask_allowed": self.ask.allowed,
             "would_quote": self.would_quote,
             "quote_decision_summary": self.summary,
         }

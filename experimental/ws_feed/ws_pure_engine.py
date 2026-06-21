@@ -537,8 +537,8 @@ class WsPureTradingEngine:
                 best_ask=ba,
                 peer_lane_empty=is_peer_lane_empty(comp_intel),
                 solo_acquisition=bool(engine_dec.get("g7_solo_acquisition")),
-                pause_bids=bool(engine_dec.get("pause_bids")),
-                pause_asks=bool(engine_dec.get("pause_asks")),
+                bid_allowed=bool(engine_dec.get("qd_bid_allowed")),
+                ask_allowed=bool(engine_dec.get("qd_ask_allowed")),
             )
 
         await self._detect_fills(
@@ -586,8 +586,8 @@ class WsPureTradingEngine:
         best_ask: Optional[float],
         peer_lane_empty: bool = False,
         solo_acquisition: bool = False,
-        pause_bids: bool = False,
-        pause_asks: bool = False,
+        bid_allowed: bool = True,
+        ask_allowed: bool = True,
     ) -> tuple[int, int]:
         config = self.config
         connector = self.connector
@@ -649,13 +649,13 @@ class WsPureTradingEngine:
         from experimental.ws_feed.ask_brake_cancel import side_brake_cancel_sequences
 
         for seq in side_brake_cancel_sequences(
-            open_offers, pause_bids=pause_bids, pause_asks=pause_asks
+            open_offers, bid_allowed=bid_allowed, ask_allowed=ask_allowed
         ):
             if seq not in cancel_sequences:
                 cancel_sequences.append(seq)
                 self.decision_log.add(
                     "execution",
-                    f"QD side-brake: cancel seq {seq} (pause_bids={pause_bids} pause_asks={pause_asks})",
+                    f"QD side-brake: cancel seq {seq} (bid={bid_allowed} ask={ask_allowed})",
                 )
         for decision in stale_decisions:
             self.decision_log.add(
@@ -1135,8 +1135,8 @@ class WsPureTradingEngine:
             quote_decision_summary=str(ed.get("quote_decision_summary") or ""),
             quoting_policy_label=str(ed.get("quoting_policy_label") or "ws_pure_as"),
             inventory_label=str(ed.get("inventory_label") or ""),
-            pause_bids=bool(ed.get("pause_bids")),
-            pause_asks=bool(ed.get("pause_asks")),
+            qd_bid_allowed=bool(ed.get("qd_bid_allowed")),
+            qd_ask_allowed=bool(ed.get("qd_ask_allowed")),
             as_reservation=ed.get("as_reservation"),
             as_optimal_spread_pct=ed.get("as_optimal_spread_pct"),
             as_gamma=ed.get("as_gamma"),

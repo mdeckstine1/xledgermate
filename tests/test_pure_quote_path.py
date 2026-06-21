@@ -157,8 +157,8 @@ def test_g4_peer_lane_in_quote_path() -> None:
         assert balanced_empty.qd_intent == "solo_accumulate_on_edge"
         assert balanced_empty.qd_bid_allowed is True
         assert balanced_empty.qd_ask_allowed is False
-        assert balanced_empty.pause_bids is False
-        assert balanced_empty.pause_asks is True
+        assert balanced_empty.qd_bid_allowed is True
+        assert balanced_empty.qd_ask_allowed is False
         assert balanced_empty.suggested_ask is None
         assert balanced_empty.suggested_bid is not None
 
@@ -177,8 +177,7 @@ def test_g4_peer_lane_in_quote_path() -> None:
         )
         assert xrp_empty.g4_grade == "solo_acquire"
         assert xrp_empty.qd_bid_allowed is True
-        assert xrp_empty.pause_bids is False
-        assert xrp_empty.pause_asks is True
+        assert xrp_empty.qd_ask_allowed is False
         assert xrp_empty.would_quote is True
 
         skim = await path.compute_decision(
@@ -218,7 +217,7 @@ def test_v220_xrp_heavy_solo_no_deadlock() -> None:
             competitor_intel={"peer_lane_empty": True, "peer_lane_count": 0},
         )
         assert d.qd_bid_allowed is True
-        assert d.pause_bids is False
+        assert d.qd_bid_allowed is True
         assert d.would_quote is True
 
     asyncio.run(run())
