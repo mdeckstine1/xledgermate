@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 from strategy.quote_decision_layers.edge import SOLO_EDGE_ABSOLUTE_FLOOR_PCT, SOLO_EDGE_MULT
 
 
-QUOTE_DECISION_VERSION = "2.3.0"
+QUOTE_DECISION_VERSION = "2.3.1"
 
 
 class BookMode(str, Enum):

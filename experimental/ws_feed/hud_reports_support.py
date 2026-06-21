@@ -126,6 +126,12 @@ def _gen_clob_amm_monitor(logs: Path) -> str:
     return format_clob_amm_report(logs_dir=logs)
 
 
+def _gen_qd_layered_decision(logs: Path) -> str:
+    from scripts.qd_layered_report import build_qd_layered_report, format_qd_layered_report
+
+    return format_qd_layered_report(build_qd_layered_report(logs_dir=logs))
+
+
 def _gen_qd_final_diagnostics(logs: Path) -> str:
     from scripts.qd_final_report import build_qd_final_report, format_qd_final_report
 
@@ -162,27 +168,69 @@ def _gen_reservation_snapshot(logs: Path) -> str:
     rs = enrich_runtime_reservation_metrics(rs)
     delta = rs.get("reservation_to_bbo_delta_bps")
     inside = rs.get("inside_l1")
+    qd_intent = rs.get("qd_intent") or "—"
+    qd_bid = rs.get("qd_bid_allowed")
+    qd_ask = rs.get("qd_ask_allowed")
     lines = [
-        "=== Reservation snapshot (current runtime) ===",
+        "=== Reservation + QD snapshot (current runtime) ===",
         f"generated: {datetime.now(tz=timezone.utc).isoformat()}",
         "",
+        "--- Layered QD (L5 permissions) ---",
+        f"qd_intent: {qd_intent}",
+        f"qd_book_mode: {rs.get('qd_book_mode') or '—'} | solo_mode: {rs.get('solo_mode')}",
+        f"qd_bid_allowed: {qd_bid} | qd_ask_allowed: {qd_ask}",
+        f"qd_bid_block: {rs.get('qd_bid_block_reason') or '—'}",
+        f"qd_ask_block: {rs.get('qd_ask_block_reason') or '—'}",
+        f"qd_inventory_cb: {rs.get('qd_inventory_cb_mode') or '—'}",
+        f"qd_would_quote: {rs.get('qd_would_quote')}",
+        "",
+        "--- Reservation vs BBO ---",
         f"mid: {rs.get('mid_price')}",
         f"best_bid: {rs.get('best_bid_rlusd_per_xrp')}",
         f"best_ask: {rs.get('best_ask_rlusd_per_xrp')}",
         f"as_reservation: {rs.get('as_reservation')}",
         f"Res→BBO: {format_reservation_bbo_delta(delta, inside_l1=inside)}",
         f"inside_l1: {inside}",
-        f"would_quote (market_edge_met): {rs.get('market_edge_met')}",
         f"zero_quote_reason: {rs.get('zero_quote_reason') or rs.get('edge_resolution_summary') or '—'}",
         f"as_presence_pct: {rs.get('as_presence_pct')}",
         f"cycle_count: {rs.get('cycle_count')}",
         "",
-        "Soak-safe: derived from runtime_state.json each request (no engine restart).",
+        "Soak-safe: runtime_state.json each request (no engine restart).",
+        "Full L1–L5 report: Reports → Layered quote decision.",
     ]
     return "\n".join(lines)
 
 
 REPORT_SPECS: List[ReportSpec] = [
+    ReportSpec(
+        id="qd_layered_decision",
+        title="Layered quote decision",
+        subtitle="L1–L5 operator view (posture → permissions)",
+        category="Quote Decision",
+        description=(
+            "Acquisition-centered layered QD report: posture, intent + reason, solo edge gate, "
+            "bleed, L5 bid/ask permissions, inventory CB, cycle mix (accumulate vs trim), "
+            "and downstream would_quote status."
+        ),
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="python scripts/qd_layered_report.py",
+        phase_ref="QD L1–L5",
+    ),
+    ReportSpec(
+        id="qd_final_diagnostics",
+        title="QD L5 final permissions",
+        subtitle="QD_FINAL log tail (deep debug)",
+        category="Quote Decision",
+        description=(
+            "L5 permission deep-dive: QD_FINAL log tail, block causes per side, "
+            "solo accumulate stats, bleed/inventory CB inputs. Companion to Layered quote decision."
+        ),
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="python scripts/qd_final_report.py",
+        phase_ref="QD L5 debug",
+    ),
     ReportSpec(
         id="hourly_telegram",
         title="Hourly operator summary",
@@ -196,28 +244,17 @@ REPORT_SPECS: List[ReportSpec] = [
     ),
     ReportSpec(
         id="reservation_snapshot",
-        title="Reservation snapshot",
-        subtitle="Live Res→BBO from runtime",
-        category="Operator",
-        description="Current reservation vs BBO delta and quote posture from runtime_state.json.",
-        soak_safe=True,
-        engine_restart=False,
-        cli_command="(HUD report only)",
-        phase_ref="Phase M1",
-    ),
-    ReportSpec(
-        id="qd_final_diagnostics",
-        title="QD L5 final permissions",
-        subtitle="QD_FINAL log tail + runtime snapshot",
-        category="Operator",
+        title="Reservation + QD snapshot",
+        subtitle="Res→BBO + L5 permissions from runtime",
+        category="Quote Decision",
         description=(
-            "Temporary L5 debug: final bid/ask allowed flags, block causes (edge/intent/inventory/"
-            "tape/bleed), solo accumulate stats, and recent QD_FINAL lines from xledgermate.log."
+            "Current reservation vs BBO delta plus qd_intent, qd_bid/ask_allowed, "
+            "inventory CB mode, and would_quote from runtime_state.json."
         ),
         soak_safe=True,
         engine_restart=False,
-        cli_command="python scripts/qd_final_report.py",
-        phase_ref="QD debug",
+        cli_command="(HUD report only)",
+        phase_ref="QD + M1",
     ),
     ReportSpec(
         id="ws_session_e15",
@@ -257,11 +294,14 @@ REPORT_SPECS: List[ReportSpec] = [
         title="Acquisition metrics",
         subtitle="Edge-positive inventory vs spot",
         category="Soak analysis",
-        description="Session BUY efficiency, solo_acquire fire rate, capture by inventory state (M6 + intel JSONL).",
+        description=(
+            "Session BUY efficiency, solo accumulate cycle rate (QD L2), capture by inventory "
+            "state from fill_quote_age + intel JSONL."
+        ),
         soak_safe=True,
         engine_restart=False,
         cli_command="python scripts/acquisition_metrics_report.py",
-        phase_ref="Phase A2 soak",
+        phase_ref="Acquisition soak",
     ),
     ReportSpec(
         id="ws_runtime_analysis",
@@ -339,6 +379,7 @@ REPORT_SPECS: List[ReportSpec] = [
 ]
 
 _GENERATORS: Dict[str, ReportGenerator] = {
+    "qd_layered_decision": _gen_qd_layered_decision,
     "hourly_telegram": _gen_hourly_telegram,
     "reservation_snapshot": _gen_reservation_snapshot,
     "qd_final_diagnostics": _gen_qd_final_diagnostics,

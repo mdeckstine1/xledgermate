@@ -22,6 +22,7 @@ def test_list_reports_has_soak_safe_entries() -> None:
     assert "soak_dashboard" in ids
     assert "soak_dashboard_narrative" in ids
     assert "qd_final_diagnostics" in ids
+    assert "qd_layered_decision" in ids
     assert all(r["soak_safe"] for r in reports)
 
 

@@ -25,7 +25,8 @@ def main() -> None:
     print(f"Fills (tracker): {rs['fills_session']} | Cancel/fill: {rs['cancel_per_fill']:.2f}")
     print(f"Toxic: {rs['toxic_fill_ratio']*100:.0f}pct / @30s {rs['toxic_fill_ratio_30s']*100:.0f}pct | Mean 30s markout: {rs['mean_markout_30s_pct']:+.3f}pct")
     print(f"Policy: {rs.get('quoting_policy_label', '')}")
-    print(f"pause_bids={rs['pause_bids']} pause_asks={rs['pause_asks']} | dynamic_edge={rs['dynamic_min_edge_enabled']}")
+    print(f"Inventory: {rs['inventory_label']} | QD bid/ask allowed: {rs.get('qd_bid_allowed')}/{rs.get('qd_ask_allowed')}")
+    print(f"qd_intent: {rs.get('qd_intent') or '—'} | dynamic_edge={rs['dynamic_min_edge_enabled']}")
     print(f"eff_edge={rs['effective_min_edge_pct']:.3f}pct | market_edge_met={rs['market_edge_met']} capture={rs['market_edge_pct']:+.3f}pct")
     print(f"Open offers: {rs['open_offers_count']} | {rs['last_execution_summary']}")
 

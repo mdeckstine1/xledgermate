@@ -5,6 +5,18 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.3.1] — 2026-06-21 (`Ashigaru Shoshin`)
+
+**Layered QD observability + solo acquisition edge tuning (patch release).**
+
+- **Solo edge gate (L3)** — relaxed acquisition threshold on solo books: pass if `capture >= min_edge × 0.65` or `capture >= 0.012%`; crowded/sparse unchanged. Tunable via `solo_edge_mult` / `solo_edge_absolute_floor_pct` in config.
+- **QD observability** — `QD_OPS` posture/intent/inventory CB tokens; `QD_FINAL` L5 permission debug logging; HUD Reports tab aligned with L1–L5 architecture.
+- **Reports (new/updated)** — *Layered quote decision* (L1–L5 operator view), *QD L5 final permissions* (deep debug), *Reservation + QD snapshot* (runtime permissions + Res→BBO). Removed legacy A2 gate language from catalog descriptions.
+- **L2 cleanup** — crowded/sparse no longer select `INVENTORY_UNLOAD`; L5 inventory circuit breaker owns permission on non-solo books; solo trim-only fallback retained.
+- **HUD** — QD banner, side cards, L5 permissions row, inventory CB synthesis; deprecated A2 gate labels removed from Intel panel.
+
+---
+
 ## [2.3.0] — 2026-06-21 (`Ashigaru Shoshin`)
 
 **QD stack convergence + peer/solo wiring (minor release).**

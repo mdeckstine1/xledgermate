@@ -86,7 +86,7 @@ def main() -> int:
     print(f"Cancel per fill: {cancel_cf:.2f}")
     print(f"Open offers (snapshot proxy): {vis_n}/{vis_total} cycles ({vis_pct:.0f}% visible)")
     print(f"Policy: {rs.get('quoting_policy_label', '')}")
-    print(f"Pause bids/asks: {rs.get('pause_bids')}/{rs.get('pause_asks')}")
+    print(f"QD bid/ask allowed: {rs.get('qd_bid_allowed')}/{rs.get('qd_ask_allowed')} | intent: {rs.get('qd_intent') or '—'}")
     print()
     print("--- Gate checklist ---")
     g1_fills = "PASS" if n >= 40 else "pending"
