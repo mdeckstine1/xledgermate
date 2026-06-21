@@ -161,3 +161,6 @@ class LayerQuotingDecision:
     ask_pause_note: str = ""
     trace: Optional[LayerTrace] = None
     posture_ops_line: str = ""
+    inventory_cb_mode: str = "clear"
+    inventory_cb_note: str = ""
+    heavy_drift_l5_deferred: bool = False

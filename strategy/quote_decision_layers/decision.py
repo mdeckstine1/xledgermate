@@ -187,6 +187,49 @@ def _base_permission(
     )
 
 
+def resolve_inventory_cb_status(
+    posture: Posture,
+    *,
+    bid_cb_ok: bool,
+    ask_cb_ok: bool,
+    inventory_max_deviation: float,
+    inventory_mode: str,
+) -> tuple[str, str, bool]:
+    """
+    HUD / ops summary for L5 inventory circuit breaker.
+
+    Returns (mode, note, heavy_drift_l5_deferred).
+    """
+    inv = posture.inventory
+    heavy = inv.band in (DriftBand.HEAVY_XRP, DriftBand.HEAVY_RLUSD)
+    if posture.book.mode == BookMode.SOLO:
+        return (
+            "skipped_solo",
+            "L5 inventory CB skipped — solo defers to L2 intent",
+            False,
+        )
+    cap = max(0.05, float(inventory_max_deviation))
+    mm = (inventory_mode or "market_make").strip().lower() == "market_make"
+    tag = "inventory bailout" if mm else "inventory limit"
+    deferred = heavy
+    if not bid_cb_ok:
+        return (
+            "blocked_bid",
+            f"{tag}: +{inv.deviation:.0%} XRP drift (cap {cap:.0%}) → pause bids",
+            deferred,
+        )
+    if not ask_cb_ok:
+        return (
+            "blocked_ask",
+            f"{tag}: {inv.deviation:.0%} XRP drift (cap {cap:.0%}) → pause asks",
+            deferred,
+        )
+    note = "inventory within cap"
+    if deferred:
+        note = f"heavy drift — L5 clear this cycle (cap {cap:.0%})"
+    return "clear", note, deferred
+
+
 def _pause_note(side: str, perm: SidePermission) -> str:
     if perm.allowed:
         return ""
@@ -364,6 +407,14 @@ def build_layer_decision(
     if solo_or_blocked:
         summary += f" | {trace.compact()}"
 
+    inv_cb_mode, inv_cb_note, heavy_deferred = resolve_inventory_cb_status(
+        posture,
+        bid_cb_ok=bid_cb_ok,
+        ask_cb_ok=ask_cb_ok,
+        inventory_max_deviation=inventory_max_deviation,
+        inventory_mode=inventory_mode,
+    )
+
     return LayerQuotingDecision(
         bid=bid,
         ask=ask,
@@ -373,4 +424,7 @@ def build_layer_decision(
         bid_pause_note=_pause_note("bid", bid),
         ask_pause_note=_pause_note("ask", ask),
         trace=trace,
+        inventory_cb_mode=inv_cb_mode,
+        inventory_cb_note=inv_cb_note,
+        heavy_drift_l5_deferred=heavy_deferred,
     )

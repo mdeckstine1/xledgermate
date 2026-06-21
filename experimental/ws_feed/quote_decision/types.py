@@ -140,6 +140,9 @@ class QuotingDecision:
     trace: LayerTrace
     summary: str
     would_quote: bool
+    inventory_cb_mode: str = "clear"
+    inventory_cb_note: str = ""
+    heavy_drift_l5_deferred: bool = False
 
     def to_legacy_flags(self) -> Dict[str, Any]:
         """

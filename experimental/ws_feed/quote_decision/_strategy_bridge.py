@@ -249,6 +249,9 @@ def layer_to_quoting_decision(
         trace=trace,
         summary=layer.summary,
         would_quote=would_quote,
+        inventory_cb_mode=layer.inventory_cb_mode,
+        inventory_cb_note=layer.inventory_cb_note,
+        heavy_drift_l5_deferred=layer.heavy_drift_l5_deferred,
     )
 
 

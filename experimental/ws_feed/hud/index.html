@@ -427,6 +427,33 @@
         .qd-side-card.allowed { border-color: #22c55e; }
         .qd-side-card.blocked { border-color: #475569; }
         .qd-side-card.bleed { border-color: #ef4444; }
+        .qd-side-card.solo-accumulate {
+            border-color: #22c55e;
+            box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.35);
+            animation: qd-accumulate-pulse 2.5s ease-in-out infinite;
+        }
+        @keyframes qd-accumulate-pulse {
+            0%, 100% { box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.35); }
+            50% { box-shadow: 0 0 8px 2px rgba(34, 197, 94, 0.25); }
+        }
+        .qd-banner-subtext {
+            font-size: 0.68rem;
+            color: #94a3b8;
+            width: 100%;
+            margin-top: 2px;
+        }
+        .qd-inv-cb-line {
+            font-size: 0.72rem;
+            color: #cbd5e1;
+        }
+        .purpose-strip-collapsed .purpose-pill:not(.hero) { display: none; }
+        .purpose-strip-toggle {
+            font-size: 0.62rem;
+            color: #64748b;
+            cursor: pointer;
+            user-select: none;
+            margin-left: 6px;
+        }
         .qd-side-title {
             font-size: 0.62rem;
             text-transform: uppercase;
@@ -827,8 +854,8 @@
         <div class="header">XLedgerMate — Live Market Maker HUD <span id="mode" style="font-size:0.9rem; color:#64748b;"></span> <span id="header-session" style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">v — · cycles — · fills — · presence —</span></div>
 
         <div class="health-bar" id="health-bar">
-            <div class="health-label">Purpose <span>skim-funded inventory growth</span></div>
-            <div class="purpose-strip">
+            <div class="health-label">Purpose <span>skim-funded inventory growth</span><span class="purpose-strip-toggle" id="purpose-strip-toggle" title="Show/hide purpose KPIs">▼</span></div>
+            <div class="purpose-strip purpose-strip-collapsed" id="purpose-strip">
                 <div class="purpose-pill neutral hero" id="purpose-gate-pill"><div class="purpose-label">Purpose</div><div class="purpose-value" id="purpose-gate">—</div></div>
                 <div class="purpose-pill neutral" id="purpose-edge-pill"><div class="purpose-label">at_edge</div><div class="purpose-value" id="purpose-edge">—</div></div>
                 <div class="purpose-pill neutral" id="purpose-buy-pill"><div class="purpose-label">Buy cap</div><div class="purpose-value" id="purpose-buy">—</div></div>
@@ -937,9 +964,14 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             <span class="label">Intent</span>
                             <span id="qd-banner-intent" class="value">—</span>
                         </div>
+                        <div id="qd-banner-intent-sub" class="qd-banner-subtext" style="display:none;"></div>
                         <div class="qd-banner-line">
-                            <span class="label">Quoting</span>
+                            <span class="label">L5 Permissions</span>
                             <span id="qd-banner-quoting" class="value">—</span>
+                        </div>
+                        <div class="qd-banner-line qd-inv-cb-line">
+                            <span class="label">Inventory CB</span>
+                            <span id="qd-banner-inv-cb" class="value">—</span>
                         </div>
                         <div class="qd-banner-line">
                             <span id="qd-banner-health" class="qd-health">—</span>
@@ -2550,7 +2582,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
             return 'neutral';
         }
 
-        function renderSideCard(side, sideSnap, s) {
+        function renderSideCard(side, sideSnap, s, summary) {
             const allowed = sideSnap ? sideSnap.allowed : (side === 'bid' ? s.qd_bid_allowed : s.qd_ask_allowed);
             const bleeding = sideSnap ? sideSnap.bleeding : (side === 'bid' ? s.qd_bid_bleeding : s.qd_ask_bleeding);
             const blockCause = sideSnap ? (sideSnap.block_cause_label || mapBlockCause(sideSnap.block_cause)) : mapBlockCause(side === 'bid' ? s.qd_bid_pause_cause : s.qd_ask_pause_cause);
@@ -2565,10 +2597,12 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const blockEl = document.getElementById(`qd-${side}-block`);
 
             if (card) {
-                card.classList.remove('allowed', 'blocked', 'bleed');
+                card.classList.remove('allowed', 'blocked', 'bleed', 'solo-accumulate');
                 if (bleeding) card.classList.add('bleed');
                 else if (allowed) card.classList.add('allowed');
                 else card.classList.add('blocked');
+                const soloAccum = summary && summary.solo_accumulate && side === 'bid' && allowed;
+                if (soloAccum) card.classList.add('solo-accumulate');
             }
             if (statusEl) {
                 statusEl.textContent = allowed ? 'ALLOWED' : 'BLOCKED';
@@ -2606,7 +2640,12 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const health = summary.health || postureClass;
 
             const badge = summary.posture_badge || (s.qd_book_mode || '—').toUpperCase();
-            setText('qd-book-mode', badge);
+            const peerTok = snap.peer_lane_token || s.qd_peer_lane_token || '';
+            const peerCnt = snap.peer_lane_count != null ? snap.peer_lane_count : s.peer_lane_count;
+            const bookPillText = peerTok
+                ? `${badge} · ${peerTok}${peerCnt != null ? ` (${peerCnt})` : ''}`
+                : badge;
+            setText('qd-book-mode', bookPillText);
             setText('qd-intent-short', snap.intent_short || qdIntentShort(s.qd_intent));
             setText('qd-quoting-short', summary.quoting_short || '—');
 
@@ -2627,9 +2666,21 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 badgeEl.textContent = badge;
                 badgeEl.className = 'qd-badge ' + qdPostureBadgeClass(badge);
             }
-            setText('qd-banner-posture-detail', summary.posture_detail || s.posture_reason || '—');
+            setText('qd-banner-posture-detail', summary.posture_detail || snap.posture_headline || s.posture_reason || '—');
             setText('qd-banner-intent', summary.intent_line || (snap.intent_label || '—'));
+            const intentSub = document.getElementById('qd-banner-intent-sub');
+            const subtext = summary.intent_subtext || snap.intent_subtext || '';
+            if (intentSub) {
+                if (subtext) {
+                    intentSub.style.display = 'block';
+                    intentSub.textContent = subtext;
+                } else {
+                    intentSub.style.display = 'none';
+                    intentSub.textContent = '';
+                }
+            }
             setText('qd-banner-quoting', summary.quoting_line || s.qd_permissions_summary || '—');
+            setText('qd-banner-inv-cb', summary.inventory_cb_line || snap.inventory_cb_label || '—');
 
             const healthEl = document.getElementById('qd-banner-health');
             if (healthEl) {
@@ -2639,8 +2690,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
             setText('qd-banner-health-line', summary.health_line || '—');
 
-            renderSideCard('bid', bid, s);
-            renderSideCard('ask', ask, s);
+            renderSideCard('bid', bid, s, summary);
+            renderSideCard('ask', ask, s, summary);
 
             const traceStruct = snap.layer_trace_struct || {};
             const traceLines = document.getElementById('qd-trace-lines');
@@ -2788,12 +2839,13 @@ The A-S strategy itself decides presence via reservation price being inside the 
             soakPillClass(document.getElementById('soak-g6-pill'), g6SoakPillClass(g6.tier || ''));
 
             const soloOn = !!(s.solo_mode && s.qd_book_mode === 'solo');
+            const ds = s.qd_decision_summary || {};
             const peerEmpty = !!(s.peer_lane_empty);
-            let soloTxt = soloOn ? 'QD solo' : (peerEmpty ? 'lane empty' : (s.g7_solo_acquisition ? 'G7 acq' : '—'));
+            let soloTxt = ds.solo_accumulate ? 'ACCUM' : (soloOn ? 'QD solo' : (peerEmpty ? 'lane empty' : (s.g7_solo_acquisition ? 'G7 acq' : '—')));
             setText('soak-solo', soloTxt);
             soakPillClass(
                 document.getElementById('soak-solo-pill'),
-                soloOn ? 'good' : (peerEmpty ? 'warn' : 'neutral')
+                ds.solo_accumulate ? 'good' : (soloOn ? 'good' : (peerEmpty ? 'warn' : 'neutral'))
             );
 
             let statusTxt = kill ? 'KILL' : (qCopy.good ? 'LIVE' : 'IDLE');
@@ -5174,6 +5226,14 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 loadTelegramConfig();
                 loadCompetitorNicknames();
                 initCollapsibles();
+                const purposeToggle = document.getElementById('purpose-strip-toggle');
+                const purposeStrip = document.getElementById('purpose-strip');
+                if (purposeToggle && purposeStrip) {
+                    purposeToggle.addEventListener('click', () => {
+                        purposeStrip.classList.toggle('purpose-strip-collapsed');
+                        purposeToggle.textContent = purposeStrip.classList.contains('purpose-strip-collapsed') ? '▼' : '▲';
+                    });
+                }
                 showPage('live');
             } catch (e) {
                 console.error('[HUD] bootHud init error', e);

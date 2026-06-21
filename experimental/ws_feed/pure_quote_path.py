@@ -346,6 +346,9 @@ def _qd_observability_fields(
         "qd_bid_bleeding": bool(p.buy_quality.bleeding),
         "qd_ask_bleeding": bool(p.sell_quality.bleeding),
         "qd_layer_trace": layer_trace,
+        "qd_inventory_cb_mode": getattr(qd, "inventory_cb_mode", "clear"),
+        "qd_inventory_cb_note": getattr(qd, "inventory_cb_note", ""),
+        "qd_heavy_drift_l5_deferred": bool(getattr(qd, "heavy_drift_l5_deferred", False)),
     }
 
 

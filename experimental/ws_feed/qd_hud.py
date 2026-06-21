@@ -44,6 +44,93 @@ _DRIFT_LABELS: Dict[str, str] = {
 }
 
 
+_INVENTORY_CB_LABELS: Dict[str, str] = {
+    "skipped_solo": "skipped (solo)",
+    "blocked_bid": "active — bid blocked",
+    "blocked_ask": "active — ask blocked",
+    "clear": "clear",
+}
+
+
+def _inventory_cb_from_runtime(
+    runtime: Mapping[str, Any],
+    *,
+    book_mode: str,
+    solo_mode: bool,
+    drift_band: str,
+    bid_pause: str,
+    ask_pause: str,
+) -> tuple[str, str, bool]:
+    """Resolve L5 inventory CB display; prefer engine fields when present."""
+    mode = str(runtime.get("qd_inventory_cb_mode") or "").strip()
+    note = str(runtime.get("qd_inventory_cb_note") or "").strip()
+    deferred = runtime.get("qd_heavy_drift_l5_deferred")
+    if mode:
+        return mode, note or _INVENTORY_CB_LABELS.get(mode, mode), bool(deferred)
+
+    heavy = drift_band in ("heavy_xrp", "heavy_rlusd")
+    if solo_mode or (book_mode or "").lower() == "solo":
+        return (
+            "skipped_solo",
+            "L5 inventory CB skipped — solo defers to L2 intent",
+            False,
+        )
+    if bid_pause == "inventory":
+        return "blocked_bid", note or "L5 inventory CB — pause bids", heavy
+    if ask_pause == "inventory":
+        return "blocked_ask", note or "L5 inventory CB — pause asks", heavy
+    if heavy and book_mode in ("crowded", "sparse"):
+        return "clear", "heavy drift — L5 owns permission (no L2 unload)", True
+    return "clear", "inventory within cap", False
+
+
+def _posture_headline(
+    *,
+    book_mode: str,
+    solo_mode: bool,
+    lane_token: str,
+    peer_count: int,
+    posture_r: str,
+    drift_label: str,
+) -> str:
+    mode = (book_mode or "—").upper()
+    solo_tag = " · solo mode" if solo_mode else ""
+    peer = lane_token or "—"
+    if peer == "crowded" and peer_count:
+        peer = f"crowded ({peer_count})"
+    elif peer in ("empty", "missing"):
+        peer = f"{peer} ({peer_count})"
+    reason = posture_r.replace("_", " ") if posture_r else "—"
+    return f"{mode}{solo_tag} · peer {peer} · {reason} · drift {drift_label}"
+
+
+def _intent_subtext(
+    intent: str,
+    *,
+    intent_reason: str,
+    book_mode: str,
+    bid_edge_viable: bool,
+    ask_edge_viable: bool,
+    bid_allowed: bool,
+    ask_allowed: bool,
+) -> str:
+    intent_l = (intent or "").lower()
+    edge_drv = f"edge B{'✓' if bid_edge_viable else '✗'} A{'✓' if ask_edge_viable else '✗'}"
+    if "accumulate" in intent_l and (book_mode or "").lower() == "solo":
+        return f"{intent_reason or 'solo accumulate on edge'} · {edge_drv}"
+    if intent_l == "inventory_unload" and (book_mode or "").lower() == "solo":
+        if not bid_allowed and not ask_allowed:
+            return "trim-only safety net — waiting for edge · " + edge_drv
+        return (intent_reason or "solo trim") + " · " + edge_drv
+    if intent_reason:
+        return f"{intent_reason} · {edge_drv}"
+    return edge_drv
+
+
+def _inventory_cb_label(mode: str) -> str:
+    return _INVENTORY_CB_LABELS.get(mode, mode.replace("_", " "))
+
+
 def _bool_or(val: Any, default: bool = False) -> bool:
     if val is None:
         return default
@@ -194,6 +281,14 @@ def _layer_trace_struct(
             + (f" ({ask.get('block_cause_label') or bid.get('block_cause_label') or ''})" if not bid.get("allowed") or not ask.get("allowed") else "")
         ),
     }
+
+
+def _inventory_cb_pill_class(mode: str) -> str:
+    if mode == "skipped_solo":
+        return "info"
+    if mode in ("blocked_bid", "blocked_ask"):
+        return "warn"
+    return "neutral"
 
 
 def _derive_health(
@@ -367,6 +462,15 @@ def build_qd_snapshot(runtime: Mapping[str, Any]) -> Dict[str, Any]:
     ask = _side_snapshot(rt, "ask")
     intent_reason = str(rt.get("qd_intent_reason") or "")
 
+    inv_cb_mode, inv_cb_note, heavy_deferred = _inventory_cb_from_runtime(
+        rt,
+        book_mode=book_mode,
+        solo_mode=solo_mode,
+        drift_band=drift_band,
+        bid_pause=bid["block_cause"],
+        ask_pause=ask["block_cause"],
+    )
+
     layer_trace_raw = str(rt.get("qd_layer_trace") or rt.get("qd_layer_summary") or "").strip()
     if not layer_trace_raw and intent:
         bid_p = bid["block_cause"] or bid["block_reason"] or "—"
@@ -409,6 +513,27 @@ def build_qd_snapshot(runtime: Mapping[str, Any]) -> Dict[str, Any]:
             bid=bid,
             ask=ask,
         ),
+        "inventory_cb_mode": inv_cb_mode,
+        "inventory_cb_label": _inventory_cb_label(inv_cb_mode),
+        "inventory_cb_note": inv_cb_note,
+        "heavy_drift_l5_deferred": heavy_deferred,
+        "posture_headline": _posture_headline(
+            book_mode=book_mode,
+            solo_mode=solo_mode,
+            lane_token=lane_token,
+            peer_count=peer_count,
+            posture_r=posture_r,
+            drift_label=_drift_label(drift_band),
+        ),
+        "intent_subtext": _intent_subtext(
+            intent,
+            intent_reason=intent_reason,
+            book_mode=book_mode,
+            bid_edge_viable=bid["edge_viable"],
+            ask_edge_viable=ask["edge_viable"],
+            bid_allowed=bid["allowed"],
+            ask_allowed=ask["allowed"],
+        ),
     }
 
 
@@ -432,7 +557,18 @@ def build_qd_decision_summary(runtime: Mapping[str, Any], snapshot: Mapping[str,
 
     badge = _posture_badge(book_mode, posture_r)
     peer_count = snapshot.get("peer_lane_count", 0)
-    posture_detail = f"{posture_r.replace('_', ' ')} · peers {peer_count}"
+    lane_token = snapshot.get("peer_lane_token", "")
+    posture_detail = snapshot.get("posture_headline") or (
+        f"{posture_r.replace('_', ' ')} · peer {lane_token} ({peer_count})"
+    )
+
+    inv_cb_mode = str(snapshot.get("inventory_cb_mode") or "clear")
+    inv_cb_line = (
+        f"Inv CB: {_inventory_cb_label(inv_cb_mode)}"
+        + (f" — {snapshot.get('inventory_cb_note')}" if snapshot.get("inventory_cb_note") else "")
+    )
+    if snapshot.get("heavy_drift_l5_deferred"):
+        inv_cb_line += " · heavy drift → L5"
 
     quoting_line = _quoting_line(bid, ask, intent, book_mode)
     bid_on = bid.get("allowed")
@@ -440,6 +576,7 @@ def build_qd_decision_summary(runtime: Mapping[str, Any], snapshot: Mapping[str,
     quoting_short = f"{'B ON' if bid_on else 'B OFF'} / {'A ON' if ask_on else 'A OFF'}"
 
     intent_line = f"{snapshot.get('intent_label', '—')} · drift {snapshot.get('drift_label', '—')}"
+    intent_subtext = snapshot.get("intent_subtext") or ""
 
     return {
         "health": health,
@@ -447,6 +584,10 @@ def build_qd_decision_summary(runtime: Mapping[str, Any], snapshot: Mapping[str,
         "posture_badge": badge,
         "posture_detail": posture_detail,
         "intent_line": intent_line,
+        "intent_subtext": intent_subtext,
+        "inventory_cb_line": inv_cb_line,
+        "inventory_cb_mode": inv_cb_mode,
+        "inventory_cb_pill_class": _inventory_cb_pill_class(inv_cb_mode),
         "quoting_line": quoting_line,
         "quoting_short": quoting_short,
         "bid_allowed": bid_on,
@@ -505,6 +646,9 @@ def build_qd_hud_fields(runtime: Mapping[str, Any]) -> Dict[str, Any]:
         "qd_posture_class": posture_class,
         "qd_bid_allowed": bid["allowed"],
         "qd_ask_allowed": ask["allowed"],
+        "qd_inventory_cb_mode": snapshot.get("inventory_cb_mode", "clear"),
+        "qd_inventory_cb_note": snapshot.get("inventory_cb_note", ""),
+        "qd_heavy_drift_l5_deferred": snapshot.get("heavy_drift_l5_deferred", False),
         "qd_permissions_summary": (
             f"bid={'ON' if bid['allowed'] else 'OFF'} · ask={'ON' if ask['allowed'] else 'OFF'}"
             f" · bid×{bid['size_mult']:.2f} · ask×{ask['size_mult']:.2f}"
