@@ -7,7 +7,7 @@ Future trading_engine integration point. No profiles, no sacred hard gates.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 from experimental.ws_feed.book_feed import BookFeed
 from experimental.ws_feed.pure_quote_path import PureQuotePath, PureQuoteDecision, WS_AS_VERSION
@@ -73,6 +73,7 @@ class WSBookFeedAdapter:
         competitor_pressure_enabled: bool = True,
         session_buy_capture_xrp: Optional[float] = None,
         session_sell_capture_xrp: Optional[float] = None,
+        recent_fill_records: Optional[Sequence[Mapping[str, Any]]] = None,
     ) -> Dict[str, Any]:
         book_age = ws_book_age_s
         if book_age is None and hasattr(self.book_feed, "age_seconds"):
@@ -100,6 +101,7 @@ class WSBookFeedAdapter:
             competitor_pressure_enabled=competitor_pressure_enabled,
             session_buy_capture_xrp=session_buy_capture_xrp,
             session_sell_capture_xrp=session_sell_capture_xrp,
+            recent_fill_records=recent_fill_records,
         )
         if inventory_skew_override is not None:
             pass  # reserved for future override hook
@@ -183,6 +185,11 @@ def _decision_to_engine_dict(decision: PureQuoteDecision, *, book_feed: Optional
         "sell_edge_gate_blocked": decision.sell_edge_gate_blocked,
         "sell_edge_implied_bps": decision.sell_edge_implied_bps,
         "sell_edge_gate_reason": decision.sell_edge_gate_reason,
+        "qd_intent": decision.qd_intent,
+        "qd_bid_allowed": decision.qd_bid_allowed,
+        "qd_ask_allowed": decision.qd_ask_allowed,
+        "qd_would_quote": decision.qd_would_quote,
+        "qd_layer_summary": decision.qd_layer_summary,
     }
 
 

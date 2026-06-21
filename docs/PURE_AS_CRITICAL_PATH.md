@@ -261,6 +261,22 @@ Solo whale book — no peer queue war. **Deployed 2026-06-20** with A3 bundle.
 
 **Fix (v2.1.40):** buy gate on all solo-empty bids; ask brake on xrp-heavy solo empty; A2.3c immediate ask cancel on `pause_asks`.
 
+#### Segment #8 — v2.2.0 layered quote decision (Phase 1 live)
+
+**Boot:** pending deploy · **v2.2.0** · replaces A2 gate + inventory pause merge with five-layer QD stack.
+
+| Change | Detail |
+|--------|--------|
+| **QD live** | `quote_decision/` layers 1–5 sole authority on bid/ask permissions |
+| **Inv limits** | Size caps only — no `pause_bids`/`pause_asks` on pure path |
+| **Deadlock fix** | Solo xrp-heavy + buy edge → bid on (no both-sides paused) |
+| **Side-brake** | Symmetric cancel when QD pauses bid or ask |
+| **Bleed** | Last 12 session fills → Layer 4 |
+
+**Verdict:** pending — fresh soak after engine restart; purpose gate + no deadlock.
+
+See [`QUOTE_DECISION_LAYERS.md`](QUOTE_DECISION_LAYERS.md).
+
 #### M-Purpose HUD strip (shipped · HUD-only)
 
 - **Purpose strip** on Live health bar: **Purpose PASS/FAIL**, **`at_edge`**, **buy cap**, **sell cap**, **Δ XRP**, **skim** — primary pass/fail without scripts.

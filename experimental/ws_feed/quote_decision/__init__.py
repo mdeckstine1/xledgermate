@@ -1,0 +1,26 @@
+"""
+Layered quote decision stack (v1.0).
+
+Replaces shared pause_bids/pause_asks gate coupling with five explicit layers.
+See docs/QUOTE_DECISION_LAYERS.md for architecture and migration plan.
+"""
+
+from experimental.ws_feed.quote_decision.adapter import (
+    compute_quoting_decision,
+    shadow_compare_legacy,
+)
+from experimental.ws_feed.quote_decision.pipeline import run_quote_decision_pipeline
+from experimental.ws_feed.quote_decision.types import (
+    QUOTE_DECISION_VERSION,
+    QuotingDecision,
+    QuoteIntent,
+)
+
+__all__ = [
+    "QUOTE_DECISION_VERSION",
+    "QuotingDecision",
+    "QuoteIntent",
+    "compute_quoting_decision",
+    "run_quote_decision_pipeline",
+    "shadow_compare_legacy",
+]

@@ -41,8 +41,13 @@ def apply_pure_inventory_policy(
     min_order_size_xrp: float,
     bid_size_mult: float,
     ask_size_mult: float,
+    apply_side_pauses: bool = True,
 ) -> PureInventoryPolicyResult:
-    """Apply sacred inventory limits and per-leg caps to L1 sizes."""
+    """Apply sacred inventory limits and per-leg caps to L1 sizes.
+
+    When apply_side_pauses=False (v2.2.0+ QD path), size caps remain but
+    pause_bids/pause_asks do not zero legs — quoting permissions come from QD.
+    """
     total = portfolio_xrp_equiv(xrp_balance, rlusd_balance, mid_price)
     ratio = xrp_balance / total if total > 0 else 1.0
     limits = assess_inventory_limits(
@@ -63,16 +68,16 @@ def apply_pure_inventory_policy(
         xrp_reserve=xrp_reserve,
         inventory_mode=inventory_mode,
         overshoot_slack=inventory_overshoot_slack,
-        pause_bids=limits.pause_bids,
-        pause_asks=limits.pause_asks,
+        pause_bids=limits.pause_bids if apply_side_pauses else False,
+        pause_asks=limits.pause_asks if apply_side_pauses else False,
         min_size=min_order_size_xrp,
     )
     bid = cap_leg_size_for_inventory(side="bid", size_xrp=bid, **cap_kwargs)
     ask = cap_leg_size_for_inventory(side="ask", size_xrp=ask, **cap_kwargs)
 
-    if limits.pause_bids:
+    if apply_side_pauses and limits.pause_bids:
         bid = 0.0
-    if limits.pause_asks:
+    if apply_side_pauses and limits.pause_asks:
         ask = 0.0
 
     tags: List[str] = []

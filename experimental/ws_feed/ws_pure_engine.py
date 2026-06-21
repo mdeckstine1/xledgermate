@@ -489,6 +489,7 @@ class WsPureTradingEngine:
             competitor_pressure_enabled=flags.competitor_intel,
             session_buy_capture_xrp=self._last_session_buy_capture_xrp,
             session_sell_capture_xrp=self._last_session_sell_capture_xrp,
+            recent_fill_records=tuple(self._session_fill_records[-12:]),
         )
         reservation = engine_dec.get("as_reservation")
         self._reservation_crossed_after_ws_sample = detect_stale_cross(
@@ -536,6 +537,7 @@ class WsPureTradingEngine:
                 best_ask=ba,
                 peer_lane_empty=is_peer_lane_empty(comp_intel),
                 solo_acquisition=bool(engine_dec.get("g7_solo_acquisition")),
+                pause_bids=bool(engine_dec.get("pause_bids")),
                 pause_asks=bool(engine_dec.get("pause_asks")),
             )
 
@@ -584,6 +586,7 @@ class WsPureTradingEngine:
         best_ask: Optional[float],
         peer_lane_empty: bool = False,
         solo_acquisition: bool = False,
+        pause_bids: bool = False,
         pause_asks: bool = False,
     ) -> tuple[int, int]:
         config = self.config
@@ -643,14 +646,16 @@ class WsPureTradingEngine:
         for seq in stale_seqs:
             if seq not in cancel_sequences:
                 cancel_sequences.append(seq)
-        from experimental.ws_feed.ask_brake_cancel import ask_brake_cancel_sequences
+        from experimental.ws_feed.ask_brake_cancel import side_brake_cancel_sequences
 
-        for seq in ask_brake_cancel_sequences(open_offers, pause_asks=pause_asks):
+        for seq in side_brake_cancel_sequences(
+            open_offers, pause_bids=pause_bids, pause_asks=pause_asks
+        ):
             if seq not in cancel_sequences:
                 cancel_sequences.append(seq)
                 self.decision_log.add(
                     "execution",
-                    f"A2.3c ask-brake: cancel seq {seq} (pause_asks)",
+                    f"QD side-brake: cancel seq {seq} (pause_bids={pause_bids} pause_asks={pause_asks})",
                 )
         for decision in stale_decisions:
             self.decision_log.add(

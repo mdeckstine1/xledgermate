@@ -62,11 +62,13 @@ def test_b2_dynamic_sizing_on_quote() -> None:
             competitor_intel={
                 "competitor_pressure": 0.2,
                 "competitor_observed_spread_pct": 0.11,
+                "peer_lane_count": 2,
+                "peer_pressure_score": 0.2,
             },
         )
         assert d.l1_xrp == 45.5  # min(150, 0.07*650)
-        assert d.bid_size > 0
-        assert d.ask_size > d.bid_size  # xrp-heavy + low pressure → ask boost
+        assert d.ask_size > 0
+        assert d.ask_size > d.bid_size  # reservation blocks bid; ask boosted on xrp-heavy
         assert "SIZE L1=" in d.quote_decision_summary
         assert "ask-boost" in d.size_rationale
         assert len(d.quote_intents) == 6
@@ -134,7 +136,7 @@ def test_zero_quote_reason_in_summary() -> None:
 
 
 def test_g4_peer_lane_in_quote_path() -> None:
-    """G4: empty lane solo_acquire; peer lane + fled applies skim side bias."""
+    """G4: empty lane solo_acquire; v2.2 QD solo accumulate on buy edge."""
     path = PureQuotePath(gamma=0.35, kappa=3.5, configured_l1_xrp=150.0, balance_fraction_k=0.07)
 
     async def run() -> None:
@@ -152,14 +154,10 @@ def test_g4_peer_lane_in_quote_path() -> None:
         )
         assert balanced_empty.g4_grade == "solo_acquire"
         assert balanced_empty.g7_solo_acquisition is True
-        assert balanced_empty.g7_bid_role == "passive"
-        assert balanced_empty.g7_ask_role == "passive"
-        assert balanced_empty.buy_edge_gate_active is True
-        assert balanced_empty.buy_edge_gate_blocked is False
-        assert balanced_empty.buy_edge_implied_bps is not None
-        assert balanced_empty.buy_edge_implied_bps >= 1.0
-        assert balanced_empty.acquire_ask_brake_active is True
-        assert balanced_empty.acquire_ask_brake_blocked is True
+        assert balanced_empty.qd_intent == "solo_accumulate_on_edge"
+        assert balanced_empty.qd_bid_allowed is True
+        assert balanced_empty.qd_ask_allowed is False
+        assert balanced_empty.pause_bids is False
         assert balanced_empty.pause_asks is True
         assert balanced_empty.suggested_ask is None
         assert balanced_empty.suggested_bid is not None
@@ -175,14 +173,13 @@ def test_g4_peer_lane_in_quote_path() -> None:
                 "peer_lane_count": 0,
                 "peer_lane_empty": True,
             },
+            inventory_max_deviation=0.12,
         )
         assert xrp_empty.g4_grade == "solo_acquire"
-        assert xrp_empty.g7_solo_acquisition is False
-        assert xrp_empty.sell_edge_gate_active is True
-        assert xrp_empty.acquire_ask_brake_active is True
-        assert xrp_empty.acquire_ask_brake_blocked is True
-        assert xrp_empty.buy_edge_gate_active is True
+        assert xrp_empty.qd_bid_allowed is True
+        assert xrp_empty.pause_bids is False
         assert xrp_empty.pause_asks is True
+        assert xrp_empty.would_quote is True
 
         skim = await path.compute_decision(
             mid=1.120508,
@@ -201,6 +198,28 @@ def test_g4_peer_lane_in_quote_path() -> None:
         assert skim.g4_active is True
         assert skim.g4_ask_size_mult > 1.0
         assert skim.ask_size > xrp_empty.ask_size
+
+    asyncio.run(run())
+
+
+def test_v220_xrp_heavy_solo_no_deadlock() -> None:
+    """Regression v2.1.40: inv pause_bids + ask brake → both off; QD allows bid at edge."""
+    path = PureQuotePath(gamma=0.35, kappa=3.5, configured_l1_xrp=150.0)
+
+    async def run() -> None:
+        d = await path.compute_decision(
+            mid=1.10,
+            best_bid=1.099,
+            best_ask=1.101,
+            xrp_bal=200.0,
+            rlusd_bal=80.0,
+            target_ratio=0.55,
+            inventory_max_deviation=0.12,
+            competitor_intel={"peer_lane_empty": True, "peer_lane_count": 0},
+        )
+        assert d.qd_bid_allowed is True
+        assert d.pause_bids is False
+        assert d.would_quote is True
 
     asyncio.run(run())
 
@@ -225,10 +244,9 @@ def test_g7_xrp_heavy_ask_tighter_touch() -> None:
         assert "join" in d.g7_scaler_label
         assert d.g2_scaler_label
         assert "G7" in d.execution_brakes_summary
-        assert d.suggested_ask is not None
-        assert d.suggested_ask >= d.best_ask
-        if not d.pause_bids:
-            assert d.suggested_bid is not None
-            assert d.suggested_bid <= d.best_bid
+        assert d.suggested_ask is None  # v2.2 QD solo accumulate — bid only
+        assert d.suggested_bid is not None
+        assert d.suggested_bid <= d.best_bid
+        assert d.qd_bid_allowed is True
 
     asyncio.run(run())

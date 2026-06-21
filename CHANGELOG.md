@@ -5,6 +5,20 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.2.0] — 2026-06-21 (`Ashigaru Kaizen II`)
+
+**Layered quote decision stack (Phase 1 live)** — replaces overlapping A2 gates + inventory `pause_*` merge.
+
+- **`quote_decision/`** — five layers: posture → intent → edge → bleed → final permissions.
+- **Cutover:** `PureQuotePath` uses QD `bid/ask.allowed` + `size_mult`; inventory limits cap size only (no side pauses).
+- **Deadlock fix:** solo xrp-heavy + buy edge → bid allowed; no inv bailout forcing ask-only.
+- **Side-brake cancel:** symmetric bid/ask cancel when QD pauses a side (`side_brake_cancel_sequences`).
+- **Bleed input:** engine passes last 12 session fill records to Layer 4.
+
+Retired from decision path (modules remain for reference): A2.2 buy gate, A2.3 ask brake, A2.3b sell gate, `effective_quote_sides` bailout.
+
+---
+
 ## [2.1.40] — 2026-06-21 (`Ashigaru Kaizen II`)
 
 **Segment #6 diagnosis fix** — gates were too narrow; stale asks leaked inventory.
