@@ -1,12 +1,14 @@
 """
-Thin integration adapter — maps existing pure_quote_path / engine inputs to the
-new pipeline and optional legacy comparison.
+Thin integration adapter — maps pure_quote_path / engine inputs to the layered stack.
 
-Migration:
-  Phase 0 (done): shadow log QD vs legacy.
-  Phase 1 (v2.2.0): QD bid/ask.allowed active on ladder.
-  Phase 2 (v2.2.1–2.2.2): removed gate modules; QD-only observability.
-  Phase 3 (v2.2.3): pause_bids/pause_asks retired — use qd_bid_allowed/qd_ask_allowed.
+Convergence (Ashigaru-Shoshin):
+  Canonical layer logic lives in strategy/quote_decision_layers/ (sacred engine +
+  test_strategy_quote_decision_layers.py). This package keeps the stable WS public
+  API (compute_quoting_decision, run_quote_decision_pipeline, QuotingDecision) and
+  translates CycleQuoteInputs ↔ strategy params via _strategy_bridge.py.
+
+  WS-only concerns handled here: reservation_allows_bid/ask (A-S reservation guard).
+  Solo spread-capture edge gate + side-local markout bleed run through strategy layers.
 """
 
 from __future__ import annotations
@@ -15,6 +17,11 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 
 from experimental.ws_feed.quote_decision.pipeline import run_quote_decision_pipeline
 from experimental.ws_feed.quote_decision.types import CycleQuoteInputs, QuotingDecision
+
+try:
+    from strategy.fill_quality import FillQualityState
+except ImportError:  # pragma: no cover
+    FillQualityState = Any  # type: ignore[misc, assignment]
 
 
 def _portfolio_xrp_ratio(
@@ -65,6 +72,20 @@ def build_cycle_inputs(
     recent_fills: Optional[Sequence[Mapping[str, Any]]] = None,
     reservation_allows_bid: bool = True,
     reservation_allows_ask: bool = True,
+    fill_quality: Optional[FillQualityState] = None,
+    market_condition: str = "favorable",
+    mid_momentum_pct: float = 0.0,
+    min_edge_pct: float = 0.0,
+    market_edge_met: bool = True,
+    inventory_max_deviation: float = 0.12,
+    inventory_mode: str = "market_make",
+    acquiring_rlusd: bool = False,
+    mm_mode: bool = True,
+    momentum_pause_vulnerable: bool = False,
+    low_book_pressure: bool = False,
+    peer_intel_present: bool = False,
+    bid_half_spread_pct: Optional[float] = None,
+    ask_half_spread_pct: Optional[float] = None,
 ) -> CycleQuoteInputs:
     ratio = _portfolio_xrp_ratio(
         xrp_balance=xrp_balance,
@@ -92,6 +113,20 @@ def build_cycle_inputs(
         recent_sells=sells,
         reservation_allows_bid=reservation_allows_bid,
         reservation_allows_ask=reservation_allows_ask,
+        fill_quality=fill_quality,
+        market_condition=market_condition,
+        mid_momentum_pct=mid_momentum_pct,
+        min_edge_pct=min_edge_pct,
+        market_edge_met=market_edge_met,
+        inventory_max_deviation=inventory_max_deviation,
+        inventory_mode=inventory_mode,
+        acquiring_rlusd=acquiring_rlusd,
+        mm_mode=mm_mode,
+        momentum_pause_vulnerable=momentum_pause_vulnerable,
+        low_book_pressure=low_book_pressure,
+        peer_intel_present=peer_intel_present,
+        bid_half_spread_pct=bid_half_spread_pct,
+        ask_half_spread_pct=ask_half_spread_pct,
     )
 
 
@@ -116,6 +151,20 @@ def compute_quoting_decision(
     recent_fills: Optional[Sequence[Mapping[str, Any]]] = None,
     reservation_allows_bid: bool = True,
     reservation_allows_ask: bool = True,
+    fill_quality: Optional[FillQualityState] = None,
+    market_condition: str = "favorable",
+    mid_momentum_pct: float = 0.0,
+    min_edge_pct: float = 0.0,
+    market_edge_met: bool = True,
+    inventory_max_deviation: float = 0.12,
+    inventory_mode: str = "market_make",
+    acquiring_rlusd: bool = False,
+    mm_mode: bool = True,
+    momentum_pause_vulnerable: bool = False,
+    low_book_pressure: bool = False,
+    peer_intel_present: bool = False,
+    bid_half_spread_pct: Optional[float] = None,
+    ask_half_spread_pct: Optional[float] = None,
 ) -> QuotingDecision:
     """Public integration entry — call from pure_quote_path after G7 touch prices."""
     inputs = build_cycle_inputs(
@@ -138,6 +187,20 @@ def compute_quoting_decision(
         recent_fills=recent_fills,
         reservation_allows_bid=reservation_allows_bid,
         reservation_allows_ask=reservation_allows_ask,
+        fill_quality=fill_quality,
+        market_condition=market_condition,
+        mid_momentum_pct=mid_momentum_pct,
+        min_edge_pct=min_edge_pct,
+        market_edge_met=market_edge_met,
+        inventory_max_deviation=inventory_max_deviation,
+        inventory_mode=inventory_mode,
+        acquiring_rlusd=acquiring_rlusd,
+        mm_mode=mm_mode,
+        momentum_pause_vulnerable=momentum_pause_vulnerable,
+        low_book_pressure=low_book_pressure,
+        peer_intel_present=peer_intel_present,
+        bid_half_spread_pct=bid_half_spread_pct,
+        ask_half_spread_pct=ask_half_spread_pct,
     )
     return run_quote_decision_pipeline(inputs)
 

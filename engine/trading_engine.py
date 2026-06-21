@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -63,10 +64,13 @@ from strategy.quote_decision import (
 from strategy.fill_quality import FillQualityTracker
 from strategy.inventory_balance import assess_rebalance_need
 from strategy.market_microstructure import resolve_effective_min_edge_pct
+from experimental.ws_feed.peer_lane_quoting import resolve_peer_lane_params
+from strategy.quote_decision_layers.ops_log import intel_has_peer_fields
 from utils.preflight import evaluate_preflight
 from utils.quote_validation import validate_quotes_against_book
 logger = logging.getLogger(__name__)
 ENGINE_STOP_FILE = Path("logs/engine.stop")
+COMP_SCRAPE_INTERVAL_S = 15.0
 
 
 class TradingEngine:
@@ -126,6 +130,13 @@ class TradingEngine:
         self._last_valid_mid: Optional[float] = None
         self._last_best_bid: Optional[float] = None
         self._last_best_ask: Optional[float] = None
+        self._comp_provider: Optional[Any] = None
+        self._comp_intel_cache: Optional[Dict[str, Any]] = None
+        self._last_comp_intel: Optional[Dict[str, Any]] = None
+        self._last_comp_scrape: float = 0.0
+        self._last_peer_lane_empty: bool = False
+        self._last_peer_lane_count: int = 0
+        self._peer_intel_stale: bool = False
 
     def _trustworthy_mid(
         self,
@@ -154,6 +165,68 @@ class TradingEngine:
         except (json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
             logger.debug("Could not restore price history: %s", exc)
         return []
+
+    async def _maybe_refresh_competitor_intel(
+        self,
+        config: BotConfig,
+        connector: XRPLConnector,
+        *,
+        order_book: Dict[str, Any],
+        best_bid: Optional[float],
+        best_ask: Optional[float],
+    ) -> Optional[Dict[str, Any]]:
+        """On-chain peer-lane scrape for layered QD solo detection (cached ~15s)."""
+        if not bool(getattr(config, "ws_competitor_intel_enabled", True)):
+            return self._comp_intel_cache or self._last_comp_intel or None
+
+        if self._comp_provider is None:
+            try:
+                from experimental.market_analysis.competitor_intel import CompetitorIntelProvider
+                from experimental.ws_feed.pair_books import RlusdXrpPair
+
+                pair = RlusdXrpPair(
+                    rlusd_issuer=config.resolved_rlusd_issuer(),
+                    rlusd_currency=config.resolved_rlusd_currency_code(),
+                    taker=config.bot_account_address.strip() or "rEnginePeerLane",
+                )
+                self._comp_provider = CompetitorIntelProvider(connector, pair)
+            except Exception:
+                logger.warning(
+                    "CompetitorIntelProvider unavailable — peer lane defaults crowded",
+                    exc_info=True,
+                )
+                return self._comp_intel_cache or None
+
+        now = time.monotonic()
+        if (
+            now - self._last_comp_scrape < COMP_SCRAPE_INTERVAL_S
+            and self._comp_intel_cache
+        ):
+            return self._comp_intel_cache
+
+        fallback_l1 = float(config.order_sizes[0]) if config.order_sizes else 150.0
+        our_lane = fallback_l1
+        try:
+            snap = await self._comp_provider.fetch_snapshot(
+                our_lane_xrp=our_lane,
+                best_bid=best_bid,
+                best_ask=best_ask,
+                ws_bids=order_book.get("bids"),
+                ws_asks=order_book.get("asks"),
+            )
+            fields = self._comp_provider.to_hud_state(snap)
+            if fields.get("competitor_error"):
+                self._peer_intel_stale = bool(self._comp_intel_cache)
+                return self._comp_intel_cache or None
+            self._comp_intel_cache = fields
+            self._last_comp_intel = dict(fields)
+            self._last_comp_scrape = now
+            self._peer_intel_stale = False
+            return fields
+        except Exception:
+            logger.warning("Peer lane scrape failed — using cached intel if any", exc_info=True)
+            self._peer_intel_stale = bool(self._comp_intel_cache)
+            return self._comp_intel_cache or None
 
     async def run(self) -> None:
         self._running = True
@@ -692,6 +765,22 @@ class TradingEngine:
                 book_spread_pct=book_spread_pct,
                 dynamic_enabled=bool(getattr(config, "dynamic_min_edge_enabled", False)),
             )
+            comp_intel = await self._maybe_refresh_competitor_intel(
+                config,
+                connector,
+                order_book=order_book,
+                best_bid=best_bid,
+                best_ask=best_ask,
+            )
+            peer_lane_empty, peer_lane_count = resolve_peer_lane_params(
+                comp_intel,
+                intel_stale=self._peer_intel_stale,
+                ops_path="engine",
+            )
+            self._last_comp_intel = dict(comp_intel) if comp_intel else None
+            self._last_peer_lane_empty = peer_lane_empty
+            self._last_peer_lane_count = peer_lane_count
+            peer_intel_present = intel_has_peer_fields(comp_intel)
             quote_adjustments = build_quote_adjustments(
                 profile=profile,
                 assessment=market_assessment,
@@ -711,6 +800,10 @@ class TradingEngine:
                 ),
                 inventory_mode=str(getattr(config, "inventory_mode", "market_make")),
                 toxic_off_touch_latched=self._toxic_off_touch_latched,
+                peer_lane_empty=peer_lane_empty,
+                peer_lane_count=peer_lane_count,
+                peer_intel_present=peer_intel_present,
+                peer_intel_stale=self._peer_intel_stale,
             )
             inv_mode = str(getattr(config, "inventory_mode", "market_make")).strip().lower()
             self._last_quote_adjustments = quote_adjustments
@@ -747,6 +840,22 @@ class TradingEngine:
                 quote_adjustments,
             )
             self.decision_log.add("inventory", f"Inventory {inventory_state.label} (XRP ratio {inventory_state.xrp_ratio:.2f})")
+            if quote_adjustments.posture_ops_line:
+                self.decision_log.add("peer_lane", quote_adjustments.posture_ops_line)
+            elif peer_lane_empty:
+                self.decision_log.add(
+                    "peer_lane",
+                    f"solo lane active (peer_lane_empty=True, peer_lane_count={peer_lane_count})",
+                )
+            elif comp_intel and peer_lane_count > 0:
+                self.decision_log.add(
+                    "peer_lane",
+                    f"peer lane count={peer_lane_count} (crowded/sparse QD posture)",
+                )
+            intel_src = "stale_cache" if self._peer_intel_stale else (
+                "live" if peer_intel_present else "missing"
+            )
+            self.decision_log.add("peer_lane", f"peer_intel_source={intel_src}")
             self.decision_log.add("decision", quote_adjustments.decision_summary or "baseline quoting")
             perception.update_market_state(
                 mid_price=mid_price or 0.0,
@@ -1611,6 +1720,9 @@ class TradingEngine:
             quotes_at_touch=quotes_at_touch,
             worst_vs_touch_bps=worst_vs_touch_bps,
             quote_visibility_summary=quote_visibility_summary,
+            peer_lane_empty=self._last_peer_lane_empty,
+            g4_peer_lane_count=self._last_peer_lane_count,
+            competitor_intel=dict(self._last_comp_intel or {}),
         )
         self.state_store.save(state)
     def _persist_error(self, message: str) -> None:

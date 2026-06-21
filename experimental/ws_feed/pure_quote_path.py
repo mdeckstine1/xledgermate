@@ -27,7 +27,14 @@ from experimental.ws_feed.pure_inventory_policy import (
     count_active_l1_quotes,
 )
 from experimental.ws_feed.ws_book_age_modulator import apply_ws_book_age_modulator
-from experimental.ws_feed.peer_lane_quoting import G4Adjustments, compute_g4_adjustments, is_peer_lane_empty, prepare_quoting_intel
+from experimental.ws_feed.peer_lane_quoting import (
+    G4Adjustments,
+    compute_g4_adjustments,
+    is_peer_lane_empty,
+    prepare_quoting_intel,
+    resolve_peer_lane_params,
+)
+from strategy.quote_decision_layers.ops_log import intel_has_peer_fields
 from experimental.ws_feed.spread_quality_scaler import (
     G2Adjustments,
     compute_g2_adjustments,
@@ -40,6 +47,7 @@ from experimental.ws_feed.reservation_metrics import (
 )
 from experimental.ws_feed.zero_quote_notes import classify_and_explain_pure_zero_quote
 from strategy.avellaneda_strategy import AvellanedaStrategy, AvellanedaQuote
+from strategy.market_microstructure import assess_market_edge
 from strategy.quote_decision import assess_inventory
 
 _WS_AS_VERSION_FILE = Path(__file__).resolve().parent / "WS_AS_VERSION"
@@ -546,6 +554,25 @@ class PureQuotePath:
             bid_backoff_bps=g7.bid_touch_backoff_bps,
             ask_backoff_bps=g7.ask_touch_backoff_bps,
         )
+        effective_l1_pct = max(0.01, as_quote.optimal_spread_pct * g2.spread_mult)
+        book_half_pct = max(0.005, effective_book_spread / 2.0)
+        as_half_pct = max(0.005, effective_l1_pct / 2.0)
+        # Sacred path uses profile-tight skim halves, not full book-matched AS width.
+        edge_half_pct = min(as_half_pct, book_half_pct * 0.65)
+        market_edge = assess_market_edge(
+            book_spread_pct=effective_book_spread,
+            our_l1_spread_pct=effective_l1_pct,
+            min_edge_pct=0.0,
+        )
+        peer_intel_present = intel_has_peer_fields(quoting_intel)
+        if peer_intel_present:
+            peer_lane_empty, peer_lane_count = resolve_peer_lane_params(
+                quoting_intel,
+                ops_path="ws",
+            )
+        else:
+            peer_lane_empty = is_peer_lane_empty(quoting_intel)
+            peer_lane_count = g4.peer_lane_count
         qd = compute_quoting_decision(
             mid=mid,
             best_bid=best_bid,
@@ -556,8 +583,9 @@ class PureQuotePath:
             rlusd_balance=rlusd_bal,
             target_xrp_ratio=target_ratio,
             inventory_label=inv_state.label,
-            peer_lane_empty=is_peer_lane_empty(quoting_intel),
-            peer_lane_count=g4.peer_lane_count,
+            peer_lane_empty=peer_lane_empty,
+            peer_lane_count=peer_lane_count,
+            peer_intel_present=peer_intel_present,
             toxic_ratio_30s=(
                 float(fill_quality.toxic_ratio_30s) if fill_quality else 0.0
             ),
@@ -568,6 +596,12 @@ class PureQuotePath:
             recent_fills=recent_fill_records,
             reservation_allows_bid=allow_bid,
             reservation_allows_ask=allow_ask,
+            fill_quality=fill_quality,
+            inventory_max_deviation=inventory_max_deviation,
+            inventory_mode=inventory_mode,
+            market_edge_met=market_edge.met,
+            bid_half_spread_pct=edge_half_pct,
+            ask_half_spread_pct=edge_half_pct,
         )
 
         # v2.2.0 — Layer 5 is sole authority on side permissions (no inv/gate pause merge).

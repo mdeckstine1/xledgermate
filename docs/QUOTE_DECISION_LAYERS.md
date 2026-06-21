@@ -2,53 +2,68 @@
 
 Replaces the overlapping gate + inventory `pause_bids` / `pause_asks` coupling with five explicit layers. North star unchanged: **skim-funded inventory growth on solo books** — accumulate on profitable buy edges, tolerate wide drift, protect against directional bleed without forcing the opposite side.
 
-## Module layout
+## Module layout (canonical)
 
 ```
-experimental/ws_feed/quote_decision/
-├── types.py           # Dataclasses, enums, CycleQuoteInputs, QuotingDecision
-├── layer1_posture.py  # Read-only posture snapshot (book, drift, fill quality)
-├── layer2_intent.py   # Policy intent selection (what we're trying to do)
-├── layer3_edge.py     # Net profitable edge filter (fees + adverse buffer)
-├── layer4_bleed.py    # Side-local bleed protection (no opposite-side boost)
-├── layer5_decision.py # Final bid/ask permissions — sole authority
-├── pipeline.py        # run_quote_decision_pipeline()
-└── adapter.py         # compute_quoting_decision(), shadow_compare_legacy()
+strategy/quote_decision_layers/     # Canonical L1–L5 logic (sacred engine + WS)
+├── types.py
+├── posture.py                      # L1 — book mode, drift, fill quality
+├── intent.py                       # L2 — intent selection
+├── edge.py                         # L3 — net edge filter
+├── bleed.py                        # L4 — side-local bleed
+├── decision.py                     # L5 — final permissions
+├── pipeline.py                     # run_layered_quote_decision()
+└── ops_log.py                      # Grep-friendly operator visibility
+
+experimental/ws_feed/quote_decision/  # WS I/O only — delegates to strategy stack
+├── types.py                        # CycleQuoteInputs, QuotingDecision
+├── _strategy_bridge.py             # CycleQuoteInputs ↔ strategy layers
+├── adapter.py                      # compute_quoting_decision()
+└── pipeline.py                     # run_quote_decision_pipeline()
 ```
 
-Tests: `tests/test_quote_decision_layers.py`
+**Removed (Ashigaru-Shoshin):** `layer1_posture.py` … `layer5_decision.py` under `ws_feed/quote_decision/` — logic moved to `strategy/quote_decision_layers/`.
+
+Tests: `tests/test_strategy_quote_decision_layers.py` (canonical), `tests/test_quote_decision_layers.py`
 
 ## Layer responsibilities
 
-### Layer 1 — Posture (`build_posture_snapshot`)
+### Layer 1 — Posture (`build_posture`)
 
 Single read-only view per cycle:
 
 | Field | Purpose |
 |-------|---------|
-| `book.mode` | SOLO / SPARSE / CROWDED from peer lane count |
+| `book.mode` | SOLO / SPARSE / CROWDED from peer lane + solo resolver |
 | `inventory.band` | Wide drift bands (±8% mild, ±16% heavy) — informational, not hard blocks |
 | `buy_quality` / `sell_quality` | Recent fill economics for bleed detection |
 
-**Why:** Downstream layers must not re-derive book/inventory from raw inputs. Prevents cascade bugs when one layer tweaks a shared flag another layer reads.
+**Peer lane → book mode defaults:**
 
-### Layer 2 — Intent (`select_quote_intent`)
+| Condition | `book.mode` | `posture_reason` |
+|-----------|-------------|------------------|
+| `peer_lane_empty=True` (confirmed intel) | SOLO | `confirmed_empty` |
+| No peer intel / missing fields | CROWDED (conservative) | `missing_intel` |
+| `peer_lane_count==1` + low book pressure | SOLO | `sparse_low_pressure` |
+| Peers present, not solo | SPARSE (≤2) or CROWDED | `crowded_default` |
+
+**Why:** Downstream layers must not re-derive book/inventory from raw inputs.
+
+### Layer 2 — Intent (`select_intent`)
 
 Chooses operational intent — does **not** set final permissions:
 
 | Intent | When |
 |--------|------|
-| `SOLO_ACCUMULATE_ON_EDGE` | Solo book + viable buy edge (default solo posture) |
+| `SOLO_ACCUMULATE_ON_EDGE` | Solo book + viable buy or sell edge (drift ignored) |
 | `PATIENT_SOLO` | Solo, no edge or toxic flow — wait |
 | `TWO_SIDED_SKIM` | Crowded/sparse + edge on one or both sides |
-| `PROTECT_BLEED` | Reserved for future explicit bleed posture labeling |
+| `INVENTORY_UNLOAD` | Heavy drift + edge on unload side |
 | `HOLD_OFF` | Both sides bleeding |
 
-**Principle 3:** Solo + good buy edge → accumulate even when inventory is xrp-heavy drifted.
+On solo books, inventory circuit breaker is **skipped** (Layer 5 logs `inventory_cb_skipped_solo`).
 
-**Principle 4:** Single-side bleed is **not** handled here — Layer 4 pauses that side only without changing intent or enabling the opposite side.
-
-### Layer 3 — Edge (`evaluate_edge`)
+### Layer 3 — Edge (`evaluate_side_edge`)
 
 Net profitability after fees + adverse selection buffer:
 
@@ -58,71 +73,51 @@ Net profitability after fees + adverse selection buffer:
 
 ### Layer 4 — Bleed (`apply_bleed_protection`)
 
-When recent fills on a side show negative capture (≥3 fills, session cap < 0):
+When recent fills on a side show toxic ratio or negative markout (≥3 fills):
 
-- Pause **that side only** (`bid_allowed_override=False` or ask equivalent)
+- Pause **that side only**
 - Never boost or enable the opposite side
 
-Fixes the `effective_quote_sides` bailout bug where `pause_bids=true` accidentally forced ask-only quoting.
+### Layer 5 — Final decision (`build_layer_decision`)
 
-### Layer 5 — Final decision (`build_final_quoting_decision`)
+Sole authority on `bid.allowed`, `ask.allowed`, `size_mult`. Combines intent, edge, bleed, inventory CB (crowded only), and tape guards.
 
-Sole authority on `bid.allowed`, `ask.allowed`, `size_mult`. Combines intent, edge, bleed, and reservation allows.
+## Operator grep guide (ops visibility)
 
-Output type: `QuotingDecision` with `SidePermission` per side — **not** shared pause flags.
+Structured logs use prefix `QD_OPS` at INFO. Tail production logs and grep:
 
-## Integration (Phase 0 — shadow)
+| Token | Meaning |
+|-------|---------|
+| `QD_OPS posture` | Layer 1 outcome each cycle |
+| `QD_OPS peer_lane_resolve` | Intel → `peer_lane_empty` / count at consumption |
+| `peer_intel=present\|missing\|stale` | Fresh scrape vs no fields vs cached-after-failure |
+| `peer_lane=empty\|missing\|crowded` | Lane classification for posture |
+| `solo_mode=true\|false` | Solo resolver result |
+| `book_mode=solo\|sparse\|crowded` | Final L1 book mode |
+| `posture_reason=confirmed_empty\|missing_intel\|sparse_low_pressure\|crowded_default` | Why that mode was chosen |
+| `intent=SOLO_ACCUMULATE_ON_EDGE` | Solo accumulate selected (+ edge viability fields) |
+| `inventory_cb_skipped_solo=true` | Inventory bailout deferred on solo book |
+| `path=engine\|ws` | Sacred engine vs WS pure path |
+| `peer_intel_source=live\|stale_cache\|missing` | Engine `decision_log` category `peer_lane` |
 
-`pure_quote_path.py` now runs the pipeline each cycle after L1 touch prices are known:
+Example (solo empty lane):
 
-```python
-qd = compute_quoting_decision(...)
-shadow = shadow_compare_legacy(qd, legacy_pause_bids=..., legacy_pause_asks=..., ...)
+```
+QD_OPS peer_lane_resolve | peer_intel=present | peer_lane=empty | peer_lane_empty=true | peer_lane_count=0 | path=ws
+QD_OPS posture | peer_intel=present | peer_lane=empty | peer_lane_empty=true | peer_lane_count=0 | solo_mode=true | book_mode=solo | posture_reason=confirmed_empty | path=ws
+QD_OPS inventory_cb_skipped_solo=true | reason=solo_book_deferred_to_intent | path=ws
+QD_OPS intent=SOLO_ACCUMULATE_ON_EDGE | peer_lane=empty | solo_mode=true | book_mode=solo | favor_bid=true | buy_edge_viable=true | sell_edge_viable=false | bid_edge_pct=0.042 | ask_edge_pct=0.010 | drift_band=heavy_xrp | path=ws
 ```
 
-Shadow fields on runtime/intel:
+Implementation: `strategy/quote_decision_layers/ops_log.py` (shared by engine + WS bridge).
 
-- `qd_intent`, `qd_bid_allowed`, `qd_ask_allowed`, `qd_would_quote`
-- `qd_conflicts` — disagreements with legacy pause merge
-- `qd_layer_summary`
+## Integration
 
-Legacy ladder posting is unchanged. Use `qd_conflicts` in soak to validate before cutover.
+**Sacred engine:** `strategy/quote_decision.py` → `run_layered_quote_decision(..., ops_path="engine")`
 
-## Migration plan
+**WS pure path:** `pure_quote_path.py` → `compute_quoting_decision()` → `_strategy_bridge.run_strategy_layers(..., ops_path="ws")`
 
-| Phase | Action |
-|-------|--------|
-| **0 (done)** | Shadow log QD vs legacy; soak on solo book; watch `qd_conflicts` |
-| **1 (v2.2.0 live)** | Use `qd.bid/ask.allowed` + `size_mult` for ladder; drop inv `pause_*` merge |
-| **2 (v2.2.1–2.2.2 done)** | Deleted gate modules; QD-only observability in runtime/intel |
-| **3 (v2.2.3 done)** | Retired `pause_bids`/`pause_asks` — `qd_bid_allowed`/`qd_ask_allowed` everywhere |
-
-### Phase 1 cutover sketch
-
-```python
-# Replace:
-quote_bid, quote_ask, _ = effective_quote_sides(..., pause_bids=..., pause_asks=...)
-# With:
-quote_bid = qd.bid.allowed and allow_bid
-quote_ask = qd.ask.allowed and allow_ask
-bid_size *= qd.bid.size_mult
-ask_size *= qd.ask.size_mult
-```
-
-Pass `recent_fill_records` from engine fill tracker for Layer 4 bleed accuracy.
-
-## Files to review / retire after migration
-
-| File | Issue |
-|------|-------|
-| `experimental/ws_feed/reservation_metrics.py` | `effective_quote_sides()` — inv bailout forces opposite side |
-| `experimental/ws_feed/buy_edge_gate.py` | A2.2 — merged into Layer 3 |
-| `experimental/ws_feed/acquire_ask_brake.py` | A2.3 — caused deadlock with inv pause_bids |
-| `experimental/ws_feed/sell_edge_gate.py` | A2.3b — merged into Layer 3 |
-| `experimental/ws_feed/pure_inventory_policy.py` | `pause_*` on ladder |
-| `risk/inventory_limits.py` | xrp-heavy → pause_bids ("unload via asks") |
-| `experimental/ws_feed/ws_pure_engine.py` | `_sync_offers` pause_asks param |
-| `core/runtime_state.py`, `intel_decisions_log.py` | Legacy pause fields |
+Peer lane inputs: `experimental/ws_feed/peer_lane_quoting.resolve_peer_lane_params()` (logs `peer_lane_resolve`).
 
 ## Key test scenarios
 
@@ -130,16 +125,16 @@ Pass `recent_fill_records` from engine fill tracker for Layer 4 bleed accuracy.
 2. **Solo no edge** → patient off, both sides blocked
 3. **Buy bleed on solo** → bid paused, ask not boosted by bleed
 4. **Crowded both edges** → two-sided skim
-5. **Shadow conflict** → legacy both paused, QD bid allowed at edge
+5. **Missing peer intel** → crowded default, `posture_reason=missing_intel`
 
-Run: `python -m pytest tests/test_quote_decision_layers.py -v`
+Run: `python -m pytest tests/test_strategy_quote_decision_layers.py tests/test_quote_decision_layers.py -v`
 
 ## Threshold tuning (later)
 
-All constants are centralized per layer file:
+Constants centralized per layer file:
 
-- `DRIFT_MILD` / `DRIFT_HEAVY` — `layer1_posture.py`
-- `MIN_EDGE_SOLO_BPS` / `MIN_EDGE_CROWDED_BPS` — `layer3_edge.py`
-- `BLEED_RECENT_FILLS_MIN`, `BLEED_CAPTURE_XRP` — `layer1_posture.py` / `layer4_bleed.py`
+- `DRIFT_MILD` / `DRIFT_HEAVY` — `posture.py`
+- `MIN_EDGE_SOLO_BPS` / `MIN_EDGE_CROWDED_BPS` — `edge.py`
+- Bleed thresholds — `posture.py` / `bleed.py`
 
-Adjust after shadow soak correlates with purpose-pass fills.
+Adjust after soak correlates with purpose-pass fills.

@@ -34,6 +34,12 @@ class FillQualityState:
     toxic_fills_30s: int = 0
     toxic_ratio_30s: float = 0.0
     mean_markout_30s_pct: float = 0.0
+    buy_fill_count: int = 0
+    sell_fill_count: int = 0
+    buy_toxic_ratio_30s: float = 0.0
+    sell_toxic_ratio_30s: float = 0.0
+    buy_mean_markout_30s_pct: float = 0.0
+    sell_mean_markout_30s_pct: float = 0.0
     size_multiplier: float = 1.0
     spread_multiplier: float = 1.0
     summary: str = "No recent fills"
@@ -134,6 +140,19 @@ class FillQualityTracker:
             return rec.toxic_cycle
         return False
 
+    def _side_stats(
+        self, records: list[FillRecord], side: str
+    ) -> tuple[int, float, float]:
+        """Return (count, toxic_ratio_30s, mean_markout_30s) for one side."""
+        side_recs = [r for r in records if r.side == side.upper()]
+        if not side_recs:
+            return 0, 0.0, 0.0
+        markouts = [r.markout_30s for r in side_recs if r.markout_30s is not None]
+        toxic_30s = sum(1 for r in side_recs if r.toxic_30s)
+        toxic_ratio = toxic_30s / len(markouts) if markouts else 0.0
+        mean_markout = sum(markouts) / len(markouts) if markouts else 0.0
+        return len(side_recs), toxic_ratio, mean_markout
+
     def assess(self) -> FillQualityState:
         active = list(self._records) + [
             r
@@ -172,6 +191,9 @@ class FillQualityTracker:
         spread_mult = g2.spread_mult
         summary = g2.summary
 
+        buy_n, buy_tox, buy_mo = self._side_stats(active, "BUY")
+        sell_n, sell_tox, sell_mo = self._side_stats(active, "SELL")
+
         return FillQualityState(
             score=score,
             recent_fills=n,
@@ -180,6 +202,12 @@ class FillQualityTracker:
             toxic_fills_30s=toxic_30s,
             toxic_ratio_30s=toxic_ratio_30s,
             mean_markout_30s_pct=mean_markout_30s,
+            buy_fill_count=buy_n,
+            sell_fill_count=sell_n,
+            buy_toxic_ratio_30s=buy_tox,
+            sell_toxic_ratio_30s=sell_tox,
+            buy_mean_markout_30s_pct=buy_mo,
+            sell_mean_markout_30s_pct=sell_mo,
             size_multiplier=size_mult,
             spread_multiplier=spread_mult,
             summary=summary,

@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from strategy.fill_quality import FillQualityState
 
 
 QUOTE_DECISION_VERSION = "2.2.0"
@@ -39,7 +42,8 @@ class QuoteIntent(str, Enum):
     SOLO_ACCUMULATE_ON_EDGE = "solo_accumulate_on_edge"
     PATIENT_SOLO = "patient_solo"
     TWO_SIDED_SKIM = "two_sided_skim"
-    PROTECT_BLEED = "protect_bleed"
+    INVENTORY_UNLOAD = "inventory_unload"
+    PROTECT_BLEED = "protect_bleed"  # legacy alias — strategy uses side-local bleed + L5
     HOLD_OFF = "hold_off"
 
 
@@ -182,3 +186,17 @@ class CycleQuoteInputs:
     recent_sells: tuple[Dict[str, Any], ...] = field(default_factory=tuple)
     reservation_allows_bid: bool = True
     reservation_allows_ask: bool = True
+    fill_quality: Optional["FillQualityState"] = None
+    market_condition: str = "favorable"
+    mid_momentum_pct: float = 0.0
+    min_edge_pct: float = 0.0
+    market_edge_met: bool = True
+    inventory_max_deviation: float = 0.12
+    inventory_mode: str = "market_make"
+    acquiring_rlusd: bool = False
+    mm_mode: bool = True
+    momentum_pause_vulnerable: bool = False
+    low_book_pressure: bool = False
+    peer_intel_present: bool = False
+    bid_half_spread_pct: Optional[float] = None
+    ask_half_spread_pct: Optional[float] = None

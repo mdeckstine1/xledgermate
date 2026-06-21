@@ -50,6 +50,6 @@ python scripts/ws_path_session_report.py --gate-full
 
 ## Related
 
-- [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) — Phase E checklist
+- [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) — Phase E checklist (QD ops grep: `docs/QUOTE_DECISION_LAYERS.md`)
 - [`PHASE_E_VPS_RUNBOOK.md`](PHASE_E_VPS_RUNBOOK.md) — E1 ladder
 - [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) — live WS + pure A-S ops

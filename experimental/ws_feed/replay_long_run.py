@@ -86,6 +86,7 @@ from strategy.quote_decision import (
     QuoteAdjustments,
     InventoryState,
 )
+from experimental.ws_feed.peer_lane_quoting import resolve_peer_lane_params
 from core.dynamic_quoting_policy import (
     resolve_dynamic_quoting_policy,
     apply_dynamic_quoting_policy,
@@ -478,6 +479,13 @@ def replay(
         our_l1_for_adj = max(0.01, spread / 2.0)  # simplified; real uses compute_effective_spreads + adj
         fq_stub = None  # FillQualityState would be carried from prior fills in real loop
 
+        comp_intel = {
+            k: snap[k]
+            for k in ("peer_lane_empty", "peer_lane_count")
+            if k in snap
+        } or None
+        peer_lane_empty, peer_lane_count = resolve_peer_lane_params(comp_intel)
+
         adj: QuoteAdjustments = build_quote_adjustments(
             profile=profile_obj,
             assessment=_make_market_assessment_stub(reasons_joined, spread),
@@ -496,6 +504,8 @@ def replay(
             inventory_max_deviation=0.12,
             inventory_mode="market_make",
             toxic_off_touch_latched=(toxic > 0.20),
+            peer_lane_empty=peer_lane_empty,
+            peer_lane_count=peer_lane_count,
         )
 
         # Pure WS book state (fresher incremental data from the live feed is the input).

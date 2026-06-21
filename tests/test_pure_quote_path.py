@@ -243,9 +243,8 @@ def test_g7_xrp_heavy_ask_tighter_touch() -> None:
         assert "join" in d.g7_scaler_label
         assert d.g2_scaler_label
         assert "G7" in d.execution_brakes_summary
-        assert d.suggested_ask is None  # v2.2 QD solo accumulate — bid only
-        assert d.suggested_bid is not None
-        assert d.suggested_bid <= d.best_bid
-        assert d.qd_bid_allowed is True
+        # Crowded xrp_heavy (no peer intel): QD inventory unload pauses bids; G7 still join ask.
+        assert d.qd_bid_allowed is False
+        assert d.suggested_ask is not None
 
     asyncio.run(run())

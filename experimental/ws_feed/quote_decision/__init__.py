@@ -1,8 +1,12 @@
 """
-Layered quote decision stack (v1.0).
+Layered quote decision stack — WS public API (v2.2.x).
 
-Replaces shared pause_bids/pause_asks gate coupling with five explicit layers.
-See docs/QUOTE_DECISION_LAYERS.md for architecture and migration plan.
+Converged on strategy/quote_decision_layers/ as the single canonical implementation
+(solo spread-capture edge gate, side-local markout bleed, peer-lane posture). This
+package retains stable WS types and compute_quoting_decision(); see adapter.py and
+_strategy_bridge.py for CycleQuoteInputs translation.
+
+See docs/QUOTE_DECISION_LAYERS.md for architecture history.
 """
 
 from experimental.ws_feed.quote_decision.adapter import (

@@ -8,8 +8,13 @@ Brake-only size reductions; fled-touch → modest side bias toward rebalance.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional
+
+from strategy.quote_decision_layers.ops_log import log_peer_lane_resolve
+
+logger = logging.getLogger(__name__)
 
 G4_VERSION = "1.1.0"
 SOLO_ACQUIRE_BID_SIZE_MULT = 1.06
@@ -42,6 +47,48 @@ def is_peer_lane_empty(intel: Optional[Mapping[str, Any]]) -> bool:
     if "peer_lane_count" not in intel and "peer_lane_empty" not in intel:
         return False
     return bool(intel.get("peer_lane_empty")) or _safe_int(intel.get("peer_lane_count")) <= 0
+
+
+def resolve_peer_lane_params(
+    intel: Optional[Mapping[str, Any]],
+    *,
+    intel_stale: bool = False,
+    ops_path: str = "",
+) -> tuple[bool, int]:
+    """
+    Peer lane inputs for build_quote_adjustments / layered QD.
+
+    Conservative when intel is missing or lacks peer fields: crowded book
+    (peer_lane_empty=False, peer_lane_count=0 → lane_count=3 in posture).
+    """
+    if not intel:
+        log_peer_lane_resolve(
+            None,
+            peer_lane_empty=False,
+            peer_lane_count=0,
+            intel_stale=intel_stale,
+            path=ops_path,
+        )
+        return False, 0
+    if "peer_lane_count" not in intel and "peer_lane_empty" not in intel:
+        log_peer_lane_resolve(
+            intel,
+            peer_lane_empty=False,
+            peer_lane_count=0,
+            intel_stale=intel_stale,
+            path=ops_path,
+        )
+        return False, 0
+    peer_count = max(0, _safe_int(intel.get("peer_lane_count")))
+    peer_empty = is_peer_lane_empty(intel)
+    log_peer_lane_resolve(
+        intel,
+        peer_lane_empty=peer_empty,
+        peer_lane_count=peer_count,
+        intel_stale=intel_stale,
+        path=ops_path,
+    )
+    return peer_empty, peer_count
 
 
 def prepare_quoting_intel(intel: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:

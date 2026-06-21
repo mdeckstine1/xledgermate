@@ -1,11 +1,22 @@
-"""Dynamic quote adjustments: inventory skew, min edge, adverse selection."""
+"""
+Dynamic quote adjustments: inventory skew, min edge, adverse selection.
+
+Decision flow (side permissions):
+  L1 posture  — book mode, drift band, per-side fill quality (read-only)
+  L2 intent   — solo accumulate on edge, two-sided skim, unload, hold off
+  L3 edge     — gate: do not quote a side when capture is insufficient
+  L4 bleed    — narrow pause on bleeding side only (replaces old _apply_self_bailout)
+  L5 decision — sole authority on pause_bids / pause_asks
+
+Spread, size, and touch policy are applied here after Layer 5 permissions.
+No layer may pause one side and boost the opposite; bleed is side-local only.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from core.toxicity import effective_toxic_ratio, gates_apply_for_fill_count
 from core.dynamic_quoting_policy import (
     TOUCH_AT,
     TOUCH_NEAR,
@@ -25,13 +36,12 @@ from core.perception import Profile
 from risk.inventory_limits import INVENTORY_MODE_MARKET_MAKE, INVENTORY_MODE_REBALANCE
 from strategy.fill_quality import FillQualityState
 from strategy.market_microstructure import (
-    BookPressure,
-    MomentumTier,
     assess_book_pressure,
     assess_market_edge,
     classify_momentum,
 )
-from risk.inventory_limits import assess_inventory_limits
+from strategy.quote_decision_layers.decision import _append_circuit_breaker_notes
+from strategy.quote_decision_layers.pipeline import run_layered_quote_decision
 
 # Extra half-spread per side from inventory skew (percentage points, not fraction).
 _MAX_INVENTORY_SPREAD_ADD_PCT = 1.5
@@ -69,6 +79,7 @@ class QuoteAdjustments:
     max_worse_than_touch_pct: float = 0.0
     quoting_policy_label: str = ""
     decision_summary: str = ""
+    posture_ops_line: str = ""
 
 
 @dataclass
@@ -152,54 +163,49 @@ def assess_inventory(
     )
 
 
-def _apply_self_bailout(
+def _apply_layer_permissions(
     adj: QuoteAdjustments,
     *,
+    layer_summary: str,
+    bid_allowed: bool,
+    ask_allowed: bool,
+    bid_size_mult: float,
+    ask_size_mult: float,
+    bid_pause_note: str,
+    ask_pause_note: str,
     parts: list[str],
-    profile: Profile,
-    inventory: InventoryState,
-    fq: FillQualityState,
-    mid_momentum_pct: float,
-    acquiring_rlusd: bool,
-    target_xrp_ratio: float,
-    market_edge_met: bool,
 ) -> None:
-    """Pause the side that adds inventory risk when skew, toxicity, or tape align."""
-    if acquiring_rlusd:
-        return
+    """
+    Layer 5 → QuoteAdjustments bridge.
 
-    deviation = inventory.xrp_ratio - target_xrp_ratio
-    min_gate_fills = int(getattr(profile, "toxic_min_fills_for_gates", 8))
-    toxic = effective_toxic_ratio(fq, min_fills_for_gates=min_gate_fills)
-    pause_side_ratio = float(profile.toxic_pause_side_ratio)
+    pause_bids / pause_asks are set ONLY here (plus operator override below).
+    Pause attribution (edge | bleed | inventory | tape | intent) is logged
+    via bid_pause_note / ask_pause_note for operator visibility.
+    """
+    adj.pause_bids = not bid_allowed
+    adj.pause_asks = not ask_allowed
+    if bid_allowed and bid_size_mult > 0:
+        adj.bid_size_multiplier *= bid_size_mult
+    if ask_allowed and ask_size_mult > 0:
+        adj.ask_size_multiplier *= ask_size_mult
+    parts.append(layer_summary)
+    if bid_pause_note:
+        parts.append(bid_pause_note)
+    if ask_pause_note:
+        parts.append(ask_pause_note)
 
-    if deviation > 0.05 and mid_momentum_pct < -0.04:
-        if not adj.pause_bids:
-            adj.pause_bids = True
-            parts.append(
-                "inventory bailout: XRP-heavy + falling tape → pause bids"
-            )
 
-    if gates_apply_for_fill_count(fq.recent_fills, min_fills_for_gates=min_gate_fills) and toxic >= pause_side_ratio:
-        if deviation > 0.05 and not adj.pause_bids:
-            adj.pause_bids = True
-            parts.append(
-                f"toxicity bailout ({toxic:.0%} adverse) → pause bids until XRP eases"
-            )
-        elif deviation < -0.05 and not adj.pause_asks:
-            adj.pause_asks = True
-            parts.append(
-                f"toxicity bailout ({toxic:.0%} adverse) → pause asks until RLUSD eases"
-            )
-        adj.spread_multiplier *= 1.06
-        adj.size_multiplier *= max(0.5, 0.88 - (toxic - pause_side_ratio) * 1.5)
+def _apply_acquiring_rlusd_override(adj: QuoteAdjustments, parts: list[str]) -> None:
+    """
+    Operator mode: must sell XRP for RLUSD — force asks on.
 
-    if not market_edge_met and toxic >= pause_side_ratio * 0.85 and abs(deviation) > 0.10:
-        if deviation > 0:
-            adj.pause_bids = True
-        elif deviation < 0:
-            adj.pause_asks = True
-        parts.append("thin edge + toxicity → one-sided unload only")
+    Does not change bid permissions; never a cross-side bailout from bid pause.
+    """
+    adj.ask_spread_add_pct = 0.0
+    adj.ask_anchor_shift_pct = min(0.0, adj.ask_anchor_shift_pct)
+    adj.pause_asks = False
+    adj.spread_multiplier = min(adj.spread_multiplier, 1.05)
+    parts.append("XRP-only mode → competitive asks until RLUSD balance builds")
 
 
 def _profile_market_overlay(
@@ -248,8 +254,18 @@ def build_quote_adjustments(
     inventory_max_deviation: float = 0.12,
     inventory_mode: str = "market_make",
     toxic_off_touch_latched: bool = False,
+    peer_lane_empty: bool = False,
+    peer_lane_count: int = 0,
+    peer_intel_present: bool = False,
+    peer_intel_stale: bool = False,
 ) -> QuoteAdjustments:
-    """Combine profile, market, inventory, momentum, book pressure, and fill quality."""
+    """
+    Combine profile, market, inventory, momentum, book pressure, and fill quality.
+
+    Side permissions (pause_bids/pause_asks) flow through the layered QD stack:
+      L1 posture → L2 intent → L3 edge filter → L4 bleed → L5 final decision.
+    Spread/size/touch overlays remain here; only Layer 5 sets pauses.
+    """
     adj = QuoteAdjustments(inventory_label=inventory.label)
     parts: list[str] = []
     acquiring_rlusd = fund_with_xrp_only and rlusd_balance <= min_order_xrp * 0.5
@@ -272,58 +288,24 @@ def build_quote_adjustments(
     mode_tag = "market make" if mm_mode else "rebalance"
     parts.append(f"operating mode: {mode_tag}")
 
-    inv_limits = assess_inventory_limits(
-        xrp_ratio=inventory.xrp_ratio,
-        target_xrp_ratio=target_xrp_ratio,
-        max_deviation=inventory_max_deviation,
-        inventory_mode=inventory_mode,
-    )
-    if inv_limits.pause_bids:
-        adj.pause_bids = True
-    if inv_limits.pause_asks:
-        adj.pause_asks = True
-    if inv_limits.summary:
-        parts.append(inv_limits.summary)
-
     fq = fill_quality or FillQualityState()
-
-    rebalance_acquiring_xrp = (
-        not mm_mode and adj.pause_asks and not adj.pause_bids
-    )
 
     momentum_tier, momentum_note = classify_momentum(mid_momentum_pct)
     adj.adverse_selection_tier = momentum_tier.name
     if momentum_tier.name != "none":
         if mid_momentum_pct > 0:
-            if rebalance_acquiring_xrp:
-                parts.append(
-                    f"momentum +{mid_momentum_pct:.2f}% (XRP rising) — rebalance keeps bid at touch"
-                )
-            else:
-                adj.bid_spread_add_pct += abs(mid_momentum_pct) * momentum_tier.spread_mult
-                adj.bid_size_multiplier *= momentum_tier.size_mult
-                if momentum_tier.pause_vulnerable:
-                    adj.pause_bids = True
-                elif mm_mode and mid_momentum_pct >= 0.04:
-                    adj.pause_bids = True
-                    parts.append(
-                        f"momentum +{mid_momentum_pct:.2f}% → pause bids "
-                        "(MM adverse-selection guard)"
-                    )
+            adj.bid_spread_add_pct += abs(mid_momentum_pct) * momentum_tier.spread_mult
+            adj.bid_size_multiplier *= momentum_tier.size_mult
         elif mid_momentum_pct < 0 and not acquiring_rlusd:
-            # XRP-only acquisition: keep asks competitive even if mid is falling.
             adj.ask_spread_add_pct += abs(mid_momentum_pct) * momentum_tier.spread_mult
             adj.ask_size_multiplier *= momentum_tier.size_mult
-            if momentum_tier.pause_vulnerable:
-                adj.pause_asks = True
         elif mid_momentum_pct < 0 and acquiring_rlusd:
             adj.ask_size_multiplier *= max(0.75, momentum_tier.size_mult)
-        if not (rebalance_acquiring_xrp and mid_momentum_pct > 0):
-            parts.append(
-                momentum_note
-                if not acquiring_rlusd or mid_momentum_pct >= 0
-                else "momentum falling → smaller asks (still quoting to acquire RLUSD)"
-            )
+        parts.append(
+            momentum_note
+            if not acquiring_rlusd or mid_momentum_pct >= 0
+            else "momentum falling → smaller asks (still quoting to acquire RLUSD)"
+        )
 
     pressure = assess_book_pressure(
         depth_imbalance=depth_imbalance,
@@ -366,6 +348,62 @@ def build_quote_adjustments(
     current_l1 = base_l1 * adj.spread_multiplier
     adj.min_edge_met = current_l1 >= required_edge
 
+    bid_half = max(0.005, current_l1 / 2.0)
+    ask_half = max(0.005, current_l1 / 2.0)
+
+    # Edge gate uses min_edge_met / market_edge_met computed above (L3 input).
+    low_book_pressure = pressure.label == "balanced" and abs(depth_imbalance) < 0.12
+
+    layer = run_layered_quote_decision(
+        xrp_ratio=inventory.xrp_ratio,
+        inventory_label=inventory.label,
+        fill_quality=fq,
+        target_xrp_ratio=target_xrp_ratio,
+        market_condition=assessment.condition,
+        mid_momentum_pct=mid_momentum_pct,
+        book_spread_pct=book_spread_pct,
+        bid_half_spread_pct=bid_half,
+        ask_half_spread_pct=ask_half,
+        min_edge_pct=min_edge_pct,
+        market_edge_met=market_edge.met,
+        inventory_max_deviation=inventory_max_deviation,
+        inventory_mode=inventory_mode,
+        acquiring_rlusd=acquiring_rlusd,
+        mm_mode=mm_mode,
+        momentum_pause_vulnerable=momentum_tier.pause_vulnerable,
+        peer_lane_empty=peer_lane_empty,
+        peer_lane_count=peer_lane_count,
+        low_book_pressure=low_book_pressure,
+        peer_intel_present=peer_intel_present,
+        peer_intel_stale=peer_intel_stale,
+        ops_path="engine",
+    )
+    adj.posture_ops_line = layer.posture_ops_line
+    if layer.posture.book.solo:
+        if peer_lane_empty:
+            parts.append("solo lane active (peer_lane_empty=True)")
+        elif peer_lane_count == 1:
+            parts.append("solo lane active (sparse peer_lane_count=1)")
+    _apply_layer_permissions(
+        adj,
+        layer_summary=layer.summary,
+        bid_allowed=layer.bid.allowed,
+        ask_allowed=layer.ask.allowed,
+        bid_size_mult=layer.bid.size_mult,
+        ask_size_mult=layer.ask.size_mult,
+        bid_pause_note=layer.bid_pause_note,
+        ask_pause_note=layer.ask_pause_note,
+        parts=parts,
+    )
+    _append_circuit_breaker_notes(
+        layer.posture,
+        inventory_max_deviation=inventory_max_deviation,
+        inventory_mode=inventory_mode,
+        parts=parts,
+    )
+
+    rebalance_acquiring_xrp = not mm_mode and adj.pause_asks and not adj.pause_bids
+
     policy = resolve_dynamic_quoting_policy(
         profile=profile,
         assessment=assessment,
@@ -380,17 +418,10 @@ def build_quote_adjustments(
     )
     apply_dynamic_quoting_policy(adj, policy, parts=parts)
 
-    _apply_self_bailout(
-        adj,
-        parts=parts,
-        profile=profile,
-        inventory=inventory,
-        fq=fq,
-        mid_momentum_pct=mid_momentum_pct,
-        acquiring_rlusd=acquiring_rlusd,
-        target_xrp_ratio=target_xrp_ratio,
-        market_edge_met=market_edge.met,
-    )
+    if rebalance_acquiring_xrp and mid_momentum_pct > 0:
+        parts.append(
+            f"momentum +{mid_momentum_pct:.2f}% (XRP rising) — rebalance keeps bid at touch"
+        )
 
     if adj.pause_bids and adj.pause_asks:
         adj.join_touch = False
@@ -421,9 +452,9 @@ def build_quote_adjustments(
             parts.append("MM → near-touch (visible queue, edge-aware backoff)")
         elif adj.touch_mode == TOUCH_AT and adj.join_touch:
             if adj.pause_bids and not adj.pause_asks:
-                parts.append("MM bailout → asks at touch only (unload XRP)")
+                parts.append("MM one-sided → asks at touch (bid paused by layer)")
             elif adj.pause_asks and not adj.pause_bids:
-                parts.append("MM bailout → bids at touch only (acquire XRP)")
+                parts.append("MM one-sided → bids at touch (ask paused by layer)")
             elif not adj.pause_bids and not adj.pause_asks:
                 parts.append("MM → two-sided at touch (spread via round trips)")
         elif adj.touch_mode in (TOUCH_SPREAD, TOUCH_OFF) and not adj.pause_bids and not adj.pause_asks:
@@ -454,23 +485,7 @@ def build_quote_adjustments(
     adj.ask_spread_add_pct = min(_MAX_DEFENSIVE_SIDE_SPREAD_ADD_PCT, adj.ask_spread_add_pct)
 
     if acquiring_rlusd:
-        adj.ask_spread_add_pct = 0.0
-        adj.ask_anchor_shift_pct = min(0.0, adj.ask_anchor_shift_pct)
-        adj.pause_asks = False
-        adj.spread_multiplier = min(adj.spread_multiplier, 1.05)
-        parts.append("XRP-only mode → competitive asks until RLUSD balance builds")
-
-    if assessment.condition == CONDITION_HOSTILE and (not adj.min_edge_met or not adj.market_edge_met):
-        adj.pause_bids = adj.pause_bids or inventory.label in ("xrp_heavy", "slight_xrp_heavy")
-        adj.pause_asks = adj.pause_asks or inventory.label in ("rlusd_heavy", "slight_rlusd_heavy")
-        if adj.pause_bids or adj.pause_asks:
-            parts.append("hostile + weak edge → pause vulnerable side")
-
-    if assessment.condition == CONDITION_HOSTILE and momentum_tier.pause_vulnerable:
-        if mid_momentum_pct > 0:
-            adj.pause_bids = True
-        elif mid_momentum_pct < 0:
-            adj.pause_asks = True
+        _apply_acquiring_rlusd_override(adj, parts)
 
     adj.decision_summary = "; ".join(parts)
     return adj
