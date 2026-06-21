@@ -5,6 +5,15 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.3.2] — 2026-06-21 (`Ashigaru Shoshin`)
+
+**Balanced Aggressive solo intent (L2) + operator soak reports.**
+
+- **L2 Balanced Aggressive** — solo intent considers inventory skew: wrong-way one-sided accumulation requires *strong* edge (full net threshold); right-way edges accumulate on viable capture; neutral solo with both edges → `TWO_SIDED_SKIM`; mild drift + no edge → `PATIENT_SOLO` (not trim); heavy drift + no edge → trim-only `INVENTORY_UNLOAD`. Layer 4 bleed unchanged.
+- **Soak dashboard** — operator sections (runtime, layered QD state, soak health) + Grok narrative aligned with L1–L5 monitoring.
+
+---
+
 ## [2.3.1] — 2026-06-21 (`Ashigaru Shoshin`)
 
 **Layered QD observability + solo acquisition edge tuning (patch release).**

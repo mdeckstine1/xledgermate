@@ -224,7 +224,7 @@ def test_pipeline_emits_qd_final_solo_accumulate(caplog) -> None:
             market_condition="favorable",
             mid_momentum_pct=0.0,
             book_spread_pct=0.07,
-            bid_half_spread_pct=0.015,
+            bid_half_spread_pct=0.01,
             ask_half_spread_pct=0.03,
             min_edge_pct=0.0,
             market_edge_met=True,

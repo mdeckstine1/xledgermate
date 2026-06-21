@@ -30,6 +30,7 @@ from strategy.quote_decision_layers.types import (
 )
 
 # Inventory drift bands — wide tolerance; grow from edge, not forced rebalance.
+# L2 ``select_intent`` uses HEAVY_* for solo trim-only unload; MILD_* + no edge → patient.
 DRIFT_MILD = 0.08
 DRIFT_HEAVY = 0.16
 

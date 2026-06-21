@@ -246,7 +246,7 @@ def _format_runtime_section(runtime: Mapping[str, Any]) -> List[str]:
 def _format_summary_section(summary: Mapping[str, Any]) -> List[str]:
     lines = ["LOG TAIL SUMMARY (QD_FINAL)"]
     if not summary:
-        lines.append("  No QD_FINAL rows — engine needs v2.3.1+ with L5 logging.")
+        lines.append("  No QD_FINAL rows — engine needs v2.3.2+ with L5 logging.")
         return lines
 
     mix = intent_mix_compact(summary)

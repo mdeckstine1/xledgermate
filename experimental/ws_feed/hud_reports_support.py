@@ -418,12 +418,11 @@ REPORT_SPECS: List[ReportSpec] = [
     ReportSpec(
         id="soak_dashboard_narrative",
         title="Soak dashboard + narrative",
-        subtitle="Facts + Grok explanation (on demand)",
+        subtitle="Operator summary + Grok advisory",
         category="Soak analysis",
         description=(
-            "Same fact bundle as Soak dashboard, plus a short Grok narrative explaining soak phase, "
-            "G7/G2 alignment, edge vs MTM, and what to watch. Requires Grok key in Config/.env. "
-            "Discipline-bound — explain only, no strategy overrides."
+            "Same operator layout as Soak dashboard: runtime, QD intent/L5 permissions, soak health, "
+            "then Grok narrative on accumulate vs trim and gate status. Requires Grok key."
         ),
         soak_safe=True,
         engine_restart=False,

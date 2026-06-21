@@ -218,6 +218,10 @@ def layer_to_quoting_decision(
         layer.posture,
         buy_edge_viable=bid_edge.viable,
         sell_edge_viable=ask_edge.viable,
+        buy_capture_pct=bid_edge.implied_edge_pct,
+        sell_capture_pct=ask_edge.implied_edge_pct,
+        buy_min_edge_pct=bid_edge.min_edge_pct,
+        sell_min_edge_pct=ask_edge.min_edge_pct,
     )
     bleed = apply_bleed_protection(layer.posture)
 

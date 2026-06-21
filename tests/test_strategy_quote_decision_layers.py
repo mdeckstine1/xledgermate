@@ -69,8 +69,8 @@ def _solo_layer(**overrides):
 
 
 def test_scenario_a_solo_drifted_profitable_edge_accumulates() -> None:
-    """peer_lane_empty + xrp-heavy drift + viable buy edge → bid on, no inventory pause."""
-    layer = _solo_layer()
+    """peer_lane_empty + xrp-heavy drift + strong buy edge → bid on."""
+    layer = _solo_layer(bid_half_spread_pct=0.01)
     assert layer.posture.book.mode == BookMode.SOLO
     assert layer.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
     assert layer.bid.allowed
@@ -220,15 +220,15 @@ def test_crowded_marginal_capture_still_viable() -> None:
     assert result.viable
 
 
-def test_solo_layer_marginal_edge_now_accumulates() -> None:
-    """Pipeline: solo + marginal positive capture → SOLO_ACCUMULATE_ON_EDGE + bid on."""
+def test_solo_layer_marginal_wrong_way_edge_patient() -> None:
+    """Solo xrp-heavy + marginal buy edge (L3 pass, not strong) → patient, bid off."""
     layer = _solo_layer(
         bid_half_spread_pct=0.022,
         ask_half_spread_pct=0.03,
         market_edge_met=False,
     )
-    assert layer.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
-    assert layer.bid.allowed
+    assert layer.intent == QuoteIntent.PATIENT_SOLO
+    assert not layer.bid.allowed
     assert not layer.ask.allowed
 
 
@@ -354,7 +354,7 @@ def test_bleed_pauses_buy_side_only() -> None:
 
 
 def test_low_book_pressure_sparse_allows_solo_accumulate() -> None:
-    """peer_lane_count=1 + balanced book → solo accumulate on buy edge when drifted."""
+    """peer_lane_count=1 + strong buy edge → solo accumulate when drifted."""
     inv = assess_inventory(
         xrp_balance=172.0,
         rlusd_balance=82.0,
@@ -369,7 +369,7 @@ def test_low_book_pressure_sparse_allows_solo_accumulate() -> None:
         target_xrp_ratio=0.55,
         market_condition="favorable",
         mid_momentum_pct=0.0,
-        **_solo_edge_kwargs(),
+        **_solo_edge_kwargs(bid_half_spread_pct=0.01),
         inventory_max_deviation=0.12,
         inventory_mode=INVENTORY_MODE_MARKET_MAKE,
         acquiring_rlusd=False,
@@ -408,7 +408,7 @@ def test_pause_cause_attributed_in_summary() -> None:
 
 
 def test_scenario_d_build_quote_adjustments_solo_integration() -> None:
-    """build_quote_adjustments + peer_lane_empty on drifted inventory → solo trace in summary."""
+    """Marginal buy edge on xrp-heavy solo → patient (balanced aggressive)."""
     assessment = _favorable_assessment()
     inv = _drifted_xrp_heavy_inv()
     adj = build_quote_adjustments(
@@ -424,16 +424,15 @@ def test_scenario_d_build_quote_adjustments_solo_integration() -> None:
         peer_lane_empty=True,
         peer_lane_count=0,
     )
-    assert not adj.pause_bids
+    assert adj.pause_bids
     assert "inventory bailout" not in adj.decision_summary
-    assert "solo_accumulate_on_edge" in adj.decision_summary
+    assert "trace book=solo" in adj.decision_summary
+    assert "intent=patient_solo" in adj.decision_summary or "pause_bid=intent" in adj.decision_summary
     assert "book=solo" in adj.decision_summary
     assert "solo lane active (peer_lane_empty=True)" in adj.decision_summary
-    assert "trace book=solo" in adj.decision_summary
-    assert "pause_bid=—" in adj.decision_summary
 
 
-def test_build_quote_adjustments_solo_lane_drifts_xrp_heavy_allows_bid() -> None:
+def test_build_quote_adjustments_solo_lane_drifts_xrp_heavy_patient_marginal() -> None:
     test_scenario_d_build_quote_adjustments_solo_integration()
 
 
@@ -497,4 +496,84 @@ def test_posture_clamps_invalid_ratios_and_market_condition() -> None:
     assert p.inventory.label == "balanced"
     assert p.market_condition == CONDITION_NEUTRAL
     assert p.mid_momentum_pct == 0.0
+
+
+def test_solo_mild_xrp_no_edge_patient_not_unload() -> None:
+    """Mild xrp drift + no edge → PATIENT_SOLO (not INVENTORY_UNLOAD)."""
+    layer = run_layered_quote_decision(
+        xrp_ratio=0.64,
+        inventory_label="xrp_heavy",
+        fill_quality=FillQualityState(),
+        target_xrp_ratio=0.55,
+        market_condition="favorable",
+        mid_momentum_pct=0.0,
+        book_spread_pct=0.07,
+        bid_half_spread_pct=0.04,
+        ask_half_spread_pct=0.04,
+        min_edge_pct=0.0,
+        market_edge_met=False,
+        inventory_max_deviation=0.12,
+        inventory_mode=INVENTORY_MODE_MARKET_MAKE,
+        acquiring_rlusd=False,
+        mm_mode=True,
+        momentum_pause_vulnerable=False,
+        peer_lane_empty=True,
+    )
+    assert layer.posture.inventory.band.value == "mild_xrp"
+    assert layer.intent == QuoteIntent.PATIENT_SOLO
+
+
+def test_solo_neutral_both_edges_skim() -> None:
+    """Neutral solo + both edges viable → TWO_SIDED_SKIM."""
+    from strategy.quote_decision_layers.intent import select_intent
+    from strategy.quote_decision_layers.posture import build_posture
+
+    posture = build_posture(
+        xrp_ratio=0.55,
+        inventory_label="balanced",
+        fill_quality=FillQualityState(),
+        target_xrp_ratio=0.55,
+        market_condition="favorable",
+        mid_momentum_pct=0.0,
+        peer_lane_empty=True,
+    )
+    intent = select_intent(
+        posture,
+        buy_edge_viable=True,
+        sell_edge_viable=True,
+        buy_capture_pct=0.03,
+        sell_capture_pct=0.03,
+        buy_min_edge_pct=0.025,
+        sell_min_edge_pct=0.025,
+    )
+    assert intent.intent == QuoteIntent.TWO_SIDED_SKIM
+    assert intent.allow_two_sided
+
+
+def test_solo_xrp_skew_prefers_ask_when_both_marginal() -> None:
+    """XRP-heavy + both L3-pass edges but not strong → right-way ask accumulate."""
+    from strategy.quote_decision_layers.intent import select_intent
+    from strategy.quote_decision_layers.posture import build_posture
+
+    posture = build_posture(
+        xrp_ratio=0.72,
+        inventory_label="xrp_heavy",
+        fill_quality=FillQualityState(),
+        target_xrp_ratio=0.55,
+        market_condition="favorable",
+        mid_momentum_pct=0.0,
+        peer_lane_empty=True,
+    )
+    intent = select_intent(
+        posture,
+        buy_edge_viable=True,
+        sell_edge_viable=True,
+        buy_capture_pct=0.018,
+        sell_capture_pct=0.018,
+        buy_min_edge_pct=0.025,
+        sell_min_edge_pct=0.025,
+    )
+    assert intent.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
+    assert intent.favor_ask
+    assert not intent.favor_bid
 

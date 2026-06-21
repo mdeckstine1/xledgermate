@@ -28,10 +28,10 @@ def _solo_inputs(
     label: str = "balanced",
     fill_quality: FillQualityState | None = None,
     bid_half_spread_pct: float = 0.015,
-    ask_half_spread_pct: float = 0.03,
+    ask_half_spread_pct: float = 0.08,
     market_edge_met: bool = True,
 ) -> CycleQuoteInputs:
-    """Solo fixture with spread-capture edge that clears strategy solo gate."""
+    """Solo fixture; default ask half blocks ask edge so tests stay one-sided."""
     return CycleQuoteInputs(
         mid=mid,
         best_bid=1.099,
@@ -54,9 +54,9 @@ def _solo_inputs(
 
 
 def test_solo_viable_buy_edge_accumulates_despite_xrp_heavy_drift() -> None:
-    """Principle 3: solo + good buy edge → bid allowed even when drifted xrp-heavy."""
+    """Strong buy edge on solo xrp-heavy → accumulate bid (wrong-way allowed when strong)."""
     qd = run_quote_decision_pipeline(
-        _solo_inputs(xrp_ratio=0.71, label="xrp_heavy")
+        _solo_inputs(xrp_ratio=0.71, label="xrp_heavy", bid_half_spread_pct=0.01)
     )
     assert qd.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
     assert qd.bid.allowed is True
@@ -93,9 +93,9 @@ def test_bleed_pauses_buy_only_not_ask() -> None:
 
 
 def test_inventory_deadlock_avoided_xrp_heavy_solo() -> None:
-    """Regression: old inv pause_bids + ask brake → both off; QD allows bid at edge."""
+    """Strong buy edge on solo xrp-heavy → bid allowed (balanced aggressive)."""
     qd = run_quote_decision_pipeline(
-        _solo_inputs(xrp_ratio=0.71, label="xrp_heavy")
+        _solo_inputs(xrp_ratio=0.71, label="xrp_heavy", bid_half_spread_pct=0.01)
     )
     assert qd.bid.allowed is True
     assert not (not qd.bid.allowed and not qd.ask.allowed and qd.would_quote is False)
@@ -185,7 +185,7 @@ def test_ws_scenario_b_solo_negative_capture_edge_gate() -> None:
 
 def test_ws_scenario_d_pipeline_summary_has_solo_trace() -> None:
     qd = run_quote_decision_pipeline(
-        _solo_inputs(xrp_ratio=0.71, label="xrp_heavy")
+        _solo_inputs(xrp_ratio=0.71, label="xrp_heavy", bid_half_spread_pct=0.01)
     )
     assert qd.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
     assert "solo_accumulate_on_edge" in qd.summary

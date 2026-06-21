@@ -116,6 +116,10 @@ def run_layered_quote_decision(
         posture,
         buy_edge_viable=bid_edge.viable,
         sell_edge_viable=ask_edge.viable,
+        buy_capture_pct=bid_edge.implied_edge_pct,
+        sell_capture_pct=ask_edge.implied_edge_pct,
+        buy_min_edge_pct=bid_edge.min_edge_pct,
+        sell_min_edge_pct=ask_edge.min_edge_pct,
     )
     maybe_log_solo_accumulate(
         intent.intent,

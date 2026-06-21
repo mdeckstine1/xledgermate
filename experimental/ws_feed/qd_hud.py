@@ -6,7 +6,7 @@ from typing import Any, Dict, Mapping, Optional
 
 from strategy.quote_decision_layers.ops_log import peer_lane_token, posture_reason
 
-QD_HUD_VERSION = "2.3.1"
+QD_HUD_VERSION = "2.3.2"
 
 _INTENT_LABELS: Dict[str, str] = {
     "solo_accumulate_on_edge": "ACCUMULATE ON EDGE",
