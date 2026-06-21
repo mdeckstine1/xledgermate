@@ -202,9 +202,50 @@ def test_crowded_heavy_xrp_pauses_bids() -> None:
         peer_lane_count=3,
     )
     assert layer.posture.book.mode == BookMode.CROWDED
+    assert layer.intent == QuoteIntent.TWO_SIDED_SKIM
     assert not layer.bid.allowed
     assert layer.ask.allowed
     assert "inventory bailout" in layer.bid.block_reason
+
+
+def test_crowded_heavy_drift_selects_skim_not_inventory_unload() -> None:
+    """Heavy drift on crowded book → TWO_SIDED_SKIM; L5 CB blocks vulnerable side."""
+    from strategy.quote_decision_layers.intent import select_intent
+    from strategy.quote_decision_layers.posture import build_posture
+
+    posture = build_posture(
+        xrp_ratio=0.72,
+        inventory_label="xrp_heavy",
+        fill_quality=FillQualityState(),
+        target_xrp_ratio=0.55,
+        market_condition="favorable",
+        mid_momentum_pct=0.0,
+        peer_lane_empty=False,
+        peer_lane_count=3,
+    )
+    intent = select_intent(
+        posture,
+        buy_edge_viable=True,
+        sell_edge_viable=True,
+    )
+    assert posture.book.mode == BookMode.CROWDED
+    assert intent.intent == QuoteIntent.TWO_SIDED_SKIM
+    assert intent.allow_two_sided
+
+
+def test_solo_heavy_drift_no_edge_inventory_unload_trim() -> None:
+    """Solo + heavy drift + no edge → trim-only INVENTORY_UNLOAD safety net."""
+    layer = _solo_layer(
+        bid_half_spread_pct=0.03,
+        ask_half_spread_pct=0.03,
+        market_edge_met=False,
+    )
+    assert layer.posture.book.mode == BookMode.SOLO
+    assert layer.intent == QuoteIntent.INVENTORY_UNLOAD
+    assert not layer.bid.allowed
+    assert not layer.ask.allowed
+    assert "edge_gate" in layer.bid.block_reason
+    assert "edge_gate" in layer.ask.block_reason
 
 
 def test_scenario_c_solo_bleed_pauses_bid_only_ask_if_edge() -> None:

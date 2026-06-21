@@ -74,8 +74,8 @@ def _inventory_circuit_breaker(
     Solo books **skip** this CB entirely (``inventory_cb_skipped_solo`` is logged);
     solo accumulation / patient intent owns permissions there.
 
-    L2 ``INVENTORY_UNLOAD`` may also favor one side at HEAVY drift — that is
-    secondary; this function is the authoritative hard block for crowded/sparse.
+    L2 no longer selects ``INVENTORY_UNLOAD`` on crowded/sparse (solo trim-only);
+    this function is the authoritative hard block for those book modes.
     """
     if posture.book.mode == BookMode.SOLO:
         return True, ""

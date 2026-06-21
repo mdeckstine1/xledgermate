@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping, Optional
 
-from strategy.quote_decision_layers.types import BookMode, Posture, QuoteIntent
+from strategy.quote_decision_layers.types import BookMode, DriftBand, Posture, QuoteIntent
 
 logger = logging.getLogger(__name__)
 
@@ -273,9 +273,9 @@ def log_inventory_unload_intent(
     path: str = "",
 ) -> None:
     """
-    Log when L2 selects INVENTORY_UNLOAD on crowded/sparse (not solo).
+    Log when L2 selects solo trim-only ``INVENTORY_UNLOAD`` (no viable edge).
 
-    Intent is informational — L5 circuit breaker remains the hard permission layer.
+    Crowded/sparse heavy drift defers to L5 CB — see ``log_heavy_drift_l5_deferred``.
     """
     if favor_bid and not favor_ask:
         favor = "bid"
@@ -311,16 +311,67 @@ def maybe_log_inventory_unload_intent(
     sell_edge_viable: bool,
     path: str = "",
 ) -> None:
-    """Crowded/sparse INVENTORY_UNLOAD only — solo trim uses a separate L2 branch."""
+    """Solo trim-only INVENTORY_UNLOAD — crowded/sparse defer to L5 CB."""
     if intent_value != QuoteIntent.INVENTORY_UNLOAD:
         return
-    if posture.book.mode == BookMode.SOLO:
+    if posture.book.mode != BookMode.SOLO:
         return
     log_inventory_unload_intent(
         posture=posture,
         intent_reason=intent_reason,
         favor_bid=favor_bid,
         favor_ask=favor_ask,
+        buy_edge_viable=buy_edge_viable,
+        sell_edge_viable=sell_edge_viable,
+        path=path,
+    )
+
+
+def log_heavy_drift_l5_deferred(
+    *,
+    posture: Posture,
+    selected_intent: QuoteIntent,
+    buy_edge_viable: bool,
+    sell_edge_viable: bool,
+    path: str = "",
+) -> None:
+    """
+    Crowded/sparse + HEAVY drift: L5 inventory CB owns permission, not L2 unload.
+
+    Emitted instead of the retired crowded/sparse ``INVENTORY_UNLOAD`` intent log.
+    """
+    if posture.book.mode == BookMode.SOLO:
+        return
+    if posture.inventory.band not in (DriftBand.HEAVY_XRP, DriftBand.HEAVY_RLUSD):
+        return
+    inv = posture.inventory
+    parts = [
+        f"{LOG_PREFIX} heavy_drift_l5_deferred=true",
+        f"book_mode={posture.book.mode.value}",
+        f"drift_band={inv.band.value}",
+        f"dev={inv.deviation:+.0%}",
+        f"intent={selected_intent.value}",
+        f"buy_edge_viable={str(buy_edge_viable).lower()}",
+        f"sell_edge_viable={str(sell_edge_viable).lower()}",
+        "layer=L2",
+        "note=l5_inventory_cb_owns_permission",
+    ]
+    if path:
+        parts.append(f"path={path}")
+    logger.info(" | ".join(parts))
+
+
+def maybe_log_heavy_drift_l5_deferred(
+    *,
+    posture: Posture,
+    selected_intent: QuoteIntent,
+    buy_edge_viable: bool,
+    sell_edge_viable: bool,
+    path: str = "",
+) -> None:
+    log_heavy_drift_l5_deferred(
+        posture=posture,
+        selected_intent=selected_intent,
         buy_edge_viable=buy_edge_viable,
         sell_edge_viable=sell_edge_viable,
         path=path,

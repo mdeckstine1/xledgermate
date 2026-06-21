@@ -92,10 +92,14 @@ def select_intent(
                 allow_two_sided=False,
             )
 
+        # Solo trim-only safety net when drifted but neither side has viable edge.
+        # L5 inventory CB is skipped on solo books — this intent is the only
+        # one-sided unload hint left in L2. Crowded/sparse no longer use
+        # INVENTORY_UNLOAD; L5 ``_inventory_circuit_breaker`` owns that path.
         if inv.band in (DriftBand.HEAVY_XRP, DriftBand.MILD_XRP):
             return IntentSelection(
                 intent=QuoteIntent.INVENTORY_UNLOAD,
-                reason="solo + xrp drift + sell edge — trim only",
+                reason="solo + xrp drift + no edge — trim only (ask)",
                 favor_bid=False,
                 favor_ask=True,
                 allow_two_sided=False,
@@ -109,33 +113,12 @@ def select_intent(
             allow_two_sided=False,
         )
 
-    # Crowded / sparse — INVENTORY_UNLOAD intent (L2 policy hint, not hard permission).
+    # Crowded / sparse + heavy drift: fall through to skim/patient intent below.
     #
-    # Fires only at HEAVY drift (L1 band >= ±16%, DRIFT_HEAVY) when the unload
-    # side has viable edge. Sets one-sided favor_bid/favor_ask for L5 intent gate.
-    #
-    # Note: L5 ``_inventory_circuit_breaker`` may already pause the vulnerable
-    # side at ±12% (inventory_max_deviation) — a mild_xrp book (+13%) can be
-    # bid-blocked by L5 while L2 still selects TWO_SIDED_SKIM. At HEAVY drift
-    # both mechanisms align on one-sided unload; grep ``inventory_cb_block`` vs
-    # ``intent=INVENTORY_UNLOAD`` to see which layer drove the cycle.
-    if inv.band in (DriftBand.HEAVY_XRP, DriftBand.HEAVY_RLUSD):
-        if inv.band == DriftBand.HEAVY_XRP and sell_edge_viable:
-            return IntentSelection(
-                intent=QuoteIntent.INVENTORY_UNLOAD,
-                reason=f"{book.mode.value} + heavy xrp drift + sell edge",
-                favor_bid=False,
-                favor_ask=True,
-                allow_two_sided=False,
-            )
-        if inv.band == DriftBand.HEAVY_RLUSD and buy_edge_viable:
-            return IntentSelection(
-                intent=QuoteIntent.INVENTORY_UNLOAD,
-                reason=f"{book.mode.value} + heavy rlusd drift + buy edge",
-                favor_bid=True,
-                favor_ask=False,
-                allow_two_sided=False,
-            )
+    # INVENTORY_UNLOAD was removed here — redundant with L5 ``_inventory_circuit_breaker``
+    # which already pauses the vulnerable side at ±12% (``inventory_max_deviation``).
+    # L2 now expresses policy via TWO_SIDED_SKIM or PATIENT_SOLO; L5 is the sole
+    # permission authority (grep ``inventory_cb_block`` on crowded/sparse books).
 
     if buy_edge_viable or sell_edge_viable:
         return IntentSelection(
