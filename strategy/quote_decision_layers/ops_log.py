@@ -55,11 +55,13 @@ def peer_intel_status(
     intel: Optional[Mapping[str, Any]],
     *,
     intel_stale: bool = False,
+    intel_present: Optional[bool] = None,
 ) -> str:
     """present | missing | stale — for operator visibility on intel freshness."""
-    if not intel or not intel_has_peer_fields(intel):
+    has_fields = intel_present if intel_present is not None else intel_has_peer_fields(intel)
+    if not has_fields:
         return "missing"
-    if intel_stale or bool(intel.get("competitor_error")):
+    if intel_stale or (intel and bool(intel.get("competitor_error"))):
         return "stale"
     return "present"
 
@@ -114,7 +116,9 @@ def log_posture_ops(
     path: str = "",
 ) -> str:
     """Log Layer-1 posture + peer lane consumption; returns the formatted line."""
-    status = peer_intel_status(intel, intel_stale=intel_stale)
+    status = peer_intel_status(
+        intel, intel_stale=intel_stale, intel_present=intel_present
+    )
     line = format_posture_ops_line(
         posture=posture,
         peer_lane_empty=peer_lane_empty,
@@ -183,7 +187,7 @@ def log_peer_lane_resolve(
 ) -> str:
     """Log peer intel → posture inputs at consumption boundary."""
     present = intel_has_peer_fields(intel)
-    status = peer_intel_status(intel, intel_stale=intel_stale)
+    status = peer_intel_status(intel, intel_stale=intel_stale, intel_present=present)
     lane = peer_lane_token(
         peer_lane_empty=peer_lane_empty,
         peer_lane_count=peer_lane_count,
