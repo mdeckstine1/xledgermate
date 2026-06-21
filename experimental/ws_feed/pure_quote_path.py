@@ -180,6 +180,9 @@ class PureQuoteDecision:
     qd_bid_bleeding: bool = False
     qd_ask_bleeding: bool = False
     qd_layer_trace: str = ""
+    qd_inventory_cb_mode: str = "clear"
+    qd_inventory_cb_note: str = ""
+    qd_heavy_drift_l5_deferred: bool = False
 
     def to_runtime_dict(self, *, competitor_intel: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -252,6 +255,9 @@ class PureQuoteDecision:
             "qd_bid_bleeding": self.qd_bid_bleeding,
             "qd_ask_bleeding": self.qd_ask_bleeding,
             "qd_layer_trace": self.qd_layer_trace,
+            "qd_inventory_cb_mode": self.qd_inventory_cb_mode,
+            "qd_inventory_cb_note": self.qd_inventory_cb_note,
+            "qd_heavy_drift_l5_deferred": self.qd_heavy_drift_l5_deferred,
         }
         if competitor_intel:
             out.update({k: v for k, v in competitor_intel.items() if k != "top_competitors"})

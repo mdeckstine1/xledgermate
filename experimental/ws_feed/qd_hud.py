@@ -257,6 +257,7 @@ def _layer_trace_struct(
     intent_reason: str,
     bid: Mapping[str, Any],
     ask: Mapping[str, Any],
+    inventory_cb_label: str = "",
 ) -> Dict[str, str]:
     drift = _drift_label(drift_band)
     lane = f"{peer_lane_token} ({peer_count})" if peer_count is not None else peer_lane_token
@@ -279,6 +280,7 @@ def _layer_trace_struct(
             f"ask {'ALLOWED' if ask.get('allowed') else 'BLOCKED'}"
             f" ×{float(ask.get('size_mult') or 0):.2f}"
             + (f" ({ask.get('block_cause_label') or bid.get('block_cause_label') or ''})" if not bid.get("allowed") or not ask.get("allowed") else "")
+            + (f" · inv_cb={inventory_cb_label}" if inventory_cb_label else "")
         ),
     }
 
@@ -512,6 +514,7 @@ def build_qd_snapshot(runtime: Mapping[str, Any]) -> Dict[str, Any]:
             intent_reason=intent_reason,
             bid=bid,
             ask=ask,
+            inventory_cb_label=_inventory_cb_label(inv_cb_mode),
         ),
         "inventory_cb_mode": inv_cb_mode,
         "inventory_cb_label": _inventory_cb_label(inv_cb_mode),
@@ -578,6 +581,16 @@ def build_qd_decision_summary(runtime: Mapping[str, Any], snapshot: Mapping[str,
     intent_line = f"{snapshot.get('intent_label', '—')} · drift {snapshot.get('drift_label', '—')}"
     intent_subtext = snapshot.get("intent_subtext") or ""
 
+    if kill:
+        status_hint = "engine halted — kill switch"
+    elif bid_on or ask_on:
+        status_hint = "engine running · quoting active"
+    elif bid.get("bleeding") or ask.get("bleeding"):
+        status_hint = "engine running · bleed protection"
+    else:
+        block = _primary_block(bid, ask) or "strategy hold"
+        status_hint = f"engine running · {block.lower()}"
+
     return {
         "health": health,
         "health_line": health_line,
@@ -588,6 +601,7 @@ def build_qd_decision_summary(runtime: Mapping[str, Any], snapshot: Mapping[str,
         "inventory_cb_line": inv_cb_line,
         "inventory_cb_mode": inv_cb_mode,
         "inventory_cb_pill_class": _inventory_cb_pill_class(inv_cb_mode),
+        "status_hint": status_hint,
         "quoting_line": quoting_line,
         "quoting_short": quoting_short,
         "bid_allowed": bid_on,

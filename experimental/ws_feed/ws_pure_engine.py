@@ -1227,6 +1227,9 @@ class WsPureTradingEngine:
             qd_bid_bleeding=bool(ed.get("qd_bid_bleeding")),
             qd_ask_bleeding=bool(ed.get("qd_ask_bleeding")),
             qd_layer_trace=str(ed.get("qd_layer_trace") or ""),
+            qd_inventory_cb_mode=str(ed.get("qd_inventory_cb_mode") or ""),
+            qd_inventory_cb_note=str(ed.get("qd_inventory_cb_note") or ""),
+            qd_heavy_drift_l5_deferred=bool(ed.get("qd_heavy_drift_l5_deferred")),
         )
         self.state_store.save(state)
         if ed and flags.intel_log:

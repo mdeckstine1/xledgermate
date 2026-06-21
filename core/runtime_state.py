@@ -186,6 +186,9 @@ class RuntimeState:
     qd_bid_bleeding: bool = False
     qd_ask_bleeding: bool = False
     qd_layer_trace: str = ""
+    qd_inventory_cb_mode: str = ""
+    qd_inventory_cb_note: str = ""
+    qd_heavy_drift_l5_deferred: bool = False
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()

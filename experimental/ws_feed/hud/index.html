@@ -914,20 +914,16 @@
                     </div>
 
                     <div class="card">
-                        <div class="label">Quote posture <span style="font-size:0.6rem; color:#4ade80;">(pure A-S · live)</span></div>
+                        <div class="label">A-S reservation <span style="font-size:0.6rem; color:#64748b;">(pricing · see QD stack below for permissions)</span></div>
                         <div class="metric-row"><span class="label">Reservation (inside book = protected)</span> <span id="reservation" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Res → BBO Δ <span class="info" title="Signed distance to nearest touch this cycle. Positive = inside L1. Negative = outside.">?</span></span> <span id="res-bbo-delta" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Optimal Spread</span> <span id="as_spread" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">Gamma / Kappa <span class="info" title="Pure A-S parameters (no hard gate on top).
-
-Gamma: Inventory risk aversion. Higher = more cautious on skew.
-Kappa: Controls how competitive the optimal spread is.
-
-The A-S strategy itself decides presence via reservation price being inside the best bid/ask. This is the only protection in the WS + pure path.">?</span></span> <span id="params" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">Cycle posture</span> <span id="quote-posture-label" class="value" style="font-size:0.8rem;">—</span></div>
+                        <div class="metric-row"><span class="label">Gamma / Kappa <span class="info" title="Pure A-S parameters. Quoting permissions come from the layered QD stack (L5), not reservation alone.">?</span></span> <span id="params" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">L5 permissions</span> <span id="qd-as-l5-permissions" class="value" style="font-size:0.8rem;">—</span></div>
+                        <div class="metric-row"><span class="label">Reservation skew</span> <span id="quote-posture-label" class="value" style="font-size:0.8rem;">—</span></div>
                         <div id="would_quote" class="value" style="margin-top:8px;">—</div>
                         <div id="zero-quote-note" class="note" style="margin-top:6px; font-size:0.68rem; opacity:0.9; display:none;"></div>
-                        <small style="display:block; margin-top:4px; font-size:0.65rem; opacity:0.7;">Protected by A-S math (reservation inside live book). No additional hard rules.</small>
+                        <small style="display:block; margin-top:4px; font-size:0.65rem; opacity:0.7;">A-S sets prices; layered QD (L1–L5) decides bid/ask allowed. Status above reflects L5 output.</small>
                     </div>
 
                     <div class="card">
@@ -2167,7 +2163,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                     || s.qd_bid_block_reason
                     || s.qd_ask_block_reason
                     || 'both sides blocked';
-                const detail = summary.quoting_line || blockHint;
+                const detail = summary.status_hint || summary.quoting_line || blockHint;
                 return {
                     headline: offers > 0
                         ? `NOT QUOTING ${quotingShort} — ${offers} resting on ledger`
@@ -2848,11 +2844,16 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 ds.solo_accumulate ? 'good' : (soloOn ? 'good' : (peerEmpty ? 'warn' : 'neutral'))
             );
 
-            let statusTxt = kill ? 'KILL' : (qCopy.good ? 'LIVE' : 'IDLE');
+            let statusTxt = kill ? 'KILL' : (qCopy.good ? 'QUOTING' : 'IDLE');
             if (!kill && !qCopy.good && qCopy.blockHint) {
                 statusTxt = 'BLOCKED';
             }
             setText('soak-status', statusTxt);
+            const statusPill = document.getElementById('soak-status-pill');
+            if (statusPill) {
+                const ds = s.qd_decision_summary || {};
+                statusPill.title = ds.status_hint || (kill ? 'Kill switch active' : (qCopy.good ? 'L5 allows at least one side' : 'Engine running — strategy block (not process death)'));
+            }
             soakPillClass(document.getElementById('soak-status-pill'), kill ? 'bad' : (qCopy.good ? 'good' : 'warn'));
         }
 
@@ -3110,7 +3111,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
 
             const wq = document.getElementById('would_quote');
+            const ds = s.qd_decision_summary || {};
             setText('quote-posture-label', qCopy.posture);
+            setText('qd-as-l5-permissions', ds.quoting_short || s.qd_permissions_summary || '—');
             if (wq) {
                 const wqChanged = prevValues.would_quote !== s.would_quote;
                 prevValues.would_quote = s.would_quote;
@@ -3130,9 +3133,10 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const zqn = document.getElementById('zero-quote-note');
             if (zqn) {
                 const qCopyLocal = quoteStatusCopy(s);
+                const dsLocal = s.qd_decision_summary || {};
                 const note = s.would_quote || s.qd_would_quote
                     ? (s.tight_book_note || '')
-                    : (s.zero_quote_operator_note || qCopyLocal.posture || s.zero_quote_detail || s.zero_quote_reason || '');
+                    : (dsLocal.intent_subtext || dsLocal.primary_block || s.zero_quote_operator_note || qCopyLocal.blockHint || s.zero_quote_detail || s.zero_quote_reason || '');
                 if (note) {
                     zqn.style.display = 'block';
                     zqn.textContent = note;
@@ -3224,9 +3228,12 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const soloEl = document.getElementById('solo-acquisition');
             if (soloEl) {
                 const ds = s.qd_decision_summary || {};
-                if (s.solo_mode && s.qd_book_mode === 'solo') {
-                    soloEl.textContent = ds.posture_badge ? `${ds.posture_badge} · ${s.posture_reason || 'solo'}` : 'QD solo';
+                if (ds.solo_accumulate) {
+                    soloEl.textContent = `${ds.posture_badge || 'SOLO'} · ACCUM on edge`;
                     soloEl.className = 'value good';
+                } else if (s.solo_mode && s.qd_book_mode === 'solo') {
+                    soloEl.textContent = ds.intent_line || (ds.posture_badge ? `${ds.posture_badge} · ${s.posture_reason || 'solo'}` : 'QD solo');
+                    soloEl.className = 'value ' + (ds.quoting_active ? 'good' : 'warn');
                 } else if (s.g7_solo_acquisition) {
                     soloEl.textContent = 'ON — empty peer lane';
                     soloEl.className = 'value good';

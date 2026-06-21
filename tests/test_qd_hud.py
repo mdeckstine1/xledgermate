@@ -159,3 +159,22 @@ def test_build_qd_decision_summary_both_blocked_edge() -> None:
     assert summary["primary_block"] == "Edge Gate"
     assert summary["quoting_active"] is False
     assert "BID OFF" in summary["quoting_line"]
+
+
+def test_build_qd_decision_summary_status_hint_and_l5_trace() -> None:
+    runtime = {
+        "qd_intent": "inventory_unload",
+        "qd_book_mode": "solo",
+        "solo_mode": True,
+        "qd_bid_allowed": False,
+        "qd_ask_allowed": False,
+        "qd_bid_edge_viable": False,
+        "qd_ask_edge_viable": False,
+        "qd_bid_pause_cause": "edge",
+        "qd_ask_pause_cause": "edge",
+        "qd_inventory_cb_mode": "skipped_solo",
+    }
+    snap = build_qd_snapshot(runtime)
+    summary = build_qd_decision_summary(runtime, snap)
+    assert summary["status_hint"] == "engine running · edge gate"
+    assert "inv_cb=skipped (solo)" in snap["layer_trace_struct"]["l5"]
