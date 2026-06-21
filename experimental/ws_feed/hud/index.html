@@ -367,37 +367,105 @@
         .purpose-pill.info { border-color: #3b82f6; }
         .purpose-pill.info .purpose-value { color: #93c5fd; }
 
-        /* Layered QD v2.3 stack */
+        /* Layered QD v2.3 operator view */
         .qd-stack-card { margin-top: 12px; border-color: #2563eb; }
-        .qd-sections {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 10px;
+        .qd-banner {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 10px 14px;
             margin-top: 8px;
         }
-        .qd-section {
+        .qd-banner.good { border-color: #22c55e; }
+        .qd-banner.warn { border-color: #facc15; }
+        .qd-banner.info { border-color: #3b82f6; }
+        .qd-banner.bad { border-color: #ef4444; }
+        .qd-banner-line {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 8px 14px;
+            margin-bottom: 4px;
+            font-size: 0.82rem;
+        }
+        .qd-banner-line:last-child { margin-bottom: 0; }
+        .qd-badge {
+            display: inline-block;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #475569;
+            background: #1e293b;
+        }
+        .qd-badge.good { border-color: #22c55e; color: #4ade80; }
+        .qd-badge.warn { border-color: #facc15; color: #facc15; }
+        .qd-badge.info { border-color: #3b82f6; color: #93c5fd; }
+        .qd-badge.bad { border-color: #ef4444; color: #f87171; }
+        .qd-health {
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+        }
+        .qd-health.good { color: #4ade80; }
+        .qd-health.warn { color: #facc15; }
+        .qd-health.bad { color: #f87171; }
+        .qd-side-cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .qd-side-card {
             background: #0f172a;
             border: 1px solid #334155;
             border-radius: 6px;
-            padding: 8px 10px;
+            padding: 10px 12px;
         }
-        .qd-section .qd-section-title {
+        .qd-side-card.allowed { border-color: #22c55e; }
+        .qd-side-card.blocked { border-color: #475569; }
+        .qd-side-card.bleed { border-color: #ef4444; }
+        .qd-side-title {
             font-size: 0.62rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             color: #64748b;
             margin-bottom: 6px;
         }
-        .qd-section.good { border-color: #22c55e; }
-        .qd-section.warn { border-color: #facc15; }
-        .qd-section.info { border-color: #3b82f6; }
-        .qd-section.bad { border-color: #ef4444; }
-        .qd-section .value { font-size: 0.78rem; }
-        .qd-trace {
-            margin-top: 10px;
-            font-family: ui-monospace, monospace;
+        .qd-side-status {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .qd-side-status.good { color: #4ade80; }
+        .qd-side-status.warn { color: #facc15; }
+        .qd-side-status.bad { color: #f87171; }
+        .qd-side-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.72rem;
+            margin-bottom: 3px;
+            gap: 8px;
+        }
+        .qd-side-row .label { color: #64748b; flex-shrink: 0; }
+        .qd-side-block {
+            margin-top: 6px;
             font-size: 0.68rem;
-            color: #94a3b8;
+            color: #fbbf24;
+        }
+        .qd-trace-lines {
+            margin-top: 8px;
+            font-size: 0.72rem;
+            line-height: 1.5;
+        }
+        .qd-trace-lines .layer { color: #94a3b8; }
+        .qd-trace-raw {
+            margin-top: 8px;
+            font-family: ui-monospace, monospace;
+            font-size: 0.65rem;
+            color: #64748b;
             word-break: break-word;
         }
         .qd-strip { border-bottom: none; margin-bottom: 6px; padding-bottom: 0; }
@@ -768,14 +836,11 @@
                 <div class="purpose-pill neutral" id="purpose-delta-pill"><div class="purpose-label">Δ XRP</div><div class="purpose-value" id="purpose-delta">—</div></div>
                 <div class="purpose-pill neutral" id="purpose-skim-pill"><div class="purpose-label">Skim</div><div class="purpose-value" id="purpose-skim">—</div></div>
             </div>
-            <div class="health-label">QD Stack <span>5-layer quote decision · v2.3</span></div>
+            <div class="health-label">Quote Decision <span>posture · intent · permissions</span></div>
             <div class="purpose-strip qd-strip">
-                <div class="purpose-pill neutral" id="qd-book-pill"><div class="purpose-label">Book</div><div class="purpose-value" id="qd-book-mode">—</div></div>
-                <div class="purpose-pill neutral" id="qd-lane-pill"><div class="purpose-label">Peer lane</div><div class="purpose-value" id="qd-peer-lane">—</div></div>
+                <div class="purpose-pill neutral" id="qd-book-pill"><div class="purpose-label">Posture</div><div class="purpose-value" id="qd-book-mode">—</div></div>
                 <div class="purpose-pill neutral" id="qd-intent-pill"><div class="purpose-label">Intent</div><div class="purpose-value" id="qd-intent-short">—</div></div>
-                <div class="purpose-pill neutral" id="qd-bid-pill"><div class="purpose-label">Bid</div><div class="purpose-value" id="qd-bid-perm">—</div></div>
-                <div class="purpose-pill neutral" id="qd-ask-pill"><div class="purpose-label">Ask</div><div class="purpose-value" id="qd-ask-perm">—</div></div>
-                <div class="purpose-pill neutral" id="qd-drift-pill"><div class="purpose-label">Drift</div><div class="purpose-value" id="qd-drift-band">—</div></div>
+                <div class="purpose-pill neutral" id="qd-perm-pill"><div class="purpose-label">Quoting</div><div class="purpose-value" id="qd-quoting-short">—</div></div>
             </div>
             <div class="health-label">Health <span>— live KPIs</span></div>
             <div class="soak-strip">
@@ -848,7 +913,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                         <div class="metric-row"><span class="label">Markout @30s</span> <span id="session-markout" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Toxic ratio @30s</span> <span id="session-toxic" class="value">—</span></div>
                         <div class="metric-row"><span class="label">G2 scaler</span> <span id="g2-scaler" class="value">—</span></div>
-                        <div class="metric-row"><span class="label">Solo acquisition <span class="info" title="A2: empty peer lane (0 peers in your size band) — G7 joins touch on both sides for fill rate.">?</span></span> <span id="solo-acquisition" class="value">—</span></div>
+                        <div class="metric-row"><span class="label">Solo posture <span class="info" title="QD Layer 1: empty peer lane — bot may accumulate on edge when solo. G7 queue tactic is separate.">?</span></span> <span id="solo-acquisition" class="value">—</span></div>
                         <div class="metric-row"><span class="label">G7 queue</span> <span id="g7-scaler" class="value">—</span></div>
                         <div class="metric-row"><span class="label">Queue vs touch</span> <span id="queue-visibility" class="value">—</span></div>
                         <small id="fill-quality-note" style="display:block; margin-top:6px; font-size:0.65rem; opacity:0.7;">—</small>
@@ -862,50 +927,49 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 </div>
 
                 <div class="card qd-stack-card full-width">
-                    <div class="label collapsible-header" data-target="qd-stack-body">
-                        Layered Quote Decision (L1–L5) <span class="chevron">▼</span>
+                    <div class="label">Quote Decision · v2.3</div>
+                    <div id="qd-banner" class="qd-banner neutral">
+                        <div class="qd-banner-line">
+                            <span id="qd-badge-posture" class="qd-badge neutral">—</span>
+                            <span id="qd-banner-posture-detail" class="value" style="font-size:0.75rem;">—</span>
+                        </div>
+                        <div class="qd-banner-line">
+                            <span class="label">Intent</span>
+                            <span id="qd-banner-intent" class="value">—</span>
+                        </div>
+                        <div class="qd-banner-line">
+                            <span class="label">Quoting</span>
+                            <span id="qd-banner-quoting" class="value">—</span>
+                        </div>
+                        <div class="qd-banner-line">
+                            <span id="qd-banner-health" class="qd-health">—</span>
+                            <span id="qd-banner-health-line" class="value" style="font-size:0.72rem; color:#94a3b8;">—</span>
+                        </div>
                     </div>
-                    <div id="qd-stack-body" class="collapsible-content">
-                        <div class="qd-sections">
-                            <div class="qd-section neutral" id="qd-sec-posture">
-                                <div class="qd-section-title">1 · Posture &amp; Solo</div>
-                                <div class="metric-row"><span class="label">Book mode</span> <span id="qd-posture-book" class="value">—</span></div>
-                                <div class="metric-row"><span class="label">Drift band</span> <span id="qd-posture-drift" class="value">—</span></div>
-                                <div class="metric-row"><span class="label">Peer lane</span> <span id="qd-posture-lane" class="value">—</span></div>
-                                <div class="metric-row"><span class="label">Solo mode</span> <span id="qd-posture-solo" class="value">—</span></div>
-                                <div class="metric-row"><span class="label">Reason</span> <span id="qd-posture-reason" class="value" style="font-size:0.72rem;">—</span></div>
-                            </div>
-                            <div class="qd-section neutral" id="qd-sec-intent">
-                                <div class="qd-section-title">2 · Current Intent</div>
-                                <div class="metric-row"><span class="label">Intent</span> <span id="qd-intent-full" class="value">—</span></div>
-                                <div class="metric-row"><span class="label">Why</span> <span id="qd-intent-reason" class="value" style="font-size:0.72rem;">—</span></div>
-                            </div>
-                            <div class="qd-section neutral" id="qd-sec-edge">
-                                <div class="qd-section-title">3 · Edge Status</div>
-                                <div class="metric-row"><span class="label">Bid capture</span> <span id="qd-edge-bid" class="value">—</span></div>
-                                <div class="metric-row"><span class="label">Ask capture</span> <span id="qd-edge-ask" class="value">—</span></div>
-                                <div class="metric-row"><span class="label">Min edge (bid/ask)</span> <span id="qd-edge-min" class="value" style="font-size:0.72rem;">—</span></div>
-                            </div>
-                            <div class="qd-section neutral" id="qd-sec-bleed">
-                                <div class="qd-section-title">4 · Bleed</div>
-                                <div class="metric-row"><span class="label">Buy side</span> <span id="qd-bleed-bid" class="value">—</span></div>
-                                <div class="metric-row"><span class="label">Sell side</span> <span id="qd-bleed-ask" class="value">—</span></div>
-                            </div>
-                            <div class="qd-section neutral" id="qd-sec-perms">
-                                <div class="qd-section-title">5 · Final Permissions</div>
-                                <div class="metric-row"><span class="label">qd_bid_allowed</span> <span id="qd-perm-bid" class="value">—</span></div>
-                                <div class="metric-row"><span class="label">qd_ask_allowed</span> <span id="qd-perm-ask" class="value">—</span></div>
-                                <div class="metric-row"><span class="label">Size mult</span> <span id="qd-perm-size" class="value">—</span></div>
-                                <div class="metric-row"><span class="label">Block reason</span> <span id="qd-perm-block" class="value" style="font-size:0.68rem;">—</span></div>
-                            </div>
+                    <div class="qd-side-cards">
+                        <div id="qd-card-bid" class="qd-side-card blocked">
+                            <div class="qd-side-title">Bid · buy XRP</div>
+                            <div id="qd-bid-status" class="qd-side-status warn">—</div>
+                            <div class="qd-side-row"><span class="label">Edge Gate</span> <span id="qd-bid-edge" class="value">—</span></div>
+                            <div class="qd-side-row"><span class="label">Bleed Protection</span> <span id="qd-bid-bleed" class="value">—</span></div>
+                            <div class="qd-side-row"><span class="label">Size mult</span> <span id="qd-bid-size" class="value">—</span></div>
+                            <div id="qd-bid-block" class="qd-side-block" style="display:none;"></div>
                         </div>
-                        <div class="label collapsible-header collapsed" data-target="qd-trace-body" style="margin-top:10px;">
-                            6 · Decision Trace <span class="chevron">▼</span>
+                        <div id="qd-card-ask" class="qd-side-card blocked">
+                            <div class="qd-side-title">Ask · sell XRP</div>
+                            <div id="qd-ask-status" class="qd-side-status warn">—</div>
+                            <div class="qd-side-row"><span class="label">Edge Gate</span> <span id="qd-ask-edge" class="value">—</span></div>
+                            <div class="qd-side-row"><span class="label">Bleed Protection</span> <span id="qd-ask-bleed" class="value">—</span></div>
+                            <div class="qd-side-row"><span class="label">Size mult</span> <span id="qd-ask-size" class="value">—</span></div>
+                            <div id="qd-ask-block" class="qd-side-block" style="display:none;"></div>
                         </div>
-                        <div id="qd-trace-body" class="collapsible-content collapsed">
-                            <div id="qd-layer-summary" class="metric-row" style="font-size:0.75rem;"><span class="label">Summary</span> <span id="qd-summary-text" class="value">—</span></div>
-                            <div id="qd-layer-trace" class="qd-trace">—</div>
-                        </div>
+                    </div>
+                    <div class="label collapsible-header collapsed" data-target="qd-trace-body" style="margin-top:12px;">
+                        Decision Trace <span class="chevron">▼</span>
+                    </div>
+                    <div id="qd-trace-body" class="collapsible-content collapsed">
+                        <div id="qd-trace-lines" class="qd-trace-lines">—</div>
+                        <div id="qd-layer-trace" class="qd-trace-raw">—</div>
                     </div>
                 </div>
 
@@ -2029,8 +2093,22 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
         }
 
+        function mapBlockCause(cause) {
+            const labels = {
+                edge: 'Edge Gate',
+                bleed: 'Bleed Protection',
+                inventory: 'Inventory CB',
+                tape: 'Tape guard',
+                intent: 'Intent hold',
+                operator: 'Operator override',
+            };
+            const key = String(cause || '').toLowerCase();
+            return labels[key] || cause || '';
+        }
+
         function quoteStatusCopy(s) {
             const prod = isProductionHud(s);
+            const summary = s.qd_decision_summary || {};
             const qdActive = s.qd_would_quote === true
                 || s.qd_bid_allowed === true
                 || s.qd_ask_allowed === true;
@@ -2038,22 +2116,34 @@ The A-S strategy itself decides presence via reservation price being inside the 
             const offers = (s.open_offers_count != null) ? parseInt(s.open_offers_count, 10) : 0;
             const bidTag = s.qd_bid_allowed ? 'B' : '—';
             const askTag = s.qd_ask_allowed ? 'A' : '—';
-            const qdSide = `QD ${bidTag}/${askTag}`;
+            const qdSide = `${bidTag} ON / ${askTag} ON`.replace(/— ON/g, '— OFF');
+            const quotingShort = summary.quoting_short
+                || (s.qd_bid_allowed ? 'B ON' : 'B OFF') + ' / ' + (s.qd_ask_allowed ? 'A ON' : 'A OFF');
             if (prod) {
                 if (quoting) {
                     return {
-                        headline: offers > 0 ? `QUOTING ${qdSide} — ${offers} offer(s) ✓` : `QUOTING ${qdSide} — placing ✓`,
-                        short: 'QUOTING ✓',
-                        posture: offers > 0 ? `${qdSide} · ${offers} resting` : `${qdSide} · cycle active`,
+                        headline: offers > 0 ? `QUOTING ${quotingShort} — ${offers} offer(s)` : `QUOTING ${quotingShort}`,
+                        short: 'QUOTING',
+                        posture: summary.quoting_line || (offers > 0 ? `${qdSide} · ${offers} resting` : `${qdSide} · cycle active`),
                         good: true,
                     };
                 }
-                const blockHint = s.qd_layer_summary || s.qd_bid_block_reason || s.qd_ask_block_reason || 'QD blocked';
+                const blockHint = summary.primary_block
+                    || mapBlockCause(s.qd_bid_pause_cause || s.qd_ask_pause_cause)
+                    || s.qd_layer_summary
+                    || s.zero_quote_reason
+                    || s.qd_bid_block_reason
+                    || s.qd_ask_block_reason
+                    || 'both sides blocked';
+                const detail = summary.quoting_line || blockHint;
                 return {
-                    headline: offers > 0 ? `PAUSED ${qdSide} — ${offers} offer(s) on ledger` : `PAUSED ${qdSide} — no live quotes`,
-                    short: 'PAUSED',
-                    posture: offers > 0 ? `${qdSide} · resting · ${blockHint}` : blockHint,
+                    headline: offers > 0
+                        ? `NOT QUOTING ${quotingShort} — ${offers} resting on ledger`
+                        : `NOT QUOTING ${quotingShort}`,
+                    short: 'IDLE',
+                    posture: detail,
                     good: false,
+                    blockHint,
                 };
             }
             if (quoting) {
@@ -2216,13 +2306,13 @@ The A-S strategy itself decides presence via reservation price being inside the 
             html += ` <span class="${g2MarqueeKind(s)}">${g2MarqueeText(s)}</span>`;
             html += ` <span class="${g6MarqueeKind(g6.tier)}">${g6Label} ${g6Tier}</span>`;
             html += ` <span class="${g7MarqueeKind(s)}">${g7MarqueeText(s)}</span>`;
-            if (s.qd_intent) {
-                const qdKind = (s.qd_posture_class || 'info');
-                const qdSpanClass = qdKind === 'good' ? 'quote' : (qdKind === 'bad' ? 'danger' : (qdKind === 'warn' ? 'warn' : 'info'));
-                const intentTxt = qdIntentShort(s.qd_intent);
-                const bidT = s.qd_bid_allowed ? 'B' : '—';
-                const askT = s.qd_ask_allowed ? 'A' : '—';
-                html += ` <span class="${qdSpanClass}">QD ${intentTxt} ${bidT}/${askT}</span>`;
+            if (s.qd_intent || s.qd_decision_summary) {
+                const ds = s.qd_decision_summary || {};
+                const qdKind = (s.qd_posture_class || ds.health || 'info');
+                const qdSpanClass = qdKind === 'good' ? 'quote' : (qdKind === 'bad' || qdKind === 'protect' ? 'danger' : (qdKind === 'warn' || qdKind === 'caution' ? 'warn' : 'info'));
+                const intentTxt = ds.intent_line ? ds.intent_line.split(' · ')[0] : qdIntentShort(s.qd_intent);
+                const permTxt = ds.quoting_short || (s.qd_bid_allowed ? 'B ON' : 'B OFF') + ' / ' + (s.qd_ask_allowed ? 'A ON' : 'A OFF');
+                html += ` <span class="${qdSpanClass}">QD ${intentTxt} · ${permTxt}</span>`;
             }
             html += ` <span class="${spotMarqueeKind(s)}">${spotMarqueeText(s)}</span>`;
 
@@ -2243,8 +2333,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
                 html += ` <span class="info">G4 ${s.g4_grade}</span>`;
             }
 
-            if (s.g7_solo_acquisition) {
-                html += ` <span class="quote">SOLO ACQ</span>`;
+            if (s.solo_mode && s.qd_book_mode === 'solo') {
+                html += ` <span class="quote">SOLO</span>`;
             } else if (s.peer_lane_empty) {
                 html += ` <span class="warn">empty lane</span>`;
             }
@@ -2425,118 +2515,142 @@ The A-S strategy itself decides presence via reservation price being inside the 
             return raw.replace(/_/g, ' ').slice(0, 12).toUpperCase();
         }
 
-        function qdEdgeLine(side, s) {
-            const bps = side === 'bid' ? s.qd_bid_implied_bps : s.qd_ask_implied_bps;
-            const viable = side === 'bid' ? s.qd_bid_edge_viable : s.qd_ask_edge_viable;
-            const minBps = side === 'bid' ? s.qd_bid_min_edge_bps : s.qd_ask_min_edge_bps;
+        function qdEdgeGateText(side, sideSnap, s) {
+            const snap = sideSnap || {};
+            const bps = snap.implied_bps != null ? snap.implied_bps : (side === 'bid' ? s.qd_bid_implied_bps : s.qd_ask_implied_bps);
+            const viable = snap.edge_viable != null ? snap.edge_viable : (side === 'bid' ? s.qd_bid_edge_viable : s.qd_ask_edge_viable);
+            const minBps = snap.min_edge_bps != null ? snap.min_edge_bps : (side === 'bid' ? s.qd_bid_min_edge_bps : s.qd_ask_min_edge_bps);
             if (bps == null || Number.isNaN(parseFloat(bps))) return '—';
             const gate = viable === true ? 'PASS' : (viable === false ? 'FAIL' : '?');
             const minTxt = (minBps != null && !Number.isNaN(parseFloat(minBps)))
-                ? ` ≥${parseFloat(minBps).toFixed(1)}bps`
+                ? ` (≥${parseFloat(minBps).toFixed(1)} bps)`
                 : '';
             return `${parseFloat(bps).toFixed(1)} bps · ${gate}${minTxt}`;
         }
 
-        function qdBleedLine(side, s) {
-            const bleeding = side === 'bid' ? s.qd_bid_bleeding : s.qd_ask_bleeding;
-            const pause = side === 'bid' ? s.qd_bid_pause_cause : s.qd_ask_pause_cause;
-            if (bleeding) return `BLEED · pause=${pause || 'bleed'}`;
-            if (pause === 'bleed') return 'paused (bleed)';
+        function qdBleedText(sideSnap, s, side) {
+            const bleeding = sideSnap ? sideSnap.bleeding : (side === 'bid' ? s.qd_bid_bleeding : s.qd_ask_bleeding);
+            if (bleeding) return 'ACTIVE';
             return 'clear';
         }
 
+        function qdBannerClass(health, postureClass) {
+            if (health === 'good') return 'good';
+            if (health === 'protect') return 'bad';
+            if (health === 'caution' || health === 'warn') return 'warn';
+            if (health === 'off') return 'warn';
+            return postureClass || 'neutral';
+        }
+
+        function qdPostureBadgeClass(badge) {
+            const b = String(badge || '').toUpperCase();
+            if (b === 'SOLO') return 'good';
+            if (b === 'CROWDED?') return 'warn';
+            if (b === 'SPARSE' || b === 'CROWDED') return 'info';
+            return 'neutral';
+        }
+
+        function renderSideCard(side, sideSnap, s) {
+            const allowed = sideSnap ? sideSnap.allowed : (side === 'bid' ? s.qd_bid_allowed : s.qd_ask_allowed);
+            const bleeding = sideSnap ? sideSnap.bleeding : (side === 'bid' ? s.qd_bid_bleeding : s.qd_ask_bleeding);
+            const blockCause = sideSnap ? (sideSnap.block_cause_label || mapBlockCause(sideSnap.block_cause)) : mapBlockCause(side === 'bid' ? s.qd_bid_pause_cause : s.qd_ask_pause_cause);
+            const blockReason = sideSnap ? sideSnap.block_reason : (side === 'bid' ? s.qd_bid_block_reason : s.qd_ask_block_reason);
+            const sizeMult = sideSnap ? sideSnap.size_mult : (side === 'bid' ? s.qd_bid_size_mult : s.qd_ask_size_mult);
+
+            const card = document.getElementById(`qd-card-${side}`);
+            const statusEl = document.getElementById(`qd-${side}-status`);
+            const edgeEl = document.getElementById(`qd-${side}-edge`);
+            const bleedEl = document.getElementById(`qd-${side}-bleed`);
+            const sizeEl = document.getElementById(`qd-${side}-size`);
+            const blockEl = document.getElementById(`qd-${side}-block`);
+
+            if (card) {
+                card.classList.remove('allowed', 'blocked', 'bleed');
+                if (bleeding) card.classList.add('bleed');
+                else if (allowed) card.classList.add('allowed');
+                else card.classList.add('blocked');
+            }
+            if (statusEl) {
+                statusEl.textContent = allowed ? 'ALLOWED' : 'BLOCKED';
+                statusEl.className = 'qd-side-status ' + (allowed ? 'good' : (bleeding ? 'bad' : 'warn'));
+            }
+            if (edgeEl) {
+                edgeEl.textContent = qdEdgeGateText(side, sideSnap, s);
+                edgeEl.className = 'value ' + ((sideSnap && sideSnap.edge_viable) || (side === 'bid' ? s.qd_bid_edge_viable : s.qd_ask_edge_viable) ? 'good' : 'warn');
+            }
+            if (bleedEl) {
+                bleedEl.textContent = qdBleedText(sideSnap, s, side);
+                bleedEl.className = 'value ' + (bleeding ? 'bad' : '');
+            }
+            if (sizeEl) {
+                const mult = sizeMult != null ? parseFloat(sizeMult) : 0;
+                sizeEl.textContent = `×${mult.toFixed(2)}`;
+            }
+            if (blockEl) {
+                if (!allowed && (blockCause || blockReason)) {
+                    blockEl.style.display = 'block';
+                    blockEl.textContent = blockReason || blockCause;
+                } else {
+                    blockEl.style.display = 'none';
+                    blockEl.textContent = '';
+                }
+            }
+        }
+
         function renderQdHud(s) {
+            const snap = s.qd_snapshot || {};
+            const summary = s.qd_decision_summary || {};
+            const bid = snap.bid || {};
+            const ask = snap.ask || {};
             const postureClass = s.qd_posture_class || 'neutral';
-            const bookMode = (s.qd_book_mode || '—').toUpperCase();
-            const laneToken = s.qd_peer_lane_token || '—';
-            const laneCount = s.peer_lane_count != null ? parseInt(s.peer_lane_count, 10) : null;
-            const laneDisplay = laneCount != null && !Number.isNaN(laneCount)
-                ? `${laneToken} (${laneCount})`
-                : laneToken;
-            const intentFull = s.qd_intent ? String(s.qd_intent).replace(/_/g, ' ').toUpperCase() : '—';
-            const intentShort = qdIntentShort(s.qd_intent);
-            const drift = s.qd_drift_band ? String(s.qd_drift_band).replace(/_/g, ' ') : '—';
-            const solo = s.solo_mode === true ? 'YES' : (s.solo_mode === false ? 'no' : '—');
-            const reason = s.posture_reason || '—';
+            const health = summary.health || postureClass;
 
-            setText('qd-book-mode', bookMode);
-            setText('qd-peer-lane', laneDisplay);
-            setText('qd-intent-short', intentShort);
-            setText('qd-drift-band', drift);
+            const badge = summary.posture_badge || (s.qd_book_mode || '—').toUpperCase();
+            setText('qd-book-mode', badge);
+            setText('qd-intent-short', snap.intent_short || qdIntentShort(s.qd_intent));
+            setText('qd-quoting-short', summary.quoting_short || '—');
 
-            const bidOn = s.qd_bid_allowed === true;
-            const askOn = s.qd_ask_allowed === true;
-            setText('qd-bid-perm', bidOn ? 'ON' : 'OFF');
-            setText('qd-ask-perm', askOn ? 'ON' : 'OFF');
-
-            purposePillClass(document.getElementById('qd-book-pill'), postureClass === 'info' ? 'info' : postureClass);
-            purposePillClass(document.getElementById('qd-lane-pill'), laneToken === 'empty' ? 'good' : (laneToken === 'missing' ? 'warn' : 'info'));
+            purposePillClass(document.getElementById('qd-book-pill'), qdPostureBadgeClass(badge));
             purposePillClass(document.getElementById('qd-intent-pill'), postureClass);
-            purposePillClass(document.getElementById('qd-bid-pill'), bidOn ? 'good' : (s.qd_bid_pause_cause === 'bleed' ? 'bad' : 'warn'));
-            purposePillClass(document.getElementById('qd-ask-pill'), askOn ? 'good' : (s.qd_ask_pause_cause === 'bleed' ? 'bad' : 'warn'));
-            purposePillClass(document.getElementById('qd-drift-pill'), 'neutral');
+            const permPill = document.getElementById('qd-perm-pill');
+            const quotingActive = summary.quoting_active || s.qd_bid_allowed || s.qd_ask_allowed;
+            purposePillClass(permPill, quotingActive ? 'good' : (summary.protection_active ? 'bad' : 'warn'));
 
-            setText('qd-posture-book', bookMode);
-            setText('qd-posture-drift', drift);
-            setText('qd-posture-lane', laneDisplay);
-            setText('qd-posture-solo', solo);
-            setText('qd-posture-reason', reason);
-            qdSectionClass(document.getElementById('qd-sec-posture'), postureClass);
+            const banner = document.getElementById('qd-banner');
+            if (banner) {
+                banner.classList.remove('good', 'warn', 'info', 'bad', 'neutral');
+                banner.classList.add(qdBannerClass(health, postureClass));
+            }
 
-            setText('qd-intent-full', intentFull);
-            setText('qd-intent-reason', s.qd_intent_reason || '—');
-            qdSectionClass(document.getElementById('qd-sec-intent'), postureClass);
+            const badgeEl = document.getElementById('qd-badge-posture');
+            if (badgeEl) {
+                badgeEl.textContent = badge;
+                badgeEl.className = 'qd-badge ' + qdPostureBadgeClass(badge);
+            }
+            setText('qd-banner-posture-detail', summary.posture_detail || s.posture_reason || '—');
+            setText('qd-banner-intent', summary.intent_line || (snap.intent_label || '—'));
+            setText('qd-banner-quoting', summary.quoting_line || s.qd_permissions_summary || '—');
 
-            const bidEdgeEl = document.getElementById('qd-edge-bid');
-            const askEdgeEl = document.getElementById('qd-edge-ask');
-            if (bidEdgeEl) {
-                bidEdgeEl.textContent = qdEdgeLine('bid', s);
-                bidEdgeEl.className = 'value ' + (s.qd_bid_edge_viable ? 'good' : 'warn');
+            const healthEl = document.getElementById('qd-banner-health');
+            if (healthEl) {
+                const healthLabel = String(health || '—').toUpperCase();
+                healthEl.textContent = healthLabel;
+                healthEl.className = 'qd-health ' + (health === 'good' ? 'good' : (health === 'protect' ? 'bad' : (health === 'caution' ? 'warn' : '')));
             }
-            if (askEdgeEl) {
-                askEdgeEl.textContent = qdEdgeLine('ask', s);
-                askEdgeEl.className = 'value ' + (s.qd_ask_edge_viable ? 'good' : 'warn');
-            }
-            const minBid = s.qd_bid_min_edge_bps;
-            const minAsk = s.qd_ask_min_edge_bps;
-            setText('qd-edge-min', (minBid != null || minAsk != null)
-                ? `${minBid != null ? parseFloat(minBid).toFixed(1) : '—'} / ${minAsk != null ? parseFloat(minAsk).toFixed(1) : '—'} bps`
-                : '—');
-            qdSectionClass(document.getElementById('qd-sec-edge'), (s.qd_bid_edge_viable || s.qd_ask_edge_viable) ? 'good' : 'warn');
+            setText('qd-banner-health-line', summary.health_line || '—');
 
-            const bidBleedEl = document.getElementById('qd-bleed-bid');
-            const askBleedEl = document.getElementById('qd-bleed-ask');
-            if (bidBleedEl) {
-                bidBleedEl.textContent = qdBleedLine('bid', s);
-                bidBleedEl.className = 'value ' + (s.qd_bid_bleeding ? 'warn' : '');
-            }
-            if (askBleedEl) {
-                askBleedEl.textContent = qdBleedLine('ask', s);
-                askBleedEl.className = 'value ' + (s.qd_ask_bleeding ? 'warn' : '');
-            }
-            qdSectionClass(document.getElementById('qd-sec-bleed'), (s.qd_bid_bleeding || s.qd_ask_bleeding) ? 'bad' : 'good');
+            renderSideCard('bid', bid, s);
+            renderSideCard('ask', ask, s);
 
-            const bidPermEl = document.getElementById('qd-perm-bid');
-            const askPermEl = document.getElementById('qd-perm-ask');
-            if (bidPermEl) {
-                bidPermEl.textContent = bidOn ? 'allowed' : 'blocked';
-                bidPermEl.className = 'value ' + (bidOn ? 'good' : 'warn');
+            const traceStruct = snap.layer_trace_struct || {};
+            const traceLines = document.getElementById('qd-trace-lines');
+            if (traceLines) {
+                const lines = ['l1', 'l2', 'l3', 'l4', 'l5']
+                    .filter((k) => traceStruct[k])
+                    .map((k, i) => `<div class="layer"><span class="label">L${i + 1}</span> ${escapeHudHtml(traceStruct[k])}</div>`);
+                traceLines.innerHTML = lines.length ? lines.join('') : '—';
             }
-            if (askPermEl) {
-                askPermEl.textContent = askOn ? 'allowed' : 'blocked';
-                askPermEl.className = 'value ' + (askOn ? 'good' : 'warn');
-            }
-            const bidMult = s.qd_bid_size_mult != null ? parseFloat(s.qd_bid_size_mult) : 0;
-            const askMult = s.qd_ask_size_mult != null ? parseFloat(s.qd_ask_size_mult) : 0;
-            setText('qd-perm-size', `bid×${bidMult.toFixed(2)} · ask×${askMult.toFixed(2)}`);
-            const blockParts = [];
-            if (s.qd_bid_block_reason) blockParts.push(`bid: ${s.qd_bid_block_reason}`);
-            if (s.qd_ask_block_reason) blockParts.push(`ask: ${s.qd_ask_block_reason}`);
-            setText('qd-perm-block', blockParts.length ? blockParts.join(' · ') : '—');
-            qdSectionClass(document.getElementById('qd-sec-perms'), (bidOn || askOn) ? 'good' : 'warn');
-
-            setText('qd-summary-text', s.qd_layer_summary || s.qd_permissions_summary || '—');
-            setText('qd-layer-trace', s.qd_layer_trace || '—');
+            setText('qd-layer-trace', snap.layer_trace_raw || s.qd_layer_trace || '—');
         }
 
         function signedCaptureText(v) {
@@ -2673,18 +2787,19 @@ The A-S strategy itself decides presence via reservation price being inside the 
             setText('soak-g6', tierDisplay);
             soakPillClass(document.getElementById('soak-g6-pill'), g6SoakPillClass(g6.tier || ''));
 
-            const soloOn = !!(s.solo_mode || s.g7_solo_acquisition);
+            const soloOn = !!(s.solo_mode && s.qd_book_mode === 'solo');
             const peerEmpty = !!(s.peer_lane_empty);
-            let soloTxt = soloOn ? 'ON' : (peerEmpty ? 'lane empty' : '—');
-            if (soloOn && s.qd_book_mode === 'solo') soloTxt = 'ON · QD solo';
-            else if (soloOn && s.g4_grade === 'solo_acquire') soloTxt = 'ON · G4';
+            let soloTxt = soloOn ? 'QD solo' : (peerEmpty ? 'lane empty' : (s.g7_solo_acquisition ? 'G7 acq' : '—'));
             setText('soak-solo', soloTxt);
             soakPillClass(
                 document.getElementById('soak-solo-pill'),
                 soloOn ? 'good' : (peerEmpty ? 'warn' : 'neutral')
             );
 
-            let statusTxt = kill ? 'KILL' : (qCopy.good ? 'LIVE' : 'PAUSE');
+            let statusTxt = kill ? 'KILL' : (qCopy.good ? 'LIVE' : 'IDLE');
+            if (!kill && !qCopy.good && qCopy.blockHint) {
+                statusTxt = 'BLOCKED';
+            }
             setText('soak-status', statusTxt);
             soakPillClass(document.getElementById('soak-status-pill'), kill ? 'bad' : (qCopy.good ? 'good' : 'warn'));
         }
@@ -2962,13 +3077,14 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
             const zqn = document.getElementById('zero-quote-note');
             if (zqn) {
-                const note = s.would_quote
+                const qCopyLocal = quoteStatusCopy(s);
+                const note = s.would_quote || s.qd_would_quote
                     ? (s.tight_book_note || '')
-                    : (s.zero_quote_operator_note || s.zero_quote_detail || s.zero_quote_reason || '');
+                    : (s.zero_quote_operator_note || qCopyLocal.posture || s.zero_quote_detail || s.zero_quote_reason || '');
                 if (note) {
                     zqn.style.display = 'block';
                     zqn.textContent = note;
-                    zqn.style.color = s.would_quote ? '#94a3b8' : '#fbbf24';
+                    zqn.style.color = (s.would_quote || s.qd_would_quote) ? '#94a3b8' : '#fbbf24';
                 } else {
                     zqn.style.display = 'none';
                     zqn.textContent = '';
@@ -3055,7 +3171,11 @@ The A-S strategy itself decides presence via reservation price being inside the 
             })());
             const soloEl = document.getElementById('solo-acquisition');
             if (soloEl) {
-                if (s.g7_solo_acquisition) {
+                const ds = s.qd_decision_summary || {};
+                if (s.solo_mode && s.qd_book_mode === 'solo') {
+                    soloEl.textContent = ds.posture_badge ? `${ds.posture_badge} · ${s.posture_reason || 'solo'}` : 'QD solo';
+                    soloEl.className = 'value good';
+                } else if (s.g7_solo_acquisition) {
                     soloEl.textContent = 'ON — empty peer lane';
                     soloEl.className = 'value good';
                 } else if (s.peer_lane_empty) {
