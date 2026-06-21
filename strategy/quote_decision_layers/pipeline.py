@@ -52,8 +52,8 @@ def run_layered_quote_decision(
       L1 posture (read-only)
       L3 edge preview (needed for L2 intent)
       L2 intent
-      L4 bleed (side-local)
-      L5 final permissions
+      L4 bleed (side-local overrides, applied inside L5)
+      L5 final permissions (**sole** ``allowed`` authority)
     """
     posture = build_posture(
         xrp_ratio=xrp_ratio,

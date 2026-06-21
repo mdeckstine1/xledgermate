@@ -106,7 +106,12 @@ class EdgeViability:
 
 @dataclass(frozen=True)
 class SidePermission:
-    """Layer 5 — final permission for one side."""
+    """
+    Layer 5 — final permission for one side.
+
+    Only ``build_layer_decision`` (via ``merge_bleed``) may construct
+    production ``allowed`` / ``size_mult`` values for the sacred path.
+    """
 
     allowed: bool
     size_mult: float

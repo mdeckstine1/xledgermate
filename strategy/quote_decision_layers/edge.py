@@ -2,7 +2,8 @@
 Layer 3 — Profitable edge filter.
 
 Solo books: hard gate — a side is off unless capture clears net edge (fees + adverse).
-Crowded/sparse: no hard gate here; edge scales size only (side pauses elsewhere).
+Crowded/sparse: no hard gate here; edge scales size only. Side ``allowed``
+flags are set in Layer 5 only (intent, bleed, inventory, tape).
 """
 
 from __future__ import annotations

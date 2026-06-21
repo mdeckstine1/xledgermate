@@ -335,3 +335,66 @@ def test_scenario_d_build_quote_adjustments_solo_integration() -> None:
 
 def test_build_quote_adjustments_solo_lane_drifts_xrp_heavy_allows_bid() -> None:
     test_scenario_d_build_quote_adjustments_solo_integration()
+
+
+# --- Posture hardening (input validation, no quoting behavior change) ---
+
+
+def test_posture_contradictory_empty_flag_normalizes_count() -> None:
+    from strategy.quote_decision_layers.posture import build_posture
+
+    p = build_posture(
+        xrp_ratio=0.55,
+        inventory_label="balanced",
+        fill_quality=FillQualityState(),
+        target_xrp_ratio=0.55,
+        market_condition="favorable",
+        mid_momentum_pct=0.0,
+        peer_lane_empty=True,
+        peer_lane_count=5,
+    )
+    assert p.book.solo is True
+    assert p.book.peer_lane_count == 0
+    assert p.book.mode == BookMode.SOLO
+
+
+def test_posture_unknown_peer_count_defaults_crowded_mode() -> None:
+    from strategy.quote_decision_layers.posture import (
+        PEER_LANE_COUNT_CROWDED_ASSUMED,
+        build_posture,
+    )
+
+    p = build_posture(
+        xrp_ratio=0.55,
+        inventory_label="balanced",
+        fill_quality=FillQualityState(),
+        target_xrp_ratio=0.55,
+        market_condition="favorable",
+        mid_momentum_pct=0.0,
+        peer_lane_empty=False,
+        peer_lane_count=0,
+    )
+    assert p.book.solo is False
+    assert p.book.peer_lane_count == 0
+    assert p.book.mode == BookMode.CROWDED
+    assert PEER_LANE_COUNT_CROWDED_ASSUMED == 3
+
+
+def test_posture_clamps_invalid_ratios_and_market_condition() -> None:
+    from strategy.quote_decision_layers.posture import build_posture
+    from core.market_conditions import CONDITION_NEUTRAL
+
+    p = build_posture(
+        xrp_ratio=float("nan"),
+        inventory_label="",
+        fill_quality=FillQualityState(),
+        target_xrp_ratio=0.55,
+        market_condition="not_a_real_condition",
+        mid_momentum_pct=float("inf"),
+        peer_lane_empty=True,
+    )
+    assert p.inventory.xrp_ratio == 0.5  # default clamp for NaN
+    assert p.inventory.label == "balanced"
+    assert p.market_condition == CONDITION_NEUTRAL
+    assert p.mid_momentum_pct == 0.0
+

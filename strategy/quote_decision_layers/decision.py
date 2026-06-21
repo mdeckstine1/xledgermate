@@ -1,7 +1,11 @@
 """
 Layer 5 — Final quoting decision.
 
-Sole authority on bid/ask allowed flags (mapped to pause_bids/pause_asks).
+**Sole authority on bid/ask ``allowed`` flags** (mapped to pause_bids/pause_asks
+in ``strategy/quote_decision.py``). Layers 1–4 produce read-only posture,
+intent hints, edge viability, and bleed *overrides* consumed only inside
+``build_layer_decision`` — they must not set permissions elsewhere.
+
 Combines intent, edge filter, bleed protection, inventory circuit breakers,
 and adverse tape guards.
 """
@@ -214,7 +218,13 @@ def build_layer_decision(
     momentum_pause_vulnerable: bool,
     ops_path: str = "",
 ) -> LayerQuotingDecision:
-    """Merge all layers into final side permissions."""
+    """
+    Merge all layers into final ``SidePermission`` values.
+
+    This is the **only** function in the layer stack that may set
+    ``SidePermission.allowed`` / ``size_mult`` for production quoting.
+    ``merge_bleed`` may only narrow (block) a side already computed here.
+    """
     if posture.book.mode == BookMode.SOLO:
         log_inventory_cb_skipped_solo(path=ops_path)
 

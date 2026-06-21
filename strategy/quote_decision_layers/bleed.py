@@ -21,7 +21,12 @@ class BleedAdjustment:
 
 
 def apply_bleed_protection(posture: Posture) -> BleedAdjustment:
-    """Side-local bleed rules — no cross-side coupling."""
+    """
+    Side-local bleed rules — no cross-side coupling.
+
+    Returns override hints only; Layer 5 ``merge_bleed`` applies them and is
+    the sole place that sets ``SidePermission.allowed`` for production.
+    """
     bid_note = ""
     ask_note = ""
     bid_override: bool | None = None
@@ -49,6 +54,12 @@ def merge_bleed(
     allowed_override: bool | None,
     bleed_note: str,
 ) -> SidePermission:
+    """
+    Apply Layer 4 bleed within Layer 5 — may block only, never allow.
+
+    Called exclusively from ``build_layer_decision`` after base permissions
+    are computed; must not be used to grant quoting outside L5.
+    """
     if allowed_override is False:
         reason = bleed_note or perm.block_reason or "bleed_protection"
         return SidePermission(

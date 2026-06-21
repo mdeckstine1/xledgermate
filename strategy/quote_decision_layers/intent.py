@@ -1,7 +1,8 @@
 """
 Layer 2 — Intent / policy selection.
 
-Chooses what the bot is trying to do. Does not set final permissions (Layer 5).
+Chooses what the bot is trying to do. Does not set ``SidePermission.allowed``
+(Layer 5 via ``build_layer_decision`` only).
 On solo books, profitable edge on the favorable side wins over drifted inventory.
 """
 
