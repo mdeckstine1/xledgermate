@@ -95,11 +95,19 @@ def test_hourly_report_ws_fill_counts_and_hud_link(tmp_path: Path) -> None:
         ],
     )
     (logs / "runtime_state.json").write_text(
-        '{"as_mode":"pure","active_profile":"ws_pure","ws_as_version":"2.1.10",'
+        '{"as_mode":"pure","active_profile":"ws_pure","ws_as_version":"2.3.1",'
         '"fills_session":2,"portfolio_value_xrp":234.1,"as_presence_pct":79.0,'
         '"g2_grade":"watch","cycle_count":100,"mid_price":2.18,"open_offers_count":2,'
         '"toxic_fill_ratio":0.18,"toxic_fill_ratio_30s":0.40,"cancel_per_fill":1.4,'
-        '"session_pnl_balance_xrp":0.1}',
+        '"session_pnl_balance_xrp":0.1,'
+        '"qd_intent":"solo_accumulate_on_edge","qd_book_mode":"solo","solo_mode":true,'
+        '"qd_drift_band":"heavy_xrp","qd_peer_lane_token":"empty","posture_reason":"confirmed_empty",'
+        '"qd_intent_reason":"solo book + viable buy edge (drift ignored)",'
+        '"qd_bid_allowed":true,"qd_ask_allowed":false,'
+        '"qd_bid_edge_viable":true,"qd_ask_edge_viable":true,'
+        '"qd_bid_implied_bps":1.29,"qd_ask_implied_bps":1.29,'
+        '"qd_inventory_cb_mode":"skipped_solo","qd_would_quote":true,'
+        '"zero_quote_reason":"quoted"}',
         encoding="utf-8",
     )
     (logs / "g6_activation_report.json").write_text(
@@ -115,10 +123,15 @@ def test_hourly_report_ws_fill_counts_and_hud_link(tmp_path: Path) -> None:
     )
 
     assert "WS pure A-S" in text
+    assert "Ashigaru" in text
     assert "Fills — last 1h: 2 | session: 2" in text
     assert "WS fills — last 1h: 2 | session: 2 | total: 2" in text
     assert "G6: pilot_watch" in text
     assert "Presence: 79.0%" in text
+    assert "QD (layered A-S):" in text
+    assert "Intent: ACCUM" in text or "solo_accumulate" in text
+    assert "L5: bid ON" in text
+    assert "inv CB skipped" in text or "skipped (solo)" in text
     assert "HUD: http://188.245.50.229:8765" in text
     assert "Clear kill" not in text
     assert "Resume:" not in text

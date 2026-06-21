@@ -146,6 +146,110 @@ def _is_ws_runtime(rs: dict[str, Any]) -> bool:
     return bool(rs.get("ws_as_version"))
 
 
+def _fmt_on_off(value: Any) -> str:
+    if value is True:
+        return "ON"
+    if value is False:
+        return "OFF"
+    return "?"
+
+
+def _qd_lines_from_runtime(rs: dict[str, Any], *, logs: Path, since: datetime) -> list[str]:
+    """Compact L1–L5 snapshot for Telegram (acquisition-centered MM)."""
+    try:
+        from experimental.ws_feed.qd_hud import build_qd_hud_fields
+
+        hud = build_qd_hud_fields(rs)
+    except Exception:
+        hud = {}
+
+    snap = hud.get("qd_snapshot") or {}
+    summary = hud.get("qd_decision_summary") or {}
+    bid = snap.get("bid") or {}
+    ask = snap.get("ask") or {}
+
+    book = str(snap.get("book_mode") or rs.get("qd_book_mode") or "?").upper()
+    solo = snap.get("solo_mode", rs.get("solo_mode"))
+    drift = snap.get("drift_label") or rs.get("qd_drift_band") or rs.get("inventory_label") or "?"
+    peer = snap.get("peer_lane_token") or rs.get("qd_peer_lane_token") or "?"
+    intent = snap.get("intent_short") or snap.get("intent") or rs.get("qd_intent") or "?"
+    intent_reason = (snap.get("intent_reason") or rs.get("qd_intent_reason") or "")[:72]
+
+    bid_allowed = rs.get("qd_bid_allowed", bid.get("allowed"))
+    ask_allowed = rs.get("qd_ask_allowed", ask.get("allowed"))
+    bid_cause = rs.get("qd_bid_pause_cause") or bid.get("block_cause") or ""
+    ask_cause = rs.get("qd_ask_pause_cause") or ask.get("block_cause") or ""
+
+    bid_bps = bid.get("implied_bps") or rs.get("qd_bid_implied_bps")
+    ask_bps = ask.get("implied_bps") or rs.get("qd_ask_implied_bps")
+    bid_edge = f"{float(bid_bps):.1f}bps" if bid_bps is not None else "?"
+    ask_edge = f"{float(ask_bps):.1f}bps" if ask_bps is not None else "?"
+    bid_ev = "✓" if bid.get("edge_viable", rs.get("qd_bid_edge_viable")) else "✗"
+    ask_ev = "✓" if ask.get("edge_viable", rs.get("qd_ask_edge_viable")) else "✗"
+
+    inv_cb = snap.get("inventory_cb_label") or rs.get("qd_inventory_cb_mode") or "?"
+    bleed = "active" if summary.get("protection_active") else "clear"
+    would = rs.get("qd_would_quote", snap.get("would_quote"))
+    status = summary.get("status_hint") or rs.get("zero_quote_reason") or ""
+
+    lines = [
+        "QD (layered A-S):",
+        f"  Posture: {book}{' · solo' if solo else ''} · drift {drift} · peer {peer}",
+        f"  Intent: {intent}" + (f" — {intent_reason}" if intent_reason else ""),
+        f"  L5: bid {_fmt_on_off(bid_allowed)}"
+        + (f" ({bid_cause})" if bid_cause and not bid_allowed else "")
+        + f" · ask {_fmt_on_off(ask_allowed)}"
+        + (f" ({ask_cause})" if ask_cause and not ask_allowed else ""),
+        f"  Edge: bid {bid_edge}{bid_ev} · ask {ask_edge}{ask_ev} · inv CB {inv_cb} · bleed {bleed}",
+        f"  Quote: would_quote={_fmt_on_off(would).lower()}"
+        + (f" · {status[:60]}" if status else ""),
+    ]
+
+    mix = _qd_intent_mix_in_window(logs / "xledgermate.log", since=since)
+    if mix:
+        lines.append(f"  Last hour intents: {mix}")
+    return lines
+
+
+def _qd_intent_mix_in_window(log_path: Path, *, since: datetime) -> str:
+    """Count QD_FINAL intents in the lookback window (compact operator mix)."""
+    if not log_path.exists():
+        return ""
+    try:
+        from collections import Counter
+
+        from scripts.qd_final_report import parse_qd_final_line, tail_qd_final_lines
+
+        counts: Counter[str] = Counter()
+        for line in tail_qd_final_lines(log_path, limit=120):
+            rec = parse_qd_final_line(line)
+            ts_raw = rec.get("_ts", "")
+            if not ts_raw:
+                continue
+            ts = _parse_ts(ts_raw.replace(" ", "T") + "+00:00")
+            if ts is None or ts < since:
+                continue
+            intent = rec.get("intent") or "?"
+            if intent == "solo_accumulate_on_edge":
+                counts["accum"] += 1
+            elif intent == "inventory_unload":
+                counts["trim"] += 1
+            else:
+                counts[intent] += 1
+        if not counts:
+            return ""
+        parts = []
+        for key in ("accum", "trim", "two_sided_skim", "patient_solo"):
+            if counts.get(key):
+                parts.append(f"{key}={counts[key]}")
+        for key, val in sorted(counts.items()):
+            if key not in ("accum", "trim", "two_sided_skim", "patient_solo"):
+                parts.append(f"{key}={val}")
+        return ", ".join(parts)
+    except Exception:
+        return ""
+
+
 def build_report(
     *,
     window_hours: float = 1.0,
@@ -192,7 +296,9 @@ def build_report(
     toxic = float(rs.get("toxic_fill_ratio") or 0) * 100
     toxic_30 = float(rs.get("toxic_fill_ratio_30s") or 0) * 100
     cancel_cf = float(rs.get("cancel_per_fill") or 0)
-    policy = str(rs.get("quoting_policy_label") or rs.get("edge_resolution_summary") or "")[:80]
+    policy = str(rs.get("quoting_policy_label") or "")[:80]
+    if not policy and ws_path:
+        policy = str(rs.get("zero_quote_reason") or rs.get("edge_resolution_summary") or "")[:80]
 
     fills_session_rt = int(rs.get("fills_session") or 0)
     session_fill_count = fills_session_rt if fills_session_rt > 0 else session["count"]
@@ -200,7 +306,7 @@ def build_report(
         session_fill_count = max(session_fill_count, ws_session["count"])
 
     status = "KILL" if kill_active else ("RUNNING" if running else "STOPPED")
-    title = "XLedgerMate hourly (WS pure A-S)" if ws_path else "XLedgerMate hourly report"
+    title = "XLedgerMate hourly (Ashigaru · WS pure A-S)" if ws_path else "XLedgerMate hourly report"
     lines = [
         title,
         f"{now.strftime('%Y-%m-%d %H:%M')} UTC",
@@ -245,6 +351,8 @@ def build_report(
             lines.append(
                 f"Res→BBO: {format_reservation_bbo_delta(delta, inside_l1=inside)}"
             )
+        lines.append("")
+        lines.extend(_qd_lines_from_runtime(rs, logs=logs, since=since_hour))
     if kill_active and kill_reason:
         lines.append(f"Kill: {kill_reason[:200]}")
     lines.extend(
@@ -273,7 +381,8 @@ def build_report(
         ]
     )
     if policy:
-        lines.append(f"Policy: {policy}")
+        label = "Quote status" if ws_path else "Policy"
+        lines.append(f"{label}: {policy}")
     if not ws_path:
         kill_limit = 0.85
         kill_min_fills = 45
