@@ -3,9 +3,9 @@ Thin integration adapter — maps existing pure_quote_path / engine inputs to th
 new pipeline and optional legacy comparison.
 
 Migration:
-  Phase 0 (now): shadow mode — log QD decision alongside old pause_* flags.
-  Phase 1: use QD bid/ask.allowed for ladder; ignore inv pause + A2 pause_*.
-  Phase 2: remove buy_edge_gate, acquire_ask_brake, effective_quote_sides merge.
+  Phase 0 (done): shadow log QD vs legacy.
+  Phase 1 (v2.2.0): QD bid/ask.allowed active on ladder.
+  Phase 2 (v2.2.1–2.2.2): removed gate modules; QD-only observability.
   Phase 3: retire pause_bids/pause_asks from RuntimeState intel fields.
 """
 

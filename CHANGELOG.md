@@ -5,6 +5,15 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.2.2] — 2026-06-21 (`Ashigaru Kaizen II`)
+
+**Phase 2b — QD-only observability.**
+
+- Removed legacy A2 gate field aliases (`buy_edge_gate_*`, `acquire_ask_brake_*`, `sell_edge_gate_*`).
+- Runtime, intel JSONL, and engine adapter now expose `qd_*` fields only (intent, allowed, edge bps, block reason, size mult).
+
+---
+
 ## [2.2.1] — 2026-06-21 (`Ashigaru Kaizen II`)
 
 **Phase 2a — retire dead gate modules.**

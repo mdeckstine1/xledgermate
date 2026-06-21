@@ -94,7 +94,7 @@ Legacy ladder posting is unchanged. Use `qd_conflicts` in soak to validate befor
 |-------|--------|
 | **0 (done)** | Shadow log QD vs legacy; soak on solo book; watch `qd_conflicts` |
 | **1 (v2.2.0 live)** | Use `qd.bid/ask.allowed` + `size_mult` for ladder; drop inv `pause_*` merge |
-| **2** | Remove `buy_edge_gate`, `acquire_ask_brake`, `sell_edge_gate`, `effective_quote_sides` bailout |
+| **2 (v2.2.1–2.2.2 done)** | Deleted gate modules; QD-only observability in runtime/intel |
 | **3** | Retire `pause_bids`/`pause_asks` from RuntimeState and intel JSONL |
 
 ### Phase 1 cutover sketch

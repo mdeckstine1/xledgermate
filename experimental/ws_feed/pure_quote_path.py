@@ -142,24 +142,18 @@ class PureQuoteDecision:
     solo_as_tighten: bool = False
     g2_scaler_label: str = ""
     execution_brakes_summary: str = ""
-    buy_edge_gate_active: bool = False
-    buy_edge_gate_blocked: bool = False
-    buy_edge_implied_bps: Optional[float] = None
-    buy_edge_gate_reason: str = ""
-    acquire_ask_brake_active: bool = False
-    acquire_ask_brake_blocked: bool = False
-    acquire_ask_brake_reason: str = ""
-    sell_edge_gate_active: bool = False
-    sell_edge_gate_blocked: bool = False
-    sell_edge_implied_bps: Optional[float] = None
-    sell_edge_gate_reason: str = ""
-    # Layered quote decision (Phase 0 shadow — logged alongside legacy pause_*)
+    # Layered quote decision (v2.2 — sole observability for side permissions)
     qd_intent: str = ""
     qd_bid_allowed: bool = False
     qd_ask_allowed: bool = False
     qd_would_quote: bool = False
-    qd_conflicts: List[str] = field(default_factory=list)
     qd_layer_summary: str = ""
+    qd_bid_implied_bps: Optional[float] = None
+    qd_ask_implied_bps: Optional[float] = None
+    qd_bid_block_reason: str = ""
+    qd_ask_block_reason: str = ""
+    qd_bid_size_mult: float = 0.0
+    qd_ask_size_mult: float = 0.0
 
     def to_runtime_dict(self, *, competitor_intel: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -207,23 +201,17 @@ class PureQuoteDecision:
             "g7_solo_acquisition": self.g7_solo_acquisition,
             "g2_scaler_label": self.g2_scaler_label,
             "execution_brakes_summary": self.execution_brakes_summary,
-            "buy_edge_gate_active": self.buy_edge_gate_active,
-            "buy_edge_gate_blocked": self.buy_edge_gate_blocked,
-            "buy_edge_implied_bps": self.buy_edge_implied_bps,
-            "buy_edge_gate_reason": self.buy_edge_gate_reason,
-            "acquire_ask_brake_active": self.acquire_ask_brake_active,
-            "acquire_ask_brake_blocked": self.acquire_ask_brake_blocked,
-            "acquire_ask_brake_reason": self.acquire_ask_brake_reason,
-            "sell_edge_gate_active": self.sell_edge_gate_active,
-            "sell_edge_gate_blocked": self.sell_edge_gate_blocked,
-            "sell_edge_implied_bps": self.sell_edge_implied_bps,
-            "sell_edge_gate_reason": self.sell_edge_gate_reason,
             "qd_intent": self.qd_intent,
             "qd_bid_allowed": self.qd_bid_allowed,
             "qd_ask_allowed": self.qd_ask_allowed,
             "qd_would_quote": self.qd_would_quote,
-            "qd_conflicts": list(self.qd_conflicts),
             "qd_layer_summary": self.qd_layer_summary,
+            "qd_bid_implied_bps": self.qd_bid_implied_bps,
+            "qd_ask_implied_bps": self.qd_ask_implied_bps,
+            "qd_bid_block_reason": self.qd_bid_block_reason,
+            "qd_ask_block_reason": self.qd_ask_block_reason,
+            "qd_bid_size_mult": self.qd_bid_size_mult,
+            "qd_ask_size_mult": self.qd_ask_size_mult,
         }
         if competitor_intel:
             out.update({k: v for k, v in competitor_intel.items() if k != "top_competitors"})
@@ -741,23 +729,17 @@ class PureQuotePath:
             solo_as_tighten=solo_tighten,
             g2_scaler_label=brake_panel["g2_scaler_label"],
             execution_brakes_summary=execution_brakes_summary,
-            buy_edge_gate_active=qd.bid.implied_edge_bps is not None,
-            buy_edge_gate_blocked=not qd.bid.allowed,
-            buy_edge_implied_bps=qd.bid.implied_edge_bps,
-            buy_edge_gate_reason=qd.bid.block_reason,
-            acquire_ask_brake_active=is_peer_lane_empty(quoting_intel),
-            acquire_ask_brake_blocked=not qd.ask.allowed,
-            acquire_ask_brake_reason=qd.ask.block_reason,
-            sell_edge_gate_active=qd.ask.implied_edge_bps is not None,
-            sell_edge_gate_blocked=not qd.ask.allowed,
-            sell_edge_implied_bps=qd.ask.implied_edge_bps,
-            sell_edge_gate_reason=qd.ask.block_reason,
             qd_intent=qd.intent.value,
             qd_bid_allowed=qd.bid.allowed,
             qd_ask_allowed=qd.ask.allowed,
             qd_would_quote=qd.would_quote,
-            qd_conflicts=[],
             qd_layer_summary=qd.summary,
+            qd_bid_implied_bps=qd.bid.implied_edge_bps,
+            qd_ask_implied_bps=qd.ask.implied_edge_bps,
+            qd_bid_block_reason=qd.bid.block_reason,
+            qd_ask_block_reason=qd.ask.block_reason,
+            qd_bid_size_mult=qd.bid.size_mult,
+            qd_ask_size_mult=qd.ask.size_mult,
         )
         skim = (competitor_intel or {}).get("competitor_skim_advice", "") or ""
         decision.quote_decision_summary = _build_summary(

@@ -160,17 +160,17 @@ class RuntimeState:
     solo_as_tighten: bool = False
     acquisition_metrics: Dict[str, Any] = field(default_factory=dict)
     g4_peer_lane_count: int = 0
-    buy_edge_gate_active: bool = False
-    buy_edge_gate_blocked: bool = False
-    buy_edge_implied_bps: Optional[float] = None
-    buy_edge_gate_reason: str = ""
-    acquire_ask_brake_active: bool = False
-    acquire_ask_brake_blocked: bool = False
-    acquire_ask_brake_reason: str = ""
-    sell_edge_gate_active: bool = False
-    sell_edge_gate_blocked: bool = False
-    sell_edge_implied_bps: Optional[float] = None
-    sell_edge_gate_reason: str = ""
+    qd_intent: str = ""
+    qd_bid_allowed: bool = False
+    qd_ask_allowed: bool = False
+    qd_would_quote: bool = False
+    qd_layer_summary: str = ""
+    qd_bid_implied_bps: Optional[float] = None
+    qd_ask_implied_bps: Optional[float] = None
+    qd_bid_block_reason: str = ""
+    qd_ask_block_reason: str = ""
+    qd_bid_size_mult: float = 0.0
+    qd_ask_size_mult: float = 0.0
 
     def touch(self) -> None:
         self.updated_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -354,15 +354,15 @@ class RuntimeStateStore:
             solo_as_tighten=bool(data.get("solo_as_tighten", False)),
             acquisition_metrics=dict(data.get("acquisition_metrics") or {}),
             g4_peer_lane_count=int(data.get("g4_peer_lane_count") or 0),
-            buy_edge_gate_active=bool(data.get("buy_edge_gate_active", False)),
-            buy_edge_gate_blocked=bool(data.get("buy_edge_gate_blocked", False)),
-            buy_edge_implied_bps=data.get("buy_edge_implied_bps"),
-            buy_edge_gate_reason=str(data.get("buy_edge_gate_reason") or ""),
-            acquire_ask_brake_active=bool(data.get("acquire_ask_brake_active", False)),
-            acquire_ask_brake_blocked=bool(data.get("acquire_ask_brake_blocked", False)),
-            acquire_ask_brake_reason=str(data.get("acquire_ask_brake_reason") or ""),
-            sell_edge_gate_active=bool(data.get("sell_edge_gate_active", False)),
-            sell_edge_gate_blocked=bool(data.get("sell_edge_gate_blocked", False)),
-            sell_edge_implied_bps=data.get("sell_edge_implied_bps"),
-            sell_edge_gate_reason=str(data.get("sell_edge_gate_reason") or ""),
+            qd_intent=str(data.get("qd_intent") or ""),
+            qd_bid_allowed=bool(data.get("qd_bid_allowed", False)),
+            qd_ask_allowed=bool(data.get("qd_ask_allowed", False)),
+            qd_would_quote=bool(data.get("qd_would_quote", False)),
+            qd_layer_summary=str(data.get("qd_layer_summary") or ""),
+            qd_bid_implied_bps=data.get("qd_bid_implied_bps"),
+            qd_ask_implied_bps=data.get("qd_ask_implied_bps"),
+            qd_bid_block_reason=str(data.get("qd_bid_block_reason") or ""),
+            qd_ask_block_reason=str(data.get("qd_ask_block_reason") or ""),
+            qd_bid_size_mult=float(data.get("qd_bid_size_mult") or 0.0),
+            qd_ask_size_mult=float(data.get("qd_ask_size_mult") or 0.0),
         )
