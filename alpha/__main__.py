@@ -8,7 +8,7 @@ import logging
 import sys
 
 from alpha.runtime.application import AlphaApplication
-from utils.logging_setup import configure_logging
+from utils.logging_setup import setup_logging
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -63,7 +63,7 @@ async def _run_trading(*, once: bool, max_cycles: int | None, telegram: bool) ->
 
 
 def main(argv: list[str] | None = None) -> int:
-    configure_logging()
+    setup_logging()
     args = _build_parser().parse_args(argv)
     if args.command == "status":
         return asyncio.run(_run_status(telegram=not args.no_telegram))
