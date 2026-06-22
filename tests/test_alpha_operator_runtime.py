@@ -26,6 +26,16 @@ def test_apply_overrides_merges_without_mutating_base():
     assert base.dry_run is True
 
 
+def test_apply_overrides_ta_enabled():
+    base = BotConfig()
+    assert base.alpha_technical_analysis.enabled is False
+    effective = apply_overrides(base, {"alpha_ta_enabled": True})
+    assert effective.alpha_technical_analysis.enabled is True
+    assert base.alpha_technical_analysis.enabled is False
+    effective = apply_overrides(effective, {"alpha_ta_enabled": False})
+    assert effective.alpha_technical_analysis.enabled is False
+
+
 def test_validate_override_rejects_bad_values():
     _, errors = validate_override_updates({"alpha_risk_per_trade_pct": 0})
     assert errors

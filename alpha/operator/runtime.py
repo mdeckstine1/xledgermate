@@ -29,6 +29,7 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_breakout_pct",
     "alpha_structure_lookback",
     "bracket_trailing_enabled",
+    "alpha_ta_enabled",
     "trailing_step_pct",
     "initial_stop_loss_pct",
     "take_profit_pct",
@@ -58,17 +59,30 @@ def apply_overrides(config: BotConfig, overrides: Optional[Dict[str, Any]] = Non
         return config
     allowed = {f.name for f in fields(BotConfig)}
     kwargs: Dict[str, Any] = {}
+    ta_enabled = overrides.get("alpha_ta_enabled")
     for key, value in overrides.items():
+        if key == "alpha_ta_enabled":
+            continue
         if key in allowed:
             kwargs[key] = value
-    if not kwargs:
-        return config
-    return replace(config, **kwargs)
+    result = replace(config, **kwargs) if kwargs else config
+    if ta_enabled is not None:
+        result = replace(
+            result,
+            alpha_technical_analysis=replace(result.alpha_technical_analysis, enabled=bool(ta_enabled)),
+        )
+    return result
 
 
 def effective_config_snapshot(config: BotConfig) -> Dict[str, Any]:
     """Safe tunable snapshot for HUD display (no secrets)."""
-    return {key: getattr(config, key) for key in OPERATOR_TUNABLE_KEYS}
+    snap: Dict[str, Any] = {}
+    for key in OPERATOR_TUNABLE_KEYS:
+        if key == "alpha_ta_enabled":
+            snap[key] = config.alpha_technical_analysis.enabled
+        else:
+            snap[key] = getattr(config, key)
+    return snap
 
 
 def validate_override_updates(
@@ -101,7 +115,7 @@ def validate_override_updates(
 
 
 def _coerce_override(key: str, value: Any) -> Any:
-    if key in ("dry_run", "trading_enabled", "bracket_trailing_enabled"):
+    if key in ("dry_run", "trading_enabled", "bracket_trailing_enabled", "alpha_ta_enabled"):
         if isinstance(value, bool):
             return value
         if isinstance(value, str):

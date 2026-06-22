@@ -41,6 +41,18 @@ def test_patch_operator_config(client):
     assert r.json()["operator_overrides"]["alpha_risk_per_trade_pct"] == 0.8
 
 
+def test_patch_alpha_ta_enabled(client):
+    r = client.patch("/operator/config", json={"overrides": {"alpha_ta_enabled": True}})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["operator_overrides"]["alpha_ta_enabled"] is True
+    assert data["config_effective"]["alpha_ta_enabled"] is True
+    r = client.patch("/operator/config", json={"overrides": {"alpha_ta_enabled": False}})
+    assert r.status_code == 200
+    assert r.json()["config_effective"]["alpha_ta_enabled"] is False
+
+
 def test_patch_rejects_invalid_override(client):
     r = client.patch("/operator/config", json={"overrides": {"alpha_risk_per_trade_pct": 0}})
     assert r.status_code == 400

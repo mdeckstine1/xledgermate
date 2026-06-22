@@ -93,6 +93,8 @@
     .ta-signals td.bias-bearish { color:var(--bad); }
     .ta-signals tr.fired td:first-child { font-weight:600; }
     .ta-disabled-msg { padding:16px; text-align:center; color:var(--muted); }
+    .ta-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px; margin-bottom:12px; }
+    .ta-toggle { display:flex; align-items:center; gap:8px; font-size:.9rem; cursor:pointer; }
     .ctrl-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px; }
     .ctrl-row label { min-width:160px; font-size:.85rem; }
     input[type=range] { flex:1; min-width:120px; max-width:280px; }
@@ -211,8 +213,12 @@
         </div>
       </section>
       <section id="ta" class="panel">
+        <div class="card ta-toolbar">
+          <label class="ta-toggle"><input type="checkbox" id="taEnabled"> <strong>Technical analysis</strong></label>
+          <span id="taHint" class="muted">Scores entries and breakouts from RSI, momentum, patterns, and more. Takes effect on the next engine cycle.</span>
+        </div>
         <div id="taDisabled" class="card ta-disabled-msg" style="display:none">
-          Technical analysis is disabled. Set <code>alpha_technical_analysis.enabled: true</code> in config.yaml and restart Alpha.
+          TA is off — enable the switch above to start scoring.
         </div>
         <div id="taContent">
           <div class="grid ta-grid">
@@ -273,6 +279,7 @@
       el.classList.add('active');
       $(el.dataset.tab).classList.add('active');
       if (el.dataset.tab === 'live' && !operatorConfig) loadOperatorConfig();
+      if (el.dataset.tab === 'ta' && !operatorConfig) loadOperatorConfig();
     }));
 
     function toast(msg, isErr) {
@@ -356,6 +363,7 @@
       syncOffset(c.alpha_buy_limit_offset_pct ?? 0.15);
       $('trailingEnabled').checked = !!c.bracket_trailing_enabled;
       $('tradingEnabled').checked = c.trading_enabled !== false;
+      if ($('taEnabled')) $('taEnabled').checked = !!c.alpha_ta_enabled;
       syncTrail(c.trailing_step_pct ?? 1.5);
       syncBreakout(c.alpha_breakout_pct ?? 0.02);
       syncLookback(c.alpha_structure_lookback ?? 20);
@@ -399,6 +407,20 @@
     $('btnApplyTrading').onclick = async () => {
       const d = await patchJson('/operator/config', { overrides: { trading_enabled: $('tradingEnabled').checked } });
       if (d?.ok) { toast('trading_enabled updated'); poll(); }
+    };
+
+    $('taEnabled').onchange = async () => {
+      const enabled = $('taEnabled').checked;
+      const d = await patchJson('/operator/config', { overrides: { alpha_ta_enabled: enabled } });
+      if (d?.ok) {
+        toast(enabled ? 'Technical analysis enabled' : 'Technical analysis disabled');
+        operatorConfig = d;
+        fillControlsFromConfig(operatorConfig);
+        poll();
+      } else {
+        $('taEnabled').checked = !enabled;
+        toast(d?.message || 'Failed to update TA', true);
+      }
     };
 
     $('btnToggleDryRun').onclick = async () => {
@@ -635,10 +657,25 @@
 
     function renderTa(s) {
       const ta = s.technical_analysis || {};
-      const disabled = !ta.enabled;
-      $('taDisabled').style.display = disabled ? 'block' : 'none';
-      $('taContent').style.display = disabled ? 'none' : 'block';
-      if (disabled) return;
+      const overrideOn = !!operatorConfig?.config_effective?.alpha_ta_enabled;
+      const active = !!(ta.enabled || overrideOn);
+      if (document.activeElement?.id !== 'taEnabled') {
+        $('taEnabled').checked = active;
+      }
+      if (!active) {
+        $('taDisabled').style.display = 'block';
+        $('taDisabled').textContent = 'TA is off — enable the switch above to start scoring.';
+        $('taContent').style.display = 'none';
+        return;
+      }
+      if (!ta.enabled) {
+        $('taDisabled').style.display = 'block';
+        $('taDisabled').textContent = 'TA enabled — waiting for next engine cycle…';
+        $('taContent').style.display = 'none';
+        return;
+      }
+      $('taDisabled').style.display = 'none';
+      $('taContent').style.display = 'block';
 
       $('taStatus').textContent = 'ACTIVE';
       $('taSummary').textContent = ta.summary || '—';
