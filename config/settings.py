@@ -97,8 +97,9 @@ def _write_yaml_dict(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     _inject_preserved_credentials(data, path)
     _backup_config_file(path)
+    safe = {k: _yaml_safe_value(v) for k, v in data.items()}
     with path.open("w", encoding="utf-8") as handle:
-        yaml.dump(data, handle, default_flow_style=False, sort_keys=False)
+        yaml.dump(safe, handle, default_flow_style=False, sort_keys=False)
 
 
 def patch_config_file(updates: dict, filepath: Optional[Union[str, Path]] = None) -> None:
@@ -115,9 +116,13 @@ def patch_config_file(updates: dict, filepath: Optional[Union[str, Path]] = None
 
 
 def _yaml_safe_value(value: Any) -> Any:
-    """Convert dataclass values to plain dicts for YAML serialization."""
+    """Convert dataclass/tuple values to YAML-safe plain Python types."""
     if is_dataclass(value):
-        return asdict(value)
+        return _yaml_safe_value(asdict(value))
+    if isinstance(value, dict):
+        return {k: _yaml_safe_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_yaml_safe_value(v) for v in value]
     return value
 
 

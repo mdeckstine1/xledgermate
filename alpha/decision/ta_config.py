@@ -60,7 +60,7 @@ class BollingerConfig:
 class FibonacciConfig:
     enabled: bool = True
     lookback: int = 50
-    levels: Tuple[float, ...] = (0.382, 0.5, 0.618)
+    levels: List[float] = field(default_factory=lambda: [0.382, 0.5, 0.618])  # YAML list
     proximity_pct: float = 0.25
     buy_weight: float = 1.0
     sell_weight: float = 1.0
