@@ -608,11 +608,17 @@
       const plotW = plotRight - plotLeft;
       const plotH = plotBottom - plotTop;
       const y = (price) => plotTop + (1 - (price - lo) / (hi - lo)) * plotH;
-      const pack = 0.92;
-      const packedW = plotW * pack;
-      const packOffset = (plotW - packedW) / 2;
-      const slot = packedW / candles.length;
-      const bodyW = Math.max(2, Math.min(7, slot * 0.48));
+      const n = candles.length;
+      const gapPx = 1;
+      let bodyW = 5;
+      let totalW = n * bodyW + (n - 1) * gapPx;
+      if (totalW > plotW) {
+        bodyW = Math.max(2, (plotW - (n - 1) * gapPx) / n);
+        totalW = n * bodyW + (n - 1) * gapPx;
+      }
+      const pitch = bodyW + gapPx;
+      const startX = plotLeft + (plotW - totalW) / 2;
+      const candleCenter = (i) => startX + i * pitch + bodyW / 2;
 
       // Price axis (left) + horizontal grid
       const ticks = 4;
@@ -645,9 +651,9 @@
         ctx.globalAlpha = 1;
       });
 
-      // Candles — slim bodies, packed spacing
+      // Candles — slim bodies, ~1px gap
       candles.forEach((c, i) => {
-        const cx = plotLeft + packOffset + i * slot + slot / 2;
+        const cx = candleCenter(i);
         const openY = y(c.o);
         const closeY = y(c.c);
         const highY = y(c.h);
@@ -676,7 +682,7 @@
       ctx.textAlign = 'center';
       ctx.fillStyle = '#64748b';
       [...new Set(timeLabels)].sort((a, b) => a - b).forEach(i => {
-        const cx = plotLeft + packOffset + i * slot + slot / 2;
+        const cx = candleCenter(i);
         const label = formatChartTime(candles[i].t);
         if (label) ctx.fillText(label, cx, h - 10);
       });
