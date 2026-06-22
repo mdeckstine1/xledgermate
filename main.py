@@ -53,6 +53,7 @@ def parse_args() -> argparse.Namespace:
             "ws-hud",
             "gui",
             "alpha-gui",
+            "alpha-hud",
             "alpha-run",
             "once",
             "cancel-offers",
@@ -65,7 +66,7 @@ def parse_args() -> argparse.Namespace:
         default="ws-engine",
         help=(
             "ws-engine = WS + pure A-S production (default); ws-hud = operator HUD :8765; "
-            "alpha-gui = Trading Bot Alpha Streamlit; alpha-run = Alpha trading loop; "
+            "alpha-gui = Trading Bot Alpha Streamlit (legacy lab); alpha-hud = Alpha operator HUD :8765; alpha-run = Alpha trading loop; "
             "engine = DEPRECATED HTTP poll (replay/lab only); "
             "once = DEPRECATED single legacy cycle; "
             "gui, cancel-offers, clear-kill, setup-trust, "
@@ -79,6 +80,17 @@ def parse_args() -> argparse.Namespace:
         default="XRP",
         choices=["XRP", "RLUSD", "xrp", "rlusd"],
         help="Asset to send",
+    )
+    parser.add_argument(
+        "--hud-host",
+        default="",
+        help="Alpha HUD bind host (alpha-hud mode; default from config hud_bind_host)",
+    )
+    parser.add_argument(
+        "--hud-port",
+        type=int,
+        default=0,
+        help="Alpha HUD port (alpha-hud mode; default alpha_hud_port from config)",
     )
     return parser.parse_args()
 
@@ -240,6 +252,14 @@ if __name__ == "__main__":
             from alpha.gui.streamlit_app import run_gui as run_alpha_gui
 
             run_alpha_gui()
+        elif args.mode == "alpha-hud":
+            from alpha.hud.server import run_alpha_hud
+
+            host = (args.hud_host or "").strip()
+            if not host:
+                host = (getattr(config, "alpha_gui_bind_host", "") or config.hud_bind_host or "127.0.0.1").strip()
+            port = args.hud_port or int(getattr(config, "alpha_hud_port", 8765) or 8765)
+            run_alpha_hud(host=host, port=port, background=False)
         elif args.mode == "alpha-run":
             from alpha.runtime.application import AlphaApplication
 

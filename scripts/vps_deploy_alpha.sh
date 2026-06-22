@@ -27,9 +27,14 @@ else
   echo "No xledgermate-alpha.service — install from scripts/systemd/xledgermate-alpha.service"
 fi
 
-if systemctl list-unit-files | grep -q xledgermate-alpha-gui.service; then
+if systemctl list-unit-files | grep -q xledgermate-alpha-hud.service; then
+  systemctl restart xledgermate-alpha-hud
+  systemctl is-active xledgermate-alpha-hud
+elif systemctl list-unit-files | grep -q xledgermate-alpha-gui.service; then
   systemctl restart xledgermate-alpha-gui
   systemctl is-active xledgermate-alpha-gui
+else
+  echo "No alpha HUD/GUI systemd unit — install scripts/systemd/xledgermate-alpha-hud.service"
 fi
 
 echo "=== dry-run status cycle ==="

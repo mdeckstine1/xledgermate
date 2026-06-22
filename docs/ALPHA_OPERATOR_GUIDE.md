@@ -61,9 +61,10 @@ python main.py --mode setup-trust
 | `python -m alpha run --once` | Single trading cycle |
 | `python -m alpha run` | Continuous loop |
 | `python -m alpha run --max-cycles 50` | Soak test |
-| `python main.py --mode alpha-gui` | Streamlit GUI (`:8503`) |
+| `python main.py --mode alpha-hud` | **Operator HUD** (`:8765`, FastAPI — primary) |
+| `python main.py --mode alpha-gui` | Streamlit lab panel (`:8503`, optional) |
 
-**VPS access:** GUI binds to `hud_bind_host` (or `alpha_gui_bind_host`) from config. With `hud_bind_host: 0.0.0.0`, open `http://YOUR_VPS:8503`. Otherwise use SSH tunnel below.
+**VPS access:** HUD binds to `hud_bind_host` (default public on VPS). Open `http://YOUR_VPS:8765`. Streamlit `:8503` is optional lab UI.
 | `python main.py --mode alpha-run` | Same as `python -m alpha run` |
 | `python scripts/alpha_validate.py` | Pre-cutover checks + tests |
 
@@ -116,8 +117,8 @@ GUI **Pause** writes `logs/alpha_controls.json` without editing yaml.
 
 1. Push `alpha` branch
 2. SSH: `bash scripts/vps_deploy_alpha.sh`
-3. GUI tunnel: `ssh -L 8503:127.0.0.1:8503 -i ~/.ssh/hetzner_xledgermate root@YOUR_VPS`
-4. Open http://localhost:8503
+3. HUD: `http://YOUR_VPS:8765` (or SSH tunnel if `hud_bind_host: 127.0.0.1`)
+4. Optional Streamlit lab: `http://YOUR_VPS:8503`
 
 **Switch from legacy MM to Alpha:** see [`ALPHA_MAINNET_CUTOVER.md`](ALPHA_MAINNET_CUTOVER.md)
 

@@ -176,6 +176,7 @@ class BotConfig:
     alpha_structure_lookback: int = 20  # Mid samples for HTF structure stub
     alpha_gui_refresh_seconds: int = 30  # Streamlit auto-refresh hint
     alpha_gui_bind_host: str = ""  # Empty = use hud_bind_host; 0.0.0.0 for public VPS access
+    alpha_hud_port: int = 8765  # Operator HUD (FastAPI) — replaces legacy ws-hud port
     # Fund the bot with XRP only at start; place sell-XRP (ask) quotes until you hold RLUSD.
     fund_with_xrp_only: bool = True
 

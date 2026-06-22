@@ -1,0 +1,14 @@
+[Unit]
+Description=xLedgerMate Alpha operator HUD (FastAPI :8765)
+After=network-online.target xledgermate-alpha.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/xledgermate
+Environment=XLEDGERMATE_ROOT=/root/xledgermate
+ExecStart=/root/xledgermate/scripts/start_alpha_hud.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

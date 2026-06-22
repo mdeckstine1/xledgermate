@@ -79,10 +79,10 @@ echo ""
 echo "[7/8] systemd units..."
 if [ ! -f /etc/systemd/system/xledgermate-alpha.service ]; then
   cp scripts/systemd/xledgermate-alpha.service /etc/systemd/system/
-  cp scripts/systemd/xledgermate-alpha-gui.service /etc/systemd/system/
+  cp scripts/systemd/xledgermate-alpha-hud.service /etc/systemd/system/
   systemctl daemon-reload
-  systemctl enable xledgermate-alpha
-  echo "Installed xledgermate-alpha.service"
+  systemctl enable xledgermate-alpha xledgermate-alpha-hud
+  echo "Installed xledgermate-alpha + alpha-hud services"
 fi
 
 # --- Step 8: Validate and start ---

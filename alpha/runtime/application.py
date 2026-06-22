@@ -21,7 +21,7 @@ from alpha.orders.manager import OrderManager, OrderManagerState
 from alpha.reporting.service import ReportingService, bracket_summary_from_store
 from alpha.risk.engine import RiskEngine
 from alpha.runtime.executor import EntryExecutionResult, EntryExecutor
-from alpha.types import BalanceSnapshot, CycleReportContext, OperatorSnapshot, utc_now
+from alpha.types import BalanceSnapshot, CycleReportContext, OperatorSnapshot, OrderBookSnapshot, utc_now
 from alpha.version import ALPHA_VERSION
 from config.settings import BotConfig
 
@@ -77,6 +77,7 @@ class AlphaApplication:
         )
         self._kill_was_active = False
         self._last_structure: Optional[MarketStructureSnapshot] = None
+        self._last_book: Optional[OrderBookSnapshot] = None
 
     @property
     def controls(self) -> OperatorControlStore:
@@ -116,6 +117,7 @@ class AlphaApplication:
         )
         trust = account.trust_line
         book = account.book
+        self._last_book = book
 
         try:
             liquidity = await self._ledger.get_liquidity_depth(self.config.alpha_max_slippage_pct)
@@ -197,6 +199,33 @@ class AlphaApplication:
             operator_paused=self._controls.is_paused(),
         )
 
+    def _publish_hud_state(
+        self,
+        snap: OperatorSnapshot,
+        decision: DecisionResult,
+        orders: OrderManagerState,
+        execution: Optional[EntryExecutionResult],
+        report_text: str,
+    ) -> None:
+        from alpha.hud.state_export import publish_cycle_to_hud
+        from alpha.reporting.service import bracket_summary_from_store
+
+        publish_cycle_to_hud(
+            snapshot=snap,
+            decision=decision,
+            execution=execution,
+            recent_events=orders.recent_events,
+            path=self._state_dir / "alpha_runtime_state.json",
+            book=self._last_book,
+            structure=self._last_structure,
+            bracket_summary=bracket_summary_from_store(self._orders.store),
+            brackets=self._orders.store.all_records(),
+            open_offers=orders.open_offers,
+            activity_log=self._activity,
+            controls=self._controls.load(),
+            report_text=report_text,
+        )
+
     async def run_status_cycle(self, *, telegram: bool = True) -> AlphaCycleResult:
         """Read-only cycle: no entry execution."""
         self._dry_run_guard.log_mode_banner()
@@ -207,6 +236,7 @@ class AlphaApplication:
         snap, validation, decision, orders = await self._gather_cycle_context()
         ctx = self._build_report(snap, decision, orders, None)
         report_text = self._reporting.publish_cycle(ctx, to_telegram=telegram)
+        self._publish_hud_state(snap, decision, orders, None, report_text)
         return AlphaCycleResult(
             snapshot=snap,
             decision=decision,
@@ -257,6 +287,7 @@ class AlphaApplication:
 
         ctx = self._build_report(snap, decision, orders, execution)
         report_text = self._reporting.publish_cycle(ctx, to_telegram=telegram)
+        self._publish_hud_state(snap, decision, orders, execution, report_text)
         return AlphaCycleResult(
             snapshot=snap,
             decision=decision,
