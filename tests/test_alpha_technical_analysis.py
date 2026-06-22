@@ -37,6 +37,19 @@ def test_technical_analysis_disabled():
     assert snap.entry_buy_allowed is True
 
 
+def test_technical_analysis_follows_runtime_ta_override():
+    from alpha.operator.runtime import apply_overrides
+
+    base = BotConfig()
+    ta = TechnicalAnalysis(base)
+    assert ta.analyze(_rising_mids(), mid=1.18).enabled is False
+    effective = apply_overrides(base, {"alpha_ta_enabled": True})
+    ta = TechnicalAnalysis(effective)
+    snap = ta.analyze(_rising_mids(), mid=1.18)
+    assert snap.enabled is True
+    assert snap.summary != "ta_disabled"
+
+
 def test_technical_analysis_bullish_trend_scores():
     cfg = BotConfig()
     cfg.alpha_technical_analysis.enabled = True

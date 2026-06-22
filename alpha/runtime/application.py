@@ -111,6 +111,7 @@ class AlphaApplication:
         self._orders._config = config  # noqa: SLF001
         self._decision._config = config  # noqa: SLF001
         self._executor._config = config  # noqa: SLF001
+        self._ta = TechnicalAnalysis(config)
 
     async def _sync_operator_runtime(self) -> None:
         """Reload overrides, apply effective config, process queued operator commands."""
