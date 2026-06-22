@@ -2,7 +2,7 @@ streamlit
 PyYAML
 xrpl-py
 pandas
-pandas-ta  # optional — Alpha TA uses pure-pandas fallback if unavailable
+# pandas-ta optional (Alpha TA falls back to pure-pandas on Py3.14+); pip install pandas-ta
 pytest
 
 # For the real-time WS + pure A-S HUD (experimental/ws_feed/real_time_as_hud.py)

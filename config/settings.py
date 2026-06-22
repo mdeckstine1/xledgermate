@@ -1,6 +1,6 @@
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import yaml
 
@@ -112,6 +112,13 @@ def patch_config_file(updates: dict, filepath: Optional[Union[str, Path]] = None
             continue
         data[key] = value
     _write_yaml_dict(path, data)
+
+
+def _yaml_safe_value(value: Any) -> Any:
+    """Convert dataclass values to plain dicts for YAML serialization."""
+    if is_dataclass(value):
+        return asdict(value)
+    return value
 
 
 def _config_from_dict(cls: type["BotConfig"], data: dict) -> "BotConfig":
@@ -277,7 +284,7 @@ class BotConfig:
     xrpl_mainnet_rpc_url: str = "https://s1.ripple.com:51234"
 
     def to_dict(self):
-        return asdict(self)
+        return asdict(self)  # nested dataclasses (e.g. alpha_technical_analysis) serialize cleanly
 
     def risk_capital_unit_normalized(self) -> str:
         unit = (getattr(self, "risk_capital_unit", None) or "xrp").strip().lower()
@@ -386,7 +393,7 @@ class BotConfig:
 
         missing = allowed - set(data.keys())
         for key in missing:
-            merged[key] = getattr(config, key)
+            merged[key] = _yaml_safe_value(getattr(config, key))
             updated = True
 
         if "risk_capital_unit" not in data:
