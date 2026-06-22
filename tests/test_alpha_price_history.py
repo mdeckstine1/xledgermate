@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from alpha.decision.price_history import (
@@ -34,6 +35,27 @@ def test_breakout_lookback_uses_sample_interval():
     # 15m at 15s samples => 60 points (not 15)
     assert breakout_lookback_samples("15m", 60, sample_interval_seconds=15) == 60
     assert breakout_lookback_samples("15m", 60, sample_interval_seconds=0) == 15
+
+
+def test_align_series_backfills_from_mid(tmp_path: Path):
+    path = tmp_path / "alpha_price_history.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "samples": {
+                    "mid": [1.10, 1.11, 1.12, 1.13],
+                    "ask": [1.14],
+                    "bid": [1.09],
+                    "last": [],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    ask = load_price_series("ask", path=path)
+    assert len(ask) == 4
+    assert ask[0] < ask[-1]
 
 
 def test_structure_uses_ask_series(tmp_path: Path):

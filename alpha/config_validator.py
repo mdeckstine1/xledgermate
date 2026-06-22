@@ -97,6 +97,10 @@ def validate_alpha_config(config: BotConfig) -> AlphaConfigValidation:
     if src not in VALID_PRICE_SOURCES:
         errors.append("alpha_structure_price_source must be bid, ask, mid, or last")
 
+    chart_src = (config.alpha_chart_price_source or "mid").strip().lower()
+    if chart_src not in VALID_PRICE_SOURCES:
+        errors.append("alpha_chart_price_source must be bid, ask, mid, or last")
+
     if config.alpha_price_sample_interval_seconds < 0:
         errors.append("alpha_price_sample_interval_seconds must be >= 0")
     elif (

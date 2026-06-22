@@ -576,7 +576,7 @@
       if (!candles.length) {
         ctx.fillStyle = '#64748b';
         ctx.font = '13px system-ui, sans-serif';
-        ctx.fillText('Collecting mid samples for candles…', 16, h / 2);
+        ctx.fillText('Collecting price samples for candles…', 16, h / 2);
         return;
       }
 
@@ -676,6 +676,11 @@
       }
       $('taDisabled').style.display = 'none';
       $('taContent').style.display = 'block';
+      const warming = (ta.summary || '').includes('ta_insufficient_candles');
+      if (warming) {
+        $('taDisabled').style.display = 'block';
+        $('taDisabled').textContent = 'Warming up — ' + (ta.summary || 'collecting candles');
+      }
 
       $('taStatus').textContent = 'ACTIVE';
       $('taSummary').textContent = ta.summary || '—';

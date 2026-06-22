@@ -71,6 +71,26 @@ def _empty_store() -> Dict[str, List[float]]:
     return {"bid": [], "ask": [], "mid": [], "last": []}
 
 
+def _align_series_lengths(store: Dict[str, List[float]]) -> Dict[str, List[float]]:
+    """Pad bid/ask/last prefix from mid so directional sources inherit migrated history."""
+    mid = store.get("mid", [])
+    if not mid:
+        return store
+    n_mid = len(mid)
+    for key in ("bid", "ask", "last"):
+        series = list(store.get(key, []))
+        if len(series) >= n_mid:
+            continue
+        pad_count = n_mid - len(series)
+        pad = mid[:pad_count]
+        if key == "ask":
+            pad = [m * 1.00015 for m in pad]
+        elif key == "bid":
+            pad = [m * 0.99985 for m in pad]
+        store[key] = pad + series
+    return store
+
+
 def _load_store(path: Path = PRICE_HISTORY_PATH) -> Dict[str, List[float]]:
     if path.exists():
         try:
@@ -81,10 +101,16 @@ def _load_store(path: Path = PRICE_HISTORY_PATH) -> Dict[str, List[float]]:
                     raw = data["samples"].get(key, [])
                     if isinstance(raw, list):
                         store[key] = [float(x) for x in raw if float(x) > 0][-_MAX_SAMPLES:]
-                return store
+                aligned = _align_series_lengths(store)
+                if (
+                    path.exists()
+                    and len(aligned.get("ask", [])) > len(store.get("ask", []))
+                ):
+                    _save_store(aligned, path)
+                return aligned
         except (json.JSONDecodeError, OSError, TypeError, ValueError):
             pass
-    return _migrate_legacy_mid_history(path)
+    return _align_series_lengths(_migrate_legacy_mid_history(path))
 
 
 def _migrate_legacy_mid_history(path: Path) -> Dict[str, List[float]]:
@@ -98,8 +124,10 @@ def _migrate_legacy_mid_history(path: Path) -> Dict[str, List[float]]:
         mids = data.get("mids", [])
         if isinstance(mids, list):
             store["mid"] = [float(x) for x in mids if float(x) > 0][-_MAX_SAMPLES:]
+            store["ask"] = [m * 1.00015 for m in store["mid"]]
+            store["bid"] = [m * 0.99985 for m in store["mid"]]
             logger.info("price_history_migrated | legacy_mids=%d", len(store["mid"]))
-            _save_store(store, path)
+            _save_store(_align_series_lengths(store), path)
     except (json.JSONDecodeError, OSError, TypeError, ValueError):
         pass
     return store
@@ -131,7 +159,7 @@ def append_book_prices(
         store["last"].append(float(prices.last))
     for key in store:
         store[key] = store[key][-_MAX_SAMPLES:]
-    _save_store(store, path)
+    _save_store(_align_series_lengths(store), path)
 
 
 def load_price_series(

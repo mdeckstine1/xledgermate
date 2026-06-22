@@ -94,9 +94,11 @@ def _chart_payload(
     structure: Optional[MarketStructureSnapshot],
     mids: List[float],
     config: BotConfig,
+    *,
+    price_source: str = "mid",
 ) -> Dict[str, Any]:
     lookback = max(3, int(config.alpha_structure_lookback or 20))
-    bucket = max(1, min(15, lookback // 4))
+    bucket = max(1, min(15, max(1, config.alpha_technical_analysis.candle_bucket_samples or 5)))
     candles = _chart_candles_from_mids(mids, bucket=bucket)
     indicators: List[Dict[str, Any]] = [
         {
@@ -120,7 +122,7 @@ def _chart_payload(
         {
             "key": "chart_price_source",
             "label": "Chart price",
-            "value": str(config.alpha_technical_analysis.candle_price_source or "ask"),
+            "value": str(price_source or "mid"),
             "kind": "meta",
         },
         {
@@ -284,8 +286,10 @@ def build_hud_state(
     tunables = effective_config_snapshot(effective)
     history_path = runtime_state_path.parent / PRICE_HISTORY_PATH.name
     ta_source = effective.alpha_technical_analysis.candle_price_source
+    chart_source = effective.alpha_chart_price_source or "mid"
     price_history = load_price_series(ta_source, path=history_path)
-    chart = _chart_payload(structure, price_history, effective)
+    chart_history = load_price_series(chart_source, path=history_path)
+    chart = _chart_payload(structure, chart_history, effective, price_source=chart_source)
     if ta is None and effective.alpha_technical_analysis.enabled:
         from alpha.decision.price_history import resolve_book_price, book_prices_from_snapshot
 

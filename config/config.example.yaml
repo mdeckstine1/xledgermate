@@ -49,8 +49,9 @@ alpha_max_pending_buys: 1
 alpha_cycle_interval_seconds: 60
 alpha_breakout_pct: 0.02
 alpha_structure_lookback: 20
-alpha_structure_price_source: ask   # bid | ask | mid | last — directional structure default
-alpha_price_sample_interval_seconds: 15  # book poll between cycles (0 = cycle boundary only)
+alpha_structure_price_source: ask
+alpha_chart_price_source: mid    # fullest history on Live chart
+alpha_price_sample_interval_seconds: 15
 alpha_gui_refresh_seconds: 30
 alpha_gui_bind_host: ""   # empty = hud_bind_host; use 0.0.0.0 on VPS for browser without SSH tunnel
 
