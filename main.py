@@ -52,6 +52,8 @@ def parse_args() -> argparse.Namespace:
             "ws-engine",
             "ws-hud",
             "gui",
+            "alpha-gui",
+            "alpha-run",
             "once",
             "cancel-offers",
             "clear-kill",
@@ -63,6 +65,7 @@ def parse_args() -> argparse.Namespace:
         default="ws-engine",
         help=(
             "ws-engine = WS + pure A-S production (default); ws-hud = operator HUD :8765; "
+            "alpha-gui = Trading Bot Alpha Streamlit; alpha-run = Alpha trading loop; "
             "engine = DEPRECATED HTTP poll (replay/lab only); "
             "once = DEPRECATED single legacy cycle; "
             "gui, cancel-offers, clear-kill, setup-trust, "
@@ -233,6 +236,18 @@ if __name__ == "__main__":
             from gui.streamlit_gui import run_gui
 
             run_gui()
+        elif args.mode == "alpha-gui":
+            from alpha.gui.streamlit_app import run_gui as run_alpha_gui
+
+            run_alpha_gui()
+        elif args.mode == "alpha-run":
+            from alpha.runtime.application import AlphaApplication
+
+            app, validation = AlphaApplication.from_config_file()
+            if not validation.ok:
+                logger.error("%s", validation.summary())
+                sys.exit(2)
+            asyncio.run(app.run_trading_loop())
         elif args.mode in {
             "engine",
             "ws-engine",

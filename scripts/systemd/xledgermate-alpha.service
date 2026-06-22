@@ -1,0 +1,16 @@
+[Unit]
+Description=xLedgerMate Trading Bot Alpha (value accumulation loop)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/xledgermate
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/root/xledgermate/.venv/bin/python -m alpha run
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

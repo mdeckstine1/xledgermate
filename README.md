@@ -83,6 +83,7 @@ xledgermate/
 
 ## Branches & Current Work
 
+- **`alpha`** — **Trading Bot Alpha** (value accumulation, brackets) — see [Trading Bot Alpha](#trading-bot-alpha) below
 - **`Ashigaru-Kaizen`** — **production VPS live MM** (`ws-engine` + HUD `:8765`, G1–G6, soak path)
 - `main` — stable baseline on GitHub (stale v1.0.0; real pilot on tier-2-polish lineage)
 - `tier-2-polish` / `grok-tier-2-collab` — **sacred Gate 2 corpus** (HTTP poll + hard `market_edge_met` replay baseline). **Do not merge experimental changes here during Gate 2.**
@@ -126,6 +127,53 @@ python main.py --mode clear-kill
 ```
 
 Before **live** testnet (`dry_run: false`): run `setup-trust`, fund RLUSD, set non-zero `order_sizes` in config.
+
+## Trading Bot Alpha
+
+**Branch:** `alpha` · **Version:** 1.0.0 · **Strategy:** Limit buys on weakness → bracket TP/SL (not legacy MM)
+
+New value-accumulation bot — separate from `ws-engine`. Uses the same `config/config.yaml` and `credentials.local.yaml` hooks.
+
+### Quick start (Alpha)
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+copy config\config.example.yaml config\config.yaml
+# Edit config + credentials.local.yaml — keep dry_run: true for soak
+
+.\.venv\Scripts\python.exe scripts\alpha_validate.py
+.\.venv\Scripts\python.exe -m alpha status
+.\.venv\Scripts\python.exe -m alpha run --once
+.\.venv\Scripts\python.exe main.py --mode alpha-gui
+```
+
+### Alpha commands
+
+| Command | Description |
+|---------|-------------|
+| `python -m alpha status` | Read-only portfolio/risk snapshot |
+| `python -m alpha run` | Trading loop (respects `dry_run`) |
+| `python main.py --mode alpha-gui` | Streamlit GUI on port 8503 |
+| `python scripts/alpha_validate.py` | Pre-cutover validation + tests |
+
+### Safety
+
+- Default `dry_run: true` — no ledger writes until you flip it
+- Do **not** run Alpha live alongside legacy `ws-engine` on the same account
+- Mainnet cutover: [`docs/ALPHA_MAINNET_CUTOVER.md`](docs/ALPHA_MAINNET_CUTOVER.md)
+- Operator guide: [`docs/ALPHA_OPERATOR_GUIDE.md`](docs/ALPHA_OPERATOR_GUIDE.md)
+- Final report: [`docs/ALPHA_FINAL_REPORT.md`](docs/ALPHA_FINAL_REPORT.md)
+
+### VPS deploy (Alpha)
+
+```bash
+bash scripts/alpha_cutover_vps.sh      # first-time cutover (see ALPHA_HANDOVER.md)
+bash scripts/vps_deploy_alpha.sh       # routine updates
+bash scripts/alpha_rollback_to_legacy.sh  # emergency rollback to ws-engine
+```
+
+**Operator handover:** [`docs/ALPHA_HANDOVER.md`](docs/ALPHA_HANDOVER.md)  
+**Legacy MM sunset:** [`docs/LEGACY_MM_SUNSET.md`](docs/LEGACY_MM_SUNSET.md)
 
 ## Versioning
 

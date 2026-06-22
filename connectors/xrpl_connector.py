@@ -325,6 +325,10 @@ class XRPLConnector:
         )
         return tx_hash
 
+    async def get_mid_price(self, limit: int = 40) -> Optional[float]:
+        book = await self.fetch_xrp_rlusd_order_book(limit=limit)
+        return self.compute_mid_price(book)
+
     async def fetch_xrp_rlusd_order_book(
         self, limit: int = 40
     ) -> Dict[str, List[Dict[str, float]]]:

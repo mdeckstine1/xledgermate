@@ -157,8 +157,36 @@ class BotConfig:
     trading_enabled: bool = True
     xrp_reserve: float = 12.0
     min_order_size_xrp: float = 1.0
+    # Trading Bot Alpha — value accumulation (Phase 2+)
+    alpha_ws_enabled: bool = True
+    alpha_max_slippage_pct: float = 0.50
+    alpha_weakness_deviation: float = 0.05
+    alpha_strength_deviation: float = 0.05
+    alpha_base_order_size_xrp: float = 50.0
+    alpha_bid_offset_pct: float = 0.02
+    alpha_ask_offset_pct: float = 0.02
+    # Phase 4 entry — conservative mainnet defaults
+    alpha_risk_per_trade_pct: float = 0.5  # Max XRP size as % of portfolio per entry
+    alpha_min_edge_threshold_pct: float = 0.08  # Min edge (mid vs limit) to place buy
+    alpha_buy_limit_offset_pct: float = 0.15  # Limit buy % below mid (also sets edge)
+    alpha_max_inventory_imbalance_pct: float = 0.10  # Block buys when this far above target XRP ratio
+    alpha_max_pending_buys: int = 1  # Max concurrent pending buy brackets
+    alpha_cycle_interval_seconds: int = 60  # Trading loop sleep between cycles
+    alpha_breakout_pct: float = 0.02  # Min % above entry/high for breakout trailing
+    alpha_structure_lookback: int = 20  # Mid samples for HTF structure stub
+    alpha_gui_refresh_seconds: int = 30  # Streamlit auto-refresh hint
     # Fund the bot with XRP only at start; place sell-XRP (ask) quotes until you hold RLUSD.
     fund_with_xrp_only: bool = True
+
+    # === BRACKET / OCO (Alpha value-accumulation — Phase 3) ===
+    initial_stop_loss_pct: float = 0.015  # SL limit sell this % below entry (RLUSD/XRP)
+    take_profit_pct: float = 0.03  # Fixed TP % above entry when take_profit_rr <= 0
+    take_profit_rr: float = 2.0  # TP distance = SL distance * RR; preferred when > 0
+    partial_fill_mode: str = "wait_full"  # wait_full | proportional
+    min_fill_size_xrp_for_oco: float = 0.5  # Min leg fill before OCO cancels opposing bracket
+    bracket_trailing_enabled: bool = False  # Enable SL/TP trailing after breakeven / breakout
+    trailing_step_pct: float = 1.5  # % favorable move before ratcheting SL or TP (spec default 1.5)
+    breakout_confirmation_tf: str = "15m"  # HTF lookback for breakout (15m, 1h, 4h, 1d)
 
     # === RISK MANAGEMENT (GUI-adjustable daily drawdown kill switch) ===
     # 5% is too tight for a market maker — normal inventory MTM and spread timing

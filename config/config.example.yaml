@@ -32,6 +32,35 @@ rpc_failure_kill_streak: 6
 dry_run: true
 trading_enabled: true
 
+# Trading Bot Alpha (value accumulation — Phase 2+)
+alpha_ws_enabled: true
+alpha_max_slippage_pct: 0.50
+alpha_weakness_deviation: 0.05
+alpha_strength_deviation: 0.05
+alpha_base_order_size_xrp: 50.0
+alpha_bid_offset_pct: 0.02
+alpha_ask_offset_pct: 0.02
+# Phase 4 entry (conservative mainnet defaults)
+alpha_risk_per_trade_pct: 0.5
+alpha_min_edge_threshold_pct: 0.08
+alpha_buy_limit_offset_pct: 0.15
+alpha_max_inventory_imbalance_pct: 0.10
+alpha_max_pending_buys: 1
+alpha_cycle_interval_seconds: 60
+alpha_breakout_pct: 0.02
+alpha_structure_lookback: 20
+alpha_gui_refresh_seconds: 30
+
+# Bracket legs after buy fill (application-level OCO — not XRPL native)
+initial_stop_loss_pct: 0.015
+take_profit_pct: 0.03
+take_profit_rr: 2.0
+partial_fill_mode: wait_full
+min_fill_size_xrp_for_oco: 0.5
+bracket_trailing_enabled: false
+trailing_step_pct: 1.5
+breakout_confirmation_tf: "15m"
+
 max_daily_drawdown_percent: 10.0
 min_drawdown_percent: 2.0
 max_drawdown_percent: 25.0

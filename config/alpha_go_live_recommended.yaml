@@ -1,0 +1,30 @@
+# Recommended conservative mainnet parameters for Alpha go-live.
+# Merge into config/config.yaml after dry-run soak — do NOT commit secrets.
+# See docs/ALPHA_HANDOVER.md
+
+dry_run: false
+testnet: false
+trading_enabled: true
+
+alpha_risk_per_trade_pct: 0.5
+alpha_max_pending_buys: 1
+alpha_min_edge_threshold_pct: 0.08
+alpha_buy_limit_offset_pct: 0.15
+alpha_max_inventory_imbalance_pct: 0.10
+alpha_cycle_interval_seconds: 60
+alpha_base_order_size_xrp: 50.0
+
+initial_stop_loss_pct: 0.015
+take_profit_rr: 2.0
+partial_fill_mode: wait_full
+bracket_trailing_enabled: false
+trailing_step_pct: 1.5
+breakout_confirmation_tf: "15m"
+
+max_daily_drawdown_percent: 10.0
+inventory_target_xrp_ratio: 0.55
+xrp_reserve: 12.0
+min_order_size_xrp: 1.0
+
+telegram_enabled: true
+telegram_kill_alerts_enabled: true

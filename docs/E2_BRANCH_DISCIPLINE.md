@@ -1,55 +1,63 @@
-# E2 — Branch discipline (WS + pure A-S vs sacred corpus)
+# E2 — Branch discipline (Alpha vs legacy WS + pure A-S)
 
-**Status:** `Ashigaru` → **`Ashigaru-Kaizen`** → **`Ashigaru-Kaizen-II`** (archived v2.1.40) → **`Ashigaru-Shoshin`** (2026-06-21, v2.3.0) · **Production MM:** v2.3.0
+**Status:** **`alpha`** = primary production (Trading Bot Alpha v1.0.0) · **`Ashigaru-Shoshin`** = archived MM rollback (v2.3.x)
 
 ---
 
 ## Which branch for what
 
-| Branch | Deploy to VPS live MM? | Role |
-|--------|------------------------|------|
-| **`Ashigaru-Shoshin`** | **Yes** | Production: QD stack v2.2.x, `main.py --mode ws-engine`, HUD `:8765` |
-| **`Ashigaru-Kaizen-II`** | No (archived) | v2.1.40 — last A2 gate + pause_bids/asks coupling |
+| Branch | Deploy to VPS live? | Role |
+|--------|---------------------|------|
+| **`alpha`** | **Yes (primary)** | Trading Bot Alpha: value accumulation, brackets, `python -m alpha run` |
+| **`Ashigaru-Shoshin`** | Rollback only | Legacy MM: QD stack, `ws-engine`, HUD `:8765` |
+| **`Ashigaru-Kaizen-II`** | No (archived) | v2.1.40 — historical |
 | **`Ashigaru-Kaizen`** | No (archived) | v2.1.10 era — historical |
-| **`Ashigaru`** | No (renamed) | Historical name |
-| **`grok-tier-2-collab`** | No | Sacred Gate 2 labeled corpus, `grokster`, `replay_long_run`, economics A/B |
-| **`grok-ws-feed`** | No (superseded) | Historical; do not use for new work |
+| **`grok-tier-2-collab`** | No | Sacred Gate 2 replay corpus |
+
+**Cutover:** [`ALPHA_HANDOVER.md`](ALPHA_HANDOVER.md) · **Legacy sunset:** [`LEGACY_MM_SUNSET.md`](LEGACY_MM_SUNSET.md)
 
 ---
 
-## Two engines, one repo
+## Two bots, one repo
 
-| Mode | Command | Quoting model | Use |
-|------|---------|---------------|-----|
-| **WS + pure A-S** | `python main.py --mode ws-engine` | `WsPureTradingEngine` · reservation inside L1 · no hard `market_edge_met` | **Live MM on VPS** |
-| **Legacy sacred** | `python main.py --mode engine` | HTTP poll + P0 hard gate (`6c1634a`) | **Replay baseline only** — compare presence/economics vs pure path |
+| Bot | Command / service | Use |
+|-----|-------------------|-----|
+| **Trading Bot Alpha** | `python -m alpha run` · `xledgermate-alpha` | **Primary production** |
+| **Legacy WS MM** | `python main.py --mode ws-engine` · `xledgermate` | **Rollback / archive only** |
 
-**E2 rule:** P0 gate code stays in `engine/trading_engine.py` for sacred replay. It must **not** be wired into `ws_pure_engine.py`.
+**Rule:** Do not run both live on the same Bot Account.
 
 ---
 
 ## Operator commands
 
-**VPS production (Ashigaru-Shoshin):**
+**VPS production (Alpha — primary):**
 
 ```bash
 cd /root/xledgermate
-git fetch && git checkout Ashigaru-Shoshin && git pull
-systemctl restart xledgermate xledgermate-ws-hud
+bash scripts/alpha_cutover_vps.sh    # first time
+bash scripts/vps_deploy_alpha.sh     # updates
+python -m alpha status
 ```
 
-**Sacred replay / economics (any machine, collab or Ashigaru — same WS code after E2):**
+**VPS rollback (legacy MM):**
+
+```bash
+bash scripts/alpha_rollback_to_legacy.sh
+```
+
+**Sacred replay / economics (dev machines only):**
 
 ```powershell
 python -m experimental.grokster
 python -m experimental.ws_feed.replay_long_run --as-mode pure --economics
-python scripts/ws_path_session_report.py --gate-full
 ```
 
 ---
 
 ## Related
 
-- [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) — Phase E checklist (QD ops grep: `docs/QUOTE_DECISION_LAYERS.md`)
-- [`PHASE_E_VPS_RUNBOOK.md`](PHASE_E_VPS_RUNBOOK.md) — E1 ladder
-- [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) — live WS + pure A-S ops
+- [`ALPHA_HANDOVER.md`](ALPHA_HANDOVER.md) — operator handover (go-live)
+- [`ALPHA_OPERATOR_GUIDE.md`](ALPHA_OPERATOR_GUIDE.md) — daily ops
+- [`PURE_AS_CRITICAL_PATH.md`](PURE_AS_CRITICAL_PATH.md) — legacy MM checklist
+- [`WS_AS_MANUAL.md`](WS_AS_MANUAL.md) — legacy WS + pure A-S (archive)
