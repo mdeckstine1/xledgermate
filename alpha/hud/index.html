@@ -19,9 +19,19 @@
     .badge.kill { background:#7f1d1d; color:var(--bad); }
     .badge.pause { background:#78350f; color:#fdba74; }
     .banner { padding:10px 16px; background:#172554; border-bottom:1px solid var(--border); font-size:.95rem; }
-    .layout { display:grid; grid-template-columns:260px 1fr; min-height:calc(100vh - 96px); }
+    .marquee-container { background:#0f172a; border-bottom:1px solid var(--border); padding:8px 14px; overflow:hidden; white-space:nowrap; }
+    .marquee { display:inline-block; font-size:.88rem; color:#e2e8f0; animation:marquee-seamless 90s linear infinite; }
+    @keyframes marquee-seamless { 0% { transform:translateX(0); } 100% { transform:translateX(-50%); } }
+    .marquee span.ok { color:var(--ok); font-weight:600; }
+    .marquee span.warn { color:var(--warn); font-weight:500; }
+    .marquee span.bad { color:var(--bad); font-weight:600; }
+    .marquee span.info { color:var(--accent); font-weight:500; }
+    .layout { display:grid; grid-template-columns:260px 1fr; min-height:calc(100vh - 120px); }
     .sidebar { border-right:1px solid var(--border); padding:12px; background:#111827; }
     .sidebar .row { margin-bottom:12px; }
+    .sidebar-logo { display:block; width:100%; max-width:220px; margin:0 auto 14px; border-radius:8px; }
+    .sidebar-actions { display:flex; gap:6px; flex-wrap:wrap; }
+    .sidebar-actions button { flex:1 1 0; min-width:72px; margin:0; padding:8px 6px; font-size:.78rem; }
     .label { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
     .value { font-size:1rem; font-weight:600; margin-top:2px; }
     .main { padding:12px 16px; overflow:auto; }
@@ -47,6 +57,8 @@
     .muted { color:var(--muted); font-size:.8rem; }
     .controls-section { margin-bottom:16px; }
     .controls-section h2 { font-size:.85rem; color:var(--muted); text-transform:uppercase; margin:0 0 10px; }
+    .live-controls { width:50%; min-width:320px; max-width:100%; margin-top:16px; }
+    .live-controls .controls-section.card { margin-bottom:10px; }
     .ctrl-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px; }
     .ctrl-row label { min-width:160px; font-size:.85rem; }
     input[type=range] { flex:1; min-width:120px; max-width:280px; }
@@ -61,7 +73,7 @@
     .bracket-adjust { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
     .bracket-adjust input { width:72px; font-size:.75rem; padding:4px; }
     .bracket-adjust button { padding:4px 6px; font-size:.72rem; margin:0; }
-    @media (max-width:800px) { .layout { grid-template-columns:1fr; } }
+    @media (max-width:800px) { .layout { grid-template-columns:1fr; } .live-controls { width:100%; } }
   </style>
 </head>
 <body>
@@ -78,19 +90,23 @@
       <span id="fresh" class="muted"></span>
     </span>
   </header>
-  <div id="banner" class="banner">Loading…</div>
+  <div class="marquee-container">
+    <div class="marquee" id="ticker">Loading Alpha operator feed…</div>
+  </div>
   <div class="layout">
     <aside class="sidebar">
+      <img src="/Xledermate.jpg" alt="xLedgerMate" class="sidebar-logo">
       <div class="row"><div class="label">Account</div><div id="acct" class="value" style="font-size:.75rem;word-break:break-all">—</div></div>
       <div class="row"><div class="label">Mid (RLUSD/XRP)</div><div id="mid" class="value">—</div></div>
-      <div class="row"><div class="label">Portfolio (XRP eq)</div><div id="port" class="value">—</div></div>
+      <div class="row"><div class="label">Portfolio (RLUSD eq)</div><div id="port" class="value">—</div></div>
       <div class="row"><div class="label">Inventory</div><div id="inv" class="value">—</div></div>
       <div class="row"><div class="label">Drawdown</div><div id="dd" class="value">—</div></div>
       <div class="row"><div class="label">Session P&amp;L</div><div id="pnl" class="value">—</div></div>
-      <div class="row" style="margin-top:16px">
-        <button id="btnPause" class="secondary">Pause trading</button>
+      <div class="row sidebar-actions" style="margin-top:16px">
+        <button id="btnStart">Start</button>
+        <button id="btnPause" class="secondary">Pause</button>
         <button id="btnResume" style="display:none">Resume</button>
-        <button id="btnRestart" class="secondary">Restart engine</button>
+        <button id="btnRestart" class="secondary">Restart</button>
       </div>
     </aside>
     <main class="main">
@@ -98,7 +114,7 @@
         <div class="tab active" data-tab="live">Live</div>
         <div class="tab" data-tab="brackets">Brackets</div>
         <div class="tab" data-tab="offers">Open offers</div>
-        <div class="tab" data-tab="controls">Controls</div>
+        <div class="tab" data-tab="reports">Reports</div>
         <div class="tab" data-tab="activity">Activity</div>
       </div>
       <section id="live" class="panel active">
@@ -110,18 +126,7 @@
           <div class="card"><h3>Preflight</h3><div id="preflight" class="value">—</div></div>
           <div class="card"><h3>Execution</h3><div id="exec" class="value">—</div></div>
         </div>
-        <div class="card"><h3>Report</h3><pre id="report" class="muted" style="white-space:pre-wrap;margin:0;font-size:.78rem"></pre></div>
-      </section>
-      <section id="brackets" class="panel">
-        <div class="card"><table><thead><tr><th>ID</th><th>State</th><th>Mode</th><th>Entry</th><th>TP</th><th>SL</th><th>Trail</th></tr></thead><tbody id="brTable"></tbody></table></div>
-      </section>
-      <section id="offers" class="panel">
-        <div class="card"><table><thead><tr><th>Seq</th><th>Side</th><th>Price</th><th>Size XRP</th></tr></thead><tbody id="offerTable"></tbody></table></div>
-      </section>
-      <section id="activity" class="panel">
-        <div class="card activity" id="actFeed"></div>
-      </section>
-      <section id="controls" class="panel">
+        <div class="live-controls">
         <div class="controls-section card">
           <h2>Trading mode</h2>
           <div class="ctrl-row toggle">
@@ -160,6 +165,19 @@
           <button id="btnCancelAll" class="danger">Cancel all orders</button>
           <button id="btnConfigReload" class="secondary">Config reload</button>
         </div>
+        </div>
+      </section>
+      <section id="brackets" class="panel">
+        <div class="card"><table><thead><tr><th>ID</th><th>State</th><th>Mode</th><th>Entry</th><th>TP</th><th>SL</th><th>Trail</th></tr></thead><tbody id="brTable"></tbody></table></div>
+      </section>
+      <section id="offers" class="panel">
+        <div class="card"><table><thead><tr><th>Seq</th><th>Side</th><th>Price</th><th>Size XRP</th></tr></thead><tbody id="offerTable"></tbody></table></div>
+      </section>
+      <section id="reports" class="panel">
+        <div class="card"><h3>Report</h3><pre id="report" class="muted" style="white-space:pre-wrap;margin:0;font-size:.78rem"></pre></div>
+      </section>
+      <section id="activity" class="panel">
+        <div class="card activity" id="actFeed"></div>
       </section>
     </main>
   </div>
@@ -179,12 +197,15 @@
     const $ = (id) => document.getElementById(id);
     let hudState = {};
     let operatorConfig = null;
+    let lastMid = null;
+    let lastMidStyle = '';
+    let lastMidArrow = '';
 
     document.querySelectorAll('.tab').forEach(el => el.addEventListener('click', () => {
       document.querySelectorAll('.tab,.panel').forEach(n => n.classList.remove('active'));
       el.classList.add('active');
       $(el.dataset.tab).classList.add('active');
-      if (el.dataset.tab === 'controls' && !operatorConfig) loadOperatorConfig();
+      if (el.dataset.tab === 'live' && !operatorConfig) loadOperatorConfig();
     }));
 
     function toast(msg, isErr) {
@@ -236,6 +257,7 @@
 
     async function post(path) { return postJson(path); }
 
+    $('btnStart').onclick = async () => { const d = await post('/engine/start'); if (d?.ok) toast('Engine start requested'); poll(); };
     $('btnPause').onclick = async () => { await post('/controls/pause'); poll(); };
     $('btnResume').onclick = async () => { await post('/controls/resume'); poll(); };
     $('btnRestart').onclick = async () => { await post('/engine/restart'); poll(); };
@@ -352,6 +374,65 @@
     }
 
     function fmt(n, d=4) { return n == null || Number.isNaN(n) ? '—' : Number(n).toFixed(d); }
+
+    function portfolioRlusd(s) {
+      if (s.xrp != null && s.rlusd != null && s.mid) return s.xrp * s.mid + s.rlusd;
+      if (s.portfolio_xrp_equiv != null && s.mid) return s.portfolio_xrp_equiv * s.mid;
+      return null;
+    }
+
+    function buildTickerHtml(s) {
+      const modeCls = s.dry_run ? 'warn' : 'ok';
+      const mode = s.dry_run ? 'DRY-RUN' : 'LIVE';
+      const paused = s.operator_paused ? '<span class="warn">PAUSED</span>' : '';
+      const kill = s.risk?.kill_switch_active ? '<span class="bad">KILL</span>' : '';
+      const posture = '<span class="info">' + (s.posture || 'patient') + '</span>';
+      const action = (s.decision?.action || '—').toUpperCase();
+      const reason = s.decision?.reason || s.last_note || '—';
+
+      const midVal = s.book?.mid ?? s.mid;
+      let midHtml = fmt(midVal, 6);
+      if (midVal != null) {
+        const m = Number(midVal);
+        if (lastMid != null) {
+          if (m > lastMid) { lastMidStyle = 'color:var(--ok);font-weight:700;'; lastMidArrow = ' ▲'; }
+          else if (m < lastMid) { lastMidStyle = 'color:var(--bad);font-weight:700;'; lastMidArrow = ' ▼'; }
+        }
+        lastMid = m;
+        midHtml = '<span style="' + lastMidStyle + '">' + m.toFixed(6) + lastMidArrow + '</span>';
+      }
+      const bid = fmt(s.book?.best_bid, 6);
+      const ask = fmt(s.book?.best_ask, 6);
+      const spread = s.book?.spread_pct != null ? fmt(s.book.spread_pct, 3) + '%' : '—';
+      const bs = s.brackets?.summary || {};
+      const brackets = (bs.pending_buys||0) + ' pending · ' + (bs.active_fixed||0) + ' active';
+      const offers = s.open_offers_count != null ? s.open_offers_count : (s.open_offers?.length || 0);
+      const port = portfolioRlusd(s);
+      const portStr = port != null ? fmt(port, 2) + ' RLUSD' : '—';
+
+      return [
+        '<span class="' + modeCls + '">' + mode + '</span>',
+        posture, paused, kill,
+        'Decision <span class="info">' + action + '</span> — ' + reason,
+        'Mid ' + midHtml + ' · Bid ' + bid + ' · Ask ' + ask + ' · Spread ' + spread,
+        'Portfolio ' + portStr,
+        'Brackets ' + brackets + ' · Offers ' + offers,
+        'Updated ' + ago(s.updated_utc),
+      ].filter(Boolean).join('   |   ');
+    }
+
+    function updateTicker(s) {
+      const el = $('ticker');
+      if (!el) return;
+      try {
+        const base = buildTickerHtml(s);
+        const sep = '   •   ';
+        const unit = base + sep + base;
+        el.innerHTML = unit + unit;
+      } catch (e) {
+        el.textContent = s.last_note || 'Alpha operator feed';
+      }
+    }
     function ago(iso) {
       if (!iso) return 'never';
       const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -372,10 +453,11 @@
       $('killBadge').style.display = s.risk?.kill_switch_active ? 'inline' : 'none';
       if (s.risk?.kill_switch_active) $('killBadge').className = 'badge kill';
       $('fresh').textContent = 'Updated ' + ago(s.updated_utc);
-      $('banner').textContent = s.last_note || '—';
+      updateTicker(s);
       $('acct').textContent = s.account_address || '—';
       $('mid').textContent = fmt(s.mid, 6);
-      $('port').textContent = fmt(s.portfolio_xrp_equiv, 2) + ' XRP';
+      const portRlusd = portfolioRlusd(s);
+      $('port').textContent = portRlusd != null ? fmt(portRlusd, 2) + ' RLUSD' : '—';
       $('inv').textContent = (s.inventory?.label || '—') + ' (' + fmt((s.inventory?.deviation||0)*100, 2) + '% dev)';
       $('dd').textContent = fmt(s.risk?.drawdown_pct, 2) + '% / ' + fmt(s.risk?.max_drawdown_pct, 2) + '%';
       $('pnl').textContent = fmt(s.risk?.session_pnl_xrp, 4) + ' XRP';
@@ -425,10 +507,11 @@
         }
         render(await r.json());
       } catch (e) {
-        $('banner').textContent = 'HUD poll error: ' + e;
+        $('ticker').textContent = 'HUD poll error: ' + e;
       }
     }
     poll();
+    loadOperatorConfig();
     setInterval(poll, 1000);
   </script>
 </body>

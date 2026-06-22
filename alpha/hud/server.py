@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 _HUD_DIR = Path(__file__).resolve().parent
 _INDEX = _HUD_DIR / "index.html"
 _FAVICON = Path(__file__).resolve().parents[2] / "experimental" / "ws_feed" / "hud" / "favicon.png"
+_LOGO = Path(__file__).resolve().parents[2] / "Xledermate.jpg"
 _RUNTIME = Path("logs/alpha_runtime_state.json")
 _CONTROLS = Path("logs/alpha_controls.json")
 
@@ -65,6 +66,12 @@ if app is not None:
         if not _FAVICON.is_file():
             return Response(status_code=404)
         return FileResponse(_FAVICON, media_type="image/png")
+
+    @app.get("/Xledermate.jpg")
+    async def logo() -> Response:
+        if not _LOGO.is_file():
+            return Response(status_code=404)
+        return FileResponse(_LOGO, media_type="image/jpeg")
 
     @app.get("/state")
     async def get_state() -> JSONResponse:
