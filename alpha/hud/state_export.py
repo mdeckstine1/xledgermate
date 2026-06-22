@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from alpha.decision.engine import DecisionResult
 from alpha.decision.structure import MarketStructureSnapshot, build_candle_from_mids, load_mid_history
+from alpha.decision.price_history import PRICE_HISTORY_PATH, load_price_series
 from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalysisSnapshot
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControls
@@ -114,6 +115,18 @@ def _chart_payload(
             "key": "breakout_pct",
             "label": "Breakout %",
             "value": f"{float(config.alpha_breakout_pct):.3f}",
+            "kind": "meta",
+        },
+        {
+            "key": "chart_price_source",
+            "label": "Chart price",
+            "value": str(config.alpha_technical_analysis.candle_price_source or "ask"),
+            "kind": "meta",
+        },
+        {
+            "key": "structure_price_source",
+            "label": "Structure price",
+            "value": str(config.alpha_structure_price_source or "ask"),
             "kind": "meta",
         },
     ]
@@ -269,10 +282,19 @@ def build_hud_state(
     overrides = operator_overrides or {}
     effective = config_effective or BotConfig()
     tunables = effective_config_snapshot(effective)
-    mid_history = load_mid_history(runtime_state_path.parent / "alpha_mid_history.json")
-    chart = _chart_payload(structure, mid_history, effective)
+    history_path = runtime_state_path.parent / PRICE_HISTORY_PATH.name
+    ta_source = effective.alpha_technical_analysis.candle_price_source
+    price_history = load_price_series(ta_source, path=history_path)
+    chart = _chart_payload(structure, price_history, effective)
     if ta is None and effective.alpha_technical_analysis.enabled:
-        ta = TechnicalAnalysis(effective).analyze(mid_history, mid=snap.balances.mid_rlusd_per_xrp)
+        from alpha.decision.price_history import resolve_book_price, book_prices_from_snapshot
+
+        ref = snap.balances.mid_rlusd_per_xrp
+        if book is not None:
+            resolved = resolve_book_price(book_prices_from_snapshot(book), ta_source)
+            if resolved is not None:
+                ref = resolved
+        ta = TechnicalAnalysis(effective).analyze(price_history, mid=ref)
     ta_block = ta.to_dict() if ta is not None else {"enabled": False}
 
     return {

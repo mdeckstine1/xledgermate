@@ -2,16 +2,27 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Union
+
+from alpha.decision.price_history import (
+    PRICE_HISTORY_PATH,
+    append_book_prices,
+    book_prices_from_snapshot,
+    build_candle_from_prices,
+    effective_sample_seconds,
+    load_mid_history,
+    load_price_series,
+    record_mid,
+    resolve_book_price,
+)
 
 logger = logging.getLogger(__name__)
 
-_HISTORY_PATH = Path("logs/alpha_mid_history.json")
+_HISTORY_PATH = PRICE_HISTORY_PATH
 _MAX_SAMPLES = 120
 _PRICE_EPS = 1e-9
 
@@ -21,7 +32,7 @@ class CandleData:
     """
     OHLC candle for breakout confirmation on ``breakout_confirmation_tf``.
 
-    Synthesized from mid-price samples when full exchange candles are unavailable.
+    Synthesized from book price samples (bid/ask/mid) when exchange candles are unavailable.
     """
 
     open: float
@@ -53,9 +64,9 @@ class CandleData:
 
 @dataclass(frozen=True)
 class MarketStructureSnapshot:
-    """Lightweight structure view — rolling mid stats for HTF breakout context."""
+    """Lightweight structure view — rolling price stats for HTF breakout context."""
 
-    mid: float
+    mid: float  # reference price (structure_source; field name kept for HUD compat)
     sample_count: int
     mean_mid: float
     recent_high: float
@@ -68,15 +79,20 @@ class MarketStructureSnapshot:
     confirmation_candle: Optional[CandleData] = None
 
 
-def breakout_lookback_samples(timeframe: str, cycle_seconds: int = 60) -> int:
+def breakout_lookback_samples(
+    timeframe: str,
+    cycle_seconds: int = 60,
+    *,
+    sample_interval_seconds: int = 0,
+) -> int:
     """
-    Map ``breakout_confirmation_tf`` to mid-sample count.
+    Map ``breakout_confirmation_tf`` to price-sample count.
 
-    Examples (60s cycle): ``15m`` → 15, ``1h`` → 60, ``4h`` → 240.
-    Bare integers are treated as sample counts.
+    Uses ``sample_interval_seconds`` when sub-cycle book sampling is enabled.
+    Examples (60s cycle, 15s samples): ``15m`` → 60 samples.
     """
     tf = (timeframe or "15m").strip().lower()
-    cycle = max(1, int(cycle_seconds))
+    cycle = effective_sample_seconds(cycle_seconds, sample_interval_seconds)
 
     if tf.isdigit():
         return max(1, int(tf))
@@ -84,7 +100,7 @@ def breakout_lookback_samples(timeframe: str, cycle_seconds: int = 60) -> int:
     match = re.fullmatch(r"(\d+)([smhd])", tf)
     if not match:
         logger.warning("breakout_tf_unrecognized | tf=%s | default=15", timeframe)
-        return 15
+        return max(1, 15 * 60 // cycle)
 
     value, unit = int(match.group(1)), match.group(2)
     seconds_map = {"s": 1, "m": 60, "h": 3600, "d": 86400}
@@ -92,62 +108,43 @@ def breakout_lookback_samples(timeframe: str, cycle_seconds: int = 60) -> int:
     return max(1, total_seconds // cycle)
 
 
-def load_mid_history(path: Path = _HISTORY_PATH) -> List[float]:
-    """Public accessor for persisted mid samples used by structure and TA."""
-    return _load_history(path)
-
-
-def _load_history(path: Path = _HISTORY_PATH) -> List[float]:
-    if not path.exists():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        samples = data.get("mids", [])
-        return [float(x) for x in samples if float(x) > 0][-_MAX_SAMPLES:]
-    except (json.JSONDecodeError, OSError, TypeError, ValueError):
-        return []
-
-
-def _save_history(mids: List[float], path: Path = _HISTORY_PATH) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"mids": mids[-_MAX_SAMPLES:]}, indent=2), encoding="utf-8")
-
-
-def record_mid(mid: float, *, path: Path = _HISTORY_PATH) -> None:
-    if mid <= 0:
-        return
-    history = _load_history(path)
-    history.append(mid)
-    _save_history(history, path)
+# Re-export for callers that imported from structure.
+__all__ = [
+    "CandleData",
+    "MarketStructureSnapshot",
+    "analyze_structure",
+    "breakout_lookback_samples",
+    "build_candle_from_mids",
+    "build_confirmation_candle",
+    "confirm_breakout",
+    "load_mid_history",
+    "record_mid",
+]
 
 
 def build_candle_from_mids(mids: Sequence[float]) -> Optional[CandleData]:
-    """Build one OHLC candle from a sequence of mid prices."""
-    clean = [float(m) for m in mids if float(m) > 0]
-    if len(clean) < 2:
-        return None
-    return CandleData(
-        open=clean[0],
-        high=max(clean),
-        low=min(clean),
-        close=clean[-1],
-    )
+    """Build one OHLC candle from a price sample sequence (legacy name)."""
+    return build_candle_from_prices(mids)
 
 
 def build_confirmation_candle(
-    mid: float,
+    price: float,
     *,
     timeframe: str = "15m",
     cycle_seconds: int = 60,
+    sample_interval_seconds: int = 0,
+    price_source: str = "ask",
     path: Path = _HISTORY_PATH,
 ) -> Optional[CandleData]:
-    """Synthesize the current ``breakout_confirmation_tf`` candle from mid history."""
-    lookback = breakout_lookback_samples(timeframe, cycle_seconds)
-    history = _load_history(path)
-    if mid > 0:
-        history = (history + [mid])[-_MAX_SAMPLES:]
-    window = history[-lookback:] if history else ([mid] if mid > 0 else [])
-    return build_candle_from_mids(window)
+    """Synthesize the current ``breakout_confirmation_tf`` candle from price history."""
+    lookback = breakout_lookback_samples(
+        timeframe,
+        cycle_seconds,
+        sample_interval_seconds=sample_interval_seconds,
+    )
+    history = load_price_series(price_source, path=path)
+    window = history[-lookback:] if history else ([price] if price > 0 else [])
+    return build_candle_from_prices(window)
 
 
 def _average_body(candles: Sequence[CandleData]) -> float:
@@ -228,66 +225,76 @@ def confirm_breakout(
 
 
 def analyze_structure(
-    mid: float,
+    price: float,
     *,
     breakout_pct: float = 0.02,
     trend_threshold_pct: float = 0.008,
     lookback: int = 20,
     breakout_tf: str = "15m",
     cycle_seconds: int = 60,
+    sample_interval_seconds: int = 0,
+    price_source: str = "ask",
     path: Path = _HISTORY_PATH,
+    book: Optional[object] = None,
+    record_sample: bool = True,
 ) -> MarketStructureSnapshot:
-    """Rolling mid stats plus HTF confirmation candle for trailing breakout."""
-    history = _load_history(path)
-    if mid > 0:
-        history = (history + [mid])[-_MAX_SAMPLES:]
-        _save_history(history, path)
+    """Rolling price stats plus HTF confirmation candle for trailing breakout."""
+    if record_sample and book is not None:
+        append_book_prices(book_prices_from_snapshot(book), path=path)
+        resolved = resolve_book_price(book_prices_from_snapshot(book), price_source)
+        if resolved is not None:
+            price = resolved
 
-    window = history[-lookback:] if history else ([mid] if mid > 0 else [])
-    tf_lookback = breakout_lookback_samples(breakout_tf, cycle_seconds)
+    history = load_price_series(price_source, path=path)
+    window = history[-lookback:] if history else ([price] if price > 0 else [])
+    tf_lookback = breakout_lookback_samples(
+        breakout_tf,
+        cycle_seconds,
+        sample_interval_seconds=sample_interval_seconds,
+    )
     tf_window = history[-tf_lookback:] if history else window
-    confirmation_candle = build_candle_from_mids(tf_window) if tf_window else None
-    swing_high = recent_swing_high(tf_window) if tf_window else mid
+    confirmation_candle = build_candle_from_prices(tf_window) if tf_window else None
+    swing_high = recent_swing_high(tf_window) if tf_window else price
 
     if not window:
         return MarketStructureSnapshot(
-            mid=mid,
+            mid=price,
             sample_count=0,
-            mean_mid=mid,
-            recent_high=mid,
-            recent_low=mid,
+            mean_mid=price,
+            recent_high=price,
+            recent_low=price,
             trend="neutral",
             breakout_up=False,
             breakout_down=False,
-            summary="no_mid_history",
+            summary=f"no_price_history source={price_source}",
             swing_high=swing_high,
             confirmation_candle=confirmation_candle,
         )
 
-    mean_mid = sum(window) / len(window)
+    mean_price = sum(window) / len(window)
     recent_high = max(window)
     recent_low = min(window)
     trend = "neutral"
-    if mean_mid > 0:
-        drift = (mid - mean_mid) / mean_mid
+    if mean_price > 0:
+        drift = (price - mean_price) / mean_price
         if drift >= trend_threshold_pct:
             trend = "bullish"
         elif drift <= -trend_threshold_pct:
             trend = "bearish"
 
-    breakout_up = mid >= recent_high * (1.0 + breakout_pct / 100.0) if recent_high > 0 else False
-    breakout_down = mid <= recent_low * (1.0 - breakout_pct / 100.0) if recent_low > 0 else False
+    breakout_up = price >= recent_high * (1.0 + breakout_pct / 100.0) if recent_high > 0 else False
+    breakout_down = price <= recent_low * (1.0 - breakout_pct / 100.0) if recent_low > 0 else False
 
     summary = (
-        f"trend={trend} mean={mean_mid:.6f} swing_high={swing_high:.6f} "
+        f"trend={trend} source={price_source} mean={mean_price:.6f} swing_high={swing_high:.6f} "
         f"breakout_up={breakout_up} breakout_down={breakout_down}"
     )
     logger.info("market_structure | %s", summary)
 
     return MarketStructureSnapshot(
-        mid=mid,
+        mid=price,
         sample_count=len(window),
-        mean_mid=mean_mid,
+        mean_mid=mean_price,
         recent_high=recent_high,
         recent_low=recent_low,
         trend=trend,

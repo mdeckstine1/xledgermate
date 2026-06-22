@@ -49,6 +49,8 @@ alpha_max_pending_buys: 1
 alpha_cycle_interval_seconds: 60
 alpha_breakout_pct: 0.02
 alpha_structure_lookback: 20
+alpha_structure_price_source: ask   # bid | ask | mid | last — directional structure default
+alpha_price_sample_interval_seconds: 15  # book poll between cycles (0 = cycle boundary only)
 alpha_gui_refresh_seconds: 30
 alpha_gui_bind_host: ""   # empty = hud_bind_host; use 0.0.0.0 on VPS for browser without SSH tunnel
 
@@ -71,6 +73,8 @@ alpha_technical_analysis:
   min_breakout_score: 1.5
   candle_bucket_samples: 5
   min_candles: 20
+  candle_price_source: ask   # bid | ask | mid | last — long entry / bullish TA default
+  sell_signal_price_source: bid  # bearish pattern reference (future asymmetric scoring)
   rsi:
     enabled: true
     period: 14
@@ -163,7 +167,7 @@ max_daily_drawdown_percent: 10.0
 min_drawdown_percent: 2.0
 max_drawdown_percent: 25.0
 inventory_target_xrp_ratio: 0.55
-inventory_mode: market_make
+inventory_mode: rebalance   # directional value accumulation (not legacy market_make MM)
 inventory_max_deviation: 0.12
 inventory_hard_pause_deviation: 0.22
 max_leg_size_pct_of_capital: 0.12

@@ -47,9 +47,18 @@ def test_bracket_store_persistence_roundtrip(tmp_path: Path):
 
 
 def test_structure_breakout_detection(tmp_path: Path):
-    hist = tmp_path / "mid_history.json"
+    from alpha.decision.price_history import BookPrices, append_book_prices
+
+    hist = tmp_path / "alpha_price_history.json"
     for mid in [2.0, 2.01, 2.02, 2.03, 2.04]:
-        analyze_structure(mid, breakout_pct=0.5, lookback=5, path=hist)
-    snap = analyze_structure(2.08, breakout_pct=0.5, lookback=5, path=hist)
+        append_book_prices(BookPrices(bid=mid, ask=mid, mid=mid), path=hist)
+    snap = analyze_structure(
+        2.08,
+        breakout_pct=0.5,
+        lookback=5,
+        path=hist,
+        record_sample=False,
+        price_source="ask",
+    )
     assert snap.trend in ("bullish", "neutral")
     assert breakout_confirmed_for_long(snap, entry_price=2.0, min_breakout_pct=0.5)

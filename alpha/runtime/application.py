@@ -9,7 +9,14 @@ from pathlib import Path
 from typing import Optional
 
 from alpha.config_validator import AlphaConfigValidation, load_validated_config
-from alpha.decision.structure import MarketStructureSnapshot, analyze_structure, load_mid_history
+from alpha.decision.price_history import (
+    PRICE_HISTORY_PATH,
+    append_book_prices,
+    book_prices_from_snapshot,
+    load_price_series,
+    resolve_book_price,
+)
+from alpha.decision.structure import MarketStructureSnapshot, analyze_structure
 from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalysisSnapshot
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControlStore
@@ -189,6 +196,7 @@ class AlphaApplication:
         risk = self._risk.evaluate(balances=balances, trust_line=trust)
 
         structure = None
+        history_path = self._state_dir / PRICE_HISTORY_PATH.name
         if book and book.mid and book.mid > 0:
             structure = analyze_structure(
                 book.mid,
@@ -196,15 +204,21 @@ class AlphaApplication:
                 lookback=self.config.alpha_structure_lookback,
                 breakout_tf=self.config.breakout_confirmation_tf,
                 cycle_seconds=self.config.alpha_cycle_interval_seconds,
-                path=self._state_dir / "alpha_mid_history.json",
+                sample_interval_seconds=self.config.alpha_price_sample_interval_seconds,
+                price_source=self.config.alpha_structure_price_source,
+                path=history_path,
+                book=book,
+                record_sample=True,
             )
             self._last_structure = structure
             self._orders.set_structure(structure)
 
         ta_snapshot: Optional[TechnicalAnalysisSnapshot] = None
         if book and book.mid and book.mid > 0:
-            mids = load_mid_history(self._state_dir / "alpha_mid_history.json")
-            ta_snapshot = self._ta.analyze(mids, mid=book.mid)
+            ta_cfg = self.config.alpha_technical_analysis
+            prices = load_price_series(ta_cfg.candle_price_source, path=history_path)
+            ref = resolve_book_price(book_prices_from_snapshot(book), ta_cfg.candle_price_source)
+            ta_snapshot = self._ta.analyze(prices, mid=ref or book.mid)
             self._last_ta = ta_snapshot
             self._orders.set_ta(ta_snapshot)
 
@@ -404,10 +418,35 @@ class AlphaApplication:
                     logger.error("trading_cycle_error | cycle=%d | error=%s", cycle, exc, exc_info=True)
                 if max_cycles is not None and cycle >= max_cycles:
                     break
-                await asyncio.sleep(interval)
+                await self._sleep_with_price_sampling(interval)
         finally:
             await self.close()
             logger.info("alpha_trading_loop_stop | cycles=%d", cycle)
+
+    async def _sample_book_prices(self) -> None:
+        """Lightweight book poll between full trading cycles."""
+        book = await self._ledger.get_order_book()
+        if book and (book.mid or book.best_bid or book.best_ask):
+            append_book_prices(
+                book_prices_from_snapshot(book),
+                path=self._state_dir / PRICE_HISTORY_PATH.name,
+            )
+
+    async def _sleep_with_price_sampling(self, total_seconds: int) -> None:
+        sample_iv = int(self.config.alpha_price_sample_interval_seconds)
+        if sample_iv <= 0 or sample_iv >= total_seconds:
+            await asyncio.sleep(total_seconds)
+            return
+        elapsed = 0
+        while elapsed < total_seconds:
+            chunk = min(sample_iv, total_seconds - elapsed)
+            await asyncio.sleep(chunk)
+            elapsed += chunk
+            if elapsed < total_seconds:
+                try:
+                    await self._sample_book_prices()
+                except Exception as exc:
+                    logger.warning("price_sample_failed | %s", exc)
 
     async def close(self) -> None:
         try:

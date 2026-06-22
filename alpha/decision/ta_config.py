@@ -162,6 +162,8 @@ class AlphaTechnicalAnalysisConfig:
     min_breakout_score: float = 1.5
     candle_bucket_samples: int = 5
     min_candles: int = 20
+    candle_price_source: str = "ask"  # bid | ask | mid | last — directional long default
+    sell_signal_price_source: str = "bid"  # bid series for bearish pattern context
     rsi: RsiConfig = field(default_factory=RsiConfig)
     stochastic: StochasticConfig = field(default_factory=StochasticConfig)
     bollinger: BollingerConfig = field(default_factory=BollingerConfig)
@@ -198,4 +200,12 @@ def validate_ta_config(cfg: AlphaTechnicalAnalysisConfig) -> List[str]:
         errors.append("alpha_technical_analysis.rsi.period must be >= 2")
     if cfg.mode not in ("scoring", "strict"):
         errors.append("alpha_technical_analysis.mode must be scoring or strict")
+    from alpha.decision.price_history import VALID_PRICE_SOURCES
+
+    for key, src in (
+        ("candle_price_source", cfg.candle_price_source),
+        ("sell_signal_price_source", cfg.sell_signal_price_source),
+    ):
+        if (src or "").strip().lower() not in VALID_PRICE_SOURCES:
+            errors.append(f"alpha_technical_analysis.{key} must be bid, ask, mid, or last")
     return errors

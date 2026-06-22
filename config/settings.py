@@ -195,7 +195,9 @@ class BotConfig:
     alpha_max_pending_buys: int = 1  # Max concurrent pending buy brackets
     alpha_cycle_interval_seconds: int = 60  # Trading loop sleep between cycles
     alpha_breakout_pct: float = 0.02  # Min % above entry/high for breakout trailing
-    alpha_structure_lookback: int = 20  # Mid samples for HTF structure stub
+    alpha_structure_lookback: int = 20  # Price samples for HTF structure
+    alpha_structure_price_source: str = "ask"  # bid | ask | mid | last — directional default
+    alpha_price_sample_interval_seconds: int = 15  # Sub-cycle book samples (0 = cycle only)
     alpha_gui_refresh_seconds: int = 30  # Streamlit auto-refresh hint
     alpha_gui_bind_host: str = ""  # Empty = use hud_bind_host; 0.0.0.0 for public VPS access
     alpha_hud_port: int = 8765  # Operator HUD (FastAPI) — replaces legacy ws-hud port

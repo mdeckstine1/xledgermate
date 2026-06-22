@@ -91,6 +91,20 @@ def validate_alpha_config(config: BotConfig) -> AlphaConfigValidation:
     if config.alpha_structure_lookback < 3:
         errors.append("alpha_structure_lookback must be at least 3")
 
+    from alpha.decision.price_history import VALID_PRICE_SOURCES
+
+    src = (config.alpha_structure_price_source or "ask").strip().lower()
+    if src not in VALID_PRICE_SOURCES:
+        errors.append("alpha_structure_price_source must be bid, ask, mid, or last")
+
+    if config.alpha_price_sample_interval_seconds < 0:
+        errors.append("alpha_price_sample_interval_seconds must be >= 0")
+    elif (
+        config.alpha_price_sample_interval_seconds > 0
+        and config.alpha_price_sample_interval_seconds < 5
+    ):
+        warnings.append("alpha_price_sample_interval_seconds < 5 may hammer RPC")
+
     if config.alpha_weakness_deviation <= 0 or config.alpha_strength_deviation <= 0:
         errors.append("alpha_weakness_deviation and alpha_strength_deviation must be positive")
 

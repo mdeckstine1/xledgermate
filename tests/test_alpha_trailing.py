@@ -274,16 +274,11 @@ def test_order_manager_trailing_dry_run_updates_sl_price():
 
 
 def test_analyze_structure_includes_confirmation_candle(tmp_path: Path):
-    hist = tmp_path / "mid_history.json"
+    from alpha.decision.price_history import BookPrices, append_book_prices
+
+    hist = tmp_path / "alpha_price_history.json"
     for mid in [2.0, 2.01, 2.02, 2.03, 2.04]:
-        analyze_structure(
-            mid,
-            breakout_pct=0.5,
-            lookback=5,
-            breakout_tf="5m",
-            cycle_seconds=60,
-            path=hist,
-        )
+        append_book_prices(BookPrices(bid=mid, ask=mid, mid=mid), path=hist)
     snap = analyze_structure(
         2.05,
         breakout_pct=0.5,
@@ -291,6 +286,8 @@ def test_analyze_structure_includes_confirmation_candle(tmp_path: Path):
         breakout_tf="5m",
         cycle_seconds=60,
         path=hist,
+        record_sample=False,
+        price_source="ask",
     )
     assert snap.confirmation_candle is not None
     assert snap.swing_high > 0

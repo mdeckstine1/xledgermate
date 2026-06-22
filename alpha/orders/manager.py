@@ -165,6 +165,8 @@ class OrderManager:
                 current_price,
                 timeframe=self._config.breakout_confirmation_tf,
                 cycle_seconds=self._config.alpha_cycle_interval_seconds,
+                sample_interval_seconds=self._config.alpha_price_sample_interval_seconds,
+                price_source=self._config.alpha_structure_price_source,
             )
 
         if current_price > 0:
