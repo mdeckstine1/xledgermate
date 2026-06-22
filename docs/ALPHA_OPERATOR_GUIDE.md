@@ -64,7 +64,29 @@ python main.py --mode setup-trust
 | `python main.py --mode alpha-hud` | **Operator HUD** (`:8765`, FastAPI — primary) |
 | `python main.py --mode alpha-gui` | Streamlit lab panel (`:8503`, optional) |
 
-**VPS access:** HUD binds to `hud_bind_host` (default public on VPS). Open `http://YOUR_VPS:8765`. Streamlit `:8503` is optional lab UI.
+**VPS access:** HUD binds to `hud_bind_host` (default public on VPS). Open `http://YOUR_VPS:8765` — **login required** when exposed publicly (see [HUD authentication](#hud-authentication)).
+
+### HUD authentication
+
+When `hud_bind_host` is `0.0.0.0` (public VPS), the Alpha HUD **requires** username + password (same as legacy WS HUD):
+
+```yaml
+# config/config.yaml — or use .env (recommended for secrets)
+hud_auth_username: "operator"
+hud_auth_password: "your-strong-password"
+hud_auth_rp_id: "188.245.50.229"   # optional — WebAuthn / passkeys
+```
+
+Or in `.env` (gitignored):
+
+```
+XLG_HUD_USERNAME=operator
+XLG_HUD_PASSWORD=your-strong-password
+```
+
+Auth auto-enables on public bind when credentials are set. Localhost-only bind (`127.0.0.1`) skips login unless `hud_auth_enabled: true`.
+
+Streamlit `:8503` is optional lab UI — use SSH tunnel if enabled.
 | `python main.py --mode alpha-run` | Same as `python -m alpha run` |
 | `python scripts/alpha_validate.py` | Pre-cutover checks + tests |
 

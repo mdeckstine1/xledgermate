@@ -123,10 +123,25 @@ def run_alpha_hud(*, host: str = "127.0.0.1", port: int = 8765, background: bool
     """Start Alpha HUD HTTP server."""
     if FastAPI is None or uvicorn is None:
         raise RuntimeError("Install fastapi and uvicorn: pip install fastapi uvicorn")
+    if app is None:
+        raise RuntimeError("FastAPI app failed to initialize")
 
-    config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    logger.info("alpha_hud_start | host=%s | port=%d", host, port)
+    from config.settings import BotConfig
+    from experimental.ws_feed.hud_auth import attach_hud_auth, resolve_hud_auth
+
+    config = BotConfig.load()
+    bind_host = (host or "127.0.0.1").strip()
+    auth = resolve_hud_auth(config, bind_host=bind_host)
+    _require_auth_for_public_bind(bind_host, auth)
+    attach_hud_auth(app, auth)
+    if auth and auth.enabled:
+        logger.info("alpha_hud_auth | enabled | user=%s | bind=%s", auth.username, bind_host)
+    elif bind_host in ("127.0.0.1", "localhost", "::1"):
+        logger.info("alpha_hud_auth | disabled | localhost bind only")
+
+    config_uvicorn = uvicorn.Config(app, host=bind_host, port=port, log_level="warning")
+    server = uvicorn.Server(config_uvicorn)
+    logger.info("alpha_hud_start | host=%s | port=%d", bind_host, port)
 
     if background:
         thread = threading.Thread(target=server.run, daemon=True)
@@ -135,3 +150,17 @@ def run_alpha_hud(*, host: str = "127.0.0.1", port: int = 8765, background: bool
 
     server.run()
     return server
+
+
+def _require_auth_for_public_bind(host: str, auth: Optional[Any]) -> None:
+    """Refuse public exposure without username/password (same policy as legacy WS HUD)."""
+    public = host not in ("127.0.0.1", "localhost", "::1", "")
+    if not public:
+        return
+    if auth is not None and getattr(auth, "enabled", False):
+        return
+    raise RuntimeError(
+        "Alpha HUD cannot bind to a public interface without auth. "
+        "Set hud_auth_username + hud_auth_password in config/config.yaml, or "
+        "XLG_HUD_USERNAME + XLG_HUD_PASSWORD in .env (see config.example.yaml)."
+    )

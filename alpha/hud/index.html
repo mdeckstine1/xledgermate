@@ -110,6 +110,7 @@
 
     async function post(path) {
       const r = await fetch(path, { method: 'POST' });
+      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return null; }
       return r.json();
     }
     $('btnPause').onclick = async () => { await post('/controls/pause'); poll(); };
@@ -173,6 +174,10 @@
     async function poll() {
       try {
         const r = await fetch('/state?_=' + Date.now());
+        if (r.status === 401) {
+          location.href = '/login?next=' + encodeURIComponent(location.pathname);
+          return;
+        }
         render(await r.json());
       } catch (e) {
         $('banner').textContent = 'HUD poll error: ' + e;
