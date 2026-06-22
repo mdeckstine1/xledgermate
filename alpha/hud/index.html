@@ -608,8 +608,11 @@
       const plotW = plotRight - plotLeft;
       const plotH = plotBottom - plotTop;
       const y = (price) => plotTop + (1 - (price - lo) / (hi - lo)) * plotH;
-      const slot = plotW / candles.length;
-      const bodyW = Math.max(2, Math.min(16, slot * 0.85));
+      const pack = 0.92;
+      const packedW = plotW * pack;
+      const packOffset = (plotW - packedW) / 2;
+      const slot = packedW / candles.length;
+      const bodyW = Math.max(2, Math.min(7, slot * 0.48));
 
       // Price axis (left) + horizontal grid
       const ticks = 4;
@@ -642,9 +645,9 @@
         ctx.globalAlpha = 1;
       });
 
-      // Candles — tight bodies, minimal gap
+      // Candles — slim bodies, packed spacing
       candles.forEach((c, i) => {
-        const cx = plotLeft + i * slot + slot / 2;
+        const cx = plotLeft + packOffset + i * slot + slot / 2;
         const openY = y(c.o);
         const closeY = y(c.c);
         const highY = y(c.h);
@@ -673,7 +676,7 @@
       ctx.textAlign = 'center';
       ctx.fillStyle = '#64748b';
       [...new Set(timeLabels)].sort((a, b) => a - b).forEach(i => {
-        const cx = plotLeft + i * slot + slot / 2;
+        const cx = plotLeft + packOffset + i * slot + slot / 2;
         const label = formatChartTime(candles[i].t);
         if (label) ctx.fillText(label, cx, h - 10);
       });
