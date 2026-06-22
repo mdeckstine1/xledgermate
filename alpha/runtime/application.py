@@ -12,6 +12,7 @@ from alpha.config_validator import AlphaConfigValidation, load_validated_config
 from alpha.decision.structure import MarketStructureSnapshot, analyze_structure
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControlStore
+from alpha.operator.runtime import OperatorRuntimeStore, apply_overrides, derive_posture
 from alpha.decision.engine import DecisionEngine, DecisionResult
 from alpha.dry_run import DryRunGuard
 from alpha.inventory.manager import InventoryManager
@@ -59,6 +60,10 @@ class AlphaApplication:
         self._risk = RiskEngine(config, state_dir=self._state_dir)
         self._reporting = ReportingService(config)
         self._controls = OperatorControlStore(path=self._state_dir / "alpha_controls.json")
+        self._runtime = OperatorRuntimeStore(
+            overrides_path=self._state_dir / "alpha_overrides.json",
+            commands_path=self._state_dir / "alpha_commands.json",
+        )
         self._activity = ActivityLog(path=self._state_dir / "alpha_activity.jsonl")
         self._orders = OrderManager(
             self._ledger,
@@ -86,6 +91,57 @@ class AlphaApplication:
     @property
     def activity(self) -> ActivityLog:
         return self._activity
+
+    @property
+    def runtime(self) -> OperatorRuntimeStore:
+        return self._runtime
+
+    def _refresh_config(self, config: BotConfig) -> None:
+        """Push effective config into subcomponents."""
+        self.config = config
+        network = "testnet" if config.testnet else "mainnet"
+        if self._dry_run_guard.dry_run != config.dry_run or self._dry_run_guard.network != network:
+            self._dry_run_guard = DryRunGuard(dry_run=config.dry_run, network=network)
+        self._inventory._config = config  # noqa: SLF001
+        self._risk._config = config  # noqa: SLF001
+        self._reporting._config = config  # noqa: SLF001
+        self._orders._config = config  # noqa: SLF001
+        self._decision._config = config  # noqa: SLF001
+        self._executor._config = config  # noqa: SLF001
+
+    async def _sync_operator_runtime(self) -> None:
+        """Reload overrides, apply effective config, process queued operator commands."""
+        base = BotConfig.load()
+        overrides = self._runtime.load_overrides()
+        effective = apply_overrides(base, overrides)
+        self._refresh_config(effective)
+
+        for cmd in self._runtime.drain_commands():
+            cmd_type = str(cmd.get("type", ""))
+            if cmd_type == "config_reload":
+                reloaded = BotConfig.load()
+                effective = apply_overrides(reloaded, self._runtime.load_overrides())
+                self._refresh_config(effective)
+                self._activity.append("config_reload", dry_run=effective.dry_run)
+                logger.info("alpha_config_reloaded | dry_run=%s", effective.dry_run)
+            elif cmd_type == "cancel_all":
+                cancelled = await self._orders.cancel_all()
+                self._activity.append("cancel_all", executed=cancelled, dry_run=self.config.dry_run)
+                logger.info("alpha_cancel_all_processed | executed=%s", cancelled)
+            elif cmd_type == "bracket_adjust":
+                ok = await self._orders.adjust_bracket_leg(
+                    str(cmd.get("bracket_id", "")),
+                    str(cmd.get("leg", "")),
+                    float(cmd.get("new_price", 0)),
+                )
+                self._activity.append(
+                    "bracket_adjust",
+                    bracket_id=cmd.get("bracket_id"),
+                    leg=cmd.get("leg"),
+                    price=cmd.get("new_price"),
+                    executed=ok,
+                    dry_run=self.config.dry_run,
+                )
 
     @classmethod
     def from_config_file(cls, *, state_dir: Path | None = None) -> tuple[AlphaApplication, AlphaConfigValidation]:
@@ -224,10 +280,13 @@ class AlphaApplication:
             activity_log=self._activity,
             controls=self._controls.load(),
             report_text=report_text,
+            operator_overrides=self._runtime.load_overrides(),
+            config_effective=self.config,
         )
 
     async def run_status_cycle(self, *, telegram: bool = True) -> AlphaCycleResult:
         """Read-only cycle: no entry execution."""
+        await self._sync_operator_runtime()
         self._dry_run_guard.log_mode_banner()
         self._reporting.send_startup(
             dry_run=self.config.dry_run,
@@ -248,6 +307,7 @@ class AlphaApplication:
 
     async def run_trading_cycle(self, *, telegram: bool = False) -> AlphaCycleResult:
         """Full cycle: sync brackets, evaluate, execute entry if signaled."""
+        await self._sync_operator_runtime()
         self._dry_run_guard.log_mode_banner()
         snap, validation, decision, orders = await self._gather_cycle_context()
 

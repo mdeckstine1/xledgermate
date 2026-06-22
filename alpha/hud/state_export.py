@@ -12,9 +12,11 @@ from alpha.decision.engine import DecisionResult
 from alpha.decision.structure import MarketStructureSnapshot
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControls
+from alpha.operator.runtime import derive_posture, effective_config_snapshot
 from alpha.orders.types import BracketRecord
 from alpha.runtime.executor import EntryExecutionResult
 from alpha.types import BracketStatusSummary, OperatorSnapshot, OrderBookSnapshot
+from config.settings import BotConfig
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,7 @@ def _book_payload(book: Optional[OrderBookSnapshot]) -> Dict[str, Any]:
 def _bracket_row(record: BracketRecord) -> Dict[str, Any]:
     return {
         "bracket_id": record.bracket_id[:8],
+        "bracket_id_full": record.bracket_id,
         "state": record.state.value,
         "mode": record.mode.value,
         "entry": record.entry_price_rlusd_per_xrp,
@@ -73,6 +76,8 @@ def build_hud_state(
     activity: List[Dict[str, Any]],
     controls: OperatorControls,
     report_text: str = "",
+    operator_overrides: Optional[Dict[str, Any]] = None,
+    config_effective: Optional[BotConfig] = None,
 ) -> Dict[str, Any]:
     """Build JSON-serializable HUD payload from one Alpha cycle."""
     snap = snapshot
@@ -87,6 +92,20 @@ def build_hud_state(
             "summary": structure.summary,
         }
 
+    active_brackets = (
+        bracket_summary.active_fixed
+        + bracket_summary.active_sl_trailing
+        + bracket_summary.active_breakout_trailing
+    )
+    posture = derive_posture(
+        decision_action=decision.action.value,
+        pending_buys=bracket_summary.pending_buys,
+        active_brackets=active_brackets,
+    )
+    overrides = operator_overrides or {}
+    effective = config_effective or BotConfig()
+    tunables = effective_config_snapshot(effective)
+
     return {
         "hud_kind": "alpha",
         "alpha_version": snap.alpha_version,
@@ -94,6 +113,9 @@ def build_hud_state(
         "network": snap.network,
         "dry_run": snap.dry_run,
         "trading_enabled": snap.trading_enabled,
+        "posture": posture,
+        "operator_overrides": overrides,
+        "config_effective": tunables,
         "account_address": snap.account_address,
         "operator_paused": controls.trading_paused,
         "pause_reason": controls.pause_reason,
@@ -178,6 +200,8 @@ def publish_cycle_to_hud(
     activity_log: ActivityLog,
     controls: OperatorControls,
     report_text: str = "",
+    operator_overrides: Optional[Dict[str, Any]] = None,
+    config_effective: Optional[BotConfig] = None,
 ) -> None:
     try:
         state = build_hud_state(
@@ -193,6 +217,8 @@ def publish_cycle_to_hud(
             activity=activity_log.tail(40),
             controls=controls,
             report_text=report_text,
+            operator_overrides=operator_overrides,
+            config_effective=config_effective,
         )
         write_alpha_runtime_state(path, state)
     except OSError as exc:

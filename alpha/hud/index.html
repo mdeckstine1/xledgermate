@@ -42,7 +42,25 @@
     button { background:#2563eb; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:.85rem; margin-right:6px; }
     button.secondary { background:#475569; }
     button.danger { background:#b91c1c; }
+    button.warn { background:#b45309; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
     .muted { color:var(--muted); font-size:.8rem; }
+    .controls-section { margin-bottom:16px; }
+    .controls-section h2 { font-size:.85rem; color:var(--muted); text-transform:uppercase; margin:0 0 10px; }
+    .ctrl-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px; }
+    .ctrl-row label { min-width:160px; font-size:.85rem; }
+    input[type=range] { flex:1; min-width:120px; max-width:280px; }
+    input[type=number] { width:80px; background:#0f172a; border:1px solid var(--border); color:var(--text); padding:6px; border-radius:4px; }
+    .toggle { display:flex; align-items:center; gap:8px; }
+    .status-toast { position:fixed; bottom:16px; right:16px; background:#1e3a5f; border:1px solid var(--accent); padding:10px 14px; border-radius:8px; font-size:.85rem; z-index:100; display:none; max-width:90vw; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:200; padding:16px; }
+    .modal-backdrop.open { display:flex; }
+    .modal { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px; max-width:400px; width:100%; }
+    .modal h2 { margin:0 0 12px; font-size:1rem; color:var(--bad); }
+    .modal input { width:100%; background:#0f172a; border:1px solid var(--border); color:var(--text); padding:8px; border-radius:6px; margin:8px 0 12px; }
+    .bracket-adjust { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
+    .bracket-adjust input { width:72px; font-size:.75rem; padding:4px; }
+    .bracket-adjust button { padding:4px 6px; font-size:.72rem; margin:0; }
     @media (max-width:800px) { .layout { grid-template-columns:1fr; } }
   </style>
 </head>
@@ -54,7 +72,11 @@
     <span id="mode" class="badge dry">dry</span>
     <span id="pauseBadge" class="badge" style="display:none">paused</span>
     <span id="killBadge" class="badge" style="display:none">kill</span>
-    <span id="fresh" class="muted" style="margin-left:auto"></span>
+    <span id="postureBadge" class="badge">patient</span>
+    <span style="margin-left:auto;display:flex;align-items:center;gap:12px">
+      <a href="/logout" class="muted" style="font-size:.8rem;text-decoration:none">Sign out</a>
+      <span id="fresh" class="muted"></span>
+    </span>
   </header>
   <div id="banner" class="banner">Loading…</div>
   <div class="layout">
@@ -76,6 +98,7 @@
         <div class="tab active" data-tab="live">Live</div>
         <div class="tab" data-tab="brackets">Brackets</div>
         <div class="tab" data-tab="offers">Open offers</div>
+        <div class="tab" data-tab="controls">Controls</div>
         <div class="tab" data-tab="activity">Activity</div>
       </div>
       <section id="live" class="panel active">
@@ -98,24 +121,235 @@
       <section id="activity" class="panel">
         <div class="card activity" id="actFeed"></div>
       </section>
+      <section id="controls" class="panel">
+        <div class="controls-section card">
+          <h2>Trading mode</h2>
+          <div class="ctrl-row toggle">
+            <span id="dryRunLabel" class="value">dry-run</span>
+            <button id="btnToggleDryRun" class="warn">Enable LIVE trading…</button>
+          </div>
+          <div class="ctrl-row toggle">
+            <label><input type="checkbox" id="tradingEnabled"> trading_enabled</label>
+            <button id="btnApplyTrading" class="secondary">Apply</button>
+          </div>
+        </div>
+        <div class="controls-section card">
+          <h2>Risk &amp; entry</h2>
+          <div class="ctrl-row"><label>risk_per_trade_pct</label><input type="range" id="slRisk" min="0.1" max="5" step="0.1"><input type="number" id="numRisk" step="0.1"><span id="valRisk" class="muted"></span></div>
+          <div class="ctrl-row"><label>min_edge_threshold_pct</label><input type="range" id="slEdge" min="0" max="1" step="0.01"><input type="number" id="numEdge" step="0.01"><span id="valEdge" class="muted"></span></div>
+          <div class="ctrl-row"><label>buy_limit_offset_pct</label><input type="range" id="slOffset" min="0.05" max="1" step="0.01"><input type="number" id="numOffset" step="0.01"><span id="valOffset" class="muted"></span></div>
+          <button id="btnApplyRisk">Apply risk &amp; entry</button>
+        </div>
+        <div class="controls-section card">
+          <h2>Structure &amp; trailing</h2>
+          <div class="ctrl-row toggle"><label><input type="checkbox" id="trailingEnabled"> bracket_trailing_enabled</label></div>
+          <div class="ctrl-row"><label>trailing_step_pct</label><input type="range" id="slTrail" min="0.5" max="5" step="0.1"><input type="number" id="numTrail" step="0.1"></div>
+          <div class="ctrl-row"><label>breakout_pct</label><input type="range" id="slBreakout" min="0.005" max="0.1" step="0.005"><input type="number" id="numBreakout" step="0.005"></div>
+          <div class="ctrl-row"><label>structure_lookback</label><input type="range" id="slLookback" min="3" max="100" step="1"><input type="number" id="numLookback" step="1"></div>
+          <div class="ctrl-row"><label>initial_stop_loss_pct</label><input type="range" id="slSl" min="0.005" max="0.1" step="0.001"><input type="number" id="numSl" step="0.001"></div>
+          <div class="ctrl-row"><label>take_profit_pct</label><input type="range" id="slTp" min="0.01" max="0.2" step="0.01"><input type="number" id="numTp" step="0.01"></div>
+          <div class="ctrl-row"><label>take_profit_rr</label><input type="range" id="slRr" min="0.5" max="5" step="0.1"><input type="number" id="numRr" step="0.1"></div>
+          <button id="btnApplyStructure">Apply structure &amp; trailing</button>
+        </div>
+        <div class="controls-section card">
+          <h2>Manual actions</h2>
+          <button id="btnPauseCtrl" class="secondary">Pause trading</button>
+          <button id="btnResumeCtrl" style="display:none">Resume trading</button>
+          <button id="btnKill" class="danger">Emergency kill</button>
+          <button id="btnClearKill" class="secondary">Clear kill</button>
+          <button id="btnCancelAll" class="danger">Cancel all orders</button>
+          <button id="btnConfigReload" class="secondary">Config reload</button>
+        </div>
+      </section>
     </main>
+  </div>
+  <div id="toast" class="status-toast"></div>
+  <div id="modalBackdrop" class="modal-backdrop">
+    <div class="modal">
+      <h2 id="modalTitle">Confirm</h2>
+      <p id="modalMsg" class="muted"></p>
+      <input id="modalInput" type="text" placeholder="Type confirmation…" autocomplete="off">
+      <div>
+        <button id="modalCancel" class="secondary">Cancel</button>
+        <button id="modalOk" class="danger">Confirm</button>
+      </div>
+    </div>
   </div>
   <script>
     const $ = (id) => document.getElementById(id);
+    let hudState = {};
+    let operatorConfig = null;
+
     document.querySelectorAll('.tab').forEach(el => el.addEventListener('click', () => {
       document.querySelectorAll('.tab,.panel').forEach(n => n.classList.remove('active'));
       el.classList.add('active');
       $(el.dataset.tab).classList.add('active');
+      if (el.dataset.tab === 'controls' && !operatorConfig) loadOperatorConfig();
     }));
 
-    async function post(path) {
-      const r = await fetch(path, { method: 'POST' });
-      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return null; }
-      return r.json();
+    function toast(msg, isErr) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.style.display = 'block';
+      t.style.borderColor = isErr ? 'var(--bad)' : 'var(--accent)';
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => { t.style.display = 'none'; }, 4000);
     }
+
+    async function postJson(path, body) {
+      const r = await fetch(path, {
+        method: 'POST',
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return null; }
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) toast(data.message || data.errors?.join?.('; ') || ('HTTP ' + r.status), true);
+      return data;
+    }
+
+    async function patchJson(path, body) {
+      const r = await fetch(path, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return null; }
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) toast(data.message || data.errors?.join?.('; ') || ('HTTP ' + r.status), true);
+      return data;
+    }
+
+    let modalResolve = null;
+    function confirmModal(title, msg, expected) {
+      return new Promise((resolve) => {
+        modalResolve = resolve;
+        $('modalTitle').textContent = title;
+        $('modalMsg').textContent = msg;
+        $('modalInput').value = '';
+        $('modalBackdrop').classList.add('open');
+        $('modalInput').onkeydown = (e) => { if (e.key === 'Enter') $('modalOk').click(); };
+        $('modalOk').onclick = () => {
+          const ok = $('modalInput').value === expected;
+          $('modalBackdrop').classList.remove('open');
+          resolve(ok);
+        };
+        $('modalCancel').onclick = () => { $('modalBackdrop').classList.remove('open'); resolve(false); };
+      });
+    }
+
+    async function post(path) { return postJson(path); }
+
     $('btnPause').onclick = async () => { await post('/controls/pause'); poll(); };
     $('btnResume').onclick = async () => { await post('/controls/resume'); poll(); };
     $('btnRestart').onclick = async () => { await post('/engine/restart'); poll(); };
+    $('btnPauseCtrl').onclick = async () => { const d = await post('/controls/pause'); if (d?.ok) toast('Trading paused'); poll(); };
+    $('btnResumeCtrl').onclick = async () => { const d = await post('/controls/resume'); if (d?.ok) toast('Trading resumed'); poll(); };
+
+    function linkSlider(sliderId, numId, valId) {
+      const sl = $(sliderId), num = $(numId);
+      const sync = (v) => { sl.value = v; num.value = v; if (valId) $(valId).textContent = v; };
+      sl.oninput = () => sync(sl.value);
+      num.oninput = () => sync(num.value);
+      return sync;
+    }
+    const syncRisk = linkSlider('slRisk', 'numRisk', 'valRisk');
+    const syncEdge = linkSlider('slEdge', 'numEdge', 'valEdge');
+    const syncOffset = linkSlider('slOffset', 'numOffset', 'valOffset');
+    const syncTrail = linkSlider('slTrail', 'numTrail');
+    const syncBreakout = linkSlider('slBreakout', 'numBreakout');
+    const syncLookback = linkSlider('slLookback', 'numLookback');
+    const syncSl = linkSlider('slSl', 'numSl');
+    const syncTp = linkSlider('slTp', 'numTp');
+    const syncRr = linkSlider('slRr', 'numRr');
+
+    function fillControlsFromConfig(cfg) {
+      if (!cfg) return;
+      const c = cfg.config_effective || cfg;
+      syncRisk(c.alpha_risk_per_trade_pct ?? 0.5);
+      syncEdge(c.alpha_min_edge_threshold_pct ?? 0.08);
+      syncOffset(c.alpha_buy_limit_offset_pct ?? 0.15);
+      $('trailingEnabled').checked = !!c.bracket_trailing_enabled;
+      $('tradingEnabled').checked = c.trading_enabled !== false;
+      syncTrail(c.trailing_step_pct ?? 1.5);
+      syncBreakout(c.alpha_breakout_pct ?? 0.02);
+      syncLookback(c.alpha_structure_lookback ?? 20);
+      syncSl(c.initial_stop_loss_pct ?? 0.015);
+      syncTp(c.take_profit_pct ?? 0.03);
+      syncRr(c.take_profit_rr ?? 2.0);
+      const live = !c.dry_run;
+      $('dryRunLabel').textContent = live ? 'LIVE TRADING' : 'dry-run';
+      $('dryRunLabel').style.color = live ? 'var(--bad)' : 'var(--warn)';
+      $('btnToggleDryRun').textContent = live ? 'Switch to dry-run…' : 'Enable LIVE trading…';
+      $('btnToggleDryRun').className = live ? 'secondary' : 'danger';
+    }
+
+    async function loadOperatorConfig() {
+      const r = await fetch('/operator/config?_=' + Date.now());
+      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+      operatorConfig = await r.json();
+      fillControlsFromConfig(operatorConfig);
+    }
+
+    $('btnApplyRisk').onclick = async () => {
+      const d = await patchJson('/operator/config', { overrides: {
+        alpha_risk_per_trade_pct: parseFloat($('numRisk').value),
+        alpha_min_edge_threshold_pct: parseFloat($('numEdge').value),
+        alpha_buy_limit_offset_pct: parseFloat($('numOffset').value),
+      }});
+      if (d?.ok) { toast('Risk & entry updated'); operatorConfig = d; poll(); }
+    };
+    $('btnApplyStructure').onclick = async () => {
+      const d = await patchJson('/operator/config', { overrides: {
+        bracket_trailing_enabled: $('trailingEnabled').checked,
+        trailing_step_pct: parseFloat($('numTrail').value),
+        alpha_breakout_pct: parseFloat($('numBreakout').value),
+        alpha_structure_lookback: parseInt($('numLookback').value, 10),
+        initial_stop_loss_pct: parseFloat($('numSl').value),
+        take_profit_pct: parseFloat($('numTp').value),
+        take_profit_rr: parseFloat($('numRr').value),
+      }});
+      if (d?.ok) { toast('Structure & trailing updated'); operatorConfig = d; poll(); }
+    };
+    $('btnApplyTrading').onclick = async () => {
+      const d = await patchJson('/operator/config', { overrides: { trading_enabled: $('tradingEnabled').checked } });
+      if (d?.ok) { toast('trading_enabled updated'); poll(); }
+    };
+
+    $('btnToggleDryRun').onclick = async () => {
+      const goingLive = hudState.dry_run !== false;
+      const expected = goingLive ? 'ENABLE_LIVE' : 'ENABLE_DRY_RUN';
+      const ok = await confirmModal(
+        goingLive ? 'Enable LIVE trading' : 'Enable dry-run',
+        'Type ' + expected + ' to confirm. Live trading submits real ledger orders.',
+        expected
+      );
+      if (!ok) return;
+      const d = await postJson('/operator/dry-run', { dry_run: !goingLive, confirm: expected, persist: false });
+      if (d?.ok) { toast(goingLive ? 'LIVE mode queued via override' : 'Dry-run enabled'); loadOperatorConfig(); poll(); }
+    };
+
+    $('btnKill').onclick = async () => {
+      const d = await postJson('/controls/kill', { reason: 'HUD emergency kill' });
+      if (d?.ok) { toast('Kill switch activated'); poll(); }
+    };
+    $('btnClearKill').onclick = async () => {
+      const d = await post('/controls/clear-kill');
+      if (d?.ok) { toast('Kill switch cleared'); poll(); }
+    };
+    $('btnCancelAll').onclick = async () => {
+      const ok = await confirmModal('Cancel all orders', 'Type CANCEL_ALL to cancel every open offer.', 'CANCEL_ALL');
+      if (!ok) return;
+      const d = await postJson('/controls/cancel-all', { confirm: 'CANCEL_ALL' });
+      if (d?.ok) toast('Cancel-all queued for next engine cycle');
+    };
+    $('btnConfigReload').onclick = async () => {
+      const d = await post('/operator/config/reload');
+      if (d?.ok) toast('Config reload queued');
+    };
+
+    async function adjustBracket(fullId, leg, inputId) {
+      const price = parseFloat($(inputId).value);
+      if (!price || price <= 0) { toast('Enter a valid price', true); return; }
+      const d = await postJson('/brackets/' + encodeURIComponent(fullId) + '/adjust', { leg, price });
+      if (d?.ok) toast('Bracket ' + leg.toUpperCase() + ' adjust queued');
+    }
 
     function fmt(n, d=4) { return n == null || Number.isNaN(n) ? '—' : Number(n).toFixed(d); }
     function ago(iso) {
@@ -127,11 +361,13 @@
     }
 
     function render(s) {
+      hudState = s;
       $('ver').textContent = 'v' + (s.alpha_version || '?');
       $('net').textContent = s.network || '—';
       const mode = $('mode');
       mode.textContent = s.dry_run ? 'dry-run' : 'LIVE';
       mode.className = 'badge ' + (s.dry_run ? 'dry' : 'live');
+      $('postureBadge').textContent = s.posture || 'patient';
       $('pauseBadge').style.display = s.operator_paused ? 'inline' : 'none';
       $('killBadge').style.display = s.risk?.kill_switch_active ? 'inline' : 'none';
       if (s.risk?.kill_switch_active) $('killBadge').className = 'badge kill';
@@ -145,6 +381,8 @@
       $('pnl').textContent = fmt(s.risk?.session_pnl_xrp, 4) + ' XRP';
       $('btnPause').style.display = s.operator_paused ? 'none' : 'inline-block';
       $('btnResume').style.display = s.operator_paused ? 'inline-block' : 'none';
+      $('btnPauseCtrl').style.display = s.operator_paused ? 'none' : 'inline-block';
+      $('btnResumeCtrl').style.display = s.operator_paused ? 'inline-block' : 'none';
 
       $('decAction').textContent = (s.decision?.action || '—').toUpperCase();
       $('decReason').textContent = s.decision?.reason || '';
@@ -159,10 +397,17 @@
       $('exec').textContent = s.execution ? (s.execution.message || JSON.stringify(s.execution)) : '—';
       $('report').textContent = s.report_text || '';
 
-      $('brTable').innerHTML = (s.brackets?.records || []).map(r => `<tr>
+      $('brTable').innerHTML = (s.brackets?.records || []).map(r => {
+        const fid = r.bracket_id_full || r.bracket_id;
+        const slId = 'sl_' + fid.slice(0,8);
+        const tpId = 'tp_' + fid.slice(0,8);
+        return `<tr>
         <td>${r.bracket_id}</td><td>${r.state}</td><td>${r.mode}</td>
-        <td>${fmt(r.entry,6)}</td><td>${fmt(r.tp_price,6)}</td><td>${fmt(r.sl_price,6)}</td>
-        <td>${r.breakeven_passed?'BE':''}${r.breakout_confirmed?' BO':''}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No brackets</td></tr>';
+        <td>${fmt(r.entry,6)}</td>
+        <td>${fmt(r.tp_price,6)}<div class="bracket-adjust"><input id="${tpId}" placeholder="TP" value="${r.tp_price ?? ''}"><button onclick="adjustBracket('${fid}','tp','${tpId}')">Set</button></div></td>
+        <td>${fmt(r.sl_price,6)}<div class="bracket-adjust"><input id="${slId}" placeholder="SL" value="${r.sl_price ?? ''}"><button onclick="adjustBracket('${fid}','sl','${slId}')">Set</button></div></td>
+        <td>${r.breakeven_passed?'BE':''}${r.breakout_confirmed?' BO':''}</td></tr>`;
+      }).join('') || '<tr><td colspan="7" class="muted">No brackets</td></tr>';
 
       $('offerTable').innerHTML = (s.open_offers || []).map(o => `<tr>
         <td>${o.sequence||'—'}</td><td>${o.side||'—'}</td><td>${fmt(o.price,6)}</td><td>${fmt(o.size_xrp,4)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No open offers</td></tr>';

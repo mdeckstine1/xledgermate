@@ -44,6 +44,9 @@ def _load_state() -> Dict[str, Any]:
 
 
 if app is not None:
+    from alpha.hud.routes_operator import register_operator_routes
+
+    register_operator_routes(app)
 
     @app.get("/", response_class=HTMLResponse)
     @app.get("/hud", response_class=HTMLResponse)
@@ -68,7 +71,7 @@ if app is not None:
         return JSONResponse(_load_state())
 
     @app.post("/controls/{action}")
-    async def controls(action: str) -> JSONResponse:
+    async def controls_legacy(action: str) -> JSONResponse:
         from alpha.operator.controls import OperatorControlStore
 
         store = OperatorControlStore(path=_CONTROLS)

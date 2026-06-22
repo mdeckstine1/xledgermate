@@ -44,6 +44,7 @@ PASSKEYS_FILE = Path("logs/hud_passkeys.json")
 
 _PUBLIC_PREFIXES = (
     "/login",
+    "/logout",
     "/auth/passkey/login",
     "/auth/passkey/register",
     "/favicon.png",
@@ -382,12 +383,18 @@ def attach_hud_auth(app: FastAPI, settings: Optional[HudAuthSettings]) -> None:
             return await call_next(request)
         if is_authenticated(settings, request):
             return await call_next(request)
-        if request.method == "GET" and path in ("/", "/hud"):
+        if request.method in ("GET", "HEAD") and path in ("/", "/hud"):
             nxt = request.url.path
             if request.url.query:
                 nxt += "?" + request.url.query
             return RedirectResponse(f"/login?next={nxt}", status_code=302)
         return _unauthorized_json()
+
+    @app.get("/logout")
+    async def logout() -> RedirectResponse:
+        resp = RedirectResponse("/login", status_code=302)
+        resp.delete_cookie(SESSION_COOKIE, path="/")
+        return resp
 
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request, error: str = ""):

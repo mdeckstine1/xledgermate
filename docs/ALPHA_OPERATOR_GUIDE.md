@@ -109,6 +109,23 @@ Streamlit `:8503` is optional lab UI — use SSH tunnel if enabled.
 
 GUI **Pause** writes `logs/alpha_controls.json` without editing yaml.
 
+### HUD operator API (Controls tab)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/operator/config` | Effective tunables + overrides + slider defaults |
+| `PATCH` | `/operator/config` | Set runtime overrides (`logs/alpha_overrides.json`) |
+| `POST` | `/operator/config/reload` | Queue yaml reload on next engine cycle |
+| `POST` | `/operator/dry-run` | Toggle dry_run (`confirm`: `ENABLE_LIVE` / `ENABLE_DRY_RUN`) |
+| `POST` | `/controls/pause` | Pause trading |
+| `POST` | `/controls/resume` | Resume trading |
+| `POST` | `/controls/kill` | Activate kill switch |
+| `POST` | `/controls/clear-kill` | Clear kill switch |
+| `POST` | `/controls/cancel-all` | Queue cancel all (`confirm`: `CANCEL_ALL`) |
+| `POST` | `/brackets/{id}/adjust` | Queue SL/TP adjust (`leg`: `tp`/`sl`, `price`) |
+
+Runtime overrides are applied each engine cycle; dangerous actions are queued in `logs/alpha_commands.json` and processed by `AlphaApplication`.
+
 ---
 
 ## Flipping dry_run to live
@@ -132,6 +149,8 @@ GUI **Pause** writes `logs/alpha_controls.json` without editing yaml.
 | `logs/alpha_session.json` | Session P&L baseline |
 | `logs/kill_switch.json` | Kill switch state |
 | `logs/alpha_controls.json` | GUI pause/resume |
+| `logs/alpha_overrides.json` | Runtime config overrides (HUD Controls tab) |
+| `logs/alpha_commands.json` | Queued operator commands (cancel-all, reload, bracket adjust) |
 
 ---
 

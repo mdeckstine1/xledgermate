@@ -377,6 +377,31 @@ class OrderManager:
         logger.info("bracket_cancel_all | cancelled_offers=%d", len(offers))
         return True
 
+    def _resolve_bracket_id(self, bracket_id: str) -> Optional[str]:
+        if self._store.get(bracket_id):
+            return bracket_id
+        matches = [
+            r.bracket_id
+            for r in self._store.all_records()
+            if r.bracket_id.startswith(bracket_id)
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        return None
+
+    async def adjust_bracket_leg(self, bracket_id: str, leg: str, new_price: float) -> bool:
+        """Operator manual SL/TP adjust — cancel+replace like trailing; respects dry_run."""
+        resolved = self._resolve_bracket_id(bracket_id)
+        if not resolved:
+            logger.warning("bracket_adjust_unknown | id=%s", bracket_id)
+            return False
+        record = self._store.get(resolved)
+        if record is None or record.state != BracketLifecycleState.BRACKET_ACTIVE:
+            logger.warning("bracket_adjust_inactive | id=%s | state=%s", bracket_id, getattr(record, "state", None))
+            return False
+        role = BracketLegRole.TAKE_PROFIT if leg == "tp" else BracketLegRole.STOP_LOSS
+        return await self._replace_leg(record, role, new_price, reason="operator_adjust")
+
     async def _advance_pending_buy(
         self,
         record: BracketRecord,
