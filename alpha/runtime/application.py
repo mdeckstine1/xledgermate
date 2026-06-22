@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from alpha.config_validator import AlphaConfigValidation, load_validated_config
 from alpha.decision.structure import MarketStructureSnapshot, analyze_structure
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControlStore
