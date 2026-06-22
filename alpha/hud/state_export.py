@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from alpha.decision.engine import DecisionResult
-from alpha.decision.structure import MarketStructureSnapshot, build_candle_from_mids
+from alpha.decision.structure import MarketStructureSnapshot, build_candle_from_mids, load_mid_history
+from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalysisSnapshot
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControls
 from alpha.operator.runtime import derive_posture, effective_config_snapshot
@@ -218,6 +219,7 @@ def build_hud_state(
     recent_events: tuple[str, ...],
     book: Optional[OrderBookSnapshot] = None,
     structure: Optional[MarketStructureSnapshot] = None,
+    ta: Optional[TechnicalAnalysisSnapshot] = None,
     bracket_summary: BracketStatusSummary,
     brackets: Iterable[BracketRecord],
     open_offers: List[dict[str, Any]],
@@ -267,8 +269,11 @@ def build_hud_state(
     overrides = operator_overrides or {}
     effective = config_effective or BotConfig()
     tunables = effective_config_snapshot(effective)
-    mid_history = _load_mid_history(runtime_state_path.parent / "alpha_mid_history.json")
+    mid_history = load_mid_history(runtime_state_path.parent / "alpha_mid_history.json")
     chart = _chart_payload(structure, mid_history, effective)
+    if ta is None and effective.alpha_technical_analysis.enabled:
+        ta = TechnicalAnalysis(effective).analyze(mid_history, mid=snap.balances.mid_rlusd_per_xrp)
+    ta_block = ta.to_dict() if ta is not None else {"enabled": False}
 
     return {
         "hud_kind": "alpha",
@@ -335,6 +340,7 @@ def build_hud_state(
         "open_offers_count": len(open_offers),
         "structure": structure_block,
         "chart": chart,
+        "technical_analysis": ta_block,
         "book": _book_payload(book if isinstance(book, OrderBookSnapshot) else None),
         "recent_activity": activity[-40:],
         "recent_events": list(recent_events),
@@ -359,6 +365,7 @@ def publish_cycle_to_hud(
     path: Path = DEFAULT_PATH,
     book: Optional[OrderBookSnapshot] = None,
     structure: Optional[MarketStructureSnapshot] = None,
+    ta: Optional[TechnicalAnalysisSnapshot] = None,
     bracket_summary: BracketStatusSummary,
     brackets: Iterable[BracketRecord],
     open_offers: List[dict[str, Any]],
@@ -376,6 +383,7 @@ def publish_cycle_to_hud(
             recent_events=recent_events,
             book=book,
             structure=structure,
+            ta=ta,
             bracket_summary=bracket_summary,
             brackets=brackets,
             open_offers=open_offers,

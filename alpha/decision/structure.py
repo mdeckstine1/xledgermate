@@ -92,6 +92,11 @@ def breakout_lookback_samples(timeframe: str, cycle_seconds: int = 60) -> int:
     return max(1, total_seconds // cycle)
 
 
+def load_mid_history(path: Path = _HISTORY_PATH) -> List[float]:
+    """Public accessor for persisted mid samples used by structure and TA."""
+    return _load_history(path)
+
+
 def _load_history(path: Path = _HISTORY_PATH) -> List[float]:
     if not path.exists():
         return []

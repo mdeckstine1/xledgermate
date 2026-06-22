@@ -70,6 +70,7 @@ class OrderManager:
         self._config = config
         self._risk_engine = risk_engine
         self._structure = structure
+        self._ta: object | None = None
         self._store = BracketStateStore(persist_path=_default_bracket_path(state_dir))
         self._partial_fill_mode = normalize_partial_fill_mode(config.partial_fill_mode)
         self._recent_events: List[str] = []
@@ -77,6 +78,9 @@ class OrderManager:
 
     def set_structure(self, structure: object | None) -> None:
         self._structure = structure
+
+    def set_ta(self, ta: object | None) -> None:
+        self._ta = ta
 
     @property
     def store(self) -> BracketStateStore:
@@ -242,6 +246,7 @@ class OrderManager:
                 current_price=current_price,
                 candle_data=candle_data,
                 structure=snap,
+                ta=self._ta,
             )
             changed = await self._apply_trailing_result(record, result)
             if changed:

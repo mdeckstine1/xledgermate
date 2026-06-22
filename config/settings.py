@@ -4,6 +4,8 @@ from typing import List, Optional, Union
 
 import yaml
 
+from alpha.decision.ta_config import AlphaTechnicalAnalysisConfig
+
 CONFIG_FILE = Path(__file__).resolve().parent / "config.yaml"
 CREDENTIALS_SIDECAR_NAME = "credentials.local.yaml"
 _CREDENTIAL_FIELDS = ("bot_account_address", "bot_secret_key")
@@ -113,11 +115,19 @@ def patch_config_file(updates: dict, filepath: Optional[Union[str, Path]] = None
 
 
 def _config_from_dict(cls: type["BotConfig"], data: dict) -> "BotConfig":
+    from alpha.decision.ta_config import AlphaTechnicalAnalysisConfig, merge_ta_config
+
     config = cls()
     allowed = {item.name for item in fields(cls)}
     for key, value in data.items():
-        if key in allowed:
-            setattr(config, key, value)
+        if key not in allowed:
+            continue
+        if key == "alpha_technical_analysis" and isinstance(value, dict):
+            base = getattr(config, key)
+            if isinstance(base, AlphaTechnicalAnalysisConfig):
+                setattr(config, key, merge_ta_config(base, value))
+            continue
+        setattr(config, key, value)
     return config
 
 
@@ -177,6 +187,9 @@ class BotConfig:
     alpha_gui_refresh_seconds: int = 30  # Streamlit auto-refresh hint
     alpha_gui_bind_host: str = ""  # Empty = use hud_bind_host; 0.0.0.0 for public VPS access
     alpha_hud_port: int = 8765  # Operator HUD (FastAPI) — replaces legacy ws-hud port
+    alpha_technical_analysis: AlphaTechnicalAnalysisConfig = field(
+        default_factory=AlphaTechnicalAnalysisConfig
+    )
     # Fund the bot with XRP only at start; place sell-XRP (ask) quotes until you hold RLUSD.
     fund_with_xrp_only: bool = True
 

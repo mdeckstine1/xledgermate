@@ -134,6 +134,8 @@ def is_breakout_confirmed(
     candle_data: Optional[CandleData],
     structure: Optional[MarketStructureSnapshot],
     config: BotConfig,
+    *,
+    ta: object | None = None,
 ) -> bool:
     """
     Breakout confirmation on ``breakout_confirmation_tf`` (spec):
@@ -157,7 +159,20 @@ def is_breakout_confirmed(
         return False
 
     volume_ok = candle.volume is None or candle.volume > 0
-    return confirm_breakout(candle, swing_high=swing_high, volume_ok=volume_ok)
+    structure_ok = confirm_breakout(candle, swing_high=swing_high, volume_ok=volume_ok)
+    if structure_ok:
+        return True
+    if config.alpha_technical_analysis.enabled and ta is not None:
+        from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
+
+        if isinstance(ta, TechnicalAnalysisSnapshot) and ta.enabled and ta.breakout_confirmed:
+            logger.info(
+                "breakout_confirmed_ta | id=%s | breakout_score=%.2f",
+                record.bracket_id,
+                ta.breakout_score,
+            )
+            return True
+    return False
 
 
 def evaluate_trailing_tp(
@@ -252,6 +267,7 @@ def evaluate_trailing(
     current_price: float = 0.0,
     candle_data: Optional[CandleData] = None,
     structure: Optional[MarketStructureSnapshot] = None,
+    ta: object | None = None,
 ) -> TrailingEvalResult:
     """
     Full trailing evaluation for one active bracket.
@@ -289,7 +305,7 @@ def evaluate_trailing(
 
     _update_peak(record, mid)
 
-    if is_breakout_confirmed(record, candle, snap, config) and not record.breakout_confirmed:
+    if is_breakout_confirmed(record, candle, snap, config, ta=ta) and not record.breakout_confirmed:
         record.breakout_confirmed = True
         record.mode = BracketMode.BREAKOUT_TRAILING
         if record.last_tp_trail_anchor_mid <= 0:

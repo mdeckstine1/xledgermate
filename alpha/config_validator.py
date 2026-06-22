@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List
 
+from alpha.decision.ta_config import validate_ta_config
 from config.settings import BotConfig
 
 
@@ -106,6 +107,8 @@ def validate_alpha_config(config: BotConfig) -> AlphaConfigValidation:
 
     if config.inventory_target_xrp_ratio <= 0 or config.inventory_target_xrp_ratio >= 1:
         errors.append("inventory_target_xrp_ratio must be between 0 and 1")
+
+    errors.extend(validate_ta_config(config.alpha_technical_analysis))
 
     return AlphaConfigValidation(
         ok=not errors,

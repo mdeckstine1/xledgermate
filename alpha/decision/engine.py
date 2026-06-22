@@ -20,6 +20,7 @@ from config.settings import BotConfig
 if TYPE_CHECKING:
     from alpha.inventory.manager import InventoryManager
     from alpha.risk.engine import RiskEngine
+    from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ class DecisionEngine:
         liquidity: Optional[LiquidityDepth] = None,
         pending_buy_count: int = 0,
         balances: Optional[BalanceSnapshot] = None,
+        ta: Optional["TechnicalAnalysisSnapshot"] = None,
     ) -> DecisionResult:
         if not risk.trading_allowed:
             reason = "risk_trading_not_allowed"
@@ -94,6 +96,7 @@ class DecisionEngine:
                 book=book,
                 liquidity=liquidity,
                 balances=balances or (operator.balances if operator else None),
+                ta=ta,
             )
         elif (
             self._inventory is None
@@ -107,6 +110,7 @@ class DecisionEngine:
                 book=book,
                 liquidity=liquidity,
                 balances=balances or (operator.balances if operator else None),
+                ta=ta,
             )
 
         if inventory.buy_blocked_imbalance and inventory.deviation <= -self._config.alpha_weakness_deviation:
@@ -122,6 +126,7 @@ class DecisionEngine:
                 book=book,
                 liquidity=liquidity,
                 balances=balances or (operator.balances if operator else None),
+                ta=ta,
             )
         elif (
             self._inventory is None
@@ -134,6 +139,7 @@ class DecisionEngine:
                 book=book,
                 liquidity=liquidity,
                 balances=balances or (operator.balances if operator else None),
+                ta=ta,
             )
 
         logger.info(
@@ -198,6 +204,28 @@ class DecisionEngine:
             return 0.0
         return round(capped, 4)
 
+    def _ta_blocks_buy(self, ta: Optional["TechnicalAnalysisSnapshot"]) -> Optional[str]:
+        cfg = self._config.alpha_technical_analysis
+        if not cfg.enabled or ta is None or not ta.enabled:
+            return None
+        if not ta.entry_buy_allowed:
+            return (
+                f"ta_buy_blocked score={ta.buy_score:.2f}<{cfg.min_buy_score} "
+                f"sell={ta.sell_score:.2f} bias={ta.bias}"
+            )
+        return None
+
+    def _ta_blocks_sell(self, ta: Optional["TechnicalAnalysisSnapshot"]) -> Optional[str]:
+        cfg = self._config.alpha_technical_analysis
+        if not cfg.enabled or ta is None or not ta.enabled:
+            return None
+        if not ta.entry_sell_allowed:
+            return (
+                f"ta_sell_blocked score={ta.sell_score:.2f}<{cfg.min_sell_score} "
+                f"buy={ta.buy_score:.2f} bias={ta.bias}"
+            )
+        return None
+
     def _build_bid(
         self,
         *,
@@ -206,7 +234,11 @@ class DecisionEngine:
         book: OrderBookSnapshot,
         liquidity: Optional[LiquidityDepth],
         balances: Optional[BalanceSnapshot],
+        ta: Optional["TechnicalAnalysisSnapshot"] = None,
     ) -> DecisionResult:
+        blocked = self._ta_blocks_buy(ta)
+        if blocked:
+            return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
         mid = book.mid
         assert mid is not None
         price = self._buy_limit_price(book)
@@ -259,6 +291,8 @@ class DecisionEngine:
             f"weakness dev={inventory.deviation:+.3f} edge={edge:.3f}% "
             f"depth_cap={depth_cap:.2f} alloc_xrp={inventory.xrp_allocation_pct:.1f}%"
         )
+        if ta is not None and ta.enabled:
+            reason += f" ta_buy={ta.buy_score:.2f}"
         logger.info(
             "decision_engine | action=PLACE_BID | size=%.4f | price=%.6f | %s",
             size,
@@ -282,7 +316,11 @@ class DecisionEngine:
         book: OrderBookSnapshot,
         liquidity: Optional[LiquidityDepth],
         balances: Optional[BalanceSnapshot],
+        ta: Optional["TechnicalAnalysisSnapshot"] = None,
     ) -> DecisionResult:
+        blocked = self._ta_blocks_sell(ta)
+        if blocked:
+            return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
         if self._risk is not None:
             ok, msg = self._risk.validate_entry(risk)
             if not ok:
@@ -313,6 +351,8 @@ class DecisionEngine:
             f"strength dev={inventory.deviation:+.3f} depth_cap={depth_cap:.2f} "
             f"alloc_xrp={inventory.xrp_allocation_pct:.1f}%"
         )
+        if ta is not None and ta.enabled:
+            reason += f" ta_sell={ta.sell_score:.2f}"
         logger.info(
             "decision_engine | action=PLACE_ASK | size=%.4f | price=%.6f | %s",
             size,

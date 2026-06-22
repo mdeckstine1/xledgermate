@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Optional
 
 from alpha.config_validator import AlphaConfigValidation, load_validated_config
-from alpha.decision.structure import MarketStructureSnapshot, analyze_structure
+from alpha.decision.structure import MarketStructureSnapshot, analyze_structure, load_mid_history
+from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalysisSnapshot
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControlStore
 from alpha.operator.runtime import OperatorRuntimeStore, apply_overrides, derive_posture
@@ -82,7 +83,9 @@ class AlphaApplication:
         )
         self._kill_was_active = False
         self._last_structure: Optional[MarketStructureSnapshot] = None
+        self._last_ta: Optional[TechnicalAnalysisSnapshot] = None
         self._last_book: Optional[OrderBookSnapshot] = None
+        self._ta = TechnicalAnalysis(config)
 
     @property
     def controls(self) -> OperatorControlStore:
@@ -197,6 +200,13 @@ class AlphaApplication:
             self._last_structure = structure
             self._orders.set_structure(structure)
 
+        ta_snapshot: Optional[TechnicalAnalysisSnapshot] = None
+        if book and book.mid and book.mid > 0:
+            mids = load_mid_history(self._state_dir / "alpha_mid_history.json")
+            ta_snapshot = self._ta.analyze(mids, mid=book.mid)
+            self._last_ta = ta_snapshot
+            self._orders.set_ta(ta_snapshot)
+
         if risk.kill_switch_active and not self._kill_was_active:
             self._reporting.send_kill_alert(risk.kill_switch_reason or "Kill switch activated")
         self._kill_was_active = risk.kill_switch_active
@@ -223,6 +233,7 @@ class AlphaApplication:
             liquidity=liquidity,
             pending_buy_count=self._orders.pending_buy_count(),
             balances=balances,
+            ta=ta_snapshot,
         )
         return snap, validation, decision, orders
 
@@ -274,6 +285,7 @@ class AlphaApplication:
             path=self._state_dir / "alpha_runtime_state.json",
             book=self._last_book,
             structure=self._last_structure,
+            ta=self._last_ta,
             bracket_summary=bracket_summary_from_store(self._orders.store),
             brackets=self._orders.store.all_records(),
             open_offers=orders.open_offers,

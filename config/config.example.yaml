@@ -62,6 +62,103 @@ bracket_trailing_enabled: false
 trailing_step_pct: 1.5
 breakout_confirmation_tf: "15m"
 
+# Technical analysis (optional entry/breakout filter — disabled by default)
+alpha_technical_analysis:
+  enabled: false
+  mode: scoring          # scoring | strict
+  min_buy_score: 1.0
+  min_sell_score: 1.0
+  min_breakout_score: 1.5
+  candle_bucket_samples: 5
+  min_candles: 20
+  rsi:
+    enabled: true
+    period: 14
+    oversold: 30
+    overbought: 70
+    buy_weight: 1.0
+    sell_weight: 1.0
+  stochastic:
+    enabled: true
+    k_period: 14
+    d_period: 3
+    smooth_k: 3
+    oversold: 20
+    overbought: 80
+    buy_weight: 1.0
+    sell_weight: 1.0
+    breakout_weight: 1.0
+  bollinger:
+    enabled: true
+    period: 20
+    std_dev: 2.0
+    squeeze_bandwidth_pct: 0.15
+    buy_weight: 0.5
+    sell_weight: 0.5
+    breakout_weight: 1.5
+  fibonacci:
+    enabled: true
+    lookback: 50
+    levels: [0.382, 0.5, 0.618]
+    proximity_pct: 0.25
+    buy_weight: 1.0
+    sell_weight: 1.0
+  elliott_wave:
+    enabled: true
+    lookback: 30
+    impulse_weight: 1.0
+    corrective_weight: 0.5
+  candle_streak:
+    enabled: true
+    min_green_streak: 3
+    min_red_streak: 3
+    buy_weight: 1.0
+    sell_weight: 1.0
+    breakout_weight: 0.5
+  consolidation:
+    enabled: true
+    lookback: 8
+    max_band_width_pct: 0.35
+    penalty: 0.5
+  pin_bar:
+    enabled: true
+    min_wick_body_ratio: 2.0
+    buy_weight: 1.0
+    sell_weight: 1.0
+  engulfing:
+    enabled: true
+    buy_weight: 1.0
+    sell_weight: 1.0
+    breakout_weight: 1.0
+  inside_bar:
+    enabled: true
+    buy_weight: 1.0
+    sell_weight: 1.0
+    breakout_weight: 1.5
+  structure_bos:
+    enabled: true
+    lookback: 12
+    buy_weight: 1.0
+    sell_weight: 1.0
+  order_block:
+    enabled: true
+    lookback: 20
+    proximity_pct: 0.3
+    buy_weight: 1.0
+    sell_weight: 1.0
+  fair_value_gap:
+    enabled: true
+    lookback: 30
+    min_gap_pct: 0.05
+    buy_weight: 1.0
+    sell_weight: 0.5
+  liquidity_grab:
+    enabled: true
+    lookback: 20
+    wick_penetration_pct: 0.1
+    buy_weight: 1.5
+    sell_weight: 1.5
+
 max_daily_drawdown_percent: 10.0
 min_drawdown_percent: 2.0
 max_drawdown_percent: 25.0
