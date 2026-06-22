@@ -287,12 +287,12 @@ class AlphaApplication:
         try:
             while max_cycles is None or cycle < max_cycles:
                 cycle += 1
-        logger.info(
-            "alpha_trading_loop_cycle | n=%d | dry_run=%s | interval=%ds",
-            cycle,
-            self.config.dry_run,
-            interval,
-        )
+                logger.info(
+                    "alpha_trading_loop_cycle | n=%d | dry_run=%s | interval=%ds",
+                    cycle,
+                    self.config.dry_run,
+                    interval,
+                )
                 try:
                     await self.run_trading_cycle(telegram=telegram_each_cycle)
                 except Exception as exc:
