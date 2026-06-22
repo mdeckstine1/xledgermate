@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from alpha.decision.engine import DecisionResult
 from alpha.decision.structure import MarketStructureSnapshot, build_candle_from_mids, load_mid_history
-from alpha.decision.price_history import PRICE_HISTORY_PATH, load_price_series
+from alpha.decision.price_history import PRICE_HISTORY_PATH, load_price_series, effective_sample_seconds
 from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalysisSnapshot
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControls
@@ -75,19 +75,43 @@ def _load_mid_history(path: Path) -> List[float]:
         return []
 
 
-def _chart_candles_from_mids(mids: List[float], *, bucket: int, max_candles: int = 48) -> List[Dict[str, float]]:
+def _chart_candles_from_mids(
+    mids: List[float],
+    *,
+    bucket: int,
+    max_candles: int = 48,
+    sample_seconds: int = 60,
+    end_utc: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
     if bucket < 1:
         bucket = 1
-    candles: List[Dict[str, float]] = []
-    for i in range(0, len(mids), bucket):
-        chunk = mids[i : i + bucket]
+    chunks: List[List[float]] = []
+    clean = [float(m) for m in mids if float(m) > 0]
+    for i in range(0, len(clean), bucket):
+        chunk = clean[i : i + bucket]
+        if len(chunk) >= 2:
+            chunks.append(chunk)
+    chunks = chunks[-max_candles:]
+    candles: List[Dict[str, Any]] = []
+    n = len(chunks)
+    for i, chunk in enumerate(chunks):
         candle = build_candle_from_mids(chunk)
         if candle is None:
             continue
-        candles.append(
-            {"o": candle.open, "h": candle.high, "l": candle.low, "c": candle.close},
-        )
-    return candles[-max_candles:]
+        entry: Dict[str, Any] = {
+            "o": candle.open,
+            "h": candle.high,
+            "l": candle.low,
+            "c": candle.close,
+        }
+        if end_utc is not None and n > 0:
+            offset_sec = (n - 1 - i) * bucket * max(1, sample_seconds)
+            t = end_utc - timedelta(seconds=offset_sec)
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            entry["t"] = _iso(t)
+        candles.append(entry)
+    return candles
 
 
 def _chart_payload(
@@ -96,10 +120,20 @@ def _chart_payload(
     config: BotConfig,
     *,
     price_source: str = "mid",
+    end_utc: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     lookback = max(3, int(config.alpha_structure_lookback or 20))
     bucket = max(1, min(15, max(1, config.alpha_technical_analysis.candle_bucket_samples or 5)))
-    candles = _chart_candles_from_mids(mids, bucket=bucket)
+    sample_seconds = effective_sample_seconds(
+        config.alpha_cycle_interval_seconds,
+        config.alpha_price_sample_interval_seconds,
+    )
+    candles = _chart_candles_from_mids(
+        mids,
+        bucket=bucket,
+        sample_seconds=sample_seconds,
+        end_utc=end_utc,
+    )
     indicators: List[Dict[str, Any]] = [
         {
             "key": "structure_lookback",
@@ -222,6 +256,8 @@ def _chart_payload(
         "candles": candles,
         "indicators": indicators,
         "bucket_samples": bucket,
+        "sample_seconds": sample_seconds,
+        "candle_seconds": bucket * sample_seconds,
         "mid_samples": len(mids),
     }
 
@@ -289,7 +325,13 @@ def build_hud_state(
     chart_source = effective.alpha_chart_price_source or "mid"
     price_history = load_price_series(ta_source, path=history_path)
     chart_history = load_price_series(chart_source, path=history_path)
-    chart = _chart_payload(structure, chart_history, effective, price_source=chart_source)
+    chart = _chart_payload(
+        structure,
+        chart_history,
+        effective,
+        price_source=chart_source,
+        end_utc=snap.generated_utc,
+    )
     if ta is None and effective.alpha_technical_analysis.enabled:
         from alpha.decision.price_history import resolve_book_price, book_prices_from_snapshot
 
