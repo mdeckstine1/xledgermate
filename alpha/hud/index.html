@@ -609,7 +609,7 @@
       const plotH = plotBottom - plotTop;
       const y = (price) => plotTop + (1 - (price - lo) / (hi - lo)) * plotH;
       const n = candles.length;
-      const gapPx = 1;
+      const gapPx = 2;
       let bodyW = 5;
       let totalW = n * bodyW + (n - 1) * gapPx;
       if (totalW > plotW) {
@@ -651,7 +651,7 @@
         ctx.globalAlpha = 1;
       });
 
-      // Candles — slim bodies, ~1px gap
+      // Candles — slim bodies, ~2px gap
       candles.forEach((c, i) => {
         const cx = candleCenter(i);
         const openY = y(c.o);
