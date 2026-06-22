@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from alpha.decision.engine import DecisionResult
-from alpha.decision.structure import MarketStructureSnapshot
+from alpha.decision.structure import MarketStructureSnapshot, build_candle_from_mids
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControls
 from alpha.operator.runtime import derive_posture, effective_config_snapshot
@@ -62,6 +62,154 @@ def _bracket_row(record: BracketRecord) -> Dict[str, Any]:
     }
 
 
+def _load_mid_history(path: Path) -> List[float]:
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        samples = data.get("mids", [])
+        return [float(x) for x in samples if float(x) > 0]
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        return []
+
+
+def _chart_candles_from_mids(mids: List[float], *, bucket: int, max_candles: int = 48) -> List[Dict[str, float]]:
+    if bucket < 1:
+        bucket = 1
+    candles: List[Dict[str, float]] = []
+    for i in range(0, len(mids), bucket):
+        chunk = mids[i : i + bucket]
+        candle = build_candle_from_mids(chunk)
+        if candle is None:
+            continue
+        candles.append(
+            {"o": candle.open, "h": candle.high, "l": candle.low, "c": candle.close},
+        )
+    return candles[-max_candles:]
+
+
+def _chart_payload(
+    structure: Optional[MarketStructureSnapshot],
+    mids: List[float],
+    config: BotConfig,
+) -> Dict[str, Any]:
+    lookback = max(3, int(config.alpha_structure_lookback or 20))
+    bucket = max(1, min(15, lookback // 4))
+    candles = _chart_candles_from_mids(mids, bucket=bucket)
+    indicators: List[Dict[str, Any]] = [
+        {
+            "key": "structure_lookback",
+            "label": "Structure lookback",
+            "value": str(lookback),
+            "kind": "meta",
+        },
+        {
+            "key": "breakout_tf",
+            "label": "Breakout TF",
+            "value": str(config.breakout_confirmation_tf or "15m"),
+            "kind": "meta",
+        },
+        {
+            "key": "breakout_pct",
+            "label": "Breakout %",
+            "value": f"{float(config.alpha_breakout_pct):.3f}",
+            "kind": "meta",
+        },
+    ]
+    if structure is not None:
+        indicators.extend(
+            [
+                {"key": "trend", "label": "Trend", "value": structure.trend, "kind": "tag"},
+                {
+                    "key": "mean_mid",
+                    "label": "Mean mid",
+                    "value": structure.mean_mid,
+                    "kind": "line",
+                    "color": "#60a5fa",
+                },
+                {
+                    "key": "swing_high",
+                    "label": "Swing high",
+                    "value": structure.swing_high,
+                    "kind": "line",
+                    "color": "#fde047",
+                },
+                {
+                    "key": "recent_high",
+                    "label": "Recent high",
+                    "value": structure.recent_high,
+                    "kind": "line",
+                    "color": "#fca5a5",
+                },
+                {
+                    "key": "recent_low",
+                    "label": "Recent low",
+                    "value": structure.recent_low,
+                    "kind": "line",
+                    "color": "#86efac",
+                },
+                {
+                    "key": "breakout_up",
+                    "label": "Breakout up",
+                    "value": "yes" if structure.breakout_up else "no",
+                    "kind": "tag",
+                },
+                {
+                    "key": "breakout_down",
+                    "label": "Breakout down",
+                    "value": "yes" if structure.breakout_down else "no",
+                    "kind": "tag",
+                },
+                {
+                    "key": "sample_count",
+                    "label": "Samples",
+                    "value": str(structure.sample_count),
+                    "kind": "meta",
+                },
+            ]
+        )
+        cc = structure.confirmation_candle
+        if cc is not None:
+            indicators.extend(
+                [
+                    {
+                        "key": "htf_open",
+                        "label": "HTF open",
+                        "value": cc.open,
+                        "kind": "line",
+                        "color": "#94a3b8",
+                    },
+                    {
+                        "key": "htf_high",
+                        "label": "HTF high",
+                        "value": cc.high,
+                        "kind": "line",
+                        "color": "#f472b6",
+                    },
+                    {
+                        "key": "htf_low",
+                        "label": "HTF low",
+                        "value": cc.low,
+                        "kind": "line",
+                        "color": "#34d399",
+                    },
+                    {
+                        "key": "htf_close",
+                        "label": "HTF close",
+                        "value": cc.close,
+                        "kind": "line",
+                        "color": "#c084fc",
+                    },
+                ]
+            )
+    return {
+        "candles": candles,
+        "indicators": indicators,
+        "bucket_samples": bucket,
+        "mid_samples": len(mids),
+    }
+
+
 def build_hud_state(
     *,
     snapshot: OperatorSnapshot,
@@ -78,6 +226,7 @@ def build_hud_state(
     report_text: str = "",
     operator_overrides: Optional[Dict[str, Any]] = None,
     config_effective: Optional[BotConfig] = None,
+    runtime_state_path: Path = DEFAULT_PATH,
 ) -> Dict[str, Any]:
     """Build JSON-serializable HUD payload from one Alpha cycle."""
     snap = snapshot
@@ -87,10 +236,23 @@ def build_hud_state(
         structure_block = {
             "mid": structure.mid,
             "trend": structure.trend,
+            "mean_mid": structure.mean_mid,
+            "recent_high": structure.recent_high,
+            "recent_low": structure.recent_low,
             "swing_high": structure.swing_high,
             "breakout_up": structure.breakout_up,
+            "breakout_down": structure.breakout_down,
+            "sample_count": structure.sample_count,
             "summary": structure.summary,
         }
+        if structure.confirmation_candle is not None:
+            cc = structure.confirmation_candle
+            structure_block["confirmation_candle"] = {
+                "o": cc.open,
+                "h": cc.high,
+                "l": cc.low,
+                "c": cc.close,
+            }
 
     active_brackets = (
         bracket_summary.active_fixed
@@ -105,6 +267,8 @@ def build_hud_state(
     overrides = operator_overrides or {}
     effective = config_effective or BotConfig()
     tunables = effective_config_snapshot(effective)
+    mid_history = _load_mid_history(runtime_state_path.parent / "alpha_mid_history.json")
+    chart = _chart_payload(structure, mid_history, effective)
 
     return {
         "hud_kind": "alpha",
@@ -170,6 +334,7 @@ def build_hud_state(
         "open_offers": open_offers[:40],
         "open_offers_count": len(open_offers),
         "structure": structure_block,
+        "chart": chart,
         "book": _book_payload(book if isinstance(book, OrderBookSnapshot) else None),
         "recent_activity": activity[-40:],
         "recent_events": list(recent_events),
@@ -219,6 +384,7 @@ def publish_cycle_to_hud(
             report_text=report_text,
             operator_overrides=operator_overrides,
             config_effective=config_effective,
+            runtime_state_path=path,
         )
         write_alpha_runtime_state(path, state)
     except OSError as exc:

@@ -32,10 +32,17 @@
     .sidebar-logo { display:block; width:100%; max-width:220px; margin:0 auto 14px; border-radius:8px; }
     .sidebar-actions { display:flex; gap:6px; flex-wrap:wrap; }
     .sidebar-actions button { flex:1 1 0; min-width:72px; margin:0; padding:8px 6px; font-size:.78rem; }
+    button.btn-start, button.btn-resume { background:#15803d; }
+    button.btn-pause { background:#b91c1c; }
+    button.btn-restart { background:#2563eb; }
+    .sidebar-mode { border-top:1px solid var(--border); padding-top:12px; margin-top:4px; }
+    .sidebar-mode button { width:100%; margin:6px 0 0; font-size:.78rem; }
+    .sidebar-mode .sidebar-toggle { display:flex; align-items:center; gap:8px; font-size:.82rem; margin-top:8px; }
     .label { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
     .value { font-size:1rem; font-weight:600; margin-top:2px; }
     .main { padding:12px 16px; overflow:auto; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-bottom:16px; }
+    .grid.live-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
     .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; }
     .card h3 { margin:0 0 8px; font-size:.75rem; color:var(--muted); text-transform:uppercase; }
     .big { font-size:1.4rem; font-weight:700; }
@@ -59,6 +66,17 @@
     .controls-section h2 { font-size:.85rem; color:var(--muted); text-transform:uppercase; margin:0 0 10px; }
     .live-controls { width:50%; min-width:320px; max-width:100%; margin-top:16px; }
     .live-controls .controls-section.card { margin-bottom:10px; }
+    .chart-card { margin-bottom:16px; }
+    .chart-wrap { display:grid; grid-template-columns:1fr 220px; gap:12px; align-items:stretch; }
+    .chart-canvas-wrap { background:#0b1220; border:1px solid var(--border); border-radius:6px; padding:8px; min-height:236px; }
+    #priceChart { display:block; width:100%; height:220px; }
+    .indicator-list { font-size:.78rem; max-height:236px; overflow:auto; }
+    .indicator-list .ind-row { display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px solid #1f2937; }
+    .indicator-list .ind-dot { width:8px; height:8px; border-radius:50%; margin-top:5px; flex-shrink:0; background:var(--muted); }
+    .indicator-list .ind-label { color:var(--muted); font-size:.68rem; text-transform:uppercase; }
+    .indicator-list .ind-val { font-weight:600; word-break:break-word; }
+    .indicator-list .ind-tag-yes { color:var(--ok); }
+    .indicator-list .ind-tag-no { color:var(--muted); }
     .ctrl-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px; }
     .ctrl-row label { min-width:160px; font-size:.85rem; }
     input[type=range] { flex:1; min-width:120px; max-width:280px; }
@@ -73,7 +91,7 @@
     .bracket-adjust { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
     .bracket-adjust input { width:72px; font-size:.75rem; padding:4px; }
     .bracket-adjust button { padding:4px 6px; font-size:.72rem; margin:0; }
-    @media (max-width:800px) { .layout { grid-template-columns:1fr; } .live-controls { width:100%; } }
+    @media (max-width:800px) { .layout { grid-template-columns:1fr; } .live-controls { width:100%; } .grid.live-grid { grid-template-columns:1fr; } .chart-wrap { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -103,10 +121,17 @@
       <div class="row"><div class="label">Drawdown</div><div id="dd" class="value">—</div></div>
       <div class="row"><div class="label">Session P&amp;L</div><div id="pnl" class="value">—</div></div>
       <div class="row sidebar-actions" style="margin-top:16px">
-        <button id="btnStart">Start</button>
-        <button id="btnPause" class="secondary">Pause</button>
-        <button id="btnResume" style="display:none">Resume</button>
-        <button id="btnRestart" class="secondary">Restart</button>
+        <button id="btnStart" class="btn-start">Start</button>
+        <button id="btnPause" class="btn-pause">Pause</button>
+        <button id="btnResume" class="btn-resume" style="display:none">Resume</button>
+        <button id="btnRestart" class="btn-restart">Restart</button>
+      </div>
+      <div class="row sidebar-mode">
+        <div class="label">Trading mode</div>
+        <div id="dryRunLabel" class="value" style="font-size:.9rem">dry-run</div>
+        <button id="btnToggleDryRun" class="warn">Enable LIVE trading…</button>
+        <label class="sidebar-toggle"><input type="checkbox" id="tradingEnabled"> trading_enabled</label>
+        <button id="btnApplyTrading" class="secondary">Apply trading</button>
       </div>
     </aside>
     <main class="main">
@@ -118,7 +143,7 @@
         <div class="tab" data-tab="activity">Activity</div>
       </div>
       <section id="live" class="panel active">
-        <div class="grid">
+        <div class="grid live-grid">
           <div class="card"><h3>Decision</h3><div id="decAction" class="big">—</div><div id="decReason" class="muted"></div></div>
           <div class="card"><h3>Book</h3><div id="bookMid" class="big">—</div><div id="bookSpread" class="muted"></div></div>
           <div class="card"><h3>Structure</h3><div id="structTrend" class="big">—</div><div id="structSum" class="muted"></div></div>
@@ -126,18 +151,14 @@
           <div class="card"><h3>Preflight</h3><div id="preflight" class="value">—</div></div>
           <div class="card"><h3>Execution</h3><div id="exec" class="value">—</div></div>
         </div>
-        <div class="live-controls">
-        <div class="controls-section card">
-          <h2>Trading mode</h2>
-          <div class="ctrl-row toggle">
-            <span id="dryRunLabel" class="value">dry-run</span>
-            <button id="btnToggleDryRun" class="warn">Enable LIVE trading…</button>
-          </div>
-          <div class="ctrl-row toggle">
-            <label><input type="checkbox" id="tradingEnabled"> trading_enabled</label>
-            <button id="btnApplyTrading" class="secondary">Apply</button>
+        <div class="card chart-card">
+          <h3>Mid price · RLUSD/XRP</h3>
+          <div class="chart-wrap">
+            <div class="chart-canvas-wrap"><canvas id="priceChart" width="800" height="220"></canvas></div>
+            <div class="indicator-list" id="indicatorList"><div class="muted">Loading indicators…</div></div>
           </div>
         </div>
+        <div class="live-controls">
         <div class="controls-section card">
           <h2>Risk &amp; entry</h2>
           <div class="ctrl-row"><label>risk_per_trade_pct</label><input type="range" id="slRisk" min="0.1" max="5" step="0.1"><input type="number" id="numRisk" step="0.1"><span id="valRisk" class="muted"></span></div>
@@ -441,6 +462,131 @@
       return `${Math.round(s/3600)}h ago`;
     }
 
+    let lastChartState = null;
+
+    function formatIndicatorValue(ind) {
+      if (ind.kind === 'line' && typeof ind.value === 'number') return Number(ind.value).toFixed(6);
+      return String(ind.value ?? '—');
+    }
+
+    function renderIndicatorList(chart) {
+      const list = $('indicatorList');
+      const items = chart?.indicators || [];
+      if (!items.length) {
+        list.innerHTML = '<div class="muted">No structure data yet</div>';
+        return;
+      }
+      list.innerHTML = items.map(ind => {
+        const dot = ind.kind === 'line'
+          ? `<span class="ind-dot" style="background:${ind.color || 'var(--muted)'}"></span>`
+          : '<span class="ind-dot"></span>';
+        let valCls = '';
+        if (ind.kind === 'tag' && (ind.key === 'breakout_up' || ind.key === 'breakout_down' || ind.key === 'trend')) {
+          valCls = ind.value === 'yes' || ind.value === 'bullish' ? 'ind-tag-yes'
+            : (ind.value === 'no' || ind.value === 'bearish' ? 'ind-tag-no' : '');
+        }
+        return `<div class="ind-row">${dot}<div><div class="ind-label">${ind.label}</div><div class="ind-val ${valCls}">${formatIndicatorValue(ind)}</div></div></div>`;
+      }).join('');
+    }
+
+    function drawCandleChart(canvas, chart) {
+      const candles = chart?.candles || [];
+      const indicators = (chart?.indicators || []).filter(i => i.kind === 'line' && typeof i.value === 'number');
+      const wrap = canvas.parentElement;
+      const w = Math.max(320, Math.floor(wrap?.clientWidth || 800) - 16);
+      const h = 220;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = '#0b1220';
+      ctx.fillRect(0, 0, w, h);
+
+      if (!candles.length) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '13px system-ui, sans-serif';
+        ctx.fillText('Collecting mid samples for candles…', 16, h / 2);
+        return;
+      }
+
+      let lo = Infinity;
+      let hi = -Infinity;
+      candles.forEach(c => {
+        lo = Math.min(lo, c.l, c.o, c.c);
+        hi = Math.max(hi, c.h, c.o, c.c);
+      });
+      indicators.forEach(i => { lo = Math.min(lo, i.value); hi = Math.max(hi, i.value); });
+      const pad = (hi - lo) * 0.08 || 0.0001;
+      lo -= pad;
+      hi += pad;
+      const plotTop = 12;
+      const plotBottom = h - 24;
+      const plotH = plotBottom - plotTop;
+      const y = (price) => plotBottom - ((price - lo) / (hi - lo)) * plotH;
+      const slot = w / candles.length;
+      const bodyW = Math.max(2, Math.min(10, slot * 0.55));
+
+      indicators.forEach(ind => {
+        const yy = y(ind.value);
+        ctx.strokeStyle = ind.color || '#60a5fa';
+        ctx.globalAlpha = 0.75;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, yy);
+        ctx.lineTo(w, yy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = ind.color || '#60a5fa';
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.fillText(ind.label, 4, Math.max(10, yy - 2));
+      });
+
+      candles.forEach((c, i) => {
+        const cx = i * slot + slot / 2;
+        const openY = y(c.o);
+        const closeY = y(c.c);
+        const highY = y(c.h);
+        const lowY = y(c.l);
+        const green = c.c >= c.o;
+        ctx.strokeStyle = green ? '#86efac' : '#fca5a5';
+        ctx.fillStyle = green ? '#86efac' : '#fca5a5';
+        ctx.beginPath();
+        ctx.moveTo(cx, highY);
+        ctx.lineTo(cx, lowY);
+        ctx.stroke();
+        const top = Math.min(openY, closeY);
+        const bh = Math.max(1, Math.abs(closeY - openY));
+        ctx.fillRect(cx - bodyW / 2, top, bodyW, bh);
+      });
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px system-ui, sans-serif';
+      ctx.fillText(lo.toFixed(6), 4, plotBottom + 14);
+      ctx.fillText(hi.toFixed(6), w - 72, plotBottom + 14);
+      if (chart.bucket_samples) {
+        ctx.fillText(`${candles.length} candles · ${chart.bucket_samples} samples each`, w - 180, 12);
+      }
+    }
+
+    function renderChart(s) {
+      lastChartState = s;
+      const chart = s.chart || {};
+      renderIndicatorList(chart);
+      drawCandleChart($('priceChart'), chart);
+    }
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const chartObs = new ResizeObserver(() => {
+        if (lastChartState) drawCandleChart($('priceChart'), lastChartState.chart || {});
+      });
+      const wrap = document.querySelector('.chart-canvas-wrap');
+      if (wrap) chartObs.observe(wrap);
+    }
+
     function render(s) {
       hudState = s;
       $('ver').textContent = 'v' + (s.alpha_version || '?');
@@ -478,6 +624,7 @@
       $('preflight').textContent = s.risk?.preflight_summary || '—';
       $('exec').textContent = s.execution ? (s.execution.message || JSON.stringify(s.execution)) : '—';
       $('report').textContent = s.report_text || '';
+      renderChart(s);
 
       $('brTable').innerHTML = (s.brackets?.records || []).map(r => {
         const fid = r.bracket_id_full || r.bracket_id;

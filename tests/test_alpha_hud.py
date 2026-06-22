@@ -60,3 +60,6 @@ def test_build_hud_state_minimal():
     assert state["hud_kind"] == "alpha"
     assert state["decision"]["action"] == "hold"
     assert state["mid"] == 2.0
+    assert "chart" in state
+    assert "candles" in state["chart"]
+    assert "indicators" in state["chart"]
