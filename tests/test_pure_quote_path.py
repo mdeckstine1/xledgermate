@@ -201,8 +201,8 @@ def test_g4_peer_lane_in_quote_path() -> None:
     asyncio.run(run())
 
 
-def test_v220_xrp_heavy_solo_no_deadlock() -> None:
-    """Regression v2.1.40: inv pause_bids + ask brake → both off; QD allows bid at edge."""
+def test_xrp_heavy_solo_qd_allowed_but_cap_zero_does_not_quote() -> None:
+    """QD may allow the edge bid, but the executable ladder must honor size caps."""
     path = PureQuotePath(gamma=0.35, kappa=3.5, configured_l1_xrp=150.0)
 
     async def run() -> None:
@@ -217,8 +217,11 @@ def test_v220_xrp_heavy_solo_no_deadlock() -> None:
             competitor_intel={"peer_lane_empty": True, "peer_lane_count": 0},
         )
         assert d.qd_bid_allowed is True
-        assert d.qd_bid_allowed is True
-        assert d.would_quote is True
+        assert d.qd_ask_allowed is False
+        assert d.bid_size == 0.0
+        assert d.suggested_bid is None
+        assert d.would_quote is False
+        assert not [i for i in d.quote_intents if i.get("active")]
 
     asyncio.run(run())
 
@@ -244,8 +247,8 @@ def test_g7_xrp_heavy_ask_tighter_touch() -> None:
         assert d.g2_scaler_label
         assert "G7" in d.execution_brakes_summary
         assert d.suggested_ask is None  # v2.2 QD solo accumulate — bid only
-        assert d.suggested_bid is not None
-        assert d.suggested_bid <= d.best_bid
         assert d.qd_bid_allowed is True
+        assert d.bid_size == 0.0
+        assert d.suggested_bid is None
 
     asyncio.run(run())

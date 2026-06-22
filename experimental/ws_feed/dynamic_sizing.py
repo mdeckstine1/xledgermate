@@ -97,6 +97,12 @@ def build_pure_quote_ladder(
     allow_ask: bool = True,
 ) -> List[Dict[str, Any]]:
     """L1 from A-S touch; L2/L3 stepped by spread increment with scaled sizes."""
+    def normalize_ladder_size(size_xrp: float) -> float:
+        rounded = round(size_xrp, 4)
+        if rounded <= 0:
+            return 0.0
+        return max(min_order_size_xrp, rounded)
+
     half = (optimal_spread_pct / 100.0) / 2.0
     intents: List[Dict[str, Any]] = []
     levels = max(1, min(int(order_levels), len(DEFAULT_LADDER_SIZE_FRACS)))
@@ -110,8 +116,8 @@ def build_pure_quote_ladder(
             ask_price = mid * (1.0 + half + extra)
 
         if level == 1:
-            bid_size = max(min_order_size_xrp, round(l1_bid_size, 4))
-            ask_size = max(min_order_size_xrp, round(l1_ask_size, 4))
+            bid_size = normalize_ladder_size(l1_bid_size)
+            ask_size = normalize_ladder_size(l1_ask_size)
         else:
             cfg_size = None
             if configured_level_sizes and len(configured_level_sizes) >= level:
@@ -119,25 +125,27 @@ def build_pure_quote_ladder(
                 if raw and raw > 0:
                     cfg_size = float(raw)
             frac = DEFAULT_LADDER_SIZE_FRACS[level - 1]
-            bid_size = max(min_order_size_xrp, round((cfg_size or l1_bid_size * frac), 4))
-            ask_size = max(min_order_size_xrp, round((cfg_size or l1_ask_size * frac), 4))
+            bid_size = normalize_ladder_size(cfg_size or l1_bid_size * frac)
+            ask_size = normalize_ladder_size(cfg_size or l1_ask_size * frac)
 
         for side, price, size in (
             ("bid", bid_price, bid_size),
             ("ask", ask_price, ask_size),
         ):
+            row_active = (
+                active
+                and level == 1
+                and size >= min_order_size_xrp
+                and ((side == "bid" and allow_bid) or (side == "ask" and allow_ask))
+            )
             intents.append(
                 {
                     "level": level,
                     "side": side,
                     "price": price,
                     "size_xrp": size,
-                    "active": (
-                        active
-                        and level == 1
-                        and ((side == "bid" and allow_bid) or (side == "ask" and allow_ask))
-                    ),
-                    "planned": not active or level > 1,
+                    "active": row_active,
+                    "planned": not row_active,
                 }
             )
     return intents
