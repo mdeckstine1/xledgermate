@@ -570,16 +570,6 @@ class PureQuotePath:
             reservation_allows_ask=allow_ask,
         )
 
-        # v2.2.0 — Layer 5 is sole authority on side permissions (no inv/gate pause merge).
-        quote_bid = qd.bid.allowed
-        quote_ask = qd.ask.allowed
-        quote_posture = _quote_posture_label(
-            quote_bid=quote_bid,
-            quote_ask=quote_ask,
-            allow_bid=allow_bid,
-            allow_ask=allow_ask,
-        )
-
         l1_bid_size = (
             round(inv_policy.bid_size_xrp * qd.bid.size_mult, 4)
             if qd.bid.allowed
@@ -589,6 +579,15 @@ class PureQuotePath:
             round(inv_policy.ask_size_xrp * qd.ask.size_mult, 4)
             if qd.ask.allowed
             else 0.0
+        )
+        # QD decides permission; the executable ladder must still honor hard size caps.
+        quote_bid = qd.bid.allowed and l1_bid_size >= self.min_order_size_xrp
+        quote_ask = qd.ask.allowed and l1_ask_size >= self.min_order_size_xrp
+        quote_posture = _quote_posture_label(
+            quote_bid=quote_bid,
+            quote_ask=quote_ask,
+            allow_bid=allow_bid,
+            allow_ask=allow_ask,
         )
 
         brake_panel = format_execution_brake_panel(
@@ -621,8 +620,8 @@ class PureQuotePath:
         )
         ladder = apply_pause_to_ladder(
             ladder,
-            block_bids=not qd.bid.allowed,
-            block_asks=not qd.ask.allowed,
+            block_bids=not quote_bid,
+            block_asks=not quote_ask,
             min_order_size_xrp=self.min_order_size_xrp,
         )
         active_quotes = count_active_l1_quotes(ladder)
@@ -636,8 +635,8 @@ class PureQuotePath:
             book_spread_pct=book_spread_pct,
             optimal_spread_pct=as_quote.optimal_spread_pct,
             min_spread_floor_pct=self.min_spread_floor_pct,
-            bid_allowed=qd.bid.allowed,
-            ask_allowed=qd.ask.allowed,
+            bid_allowed=quote_bid,
+            ask_allowed=quote_ask,
         )
         policy_labels = {
             "inside": "PURE A-S (inside L1)",

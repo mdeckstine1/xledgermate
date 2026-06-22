@@ -138,6 +138,26 @@ def test_ladder_l1_ignores_configured_cap_for_level1() -> None:
     assert l1_bid["size_xrp"] == 11.2
 
 
+def test_ladder_does_not_resurrect_zero_capped_l1_size() -> None:
+    ladder = build_pure_quote_ladder(
+        mid=1.10,
+        l1_bid_price=1.0995,
+        l1_ask_price=1.1005,
+        l1_bid_size=0.0,
+        l1_ask_size=12.0,
+        optimal_spread_pct=0.12,
+        min_order_size_xrp=1.0,
+        allow_bid=True,
+        allow_ask=True,
+    )
+    l1_bid = next(i for i in ladder if i["level"] == 1 and i["side"] == "bid")
+    l1_ask = next(i for i in ladder if i["level"] == 1 and i["side"] == "ask")
+    assert l1_bid["size_xrp"] == 0.0
+    assert l1_bid["active"] is False
+    assert l1_bid["planned"] is True
+    assert l1_ask["active"] is True
+
+
 def test_ladder_inactive_marks_l1_not_active() -> None:
     ladder = build_pure_quote_ladder(
         mid=1.10,
