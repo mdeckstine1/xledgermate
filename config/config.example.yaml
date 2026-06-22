@@ -50,6 +50,7 @@ alpha_cycle_interval_seconds: 60
 alpha_breakout_pct: 0.02
 alpha_structure_lookback: 20
 alpha_gui_refresh_seconds: 30
+alpha_gui_bind_host: ""   # empty = hud_bind_host; use 0.0.0.0 on VPS for browser without SSH tunnel
 
 # Bracket legs after buy fill (application-level OCO — not XRPL native)
 initial_stop_loss_pct: 0.015

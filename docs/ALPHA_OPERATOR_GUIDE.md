@@ -62,6 +62,8 @@ python main.py --mode setup-trust
 | `python -m alpha run` | Continuous loop |
 | `python -m alpha run --max-cycles 50` | Soak test |
 | `python main.py --mode alpha-gui` | Streamlit GUI (`:8503`) |
+
+**VPS access:** GUI binds to `hud_bind_host` (or `alpha_gui_bind_host`) from config. With `hud_bind_host: 0.0.0.0`, open `http://YOUR_VPS:8503`. Otherwise use SSH tunnel below.
 | `python main.py --mode alpha-run` | Same as `python -m alpha run` |
 | `python scripts/alpha_validate.py` | Pre-cutover checks + tests |
 

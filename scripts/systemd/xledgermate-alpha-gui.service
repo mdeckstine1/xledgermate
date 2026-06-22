@@ -6,7 +6,8 @@ After=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/root/xledgermate
-ExecStart=/root/xledgermate/.venv/bin/streamlit run alpha/gui/streamlit_app.py --server.address 127.0.0.1 --server.port 8503 --server.headless true
+Environment=XLEDGERMATE_ROOT=/root/xledgermate
+ExecStart=/root/xledgermate/scripts/start_alpha_gui.sh
 Restart=on-failure
 
 [Install]
