@@ -215,6 +215,7 @@ class BotConfig:
     alpha_hud_port: int = 8765  # Operator HUD (FastAPI) — replaces legacy ws-hud port
     alpha_skynet_enabled: bool = True  # HUD SKYNET tab (Grok advisor — Phase 1 manual)
     alpha_skynet_grok_model: str = "grok-3"
+    alpha_skynet_grok_max_tokens: int = 4096  # Grok response budget (SKYNET manual + agent)
     alpha_grok_api_key: str = ""  # Optional; prefer XLG_GROK_KEY / XAI_API_KEY in .env
     # Post-exit re-entry (Aggressive Bag Growth — wait for dip after TP, stabilization after SL)
     alpha_reentry_enabled: bool = True

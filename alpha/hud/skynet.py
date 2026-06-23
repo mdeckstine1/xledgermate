@@ -48,11 +48,13 @@ def skynet_status(config: BotConfig | None = None) -> Dict[str, Any]:
     cfg = config or BotConfig.load()
     key = resolve_grok_key(getattr(cfg, "alpha_grok_api_key", "") or "")
     model = (getattr(cfg, "alpha_skynet_grok_model", None) or "grok-3").strip() or "grok-3"
+    max_tokens = int(getattr(cfg, "alpha_skynet_grok_max_tokens", 4096) or 4096)
     enabled = bool(getattr(cfg, "alpha_skynet_enabled", True))
     return {
         "enabled": enabled,
         "configured": bool(key),
         "model": model,
+        "max_tokens": max(256, min(8192, max_tokens)),
         "key_hint": f"xai-…{key[-4:]}" if len(key) >= 8 else "",
     }
 
@@ -238,6 +240,7 @@ def call_grok_advisor(
     timeout: int = 90,
     system_prompt: Optional[str] = None,
     user_message: Optional[str] = None,
+    max_tokens: int = 4096,
 ) -> Tuple[str, Dict[str, Any]]:
     allowed = ", ".join(OPERATOR_TUNABLE_KEYS)
     system = system_prompt or _SYSTEM_PROMPT.format(allowed_keys=allowed)
@@ -255,7 +258,7 @@ def call_grok_advisor(
     payload = {
         "model": model,
         "messages": messages,
-        "max_tokens": 1200,
+        "max_tokens": max(256, min(8192, int(max_tokens))),
         "temperature": 0.35,
     }
     resp = requests.post(_GROK_ENDPOINT, headers=headers, json=payload, timeout=timeout)

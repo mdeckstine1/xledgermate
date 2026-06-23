@@ -171,6 +171,7 @@ def register_skynet_routes(app: Any) -> None:
                 context=context,
                 api_key=api_key,
                 model=status["model"],
+                max_tokens=status.get("max_tokens", 4096),
             )
         except Exception as exc:
             logger.warning("skynet_ask_failed | %s", exc)

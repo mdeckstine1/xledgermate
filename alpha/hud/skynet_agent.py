@@ -747,6 +747,7 @@ def run_skynet_agent(
         )
         user_prompt = user_tpl.format(context=context)
         model = (getattr(cfg, "alpha_skynet_grok_model", None) or "grok-3").strip() or "grok-3"
+        max_tokens = int(getattr(cfg, "alpha_skynet_grok_max_tokens", 4096) or 4096)
         raw, parsed = call_grok_advisor(
             user_prompt="",
             context=context,
@@ -754,6 +755,7 @@ def run_skynet_agent(
             model=model,
             system_prompt=system,
             user_message=user_prompt,
+            max_tokens=max_tokens,
         )
 
         safe, rejected, errors = filter_guardrailed_suggestions(
