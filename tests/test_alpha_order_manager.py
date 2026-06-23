@@ -558,3 +558,35 @@ def test_repair_attaches_missing_sl_sequence(bracket_state):
         assert record.sl_leg.sequence == 9001
 
     asyncio.run(_run())
+
+
+def test_repair_replaces_missing_sl_at_same_price(bracket_state):
+    async def _run() -> None:
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config()
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+        bid = mgr.register_pending_buy(buy_sequence=802, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
+        ledger.remove_offer(802)
+        await mgr.sync_brackets()
+        record = mgr.store.get(bid)
+        assert record and record.sl_leg
+        sl_price = record.sl_leg.price_rlusd_per_xrp
+        old_sl_seq = record.sl_leg.sequence
+        assert old_sl_seq is not None
+        record.sl_leg.sequence = None
+        mgr.store.unregister_leg_sequence(old_sl_seq)
+        ledger.remove_offer(old_sl_seq)
+        placed_before = len(ledger.placed_sells)
+        await mgr.sync_brackets()
+        record = mgr.store.get(bid)
+        assert record is not None
+        assert record.sl_leg is not None
+        assert record.sl_leg.sequence is not None
+        assert len(ledger.placed_sells) == placed_before + 1
+
+    asyncio.run(_run())

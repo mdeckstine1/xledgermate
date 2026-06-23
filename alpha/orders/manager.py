@@ -324,7 +324,10 @@ class OrderManager:
         leg = record.tp_leg if role == BracketLegRole.TAKE_PROFIT else record.sl_leg
         if leg is None:
             return False
-        if abs(new_price - leg.price_rlusd_per_xrp) < _PRICE_EPS:
+        if (
+            abs(new_price - leg.price_rlusd_per_xrp) < _PRICE_EPS
+            and leg.sequence is not None
+        ):
             return False
 
         size_xrp = leg.remaining_xrp if leg.remaining_xrp > _SIZE_EPS else leg.size_xrp
