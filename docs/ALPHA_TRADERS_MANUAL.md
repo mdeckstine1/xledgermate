@@ -155,45 +155,60 @@ How many open orders of each type at once.
 
 Each engine cycle, the bot can **auto-cancel resting buy bids** that no longer match where it would place a new entry (mid moved, or your `buy_limit_offset_pct` changed).
 
+**Important — limit bids vs mid**
+
+Pending buys are **passive limit orders**. They fill when the **best ask** trades down to your bid price — **not** when mid crosses your entry. Seeing mid below your entry on the HUD does not mean a fill should have happened.
+
 **How it decides “stale”**
 
 1. Compute **target entry** = `mid × (1 − buy_limit_offset_pct / 100)`  
-2. For each **pending buy** bracket, compute **drift** = `|entry − target| / mid × 100`  
-3. If drift **>** `stale_pending_buy_max_drift_pct` (default **0.15%**, match `buy_limit_offset_pct`), cancel that bid and free a `max_pending_buys` slot.
+2. For each **pending buy** bracket, evaluate (any match → cancel on next cycle):
 
-Also cancels when:
+| Rule | Meaning |
+|------|---------|
+| **`entry_drift`** | `|entry − target| / mid × 100` **>** `stale_pending_buy_max_drift_pct` |
+| **`mid_passed_entry`** | Mid rallied above bid without fill by more than max drift |
+| **`entry_above_mid`** | Bid is above mid (off-policy — new bids are always below mid) |
+| **`excess_pending_buy`** | More pending buys than `max_pending_buys` — farthest from target pruned first |
+| **`age`** | Optional: `stale_pending_buy_max_age_seconds` in `config.yaml` (HUD does not expose this yet) |
 
-- **`entry_above_mid`** — bid is above mid (off-policy; new bids are always below mid)
-- **`mid_passed_entry`** — mid rallied more than `max_drift_pct` above the bid without a fill
-- **`excess_pending_buy`** — more open pending buys than `max_pending_buys` (farthest from target pruned first)
+Default **`stale_pending_buy_max_drift_pct` = 0.15%** — align with **`buy_limit_offset_pct`**. If drift is much looser (e.g. **0.5%** while offset is **0.15–0.35%**), you can accumulate **many** resting bids that look “passed” but are still considered valid.
+
+**Cancel speed**
+
+Each cancel is one **XRPL ledger transaction**. The engine typically processes **one stale cancel per cycle** (`cycle_interval_seconds`). Clearing 20 bids can take **several minutes**, not seconds. Watch engine logs for `stale_pending_buy_cancelled` or `excess_pending_buy_cancelled`.
 
 **Example — clearly stale**
 
 - Mid **1.10**, offset **0.05%** → target ≈ **1.099**  
 - A bid still at **1.04** → drift ≈ **5.5%** → **cancelled**
 
-**Example — still valid (why you may keep 5 pending)**
+**Example — ladder stuck (common)**
 
-- Mid **1.102**, offset **0.5%** → target ≈ **1.097**  
-- Pending bids at **1.097 – 1.100** → drift ≈ **0.2%** → **kept** (within 0.5%)  
-- HOLD reason `max_pending_buys=5` is correct here — slots are full with *current* bids, not stuck legacy ones.
+- Mid **1.103**, offset **0.35%** → target ≈ **1.099**  
+- 20 bids at **1.098–1.100**, **`max_drift` = 0.5%** → drift **0.15–0.25%** → **kept** (under 0.5%)  
+- **`max_pending_buys` = 20** → engine HOLDs with slots full  
+- **Fix:** set **`stale_pending_buy_max_drift_pct` → 0.15** (or match offset), lower **`max_pending_buys`**, then **Apply**
 
 **Don’t confuse Brackets history with live pending**
 
-`logs/alpha_brackets.json` lists old entries (e.g. **~1.04** from an earlier deep-offset session). Check the HUD **Brackets** tab **State** column: only rows marked **`pending buy`** count toward the cap. Filled or cancelled brackets (and active TP/SL legs) are separate.
+`logs/alpha_brackets.json` lists old entries from prior sessions. Check the HUD **Brackets** tab **State** column: only rows marked **`pending buy`** count toward the cap.
 
 **Tuning**
 
 | Goal | Action |
 |------|--------|
 | Prune bids that drifted only slightly | Lower `stale_pending_buy_max_drift_pct` (e.g. **0.15%**) on Live → Risk & entry, then **Apply** |
+| Match drift to placement band | Set `stale_pending_buy_max_drift_pct` ≈ `buy_limit_offset_pct` |
+| Limit ladder size | Lower `max_pending_buys` (1–3 conservative) |
+| Time-out old bids | Set `stale_pending_buy_max_age_seconds` in `config.yaml` (e.g. **1800**) |
 | Turn off auto-prune | Uncheck `stale_pending_buy_enabled` |
 | Force-cancel one bid | Brackets tab **✕** on that row |
 | Nuclear option | **Cancel all** — also kills active TP/SL (you keep XRP) |
 
-Optional `stale_pending_buy_max_age_seconds` in `config.yaml` (0 = off) cancels bids older than N seconds regardless of drift.
-
 Watch **Activity** or engine logs for `stale_pending_buy_cancelled` after a cycle.
+
+**SKYNET / Grok** (manual ask, Agent mode, or Full SKYNET) receives a **`pending_buy_stale`** block in context: target entry, per-bid `would_cancel` / `reason`, `over_cap_count`, and tuning notes. Use the SKYNET quick prompt **“Stale bid ladder”** or ask why bids are not canceling.
 
 ---
 
@@ -476,6 +491,8 @@ You are RLUSD-heavy. TA is fine. Bot still HOLD.
 | Bids way below mid (~5%) | Offset set very high | Lower `buy_limit_offset_pct` if you want nearer fills |
 | Bids at ~1.04 when mid ~1.10 | Old bracket history or deep offset | Check Brackets **State** = `pending buy`; stale cancel only hits live pending rows |
 | HOLD at max pending, bids ~1.097–1.10 | Bids match current offset (low drift) | Lower `stale_pending_buy_max_drift_pct` to prune tighter, or cancel manually |
+| Many pending bids, mid “passed”, no cancel | `max_drift` too loose (e.g. 0.5%) vs offset 0.15–0.35% | Align drift to offset; check SKYNET `pending_buy_stale.would_cancel_count` |
+| Cancels very slow | One XRPL cancel per engine cycle | Normal — wait or lower pending count / use Cancel all |
 | Cancelled but orders still show | Active brackets ≠ pending | Check state column; active = exits on filled bags |
 | What does **BE** / **BO** mean? | Trailing flags on active brackets | **BE** = breakeven passed, SL can trail · **BO** = breakout confirmed, TP can trail · needs `bracket_trailing_enabled` |
 | No rows in tax CSV | Dry-run or no fills yet | Switch to LIVE; CSV updates on bracket buy/TP/SL fills and Config → Send |
@@ -496,6 +513,7 @@ min_edge_threshold_pct  = 0.08
 buy_limit_offset_pct    = 0.15    ← must be ≥ min edge
 sell_limit_offset_pct   = 0.15
 max_pending_buys        = 1
+stale_pending_buy_max_drift_pct = 0.15   ← match buy_limit_offset
 ta_weight               = 0.8
 ta_min_buy_score        = 1.5
 reentry_enabled         = on
@@ -514,6 +532,25 @@ trailing_step_pct       = 1.5
 5. **Kill** without hesitation if something looks wrong.
 
 When you understand how each knob *feels*, then turn up the aggression.
+
+---
+
+## SKYNET (Grok advisor, Agent, Full mode)
+
+SKYNET sends Grok a **runtime context** each ask/agent cycle. Besides inventory, decision, TA, and brackets, it includes:
+
+- **`pending_buy_stale`** — target entry, per pending bid `would_cancel` / `reason`, `over_cap_count`, and policy notes (same rules as `stale_pending_buy_*` above)
+- **Operator knobs (effective)** — including `alpha_stale_pending_buy_*`, `alpha_max_pending_buys`, `alpha_buy_limit_offset_pct`
+
+**Modes**
+
+| Mode | Behavior |
+|------|----------|
+| **SKYNET tab — Ask** | You prompt; Grok suggests changes; you **Apply** manually |
+| **Agent mode** | Grok runs every 3–5 cycles; **Apply safe** for guardrailed suggestions |
+| **Full SKYNET** | Auto-applies guardrailed changes (confirm with `ENABLE_FULL_SKYNET`) |
+
+Grok is instructed to use `pending_buy_stale` when diagnosing unfilled bid ladders. Quick prompt: **Stale bid ladder** on the SKYNET tab.
 
 ---
 

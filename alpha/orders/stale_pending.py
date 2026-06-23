@@ -1,0 +1,137 @@
+"""Shared stale pending-buy policy (OrderManager + SKYNET context)."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+_PRICE_EPS = 1e-9
+
+
+def target_buy_limit_price(mid: float, offset_pct: float, *, bid_offset_pct: float = 0.0) -> float:
+    if offset_pct <= 0:
+        offset_pct = bid_offset_pct
+    return round(mid * (1.0 - offset_pct / 100.0), 6)
+
+
+def stale_pending_buy_reason(
+    entry: float,
+    mid: float,
+    *,
+    offset_pct: float,
+    max_drift_pct: float,
+    stale_enabled: bool,
+    max_age_seconds: float = 0.0,
+    age_seconds: Optional[float] = None,
+    bid_offset_pct: float = 0.0,
+) -> Optional[str]:
+    """Return cancel reason when a resting bid no longer matches current entry policy."""
+    if not stale_enabled:
+        return None
+    if mid <= 0 or entry <= 0:
+        return None
+
+    if max_drift_pct > 0:
+        if entry > mid + _PRICE_EPS:
+            overshoot_pct = (entry - mid) / mid * 100.0
+            return f"entry_above_mid={overshoot_pct:.3f}%"
+
+        if mid > entry + _PRICE_EPS:
+            passed_pct = (mid - entry) / mid * 100.0
+            if passed_pct > max_drift_pct + _PRICE_EPS:
+                return f"mid_passed_entry={passed_pct:.3f}%>{max_drift_pct:g}%"
+
+        target = target_buy_limit_price(mid, offset_pct, bid_offset_pct=bid_offset_pct)
+        drift_pct = abs(entry - target) / mid * 100.0
+        if drift_pct > max_drift_pct + _PRICE_EPS:
+            return f"entry_drift={drift_pct:.3f}%>{max_drift_pct:g}%"
+
+    if max_age_seconds > 0 and age_seconds is not None and age_seconds > max_age_seconds:
+        return f"age={age_seconds:.0f}s>{max_age_seconds:.0f}s"
+    return None
+
+
+def _parse_age_seconds(created_at: Any) -> Optional[float]:
+    if not created_at:
+        return None
+    try:
+        if isinstance(created_at, datetime):
+            ts = created_at
+        else:
+            ts = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (datetime.now(tz=timezone.utc) - ts).total_seconds()
+    except (TypeError, ValueError):
+        return None
+
+
+def build_pending_buy_stale_snapshot(
+    *,
+    mid: float,
+    operator_config: Dict[str, Any],
+    pending_records: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Summarize which pending buys are stale under current operator knobs."""
+    offset = float(operator_config.get("alpha_buy_limit_offset_pct") or 0.15)
+    max_drift = float(operator_config.get("alpha_stale_pending_buy_max_drift_pct") or 0.15)
+    max_age = float(operator_config.get("alpha_stale_pending_buy_max_age_seconds") or 0.0)
+    stale_on = operator_config.get("alpha_stale_pending_buy_enabled", True) is not False
+    cap = int(operator_config.get("alpha_max_pending_buys") or 1)
+    bid_offset = float(operator_config.get("alpha_bid_offset_pct") or 0.0)
+
+    target = target_buy_limit_price(mid, offset, bid_offset_pct=bid_offset) if mid > 0 else 0.0
+    rows: List[Dict[str, Any]] = []
+    would_cancel = 0
+    for record in pending_records:
+        if str(record.get("state") or "") != "pending_buy":
+            continue
+        entry = float(record.get("entry") or 0.0)
+        if entry <= 0:
+            continue
+        age_s = _parse_age_seconds(record.get("created_at"))
+        reason = stale_pending_buy_reason(
+            entry,
+            mid,
+            offset_pct=offset,
+            max_drift_pct=max_drift,
+            stale_enabled=stale_on,
+            max_age_seconds=max_age,
+            age_seconds=age_s,
+            bid_offset_pct=bid_offset,
+        )
+        drift_pct = abs(entry - target) / mid * 100.0 if mid > 0 and target > 0 else 0.0
+        passed_pct = (mid - entry) / mid * 100.0 if mid > entry else 0.0
+        if reason:
+            would_cancel += 1
+        rows.append(
+            {
+                "bracket_id": record.get("bracket_id"),
+                "entry": round(entry, 6),
+                "buy_sequence": record.get("buy_sequence"),
+                "drift_pct": round(drift_pct, 3),
+                "mid_passed_pct": round(passed_pct, 3),
+                "would_cancel": bool(reason),
+                "reason": reason,
+            }
+        )
+
+    over_cap = max(0, len(rows) - cap)
+    return {
+        "stale_enabled": stale_on,
+        "buy_limit_offset_pct": offset,
+        "max_drift_pct": max_drift,
+        "max_age_seconds": max_age,
+        "max_pending_buys": cap,
+        "target_entry": target,
+        "pending_count": len(rows),
+        "would_cancel_count": would_cancel,
+        "would_keep_count": len(rows) - would_cancel,
+        "over_cap_count": over_cap,
+        "note": (
+            "Limit bids fill when best ask hits the bid, not when mid crosses entry. "
+            "Cancels run one ledger offer per engine cycle (~cycle_interval_seconds). "
+            "Align max_drift_pct with buy_limit_offset_pct to avoid ladder clutter."
+        ),
+        "pending_bids": rows[:25],
+    }

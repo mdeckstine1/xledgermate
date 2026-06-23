@@ -86,6 +86,7 @@ def _bracket_row(record: BracketRecord) -> Dict[str, Any]:
         "sl_price": sl_leg.price_rlusd_per_xrp if sl_leg else None,
         "sl_size_xrp": round(sl_leg.size_xrp, 4) if sl_leg else None,
         "peak_mid": record.peak_mid_rlusd_per_xrp,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
     }
 
 

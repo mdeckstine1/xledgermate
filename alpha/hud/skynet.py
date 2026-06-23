@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from alpha.operator.runtime import OPERATOR_TUNABLE_KEYS, validate_override_updates
+from alpha.orders.stale_pending import build_pending_buy_stale_snapshot
 from config.settings import BotConfig
 from utils.env_secrets import resolve_grok_key
 
@@ -41,6 +42,15 @@ Rules for suggested_changes:
 - Prefer small, incremental knob adjustments aligned with bag growth and risk.
 - If no changes are warranted, return an empty suggested_changes array.
 - Explain HOLD reasons using inventory deviation, edge gates, re-entry cooldowns, TA, depth, and max_pending_buys.
+- Pending buy limits are passive: they fill when best ask hits the bid, NOT when mid crosses entry.
+- Stale pending buy policy (see context `pending_buy_stale`):
+  - `entry_drift` — |entry − target| / mid exceeds `alpha_stale_pending_buy_max_drift_pct`
+  - `mid_passed_entry` — mid rallied above bid without fill beyond max drift
+  - `entry_above_mid` — bid above mid (off-policy)
+  - `excess_pending_buy` — count > `alpha_max_pending_buys` (farthest pruned)
+  - Default max drift ≈ `alpha_buy_limit_offset_pct` (0.15%). Loose drift (e.g. 0.5%) keeps large ladders resting.
+  - Cancels are one XRPL offer per engine cycle — clearing many bids takes minutes.
+- When many pending buys sit unfilled, check `pending_buy_stale` and suggest tightening `alpha_stale_pending_buy_max_drift_pct`, lowering `alpha_max_pending_buys`, or enabling `alpha_stale_pending_buy_max_age_seconds`.
 """
 
 
@@ -73,6 +83,19 @@ def build_skynet_context(
     brackets = hud_state.get("brackets") or {}
     reentry = hud_state.get("reentry") or {}
     cfg = operator_config or hud_state.get("config_effective") or {}
+    mid = float(hud_state.get("mid") or 0.0)
+    pending_records = [
+        r for r in (brackets.get("records") or []) if r.get("state") == "pending_buy"
+    ]
+    stale_snapshot = (
+        build_pending_buy_stale_snapshot(
+            mid=mid,
+            operator_config=cfg,
+            pending_records=pending_records,
+        )
+        if mid > 0
+        else {"note": "mid unavailable — stale pending analysis skipped"}
+    )
 
     lines = [
         "=== Alpha runtime snapshot ===",
@@ -121,6 +144,9 @@ def build_skynet_context(
         "=== Brackets ===",
         f"summary={json.dumps(brackets.get('summary'), default=str)}",
         f"open_records={json.dumps((brackets.get('records') or [])[:12], default=str)[:3000]}",
+        "",
+        "=== Pending buy stale diagnostics (for ladder / unfilled bid issues) ===",
+        json.dumps(stale_snapshot, default=str)[:4000],
         "",
         "=== Open offers (sample) ===",
         json.dumps((hud_state.get("open_offers") or [])[:15], default=str)[:2000],

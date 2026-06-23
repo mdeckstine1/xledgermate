@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 from alpha.dry_run import DryRunGuard
 from alpha.ledger.interface import LedgerInterface
 from alpha.orders.bracket import compute_bracket_prices, normalize_partial_fill_mode
+from alpha.orders.stale_pending import stale_pending_buy_reason as _stale_pending_buy_reason
+from alpha.orders.stale_pending import target_buy_limit_price
 from alpha.orders.state import BracketStateStore
 from alpha.orders.trailing import TrailingEvalResult, evaluate_trailing
 from alpha.orders.types import (
@@ -716,47 +718,33 @@ class OrderManager:
         return True
 
     def _target_buy_limit_price(self, mid: float) -> float:
-        offset_pct = self._config.alpha_buy_limit_offset_pct
-        if offset_pct <= 0:
-            offset_pct = self._config.alpha_bid_offset_pct
-        return round(mid * (1.0 - offset_pct / 100.0), 6)
+        return target_buy_limit_price(
+            mid,
+            self._config.alpha_buy_limit_offset_pct,
+            bid_offset_pct=self._config.alpha_bid_offset_pct,
+        )
 
     def stale_pending_buy_reason(self, record: BracketRecord, mid: float) -> Optional[str]:
         """Return cancel reason when a resting bid no longer matches current entry policy."""
-        if not self._config.alpha_stale_pending_buy_enabled:
-            return None
         if record.state != BracketLifecycleState.PENDING_BUY:
             return None
         entry = record.entry_price_rlusd_per_xrp
-        if mid <= 0 or entry <= 0:
-            return None
-
-        max_drift = self._config.alpha_stale_pending_buy_max_drift_pct
-        if max_drift > 0:
-            # New bids are always below mid; a resting bid above mid is off-policy.
-            if entry > mid + _PRICE_EPS:
-                overshoot_pct = (entry - mid) / mid * 100.0
-                return f"entry_above_mid={overshoot_pct:.3f}%"
-
-            # Market rallied through the bid without a fill — dip was missed.
-            if mid > entry + _PRICE_EPS:
-                passed_pct = (mid - entry) / mid * 100.0
-                if passed_pct > max_drift + _PRICE_EPS:
-                    return f"mid_passed_entry={passed_pct:.3f}%>{max_drift:g}%"
-
-            target = self._target_buy_limit_price(mid)
-            drift_pct = abs(entry - target) / mid * 100.0
-            if drift_pct > max_drift + _PRICE_EPS:
-                return f"entry_drift={drift_pct:.3f}%>{max_drift:g}%"
-
+        age_s: Optional[float] = None
         max_age = self._config.alpha_stale_pending_buy_max_age_seconds
         if max_age > 0:
             from alpha.types import utc_now
 
             age_s = (utc_now() - record.created_at).total_seconds()
-            if age_s > max_age:
-                return f"age={age_s:.0f}s>{max_age:.0f}s"
-        return None
+        return _stale_pending_buy_reason(
+            entry,
+            mid,
+            offset_pct=self._config.alpha_buy_limit_offset_pct,
+            max_drift_pct=self._config.alpha_stale_pending_buy_max_drift_pct,
+            stale_enabled=self._config.alpha_stale_pending_buy_enabled,
+            max_age_seconds=max_age,
+            age_seconds=age_s,
+            bid_offset_pct=self._config.alpha_bid_offset_pct,
+        )
 
     async def _cancel_stale_pending_buys(self, mid: float) -> int:
         """Cancel pending buys that drifted from the current target entry or exceeded max age."""
