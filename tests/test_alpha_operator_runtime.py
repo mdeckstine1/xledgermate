@@ -28,12 +28,29 @@ def test_apply_overrides_merges_without_mutating_base():
 
 def test_apply_overrides_ta_enabled():
     base = BotConfig()
-    assert base.alpha_technical_analysis.enabled is False
-    effective = apply_overrides(base, {"alpha_ta_enabled": True})
-    assert effective.alpha_technical_analysis.enabled is True
-    assert base.alpha_technical_analysis.enabled is False
-    effective = apply_overrides(effective, {"alpha_ta_enabled": False})
+    assert base.alpha_technical_analysis.enabled is True
+    effective = apply_overrides(base, {"alpha_ta_enabled": False})
     assert effective.alpha_technical_analysis.enabled is False
+    assert base.alpha_technical_analysis.enabled is True
+    effective = apply_overrides(effective, {"alpha_ta_enabled": True})
+    assert effective.alpha_technical_analysis.enabled is True
+
+
+def test_apply_overrides_inventory_and_ta_virtual_keys():
+    base = BotConfig()
+    effective = apply_overrides(
+        base,
+        {
+            "inventory_target_xrp_ratio": 0.80,
+            "alpha_ta_weight": 0.5,
+            "alpha_ta_min_buy_score": 2.0,
+            "alpha_ta_rsi_enabled": False,
+        },
+    )
+    assert effective.inventory_target_xrp_ratio == 0.80
+    assert effective.alpha_ta_weight == 0.5
+    assert effective.alpha_technical_analysis.min_buy_score == 2.0
+    assert effective.alpha_technical_analysis.rsi.enabled is False
 
 
 def test_validate_override_rejects_bad_values():

@@ -1,7 +1,7 @@
 # xLedgerMate Trading Bot Alpha — Operator Guide
 
 **Version:** 1.0.0 · **Branch:** `alpha`  
-**Strategy:** Value accumulation (limit buys on weakness → bracket TP/SL)
+**Strategy:** Aggressive Bag Growth (TA-Driven & HUD-Controlled — limit buys on dips → bracket TP/SL → patient re-entry)
 
 This guide is for the **new Alpha bot**, not the legacy `ws-engine` market maker.
 
@@ -11,11 +11,12 @@ This guide is for the **new Alpha bot**, not the legacy `ws-engine` market maker
 
 ## What Alpha does
 
-1. Monitors XRP/RLUSD inventory vs target ratio
-2. Places **limit buy** below mid when RLUSD-heavy and edge/depth allow
+1. Targets **~75% XRP** allocation (Aggressive Bag Growth — minimize idle RLUSD)
+2. Places **limit buy** below mid when RLUSD-heavy, edge/depth/TA allow
 3. On fill, places **TP + SL** limit sells (application-level OCO)
-4. Cancels opposing leg when TP or SL fills
-5. Respects **dry_run**, kill switch, drawdown, and operator pause
+4. After **TP or SL** exit, **re-entry gate** waits for dip/stabilization + TA before next buy
+5. Places **limit sell** on XRP strength (profit take / rebalance)
+6. Respects **dry_run**, kill switch, drawdown, and operator pause
 
 ---
 
@@ -108,7 +109,9 @@ Streamlit `:8503` is optional lab UI — use SSH tunnel if enabled.
 | `alpha_sell_limit_offset_pct` | `0.15` | Limit sell % above mid |
 | `alpha_max_pending_buys` | `1` | Max pending buy entries |
 | `alpha_max_pending_sells` | `1` | Max strength-sell offers (non-bracket) |
-| `alpha_max_inventory_imbalance_pct` | `0.10` | Block buys when too XRP-heavy |
+| `inventory_target_xrp_ratio` | `0.75` | XRP bag target (Aggressive Bag Growth) |
+| `alpha_weakness_deviation` | `0.02` | Buy when this far below XRP target |
+| `alpha_strength_deviation` | `0.04` | Strength sell threshold |
 | `initial_stop_loss_pct` | `0.015` | Bracket SL below entry |
 | `take_profit_rr` | `2.0` | TP = 2× SL distance |
 | `max_daily_drawdown_percent` | `10.0` | Kill switch threshold |

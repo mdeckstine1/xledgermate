@@ -24,8 +24,7 @@ from alpha.orders.types import (
     BracketMode,
     BracketRecord,
 )
-from alpha.types import RiskSnapshot
-from config.settings import BotConfig
+from alpha.decision.reentry import ReentryGate
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +63,14 @@ class OrderManager:
         risk_engine: object | None = None,
         state_dir: Path | None = None,
         structure: object | None = None,
+        reentry_gate: ReentryGate | None = None,
     ) -> None:
         self._ledger = ledger
         self._guard = dry_run_guard
         self._config = config
         self._risk_engine = risk_engine
         self._structure = structure
+        self._reentry = reentry_gate
         self._ta: object | None = None
         self._store = BracketStateStore(persist_path=_default_bracket_path(state_dir))
         self._partial_fill_mode = normalize_partial_fill_mode(config.partial_fill_mode)
@@ -656,6 +657,17 @@ class OrderManager:
                 new_state=new_state,
             )
         )
+
+        if self._reentry is not None and not partial:
+            exit_mid = leg.price_rlusd_per_xrp
+            from alpha.decision.structure import MarketStructureSnapshot
+
+            if isinstance(self._structure, MarketStructureSnapshot) and self._structure.mid > 0:
+                exit_mid = self._structure.mid
+            if role == BracketLegRole.TAKE_PROFIT:
+                self._reentry.record_tp_exit(bracket_id=record.bracket_id, exit_mid=exit_mid)
+            else:
+                self._reentry.record_sl_exit(bracket_id=record.bracket_id, exit_mid=exit_mid)
 
         if opposing is not None and opposing.sequence is not None:
             still_open = opposing.sequence in open_map

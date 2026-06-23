@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -92,12 +93,15 @@ def test_depth_within_slippage_tight_touch():
 
 
 def test_decision_holds_on_zero_depth():
-    cfg = BotConfig(
-        alpha_weakness_deviation=0.05,
-        alpha_buy_limit_offset_pct=0.15,
-        alpha_min_edge_threshold_pct=0.08,
-        alpha_risk_per_trade_pct=5.0,
-        trading_enabled=True,
+    cfg = replace(
+        BotConfig(
+            alpha_weakness_deviation=0.05,
+            alpha_buy_limit_offset_pct=0.15,
+            alpha_min_edge_threshold_pct=0.08,
+            alpha_risk_per_trade_pct=5.0,
+            trading_enabled=True,
+        ),
+        alpha_technical_analysis=replace(BotConfig().alpha_technical_analysis, enabled=False),
     )
     engine = DecisionEngine(cfg, inventory=InventoryManager(cfg))
     empty = OrderBookSnapshot(
@@ -132,11 +136,14 @@ def test_decision_holds_on_zero_depth():
 
 
 def test_decision_holds_on_volatile_wide_spread_without_edge():
-    cfg = BotConfig(
-        alpha_weakness_deviation=0.05,
-        alpha_buy_limit_offset_pct=0.02,
-        alpha_min_edge_threshold_pct=0.10,
-        trading_enabled=True,
+    cfg = replace(
+        BotConfig(
+            alpha_weakness_deviation=0.05,
+            alpha_buy_limit_offset_pct=0.02,
+            alpha_min_edge_threshold_pct=0.10,
+            trading_enabled=True,
+        ),
+        alpha_technical_analysis=replace(BotConfig().alpha_technical_analysis, enabled=False),
     )
     engine = DecisionEngine(cfg, inventory=InventoryManager(cfg))
     book = _volatile_book()

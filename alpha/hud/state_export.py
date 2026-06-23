@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from alpha.decision.engine import DecisionResult
+from alpha.decision.reentry import ReentrySnapshot
 from alpha.decision.structure import MarketStructureSnapshot, build_candle_from_mids, load_mid_history
 from alpha.decision.price_history import PRICE_HISTORY_PATH, load_price_series, effective_sample_seconds
 from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalysisSnapshot
@@ -280,6 +280,7 @@ def build_hud_state(
     operator_overrides: Optional[Dict[str, Any]] = None,
     config_effective: Optional[BotConfig] = None,
     runtime_state_path: Path = DEFAULT_PATH,
+    reentry: Optional[ReentrySnapshot] = None,
 ) -> Dict[str, Any]:
     """Build JSON-serializable HUD payload from one Alpha cycle."""
     snap = snapshot
@@ -382,7 +383,13 @@ def build_hud_state(
         "decision": {
             "action": decision.action.value,
             "reason": decision.reason,
+            "edge_pct": decision.edge_pct,
         },
+        "reentry": (
+            reentry.to_dict()
+            if reentry is not None and reentry.active
+            else {"active": False}
+        ),
         "execution": (
             {
                 "action": execution.action,
@@ -442,6 +449,7 @@ def publish_cycle_to_hud(
     report_text: str = "",
     operator_overrides: Optional[Dict[str, Any]] = None,
     config_effective: Optional[BotConfig] = None,
+    reentry: Optional[ReentrySnapshot] = None,
 ) -> None:
     try:
         state = build_hud_state(
@@ -461,6 +469,7 @@ def publish_cycle_to_hud(
             operator_overrides=operator_overrides,
             config_effective=config_effective,
             runtime_state_path=path,
+            reentry=reentry,
         )
         write_alpha_runtime_state(path, state)
     except OSError as exc:

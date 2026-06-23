@@ -182,8 +182,8 @@ class BotConfig:
     # Trading Bot Alpha — value accumulation (Phase 2+)
     alpha_ws_enabled: bool = True
     alpha_max_slippage_pct: float = 0.50
-    alpha_weakness_deviation: float = 0.05
-    alpha_strength_deviation: float = 0.05
+    alpha_weakness_deviation: float = 0.02  # RLUSD deploy trigger — % below XRP target (aggressive)
+    alpha_strength_deviation: float = 0.04  # Strength sell when this far above XRP target
     alpha_base_order_size_xrp: float = 50.0
     alpha_bid_offset_pct: float = 0.02
     alpha_ask_offset_pct: float = 0.02
@@ -204,6 +204,15 @@ class BotConfig:
     alpha_gui_refresh_seconds: int = 30  # Streamlit auto-refresh hint
     alpha_gui_bind_host: str = ""  # Empty = use hud_bind_host; 0.0.0.0 for public VPS access
     alpha_hud_port: int = 8765  # Operator HUD (FastAPI) — replaces legacy ws-hud port
+    # Post-exit re-entry (Aggressive Bag Growth — wait for dip after TP, stabilization after SL)
+    alpha_reentry_enabled: bool = True
+    alpha_reentry_tp_dip_pct: float = 0.08  # Re-buy after TP only when mid dips this % below TP exit
+    alpha_reentry_tp_min_cycles: int = 1  # Min cycles after TP before re-entry allowed
+    alpha_reentry_sl_stabilization_pct: float = 0.12  # After SL, mid must bounce this % above recent_low
+    alpha_reentry_sl_min_cycles: int = 3  # Min cycles after SL before re-entry considered
+    alpha_reentry_tp_min_ta_score: float = 1.5  # Min TA buy score to re-enter after TP
+    alpha_reentry_sl_min_ta_score: float = 2.5  # Higher TA bar after stop-loss exit
+    alpha_ta_weight: float = 1.0  # 0=TA advisory only (HUD); 1=full TA buy gate at min_buy_score
     alpha_technical_analysis: AlphaTechnicalAnalysisConfig = field(
         default_factory=AlphaTechnicalAnalysisConfig
     )
@@ -226,7 +235,7 @@ class BotConfig:
     max_daily_drawdown_percent: float = 10.0
     min_drawdown_percent: float = 2.0
     max_drawdown_percent: float = 25.0
-    inventory_target_xrp_ratio: float = 0.55   # Slightly XRP-heavy (supports your $27 thesis)
+    inventory_target_xrp_ratio: float = 0.75   # Aggressive Bag Growth — deploy RLUSD into XRP (75% XRP target)
     inventory_mode: str = "market_make"        # market_make = two-sided spread capture; rebalance = pause side
     inventory_max_deviation: float = 0.12      # Rebalance mode: pause side beyond this (ratio points)
     inventory_hard_pause_deviation: float = 0.22  # Legacy YAML only; pause uses inventory_max_deviation

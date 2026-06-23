@@ -10,6 +10,7 @@ from alpha.orders.bracket import compute_bracket_prices, normalize_partial_fill_
 from alpha.orders.manager import OrderManager
 from alpha.orders.types import BracketLifecycleState
 from alpha.types import LedgerOfferResult
+from dataclasses import replace
 from config.settings import BotConfig
 
 
@@ -27,7 +28,10 @@ def _bracket_config(**overrides: Any) -> BotConfig:
     )
     for key, value in overrides.items():
         setattr(base, key, value)
-    return base
+    return replace(
+        base,
+        alpha_technical_analysis=replace(base.alpha_technical_analysis, enabled=False),
+    )
 
 
 class _BracketFakeLedger:

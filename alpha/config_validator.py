@@ -115,6 +115,12 @@ def validate_alpha_config(config: BotConfig) -> AlphaConfigValidation:
     ):
         warnings.append("alpha_price_sample_interval_seconds < 5 may hammer RPC")
 
+    if config.alpha_reentry_sl_min_cycles < 1:
+        errors.append("alpha_reentry_sl_min_cycles must be at least 1")
+
+    if config.alpha_reentry_tp_min_cycles < 1:
+        errors.append("alpha_reentry_tp_min_cycles must be at least 1")
+
     if config.alpha_weakness_deviation <= 0 or config.alpha_strength_deviation <= 0:
         errors.append("alpha_weakness_deviation and alpha_strength_deviation must be positive")
 

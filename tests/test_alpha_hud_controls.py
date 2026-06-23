@@ -53,6 +53,30 @@ def test_patch_alpha_ta_enabled(client):
     assert r.json()["config_effective"]["alpha_ta_enabled"] is False
 
 
+def test_patch_hud_tunables(client):
+    r = client.patch(
+        "/operator/config",
+        json={
+            "overrides": {
+                "inventory_target_xrp_ratio": 0.78,
+                "alpha_ta_weight": 0.6,
+                "alpha_reentry_tp_min_ta_score": 2.0,
+                "alpha_reentry_sl_min_ta_score": 3.0,
+                "alpha_ta_min_buy_score": 1.8,
+                "alpha_ta_rsi_enabled": False,
+            }
+        },
+    )
+    assert r.status_code == 200
+    eff = r.json()["config_effective"]
+    assert eff["inventory_target_xrp_ratio"] == 0.78
+    assert eff["inventory_target_xrp_pct"] == 78.0
+    assert eff["alpha_ta_weight"] == 0.6
+    assert eff["alpha_reentry_tp_min_ta_score"] == 2.0
+    assert eff["alpha_ta_min_buy_score"] == 1.8
+    assert eff["alpha_ta_rsi_enabled"] is False
+
+
 def test_patch_rejects_invalid_override(client):
     r = client.patch("/operator/config", json={"overrides": {"alpha_risk_per_trade_pct": 0}})
     assert r.status_code == 400

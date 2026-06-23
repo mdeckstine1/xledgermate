@@ -16,10 +16,24 @@ logger = logging.getLogger(__name__)
 _DEFAULT_OVERRIDES = Path("logs/alpha_overrides.json")
 _DEFAULT_COMMANDS = Path("logs/alpha_commands.json")
 
-# Keys the HUD may override at runtime (Alpha v1 tunables).
+# Virtual TA keys (mapped into alpha_technical_analysis nested config).
+_TA_VIRTUAL_KEYS = frozenset(
+    {
+        "alpha_ta_enabled",
+        "alpha_ta_min_buy_score",
+        "alpha_ta_min_sell_score",
+        "alpha_ta_rsi_enabled",
+        "alpha_ta_stoch_enabled",
+        "alpha_ta_bollinger_enabled",
+        "alpha_ta_engulfing_enabled",
+    }
+)
+
+# Keys the HUD may override at runtime (Aggressive Bag Growth — TA-Driven).
 OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "dry_run",
     "trading_enabled",
+    "inventory_target_xrp_ratio",
     "alpha_risk_per_trade_pct",
     "alpha_min_edge_threshold_pct",
     "alpha_buy_limit_offset_pct",
@@ -28,26 +42,49 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_strength_deviation",
     "alpha_max_pending_buys",
     "alpha_max_pending_sells",
+    "alpha_ta_weight",
+    "alpha_ta_enabled",
+    "alpha_ta_min_buy_score",
+    "alpha_ta_min_sell_score",
+    "alpha_ta_rsi_enabled",
+    "alpha_ta_stoch_enabled",
+    "alpha_ta_bollinger_enabled",
+    "alpha_ta_engulfing_enabled",
+    "alpha_reentry_enabled",
+    "alpha_reentry_tp_dip_pct",
+    "alpha_reentry_tp_min_cycles",
+    "alpha_reentry_tp_min_ta_score",
+    "alpha_reentry_sl_stabilization_pct",
+    "alpha_reentry_sl_min_cycles",
+    "alpha_reentry_sl_min_ta_score",
     "alpha_breakout_pct",
     "alpha_structure_lookback",
     "bracket_trailing_enabled",
-    "alpha_ta_enabled",
     "trailing_step_pct",
     "initial_stop_loss_pct",
     "take_profit_pct",
     "take_profit_rr",
 )
 
-# Slider/toggle defaults for HUD (min, max, step) — bool/int fields omit step.
 OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
+    "inventory_target_xrp_ratio": {"min": 0.01, "max": 0.99, "step": 0.01},
     "alpha_risk_per_trade_pct": {"min": 0.1, "max": 5.0, "step": 0.1},
     "alpha_min_edge_threshold_pct": {"min": 0.0, "max": 1.0, "step": 0.01},
     "alpha_buy_limit_offset_pct": {"min": 0.05, "max": 1.0, "step": 0.01},
     "alpha_sell_limit_offset_pct": {"min": 0.05, "max": 1.0, "step": 0.01},
-    "alpha_weakness_deviation": {"min": 0.01, "max": 0.25, "step": 0.01},
+    "alpha_weakness_deviation": {"min": 0.005, "max": 0.15, "step": 0.005},
     "alpha_strength_deviation": {"min": 0.01, "max": 0.25, "step": 0.01},
     "alpha_max_pending_buys": {"min": 1, "max": 5, "step": 1},
     "alpha_max_pending_sells": {"min": 1, "max": 5, "step": 1},
+    "alpha_ta_weight": {"min": 0.0, "max": 1.0, "step": 0.05},
+    "alpha_ta_min_buy_score": {"min": 0.0, "max": 10.0, "step": 0.1},
+    "alpha_ta_min_sell_score": {"min": 0.0, "max": 10.0, "step": 0.1},
+    "alpha_reentry_tp_dip_pct": {"min": 0.01, "max": 2.0, "step": 0.01},
+    "alpha_reentry_tp_min_cycles": {"min": 0, "max": 20, "step": 1},
+    "alpha_reentry_tp_min_ta_score": {"min": 0.0, "max": 10.0, "step": 0.1},
+    "alpha_reentry_sl_stabilization_pct": {"min": 0.01, "max": 2.0, "step": 0.01},
+    "alpha_reentry_sl_min_cycles": {"min": 0, "max": 50, "step": 1},
+    "alpha_reentry_sl_min_ta_score": {"min": 0.0, "max": 10.0, "step": 0.1},
     "alpha_breakout_pct": {"min": 0.005, "max": 0.10, "step": 0.005},
     "alpha_structure_lookback": {"min": 3, "max": 100, "step": 1},
     "trailing_step_pct": {"min": 0.5, "max": 5.0, "step": 0.1},
@@ -57,35 +94,65 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
 }
 
 
+def _apply_ta_virtual_overrides(config: BotConfig, overrides: Dict[str, Any]) -> BotConfig:
+    """Merge HUD TA virtual keys into nested alpha_technical_analysis."""
+    ta = config.alpha_technical_analysis
+    if "alpha_ta_enabled" in overrides:
+        ta = replace(ta, enabled=bool(overrides["alpha_ta_enabled"]))
+    if "alpha_ta_min_buy_score" in overrides:
+        ta = replace(ta, min_buy_score=float(overrides["alpha_ta_min_buy_score"]))
+    if "alpha_ta_min_sell_score" in overrides:
+        ta = replace(ta, min_sell_score=float(overrides["alpha_ta_min_sell_score"]))
+    if "alpha_ta_rsi_enabled" in overrides:
+        ta = replace(ta, rsi=replace(ta.rsi, enabled=bool(overrides["alpha_ta_rsi_enabled"])))
+    if "alpha_ta_stoch_enabled" in overrides:
+        ta = replace(ta, stochastic=replace(ta.stochastic, enabled=bool(overrides["alpha_ta_stoch_enabled"])))
+    if "alpha_ta_bollinger_enabled" in overrides:
+        ta = replace(ta, bollinger=replace(ta.bollinger, enabled=bool(overrides["alpha_ta_bollinger_enabled"])))
+    if "alpha_ta_engulfing_enabled" in overrides:
+        ta = replace(ta, engulfing=replace(ta.engulfing, enabled=bool(overrides["alpha_ta_engulfing_enabled"])))
+    return replace(config, alpha_technical_analysis=ta)
+
+
 def apply_overrides(config: BotConfig, overrides: Optional[Dict[str, Any]] = None) -> BotConfig:
     """Return effective config with runtime overrides merged (does not mutate input)."""
     if not overrides:
         return config
     allowed = {f.name for f in fields(BotConfig)}
     kwargs: Dict[str, Any] = {}
-    ta_enabled = overrides.get("alpha_ta_enabled")
     for key, value in overrides.items():
-        if key == "alpha_ta_enabled":
+        if key in _TA_VIRTUAL_KEYS:
             continue
         if key in allowed:
             kwargs[key] = value
     result = replace(config, **kwargs) if kwargs else config
-    if ta_enabled is not None:
-        result = replace(
-            result,
-            alpha_technical_analysis=replace(result.alpha_technical_analysis, enabled=bool(ta_enabled)),
-        )
+    if overrides.keys() & _TA_VIRTUAL_KEYS:
+        result = _apply_ta_virtual_overrides(result, overrides)
     return result
 
 
 def effective_config_snapshot(config: BotConfig) -> Dict[str, Any]:
     """Safe tunable snapshot for HUD display (no secrets)."""
+    ta = config.alpha_technical_analysis
     snap: Dict[str, Any] = {}
     for key in OPERATOR_TUNABLE_KEYS:
         if key == "alpha_ta_enabled":
-            snap[key] = config.alpha_technical_analysis.enabled
+            snap[key] = ta.enabled
+        elif key == "alpha_ta_min_buy_score":
+            snap[key] = ta.min_buy_score
+        elif key == "alpha_ta_min_sell_score":
+            snap[key] = ta.min_sell_score
+        elif key == "alpha_ta_rsi_enabled":
+            snap[key] = ta.rsi.enabled
+        elif key == "alpha_ta_stoch_enabled":
+            snap[key] = ta.stochastic.enabled
+        elif key == "alpha_ta_bollinger_enabled":
+            snap[key] = ta.bollinger.enabled
+        elif key == "alpha_ta_engulfing_enabled":
+            snap[key] = ta.engulfing.enabled
         else:
             snap[key] = getattr(config, key)
+    snap["inventory_target_xrp_pct"] = round(config.inventory_target_xrp_ratio * 100.0, 1)
     return snap
 
 
@@ -119,15 +186,31 @@ def validate_override_updates(
 
 
 def _coerce_override(key: str, value: Any) -> Any:
-    if key in ("dry_run", "trading_enabled", "bracket_trailing_enabled", "alpha_ta_enabled"):
+    _BOOL_KEYS = {
+        "dry_run",
+        "trading_enabled",
+        "bracket_trailing_enabled",
+        "alpha_ta_enabled",
+        "alpha_ta_rsi_enabled",
+        "alpha_ta_stoch_enabled",
+        "alpha_ta_bollinger_enabled",
+        "alpha_ta_engulfing_enabled",
+        "alpha_reentry_enabled",
+    }
+    if key in _BOOL_KEYS:
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
             return value.lower() in ("1", "true", "yes", "on")
         return bool(value)
-    if key in ("alpha_max_pending_buys", "alpha_max_pending_sells"):
-        return int(value)
-    if key == "alpha_structure_lookback":
+    _INT_KEYS = {
+        "alpha_max_pending_buys",
+        "alpha_max_pending_sells",
+        "alpha_structure_lookback",
+        "alpha_reentry_tp_min_cycles",
+        "alpha_reentry_sl_min_cycles",
+    }
+    if key in _INT_KEYS:
         return int(value)
     return float(value)
 
@@ -135,6 +218,14 @@ def _coerce_override(key: str, value: Any) -> Any:
 def _validate_merged_config(config: BotConfig, changed_keys: Any) -> List[str]:
     errors: List[str] = []
     keys = set(changed_keys)
+
+    if "inventory_target_xrp_ratio" in keys:
+        if config.inventory_target_xrp_ratio <= 0 or config.inventory_target_xrp_ratio >= 1:
+            errors.append("inventory_target_xrp_ratio must be between 0 and 1 (exclusive)")
+
+    if "alpha_ta_weight" in keys:
+        if config.alpha_ta_weight < 0 or config.alpha_ta_weight > 1:
+            errors.append("alpha_ta_weight must be between 0 and 1")
 
     if "alpha_risk_per_trade_pct" in keys:
         if config.alpha_risk_per_trade_pct <= 0 or config.alpha_risk_per_trade_pct > 100:
@@ -154,6 +245,12 @@ def _validate_merged_config(config: BotConfig, changed_keys: Any) -> List[str]:
 
     if "alpha_max_pending_sells" in keys and config.alpha_max_pending_sells < 1:
         errors.append("alpha_max_pending_sells must be at least 1")
+
+    if "alpha_reentry_tp_min_cycles" in keys and config.alpha_reentry_tp_min_cycles < 0:
+        errors.append("alpha_reentry_tp_min_cycles must be non-negative")
+
+    if "alpha_reentry_sl_min_cycles" in keys and config.alpha_reentry_sl_min_cycles < 0:
+        errors.append("alpha_reentry_sl_min_cycles must be non-negative")
 
     if "alpha_breakout_pct" in keys and config.alpha_breakout_pct <= 0:
         errors.append("alpha_breakout_pct must be positive")

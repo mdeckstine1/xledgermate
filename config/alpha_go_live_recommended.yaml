@@ -1,11 +1,13 @@
-# Recommended conservative mainnet parameters for Alpha go-live.
+# Aggressive Bag Growth — recommended mainnet parameters
 # Merge into config/config.yaml after dry-run soak — do NOT commit secrets.
-# See docs/ALPHA_HANDOVER.md
 
-dry_run: false
+dry_run: true
 testnet: false
 trading_enabled: true
 
+inventory_target_xrp_ratio: 0.75
+alpha_weakness_deviation: 0.02
+alpha_strength_deviation: 0.04
 alpha_risk_per_trade_pct: 0.5
 alpha_max_pending_buys: 1
 alpha_max_pending_sells: 1
@@ -16,6 +18,17 @@ alpha_max_inventory_imbalance_pct: 0.10
 alpha_cycle_interval_seconds: 60
 alpha_base_order_size_xrp: 50.0
 
+alpha_reentry_enabled: true
+alpha_reentry_tp_dip_pct: 0.08
+alpha_reentry_tp_min_cycles: 1
+alpha_reentry_sl_stabilization_pct: 0.12
+alpha_reentry_sl_min_cycles: 3
+
+alpha_technical_analysis:
+  enabled: true
+  min_buy_score: 1.5
+  min_sell_score: 1.0
+
 initial_stop_loss_pct: 0.015
 take_profit_rr: 2.0
 partial_fill_mode: wait_full
@@ -24,7 +37,6 @@ trailing_step_pct: 1.5
 breakout_confirmation_tf: "15m"
 
 max_daily_drawdown_percent: 10.0
-inventory_target_xrp_ratio: 0.55
 xrp_reserve: 12.0
 min_order_size_xrp: 1.0
 

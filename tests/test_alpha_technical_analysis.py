@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from alpha.decision.engine import DecisionAction, DecisionEngine
+from dataclasses import replace
+
 from config.settings import BotConfig
 from alpha.decision.ta_config import AlphaTechnicalAnalysisConfig, merge_ta_config
 from alpha.decision.technical_analysis import TechnicalAnalysis, mids_to_candles
@@ -31,6 +33,7 @@ def test_ta_config_merge_nested():
 
 def test_technical_analysis_disabled():
     cfg = BotConfig()
+    cfg = replace(cfg, alpha_technical_analysis=replace(cfg.alpha_technical_analysis, enabled=False))
     ta = TechnicalAnalysis(cfg)
     snap = ta.analyze(_rising_mids(), mid=1.18)
     assert snap.enabled is False
@@ -41,8 +44,13 @@ def test_technical_analysis_follows_runtime_ta_override():
     from alpha.operator.runtime import apply_overrides
 
     base = BotConfig()
+    assert base.alpha_technical_analysis.enabled is True
     ta = TechnicalAnalysis(base)
-    assert ta.analyze(_rising_mids(), mid=1.18).enabled is False
+    assert ta.analyze(_rising_mids(), mid=1.18).enabled is True
+    effective = apply_overrides(base, {"alpha_ta_enabled": False})
+    ta = TechnicalAnalysis(effective)
+    snap = ta.analyze(_rising_mids(), mid=1.18)
+    assert snap.enabled is False
     effective = apply_overrides(base, {"alpha_ta_enabled": True})
     ta = TechnicalAnalysis(effective)
     snap = ta.analyze(_rising_mids(), mid=1.18)

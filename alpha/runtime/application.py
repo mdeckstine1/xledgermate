@@ -21,6 +21,7 @@ from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalys
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControlStore
 from alpha.operator.runtime import OperatorRuntimeStore, apply_overrides, derive_posture
+from alpha.decision.reentry import ReentryGate
 from alpha.decision.engine import DecisionEngine, DecisionResult
 from alpha.dry_run import DryRunGuard
 from alpha.inventory.manager import InventoryManager
@@ -73,14 +74,24 @@ class AlphaApplication:
             commands_path=self._state_dir / "alpha_commands.json",
         )
         self._activity = ActivityLog(path=self._state_dir / "alpha_activity.jsonl")
+        self._reentry = ReentryGate(
+            config,
+            persist_path=self._state_dir / "alpha_reentry.json",
+        )
         self._orders = OrderManager(
             self._ledger,
             self._dry_run_guard,
             config,
             risk_engine=self._risk,
             state_dir=self._state_dir,
+            reentry_gate=self._reentry,
         )
-        self._decision = DecisionEngine(config, inventory=self._inventory, risk=self._risk)
+        self._decision = DecisionEngine(
+            config,
+            inventory=self._inventory,
+            risk=self._risk,
+            reentry=self._reentry,
+        )
         self._executor = EntryExecutor(
             self._ledger,
             self._orders,
@@ -119,6 +130,7 @@ class AlphaApplication:
         self._decision._config = config  # noqa: SLF001
         self._executor._config = config  # noqa: SLF001
         self._ta = TechnicalAnalysis(config)
+        self._reentry._config = config  # noqa: SLF001
 
     async def _sync_operator_runtime(self) -> None:
         """Reload overrides, apply effective config, process queued operator commands."""
@@ -228,6 +240,8 @@ class AlphaApplication:
 
         orders = await self._orders.sync_brackets(risk=risk)
 
+        self._reentry.tick_cycle()
+
         snap = OperatorSnapshot(
             generated_utc=utc_now(),
             alpha_version=ALPHA_VERSION,
@@ -250,6 +264,7 @@ class AlphaApplication:
             pending_sell_count=self._orders.count_strength_sells(orders.open_offers),
             balances=balances,
             ta=ta_snapshot,
+            structure=self._last_structure,
         )
         return snap, validation, decision, orders
 
@@ -310,6 +325,7 @@ class AlphaApplication:
             report_text=report_text,
             operator_overrides=self._runtime.load_overrides(),
             config_effective=self.config,
+            reentry=self._reentry.snapshot,
         )
 
     async def run_status_cycle(self, *, telegram: bool = True) -> AlphaCycleResult:
@@ -346,6 +362,8 @@ class AlphaApplication:
             self._activity.append("cycle_skipped", reason="operator_pause")
         elif snap.risk.trading_allowed:
             execution = await self._executor.execute(decision, risk=snap.risk)
+            if execution.executed and execution.action == "place_bid":
+                self._reentry.clear(reason="buy_executed")
         else:
             logger.info("trading_cycle_skipped | risk_trading_not_allowed")
 

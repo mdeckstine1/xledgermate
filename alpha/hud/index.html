@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Cache-Control" content="no-cache">
-  <title>xLedgerMate — Alpha Operator HUD</title>
+  <title>xLedgerMate — Aggressive Bag Growth (TA-Driven)</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <!-- alpha-hud-build:__HUD_BUILD__ -->
   <style>
@@ -70,8 +70,10 @@
     .controls-section h2 { font-size:.85rem; color:var(--muted); text-transform:uppercase; margin:0 0 10px; }
     .live-controls { width:100%; max-width:100%; margin-top:16px; }
     .live-controls .controls-section.card { margin-bottom:10px; }
-    .controls-pair { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; margin-bottom:10px; }
+    .controls-pair { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; margin-bottom:10px; }
     .controls-pair .controls-section.card { margin-bottom:0; }
+    .ctrl-row label[title] { cursor:help; border-bottom:1px dotted var(--muted); }
+    .strategy-banner { font-size:.78rem; color:var(--muted); margin-top:2px; }
     .chart-card { margin-bottom:16px; width:50%; max-width:50%; min-width:300px; }
     .chart-wrap { display:grid; grid-template-columns:1fr 220px; gap:12px; align-items:stretch; }
     .chart-canvas-wrap { background:#0b1220; border:1px solid var(--border); border-radius:6px; padding:8px; min-height:266px; }
@@ -117,7 +119,10 @@
 </head>
 <body>
   <header>
-    <h1>Alpha Operator HUD</h1>
+    <div>
+      <h1>Alpha Operator HUD</h1>
+      <div class="strategy-banner">Aggressive Bag Growth (TA-Driven &amp; HUD-Controlled)</div>
+    </div>
     <span id="ver" class="badge">v?</span>
     <span id="net" class="badge">net</span>
     <span id="mode" class="badge dry">dry</span>
@@ -166,7 +171,7 @@
       </div>
       <section id="live" class="panel active">
         <div class="grid live-grid">
-          <div class="card"><h3>Decision</h3><div id="decAction" class="big">—</div><div id="decReason" class="muted"></div></div>
+          <div class="card"><h3>Decision</h3><div id="decAction" class="big">—</div><div id="decReason" class="muted"></div><div id="decReentry" class="muted" style="font-size:.78rem;margin-top:.35rem"></div><div id="decTa" class="muted" style="font-size:.78rem"></div></div>
           <div class="card"><h3>Book</h3><div id="bookMid" class="big">—</div><div id="bookSpread" class="muted"></div></div>
           <div class="card"><h3>Structure</h3><div id="structTrend" class="big">—</div><div id="structSum" class="muted"></div></div>
           <div class="card"><h3>Brackets</h3><div id="brSum" class="big">—</div><div id="brDetail" class="muted"></div></div>
@@ -184,24 +189,37 @@
         <div class="controls-pair">
         <div class="controls-section card">
           <h2>Risk &amp; entry</h2>
-          <div class="ctrl-row"><label>risk_per_trade_pct</label><input type="range" id="slRisk" min="0.1" max="5" step="0.1"><input type="number" id="numRisk" step="0.1"><span id="valRisk" class="muted"></span></div>
-          <div class="ctrl-row"><label>min_edge_threshold_pct</label><input type="range" id="slEdge" min="0" max="1" step="0.01"><input type="number" id="numEdge" step="0.01"><span id="valEdge" class="muted"></span></div>
-          <div class="ctrl-row"><label>buy_limit_offset_pct</label><input type="range" id="slOffset" min="0.05" max="1" step="0.01"><input type="number" id="numOffset" step="0.01"><span id="valOffset" class="muted"></span></div>
-          <div class="ctrl-row"><label>sell_limit_offset_pct</label><input type="range" id="slSellOffset" min="0.05" max="1" step="0.01"><input type="number" id="numSellOffset" step="0.01"><span id="valSellOffset" class="muted"></span></div>
-          <div class="ctrl-row"><label>max_pending_buys</label><input type="number" id="numMaxBuys" min="1" max="5" step="1"></div>
-          <div class="ctrl-row"><label>max_pending_sells</label><input type="number" id="numMaxSells" min="1" max="5" step="1"></div>
+          <div class="ctrl-row"><label title="Target XRP share of portfolio. Buys deploy RLUSD when below target; sells trim when above.">target_xrp_pct</label><input type="range" id="slTargetXrp" min="0" max="100" step="1"><input type="number" id="numTargetXrp" min="0" max="100" step="1"><span id="valTargetXrp" class="muted">%</span></div>
+          <div class="ctrl-row"><label title="How far below target XRP ratio before weakness triggers RLUSD deployment buys.">weakness_deviation</label><input type="range" id="slWeakness" min="0.005" max="0.15" step="0.005"><input type="number" id="numWeakness" step="0.005"><span id="valWeakness" class="muted"></span></div>
+          <div class="ctrl-row"><label title="Percent of risk capital allocated per buy bracket.">risk_per_trade_pct</label><input type="range" id="slRisk" min="0.1" max="5" step="0.1"><input type="number" id="numRisk" step="0.1"><span id="valRisk" class="muted"></span></div>
+          <div class="ctrl-row"><label title="Minimum expected edge (spread capture) required before placing a bid.">min_edge_threshold_pct</label><input type="range" id="slEdge" min="0" max="1" step="0.01"><input type="number" id="numEdge" step="0.01"><span id="valEdge" class="muted"></span></div>
+          <div class="ctrl-row"><label title="Bid limit sits this % below mid — deeper = more patient fills.">buy_limit_offset_pct</label><input type="range" id="slOffset" min="0.05" max="1" step="0.01"><input type="number" id="numOffset" step="0.01"><span id="valOffset" class="muted"></span></div>
+          <div class="ctrl-row"><label title="Ask limit sits this % above mid for strength sells.">sell_limit_offset_pct</label><input type="range" id="slSellOffset" min="0.05" max="1" step="0.01"><input type="number" id="numSellOffset" step="0.01"><span id="valSellOffset" class="muted"></span></div>
+          <div class="ctrl-row"><label title="Max simultaneous open buy offers.">max_pending_buys</label><input type="number" id="numMaxBuys" min="1" max="5" step="1"></div>
+          <div class="ctrl-row"><label title="Max simultaneous open sell offers.">max_pending_sells</label><input type="number" id="numMaxSells" min="1" max="5" step="1"></div>
           <button id="btnApplyRisk">Apply risk &amp; entry</button>
         </div>
         <div class="controls-section card">
           <h2>Structure &amp; trailing</h2>
-          <div class="ctrl-row toggle"><label><input type="checkbox" id="trailingEnabled"> bracket_trailing_enabled</label></div>
-          <div class="ctrl-row"><label>trailing_step_pct</label><input type="range" id="slTrail" min="0.5" max="5" step="0.1"><input type="number" id="numTrail" step="0.1"></div>
-          <div class="ctrl-row"><label>breakout_pct</label><input type="range" id="slBreakout" min="0.005" max="0.1" step="0.005"><input type="number" id="numBreakout" step="0.005"></div>
-          <div class="ctrl-row"><label>structure_lookback</label><input type="range" id="slLookback" min="3" max="100" step="1"><input type="number" id="numLookback" step="1"></div>
-          <div class="ctrl-row"><label>initial_stop_loss_pct</label><input type="range" id="slSl" min="0.005" max="0.1" step="0.001"><input type="number" id="numSl" step="0.001"></div>
-          <div class="ctrl-row"><label>take_profit_pct</label><input type="range" id="slTp" min="0.01" max="0.2" step="0.01"><input type="number" id="numTp" step="0.01"></div>
-          <div class="ctrl-row"><label>take_profit_rr</label><input type="range" id="slRr" min="0.5" max="5" step="0.1"><input type="number" id="numRr" step="0.1"></div>
+          <div class="ctrl-row toggle"><label title="Ratchet TP/SL after breakeven or breakout confirmation."><input type="checkbox" id="trailingEnabled"> bracket_trailing_enabled</label></div>
+          <div class="ctrl-row"><label title="% favorable move before trailing step ratchets bracket legs.">trailing_step_pct</label><input type="range" id="slTrail" min="0.5" max="5" step="0.1"><input type="number" id="numTrail" step="0.1"></div>
+          <div class="ctrl-row"><label title="Price move % beyond structure high/low to confirm breakout.">breakout_pct</label><input type="range" id="slBreakout" min="0.005" max="0.1" step="0.005"><input type="number" id="numBreakout" step="0.005"></div>
+          <div class="ctrl-row"><label title="Price samples used for HTF structure trend.">structure_lookback</label><input type="range" id="slLookback" min="3" max="100" step="1"><input type="number" id="numLookback" step="1"></div>
+          <div class="ctrl-row"><label title="Stop-loss limit % below entry (RLUSD/XRP).">initial_stop_loss_pct</label><input type="range" id="slSl" min="0.005" max="0.1" step="0.001"><input type="number" id="numSl" step="0.001"></div>
+          <div class="ctrl-row"><label title="Fixed take-profit % above entry when RR is not used.">take_profit_pct</label><input type="range" id="slTp" min="0.01" max="0.2" step="0.01"><input type="number" id="numTp" step="0.01"></div>
+          <div class="ctrl-row"><label title="TP distance = SL distance × RR (preferred when &gt; 0).">take_profit_rr</label><input type="range" id="slRr" min="0.5" max="5" step="0.1"><input type="number" id="numRr" step="0.1"></div>
           <button id="btnApplyStructure">Apply structure &amp; trailing</button>
+        </div>
+        <div class="controls-section card">
+          <h2>Re-entry after exit</h2>
+          <div class="ctrl-row toggle"><label title="Patient reload: wait for dip after TP and stabilization after SL before next buy."><input type="checkbox" id="reentryEnabled"> reentry_enabled</label></div>
+          <div class="ctrl-row"><label title="Min engine cycles after take-profit before re-entry considered.">tp_cooldown_cycles</label><input type="range" id="slReTpCycles" min="0" max="20" step="1"><input type="number" id="numReTpCycles" step="1"></div>
+          <div class="ctrl-row"><label title="Mid must dip this % below TP exit price before re-buy.">tp_dip_pct</label><input type="range" id="slReTpDip" min="0.01" max="2" step="0.01"><input type="number" id="numReTpDip" step="0.01"></div>
+          <div class="ctrl-row"><label title="Min TA buy score required to re-enter after take-profit.">tp_min_ta_score</label><input type="range" id="slReTpTa" min="0" max="10" step="0.1"><input type="number" id="numReTpTa" step="0.1"></div>
+          <div class="ctrl-row"><label title="Min engine cycles after stop-loss (longer = avoid falling knife).">sl_cooldown_cycles</label><input type="range" id="slReSlCycles" min="0" max="50" step="1"><input type="number" id="numReSlCycles" step="1"></div>
+          <div class="ctrl-row"><label title="After SL, mid must bounce this % above recent low.">sl_stabilization_pct</label><input type="range" id="slReSlStab" min="0.01" max="2" step="0.01"><input type="number" id="numReSlStab" step="0.01"></div>
+          <div class="ctrl-row"><label title="Higher TA buy score bar after stop-loss — reversal confirmation.">sl_min_ta_score</label><input type="range" id="slReSlTa" min="0" max="10" step="0.1"><input type="number" id="numReSlTa" step="0.1"></div>
+          <button id="btnApplyReentry">Apply re-entry</button>
         </div>
         </div>
         <div class="controls-section card">
@@ -217,8 +235,19 @@
       </section>
       <section id="ta" class="panel">
         <div class="card ta-toolbar">
-          <label class="ta-toggle"><input type="checkbox" id="taEnabled"> <strong>Technical analysis</strong></label>
-          <span id="taHint" class="muted">Scores entries and breakouts from RSI, momentum, patterns, and more. Takes effect on the next engine cycle.</span>
+          <label class="ta-toggle" title="Master switch — when off, TA scores display but do not gate entries."><input type="checkbox" id="taEnabled"> <strong>Technical analysis</strong></label>
+          <span id="taHint" class="muted">TA intelligence + HUD knobs: weight gates vs inventory/edge. Applies next cycle.</span>
+        </div>
+        <div class="card" style="margin-bottom:12px">
+          <h3 style="margin:0 0 10px;font-size:.75rem;color:var(--muted);text-transform:uppercase">TA tuning</h3>
+          <div class="ctrl-row"><label title="0 = TA advisory only (HUD display); 1 = full buy gate at min buy score.">ta_weight</label><input type="range" id="slTaWeight" min="0" max="1" step="0.05"><input type="number" id="numTaWeight" step="0.05"><span id="valTaWeight" class="muted"></span></div>
+          <div class="ctrl-row"><label title="Minimum composite buy score to allow PLACE_BID (scaled by ta_weight).">min_buy_score</label><input type="range" id="slTaBuyScore" min="0" max="10" step="0.1"><input type="number" id="numTaBuyScore" step="0.1"></div>
+          <div class="ctrl-row"><label title="Minimum sell score for strength sells when TA gates asks.">min_sell_score</label><input type="range" id="slTaSellScore" min="0" max="10" step="0.1"><input type="number" id="numTaSellScore" step="0.1"></div>
+          <div class="ctrl-row toggle"><label title="RSI oversold/overbought contribution to buy/sell scores."><input type="checkbox" id="taRsiEnabled"> RSI</label></div>
+          <div class="ctrl-row toggle"><label title="Stochastic momentum for entries and breakouts."><input type="checkbox" id="taStochEnabled"> Stochastic</label></div>
+          <div class="ctrl-row toggle"><label title="Bollinger band squeeze and band-touch signals."><input type="checkbox" id="taBbEnabled"> Bollinger</label></div>
+          <div class="ctrl-row toggle"><label title="Bullish/bearish engulfing candle patterns."><input type="checkbox" id="taEngulfEnabled"> Engulfing</label></div>
+          <button id="btnApplyTa">Apply TA settings</button>
         </div>
         <div id="taDisabled" class="card ta-disabled-msg" style="display:none">
           TA is off — enable the switch above to start scoring.
@@ -352,16 +381,32 @@
     const syncEdge = linkSlider('slEdge', 'numEdge', 'valEdge');
     const syncOffset = linkSlider('slOffset', 'numOffset', 'valOffset');
     const syncSellOffset = linkSlider('slSellOffset', 'numSellOffset', 'valSellOffset');
+    const syncTargetXrp = linkSlider('slTargetXrp', 'numTargetXrp', 'valTargetXrp');
+    const syncWeakness = linkSlider('slWeakness', 'numWeakness', 'valWeakness');
     const syncTrail = linkSlider('slTrail', 'numTrail');
     const syncBreakout = linkSlider('slBreakout', 'numBreakout');
     const syncLookback = linkSlider('slLookback', 'numLookback');
     const syncSl = linkSlider('slSl', 'numSl');
     const syncTp = linkSlider('slTp', 'numTp');
     const syncRr = linkSlider('slRr', 'numRr');
+    const syncReTpCycles = linkSlider('slReTpCycles', 'numReTpCycles');
+    const syncReTpDip = linkSlider('slReTpDip', 'numReTpDip');
+    const syncReTpTa = linkSlider('slReTpTa', 'numReTpTa');
+    const syncReSlCycles = linkSlider('slReSlCycles', 'numReSlCycles');
+    const syncReSlStab = linkSlider('slReSlStab', 'numReSlStab');
+    const syncReSlTa = linkSlider('slReSlTa', 'numReSlTa');
+    const syncTaWeight = linkSlider('slTaWeight', 'numTaWeight', 'valTaWeight');
+    const syncTaBuyScore = linkSlider('slTaBuyScore', 'numTaBuyScore');
+    const syncTaSellScore = linkSlider('slTaSellScore', 'numTaSellScore');
 
     function fillControlsFromConfig(cfg) {
       if (!cfg) return;
       const c = cfg.config_effective || cfg;
+      const targetPct = c.inventory_target_xrp_pct != null
+        ? c.inventory_target_xrp_pct
+        : Math.round((c.inventory_target_xrp_ratio ?? 0.75) * 100);
+      syncTargetXrp(targetPct);
+      syncWeakness(c.alpha_weakness_deviation ?? 0.02);
       syncRisk(c.alpha_risk_per_trade_pct ?? 0.5);
       syncEdge(c.alpha_min_edge_threshold_pct ?? 0.08);
       syncOffset(c.alpha_buy_limit_offset_pct ?? 0.15);
@@ -370,7 +415,21 @@
       $('numMaxSells').value = c.alpha_max_pending_sells ?? 1;
       $('trailingEnabled').checked = !!c.bracket_trailing_enabled;
       $('tradingEnabled').checked = c.trading_enabled !== false;
+      $('reentryEnabled').checked = c.alpha_reentry_enabled !== false;
+      syncReTpCycles(c.alpha_reentry_tp_min_cycles ?? 1);
+      syncReTpDip(c.alpha_reentry_tp_dip_pct ?? 0.08);
+      syncReTpTa(c.alpha_reentry_tp_min_ta_score ?? 1.5);
+      syncReSlCycles(c.alpha_reentry_sl_min_cycles ?? 3);
+      syncReSlStab(c.alpha_reentry_sl_stabilization_pct ?? 0.12);
+      syncReSlTa(c.alpha_reentry_sl_min_ta_score ?? 2.5);
       if ($('taEnabled')) $('taEnabled').checked = !!c.alpha_ta_enabled;
+      syncTaWeight(c.alpha_ta_weight ?? 1.0);
+      syncTaBuyScore(c.alpha_ta_min_buy_score ?? 1.5);
+      syncTaSellScore(c.alpha_ta_min_sell_score ?? 1.0);
+      if ($('taRsiEnabled')) $('taRsiEnabled').checked = c.alpha_ta_rsi_enabled !== false;
+      if ($('taStochEnabled')) $('taStochEnabled').checked = c.alpha_ta_stoch_enabled !== false;
+      if ($('taBbEnabled')) $('taBbEnabled').checked = c.alpha_ta_bollinger_enabled !== false;
+      if ($('taEngulfEnabled')) $('taEngulfEnabled').checked = c.alpha_ta_engulfing_enabled !== false;
       syncTrail(c.trailing_step_pct ?? 1.5);
       syncBreakout(c.alpha_breakout_pct ?? 0.02);
       syncLookback(c.alpha_structure_lookback ?? 20);
@@ -392,7 +451,10 @@
     }
 
     $('btnApplyRisk').onclick = async () => {
+      const targetPct = parseFloat($('numTargetXrp').value);
       const d = await patchJson('/operator/config', { overrides: {
+        inventory_target_xrp_ratio: targetPct / 100.0,
+        alpha_weakness_deviation: parseFloat($('numWeakness').value),
         alpha_risk_per_trade_pct: parseFloat($('numRisk').value),
         alpha_min_edge_threshold_pct: parseFloat($('numEdge').value),
         alpha_buy_limit_offset_pct: parseFloat($('numOffset').value),
@@ -401,6 +463,30 @@
         alpha_max_pending_sells: parseInt($('numMaxSells').value, 10),
       }});
       if (d?.ok) { toast('Risk & entry updated'); operatorConfig = d; poll(); }
+    };
+    $('btnApplyReentry').onclick = async () => {
+      const d = await patchJson('/operator/config', { overrides: {
+        alpha_reentry_enabled: $('reentryEnabled').checked,
+        alpha_reentry_tp_min_cycles: parseInt($('numReTpCycles').value, 10),
+        alpha_reentry_tp_dip_pct: parseFloat($('numReTpDip').value),
+        alpha_reentry_tp_min_ta_score: parseFloat($('numReTpTa').value),
+        alpha_reentry_sl_min_cycles: parseInt($('numReSlCycles').value, 10),
+        alpha_reentry_sl_stabilization_pct: parseFloat($('numReSlStab').value),
+        alpha_reentry_sl_min_ta_score: parseFloat($('numReSlTa').value),
+      }});
+      if (d?.ok) { toast('Re-entry settings updated'); operatorConfig = d; poll(); }
+    };
+    $('btnApplyTa').onclick = async () => {
+      const d = await patchJson('/operator/config', { overrides: {
+        alpha_ta_weight: parseFloat($('numTaWeight').value),
+        alpha_ta_min_buy_score: parseFloat($('numTaBuyScore').value),
+        alpha_ta_min_sell_score: parseFloat($('numTaSellScore').value),
+        alpha_ta_rsi_enabled: $('taRsiEnabled').checked,
+        alpha_ta_stoch_enabled: $('taStochEnabled').checked,
+        alpha_ta_bollinger_enabled: $('taBbEnabled').checked,
+        alpha_ta_engulfing_enabled: $('taEngulfEnabled').checked,
+      }});
+      if (d?.ok) { toast('TA settings updated'); operatorConfig = d; poll(); }
     };
     $('btnApplyStructure').onclick = async () => {
       const d = await patchJson('/operator/config', { overrides: {
@@ -815,6 +901,14 @@
 
       $('decAction').textContent = (s.decision?.action || '—').toUpperCase();
       $('decReason').textContent = s.decision?.reason || '';
+      const re = s.reentry;
+      $('decReentry').textContent = re?.active
+        ? `Re-entry gate: after ${re.exit_type} exit — cycle ${re.cycles_since_exit} (exit mid ${Number(re.exit_mid).toFixed(6)})`
+        : '';
+      const ta = s.technical_analysis;
+      $('decTa').textContent = ta?.enabled
+        ? `TA buy=${Number(ta.buy_score).toFixed(2)} sell=${Number(ta.sell_score).toFixed(2)} gate=${ta.entry_buy_allowed ? 'PASS' : 'BLOCK'}`
+        : (ta ? 'TA off' : '');
       $('bookMid').textContent = fmt(s.book?.mid ?? s.mid, 6);
       $('bookSpread').textContent = s.book?.spread_pct != null ? 'Spread ' + fmt(s.book.spread_pct, 3) + '%' : '';
       $('structTrend').textContent = s.structure?.trend || '—';

@@ -21,6 +21,7 @@ from alpha.types import (
     RiskSnapshot,
     TrustLineSnapshot,
 )
+from dataclasses import replace
 from config.settings import BotConfig
 
 
@@ -117,15 +118,21 @@ def test_rich_report_includes_brackets_and_pnl():
 
 
 def test_decision_uses_inventory_manager():
-    cfg = BotConfig(
-        alpha_weakness_deviation=0.05,
-        alpha_buy_limit_offset_pct=0.15,
-        alpha_min_edge_threshold_pct=0.08,
-        alpha_risk_per_trade_pct=5.0,
-        alpha_base_order_size_xrp=50.0,
-        min_order_size_xrp=1.0,
-        max_leg_size_pct_of_capital=1.0,
-        trading_enabled=True,
+    cfg = replace(
+        BotConfig(
+            alpha_weakness_deviation=0.05,
+            alpha_buy_limit_offset_pct=0.15,
+            alpha_min_edge_threshold_pct=0.08,
+            alpha_risk_per_trade_pct=5.0,
+            alpha_base_order_size_xrp=50.0,
+            min_order_size_xrp=1.0,
+            max_leg_size_pct_of_capital=1.0,
+            trading_enabled=True,
+        ),
+        alpha_technical_analysis=replace(
+            BotConfig().alpha_technical_analysis,
+            enabled=False,
+        ),
     )
     inv_mgr = InventoryManager(cfg)
     engine = DecisionEngine(cfg, inventory=inv_mgr)

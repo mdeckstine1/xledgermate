@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from typing import Any, Dict, List
 
 from alpha.decision.engine import DecisionAction, DecisionEngine
@@ -24,6 +25,7 @@ from tests.test_alpha_phase2 import _book_snapshot, _risk_ready
 
 
 def _entry_config(**overrides: Any) -> BotConfig:
+    ta_enabled = overrides.pop("ta_enabled", False)
     base = BotConfig(
         trading_enabled=True,
         alpha_weakness_deviation=0.05,
@@ -39,7 +41,10 @@ def _entry_config(**overrides: Any) -> BotConfig:
     )
     for key, value in overrides.items():
         setattr(base, key, value)
-    return base
+    return replace(
+        base,
+        alpha_technical_analysis=replace(base.alpha_technical_analysis, enabled=ta_enabled),
+    )
 
 
 def _weak_inventory() -> InventorySnapshot:

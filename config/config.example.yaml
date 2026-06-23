@@ -32,11 +32,11 @@ rpc_failure_kill_streak: 6
 dry_run: true
 trading_enabled: true
 
-# Trading Bot Alpha (value accumulation — Phase 2+)
+# Trading Bot Alpha — Aggressive Bag Growth (deploy RLUSD into XRP on dips)
 alpha_ws_enabled: true
 alpha_max_slippage_pct: 0.50
-alpha_weakness_deviation: 0.05
-alpha_strength_deviation: 0.05
+alpha_weakness_deviation: 0.02   # trigger buys when 2% below XRP target (faster RLUSD deploy)
+alpha_strength_deviation: 0.04
 alpha_base_order_size_xrp: 50.0
 alpha_bid_offset_pct: 0.02
 alpha_ask_offset_pct: 0.02
@@ -49,6 +49,15 @@ alpha_max_inventory_imbalance_pct: 0.10
 alpha_max_pending_buys: 1
 alpha_max_pending_sells: 1
 alpha_cycle_interval_seconds: 60
+# Re-entry after bracket TP/SL — wait for dip (TP) or stabilization (SL) before next buy
+alpha_reentry_enabled: true
+alpha_reentry_tp_dip_pct: 0.08
+alpha_reentry_tp_min_cycles: 1
+alpha_reentry_sl_stabilization_pct: 0.12
+alpha_reentry_sl_min_cycles: 3
+alpha_reentry_tp_min_ta_score: 1.5
+alpha_reentry_sl_min_ta_score: 2.5
+alpha_ta_weight: 1.0   # 0=TA advisory (HUD display); 1=full buy gate at min_buy_score
 alpha_breakout_pct: 0.02
 alpha_structure_lookback: 20
 alpha_structure_price_source: ask
@@ -67,11 +76,11 @@ bracket_trailing_enabled: false
 trailing_step_pct: 1.5
 breakout_confirmation_tf: "15m"
 
-# Technical analysis (optional entry/breakout filter — disabled by default)
+# Technical analysis — core buy gate when enabled (TA tab on HUD)
 alpha_technical_analysis:
-  enabled: false
+  enabled: true
   mode: scoring          # scoring | strict
-  min_buy_score: 1.0
+  min_buy_score: 1.5
   min_sell_score: 1.0
   min_breakout_score: 1.5
   candle_bucket_samples: 5
@@ -169,7 +178,7 @@ alpha_technical_analysis:
 max_daily_drawdown_percent: 10.0
 min_drawdown_percent: 2.0
 max_drawdown_percent: 25.0
-inventory_target_xrp_ratio: 0.55
+inventory_target_xrp_ratio: 0.75   # Aggressive Bag Growth — 75% XRP target
 inventory_mode: rebalance   # directional value accumulation (not legacy market_make MM)
 inventory_max_deviation: 0.12
 inventory_hard_pause_deviation: 0.22

@@ -15,12 +15,14 @@ from alpha.types import (
     OrderBookSnapshot,
     RiskSnapshot,
 )
+from alpha.decision.reentry import ReentryGate
 from config.settings import BotConfig
 
 if TYPE_CHECKING:
+    from alpha.decision.structure import MarketStructureSnapshot
+    from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
     from alpha.inventory.manager import InventoryManager
     from alpha.risk.engine import RiskEngine
-    from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -44,22 +46,24 @@ class DecisionResult:
 
 class DecisionEngine:
     """
-    MVP entry logic integrated with InventoryManager and RiskEngine.
+    Aggressive Bag Growth entry logic — deploy RLUSD on dips with TA confirmation.
 
-    Limit buy below mid on weakness; limit sell above mid on strength.
-    Edge, depth, and risk gates apply symmetrically to both sides.
-  """
+    Limit buy below mid when inventory weakness + edge + depth + TA (if enabled) pass.
+    Limit sell above mid on strength. Re-entry gate enforces patience after TP/SL exits.
+    """
 
     def __init__(
         self,
         config: BotConfig,
         *,
-        inventory: Optional[InventoryManager] = None,
-        risk: Optional[RiskEngine] = None,
+        inventory: Optional["InventoryManager"] = None,
+        risk: Optional["RiskEngine"] = None,
+        reentry: Optional[ReentryGate] = None,
     ) -> None:
         self._config = config
         self._inventory = inventory
         self._risk = risk
+        self._reentry = reentry
 
     def evaluate(
         self,
@@ -73,6 +77,7 @@ class DecisionEngine:
         pending_sell_count: int = 0,
         balances: Optional[BalanceSnapshot] = None,
         ta: Optional["TechnicalAnalysisSnapshot"] = None,
+        structure: Optional["MarketStructureSnapshot"] = None,
     ) -> DecisionResult:
         if not risk.trading_allowed:
             reason = "risk_trading_not_allowed"
@@ -94,6 +99,7 @@ class DecisionEngine:
                 pending_buy_count=pending_buy_count,
                 balances=balances or (operator.balances if operator else None),
                 ta=ta,
+                structure=structure,
             )
         elif (
             self._inventory is None
@@ -109,6 +115,7 @@ class DecisionEngine:
                 pending_buy_count=pending_buy_count,
                 balances=balances or (operator.balances if operator else None),
                 ta=ta,
+                structure=structure,
             )
 
         if inventory.buy_blocked_imbalance and inventory.deviation <= -self._config.alpha_weakness_deviation:
@@ -231,14 +238,26 @@ class DecisionEngine:
             return 0.0
         return round(capped, 4)
 
+    def _ta_effective_min_buy(self) -> float:
+        """Scale buy gate by alpha_ta_weight (0=advisory only, 1=full min_buy_score)."""
+        cfg = self._config.alpha_technical_analysis
+        weight = max(0.0, min(1.0, getattr(self._config, "alpha_ta_weight", 1.0)))
+        if weight <= 0:
+            return 0.0
+        return cfg.min_buy_score * weight
+
     def _ta_blocks_buy(self, ta: Optional["TechnicalAnalysisSnapshot"]) -> Optional[str]:
         cfg = self._config.alpha_technical_analysis
-        if not cfg.enabled or ta is None or not ta.enabled:
+        weight = getattr(self._config, "alpha_ta_weight", 1.0)
+        if not cfg.enabled or weight <= 0:
             return None
-        if not ta.entry_buy_allowed:
+        if ta is None or not ta.enabled:
+            return "ta_warming_up — insufficient price history for buy gate"
+        effective_min = self._ta_effective_min_buy()
+        if ta.buy_score < effective_min:
             return (
-                f"ta_buy_blocked score={ta.buy_score:.2f}<{cfg.min_buy_score} "
-                f"sell={ta.sell_score:.2f} bias={ta.bias}"
+                f"ta_buy_blocked score={ta.buy_score:.2f}<{effective_min:.2f} "
+                f"weight={weight:.2f} sell={ta.sell_score:.2f} bias={ta.bias}"
             )
         return None
 
@@ -276,12 +295,25 @@ class DecisionEngine:
         pending_buy_count: int = 0,
         balances: Optional[BalanceSnapshot],
         ta: Optional["TechnicalAnalysisSnapshot"] = None,
+        structure: Optional["MarketStructureSnapshot"] = None,
     ) -> DecisionResult:
         if pending_buy_count >= self._config.alpha_max_pending_buys:
             return DecisionResult(
                 action=DecisionAction.HOLD,
                 reason=f"max_pending_buys={self._config.alpha_max_pending_buys}",
             )
+
+        mid = book.mid
+        if self._reentry is not None and mid is not None and mid > 0:
+            blocked = self._reentry.blocks_buy(
+                inventory=inventory,
+                mid=mid,
+                ta=ta,
+                structure=structure,
+            )
+            if blocked:
+                return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
+
         blocked = self._ta_blocks_buy(ta)
         if blocked:
             return DecisionResult(action=DecisionAction.HOLD, reason=blocked)

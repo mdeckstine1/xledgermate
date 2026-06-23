@@ -155,9 +155,9 @@ class LiquidityGrabConfig:
 class AlphaTechnicalAnalysisConfig:
     """Master TA config — nested under ``alpha_technical_analysis`` in config.yaml."""
 
-    enabled: bool = False
+    enabled: bool = True
     mode: str = "scoring"  # scoring | strict
-    min_buy_score: float = 1.0
+    min_buy_score: float = 1.5
     min_sell_score: float = 1.0
     min_breakout_score: float = 1.5
     candle_bucket_samples: int = 5

@@ -23,6 +23,15 @@ from alpha.types import (
 )
 from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig
+from dataclasses import replace
+
+
+def _cfg_no_ta(**kwargs: Any) -> BotConfig:
+    base = BotConfig(**kwargs)
+    return replace(
+        base,
+        alpha_technical_analysis=replace(base.alpha_technical_analysis, enabled=False),
+    )
 
 
 def _book_snapshot() -> OrderBookSnapshot:
@@ -86,7 +95,7 @@ class _RecordingConnector:
 
 
 def _adapter(dry_run: bool) -> XrplLedgerAdapter:
-    cfg = BotConfig(
+    cfg = _cfg_no_ta(
         bot_account_address="rTestAccount123456789012345678901234",
         dry_run=dry_run,
         testnet=False,
@@ -153,7 +162,7 @@ def _risk_ready() -> RiskSnapshot:
 
 
 def test_decision_bid_capped_by_ask_depth():
-    cfg = BotConfig(
+    cfg = _cfg_no_ta(
         alpha_base_order_size_xrp=500.0,
         alpha_weakness_deviation=0.05,
         min_order_size_xrp=1.0,
@@ -178,7 +187,7 @@ def test_decision_bid_capped_by_ask_depth():
 
 
 def test_decision_hold_when_balanced():
-    cfg = BotConfig(alpha_weakness_deviation=0.05, alpha_strength_deviation=0.05)
+    cfg = _cfg_no_ta(alpha_weakness_deviation=0.05, alpha_strength_deviation=0.05)
     engine = DecisionEngine(cfg)
     book = _book_snapshot()
     inv = InventorySnapshot(
@@ -207,7 +216,7 @@ def _xrp_heavy_inventory() -> InventorySnapshot:
 
 
 def test_decision_ask_capped_by_bid_depth():
-    cfg = BotConfig(
+    cfg = _cfg_no_ta(
         alpha_base_order_size_xrp=500.0,
         alpha_strength_deviation=0.05,
         alpha_sell_limit_offset_pct=0.15,
@@ -230,7 +239,7 @@ def test_decision_ask_capped_by_bid_depth():
 
 
 def test_decision_insufficient_bid_depth_holds():
-    cfg = BotConfig(
+    cfg = _cfg_no_ta(
         alpha_strength_deviation=0.05,
         alpha_sell_limit_offset_pct=0.15,
         alpha_min_edge_threshold_pct=0.08,
@@ -256,4 +265,4 @@ def test_decision_insufficient_bid_depth_holds():
     )
     assert result.action == DecisionAction.HOLD
     assert "insufficient_bid_depth" in result.reason
-
+
