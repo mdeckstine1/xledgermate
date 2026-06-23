@@ -201,6 +201,9 @@ class BotConfig:
     alpha_max_inventory_imbalance_pct: float = 0.10  # Block buys when this far above target XRP ratio
     alpha_max_pending_buys: int = 1  # Max concurrent pending buy brackets
     alpha_max_pending_sells: int = 1  # Max concurrent strength-sell offers (non-bracket asks)
+    alpha_stale_pending_buy_enabled: bool = True  # Auto-cancel resting bids far from current target entry
+    alpha_stale_pending_buy_max_drift_pct: float = 0.5  # Cancel when |entry - target| / mid exceeds this %
+    alpha_stale_pending_buy_max_age_seconds: float = 0.0  # Optional max rest time (0 = age gate off)
     alpha_cycle_interval_seconds: int = 15  # Trading loop sleep between cycles (HUD: 5–60)
     alpha_breakout_pct: float = 0.02  # Min % above entry/high for breakout trailing
     alpha_structure_lookback: int = 20  # Price samples for HTF structure

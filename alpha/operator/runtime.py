@@ -42,6 +42,9 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_strength_deviation",
     "alpha_max_pending_buys",
     "alpha_max_pending_sells",
+    "alpha_stale_pending_buy_enabled",
+    "alpha_stale_pending_buy_max_drift_pct",
+    "alpha_stale_pending_buy_max_age_seconds",
     "alpha_cycle_interval_seconds",
     "alpha_ta_weight",
     "alpha_ta_enabled",
@@ -79,6 +82,8 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "alpha_strength_deviation": {"min": 0.01, "max": 0.25, "step": 0.01},
     "alpha_max_pending_buys": {"min": 1, "max": 5, "step": 1},
     "alpha_max_pending_sells": {"min": 1, "max": 5, "step": 1},
+    "alpha_stale_pending_buy_max_drift_pct": {"min": 0.05, "max": 5.0, "step": 0.05},
+    "alpha_stale_pending_buy_max_age_seconds": {"min": 0, "max": 86400, "step": 60},
     "alpha_cycle_interval_seconds": {"min": 5, "max": 60, "step": 1},
     "alpha_ta_weight": {"min": 0.0, "max": 1.0, "step": 0.05},
     "alpha_ta_min_buy_score": {"min": 0.0, "max": 10.0, "step": 0.1},
@@ -208,6 +213,7 @@ def _coerce_override(key: str, value: Any) -> Any:
         "alpha_ta_bollinger_enabled",
         "alpha_ta_engulfing_enabled",
         "alpha_reentry_enabled",
+        "alpha_stale_pending_buy_enabled",
     }
     if key in _BOOL_KEYS:
         if isinstance(value, bool):
@@ -258,6 +264,15 @@ def _validate_merged_config(config: BotConfig, changed_keys: Any) -> List[str]:
 
     if "alpha_max_pending_sells" in keys and config.alpha_max_pending_sells < 1:
         errors.append("alpha_max_pending_sells must be at least 1")
+
+    if "alpha_stale_pending_buy_max_drift_pct" in keys and config.alpha_stale_pending_buy_max_drift_pct <= 0:
+        errors.append("alpha_stale_pending_buy_max_drift_pct must be positive")
+
+    if (
+        "alpha_stale_pending_buy_max_age_seconds" in keys
+        and config.alpha_stale_pending_buy_max_age_seconds < 0
+    ):
+        errors.append("alpha_stale_pending_buy_max_age_seconds must be non-negative")
 
     if "alpha_cycle_interval_seconds" in keys:
         if config.alpha_cycle_interval_seconds < 5 or config.alpha_cycle_interval_seconds > 60:

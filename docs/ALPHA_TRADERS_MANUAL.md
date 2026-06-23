@@ -149,6 +149,16 @@ How many open orders of each type at once.
 - **1** = conservative, one shot at a time.  
 - **3–5** = ladders multiple dips (more RLUSD deployed, more to manage).
 
+### `stale_pending_buy_enabled` / `stale_pending_buy_max_drift_pct`
+
+Each engine cycle, the bot can **auto-cancel resting buy bids** that no longer match where it would place a new entry (mid moved, or your `buy_limit_offset_pct` changed).
+
+- **Enabled (default):** cancel when `|entry − target_entry| / mid` exceeds `stale_pending_buy_max_drift_pct` (default **0.5%**).  
+- Example: mid at **1.10**, offset **0.05%** → target ≈ **1.099**. A bid still at **1.04** (~5% drift) is cancelled and frees a `max_pending_buys` slot.  
+- **Manual fallback:** Brackets tab **✕** per row, or **Cancel all** (nuclear — also kills active TP/SL).
+
+Optional `stale_pending_buy_max_age_seconds` in config (0 = off) cancels bids older than N seconds regardless of drift.
+
 ---
 
 ### `cycle_interval_seconds`

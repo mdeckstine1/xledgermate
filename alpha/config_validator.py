@@ -88,6 +88,12 @@ def validate_alpha_config(config: BotConfig) -> AlphaConfigValidation:
     if config.alpha_max_pending_sells < 1:
         errors.append("alpha_max_pending_sells must be at least 1")
 
+    if config.alpha_stale_pending_buy_max_drift_pct <= 0:
+        errors.append("alpha_stale_pending_buy_max_drift_pct must be positive")
+
+    if config.alpha_stale_pending_buy_max_age_seconds < 0:
+        errors.append("alpha_stale_pending_buy_max_age_seconds must be non-negative")
+
     if config.alpha_cycle_interval_seconds < 5:
         errors.append("alpha_cycle_interval_seconds must be at least 5")
     elif config.alpha_cycle_interval_seconds > 60:

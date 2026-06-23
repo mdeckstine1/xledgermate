@@ -48,6 +48,9 @@ alpha_sell_limit_offset_pct: 0.15
 alpha_max_inventory_imbalance_pct: 0.10
 alpha_max_pending_buys: 1
 alpha_max_pending_sells: 1
+alpha_stale_pending_buy_enabled: true
+alpha_stale_pending_buy_max_drift_pct: 0.5   # cancel bids more than 0.5% from current buy_limit target
+alpha_stale_pending_buy_max_age_seconds: 0   # 0 = off; e.g. 3600 to cancel bids older than 1h
 alpha_cycle_interval_seconds: 15
 # Re-entry after bracket TP/SL — wait for dip (TP) or stabilization (SL) before next buy
 alpha_reentry_enabled: true

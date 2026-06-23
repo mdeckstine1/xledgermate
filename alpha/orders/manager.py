@@ -160,15 +160,21 @@ class OrderManager:
         offers = await self._ledger.get_open_offers()
         open_map = _open_offer_map(offers)
 
+        from alpha.decision.structure import MarketStructureSnapshot
+
+        structure = self._structure if isinstance(self._structure, MarketStructureSnapshot) else None
+        current_price = structure.mid if structure and structure.mid > 0 else 0.0
+        if current_price > 0:
+            await self._cancel_stale_pending_buys(current_price)
+
         for record in list(self._store.iter_open()):
             if record.state == BracketLifecycleState.PENDING_BUY:
                 await self._advance_pending_buy(record, open_map)
             elif record.state == BracketLifecycleState.BRACKET_ACTIVE:
                 await self._advance_active_bracket(record, open_map)
 
-        from alpha.decision.structure import CandleData, MarketStructureSnapshot, build_confirmation_candle
+        from alpha.decision.structure import CandleData, build_confirmation_candle
 
-        structure = self._structure if isinstance(self._structure, MarketStructureSnapshot) else None
         current_price = structure.mid if structure and structure.mid > 0 else 0.0
         candle_data: Optional[CandleData] = None
         if structure and structure.confirmation_candle is not None:
@@ -674,6 +680,56 @@ class OrderManager:
         )
         logger.info("offer_adjusted | seq=%s→%s | side=%s | price=%.6f", seq, new_seq, side, new_price)
         return True
+
+    def _target_buy_limit_price(self, mid: float) -> float:
+        offset_pct = self._config.alpha_buy_limit_offset_pct
+        if offset_pct <= 0:
+            offset_pct = self._config.alpha_bid_offset_pct
+        return round(mid * (1.0 - offset_pct / 100.0), 6)
+
+    def stale_pending_buy_reason(self, record: BracketRecord, mid: float) -> Optional[str]:
+        """Return cancel reason when a resting bid no longer matches current entry policy."""
+        if not self._config.alpha_stale_pending_buy_enabled:
+            return None
+        if record.state != BracketLifecycleState.PENDING_BUY:
+            return None
+        entry = record.entry_price_rlusd_per_xrp
+        if mid <= 0 or entry <= 0:
+            return None
+
+        target = self._target_buy_limit_price(mid)
+        drift_pct = abs(entry - target) / mid * 100.0
+        max_drift = self._config.alpha_stale_pending_buy_max_drift_pct
+        if max_drift > 0 and drift_pct > max_drift + _PRICE_EPS:
+            return f"entry_drift={drift_pct:.3f}%>{max_drift:g}%"
+
+        max_age = self._config.alpha_stale_pending_buy_max_age_seconds
+        if max_age > 0:
+            from alpha.types import utc_now
+
+            age_s = (utc_now() - record.created_at).total_seconds()
+            if age_s > max_age:
+                return f"age={age_s:.0f}s>{max_age:.0f}s"
+        return None
+
+    async def _cancel_stale_pending_buys(self, mid: float) -> int:
+        """Cancel pending buys that drifted from the current target entry or exceeded max age."""
+        cancelled = 0
+        for record in list(self._store.iter_open()):
+            reason = self.stale_pending_buy_reason(record, mid)
+            if reason is None:
+                continue
+            if await self.cancel_bracket(record.bracket_id):
+                cancelled += 1
+                logger.info(
+                    "stale_pending_buy_cancelled | id=%s | entry=%.6f | mid=%.6f | target=%.6f | %s",
+                    record.bracket_id,
+                    record.entry_price_rlusd_per_xrp,
+                    mid,
+                    self._target_buy_limit_price(mid),
+                    reason,
+                )
+        return cancelled
 
     async def _advance_pending_buy(
         self,

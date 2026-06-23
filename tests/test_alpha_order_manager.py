@@ -329,3 +329,134 @@ def test_cancel_all_dry_run_no_ledger_cancel(bracket_state):
         assert ledger.cancelled == []
 
     asyncio.run(_run())
+
+
+def test_stale_pending_buy_cancelled_when_entry_drifts(bracket_state):
+    from alpha.decision.structure import MarketStructureSnapshot
+
+    async def _run() -> None:
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config(
+            alpha_buy_limit_offset_pct=0.15,
+            alpha_stale_pending_buy_enabled=True,
+            alpha_stale_pending_buy_max_drift_pct=0.5,
+        )
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+        mgr.set_structure(
+            MarketStructureSnapshot(
+                mid=2.0,
+                sample_count=1,
+                mean_mid=2.0,
+                recent_high=2.0,
+                recent_low=2.0,
+                trend="neutral",
+                breakout_up=False,
+                breakout_down=False,
+                summary="test",
+                swing_high=2.0,
+            )
+        )
+        bid = mgr.register_pending_buy(buy_sequence=700, size_xrp=10.0, entry_price_rlusd_per_xrp=1.90)
+        ledger.add_buy(700, 10.0, price=1.90)
+
+        await mgr.sync_brackets()
+
+        record = mgr.store.get(bid)
+        assert record is not None
+        assert record.state == BracketLifecycleState.CANCELLED
+        assert 700 in ledger.cancelled
+
+    asyncio.run(_run())
+
+
+def test_stale_pending_buy_kept_when_near_target(bracket_state):
+    from alpha.decision.structure import MarketStructureSnapshot
+
+    async def _run() -> None:
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config(
+            alpha_buy_limit_offset_pct=0.15,
+            alpha_stale_pending_buy_enabled=True,
+            alpha_stale_pending_buy_max_drift_pct=0.5,
+        )
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+        mgr.set_structure(
+            MarketStructureSnapshot(
+                mid=2.0,
+                sample_count=1,
+                mean_mid=2.0,
+                recent_high=2.0,
+                recent_low=2.0,
+                trend="neutral",
+                breakout_up=False,
+                breakout_down=False,
+                summary="test",
+                swing_high=2.0,
+            )
+        )
+        target = 2.0 * (1.0 - 0.15 / 100.0)
+        bid = mgr.register_pending_buy(
+            buy_sequence=701, size_xrp=10.0, entry_price_rlusd_per_xrp=target
+        )
+        ledger.add_buy(701, 10.0, price=target)
+
+        await mgr.sync_brackets()
+
+        record = mgr.store.get(bid)
+        assert record is not None
+        assert record.state == BracketLifecycleState.PENDING_BUY
+        assert ledger.cancelled == []
+
+    asyncio.run(_run())
+
+
+def test_stale_pending_buy_disabled_skips_auto_cancel(bracket_state):
+    from alpha.decision.structure import MarketStructureSnapshot
+
+    async def _run() -> None:
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config(
+            alpha_stale_pending_buy_enabled=False,
+            alpha_stale_pending_buy_max_drift_pct=0.5,
+        )
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+        mgr.set_structure(
+            MarketStructureSnapshot(
+                mid=2.0,
+                sample_count=1,
+                mean_mid=2.0,
+                recent_high=2.0,
+                recent_low=2.0,
+                trend="neutral",
+                breakout_up=False,
+                breakout_down=False,
+                summary="test",
+                swing_high=2.0,
+            )
+        )
+        bid = mgr.register_pending_buy(buy_sequence=702, size_xrp=10.0, entry_price_rlusd_per_xrp=1.90)
+        ledger.add_buy(702, 10.0, price=1.90)
+
+        await mgr.sync_brackets()
+
+        record = mgr.store.get(bid)
+        assert record is not None
+        assert record.state == BracketLifecycleState.PENDING_BUY
+        assert ledger.cancelled == []
+
+    asyncio.run(_run())

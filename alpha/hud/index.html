@@ -240,6 +240,8 @@
           <div class="ctrl-row"><label title="Ask limit sits this % above mid for strength sells.">sell_limit_offset_pct</label><input type="range" id="slSellOffset" min="0.05" max="1" step="0.01"><input type="number" id="numSellOffset" step="0.01"><span id="valSellOffset" class="muted"></span></div>
           <div class="ctrl-row"><label title="Max simultaneous open buy offers.">max_pending_buys</label><input type="number" id="numMaxBuys" min="1" max="5" step="1"></div>
           <div class="ctrl-row"><label title="Max simultaneous open sell offers.">max_pending_sells</label><input type="number" id="numMaxSells" min="1" max="5" step="1"></div>
+          <div class="ctrl-row toggle"><label title="Each cycle, cancel resting buy bids that drift too far from the current buy_limit_offset target."><input type="checkbox" id="stalePendingEnabled" checked> stale_pending_buy_enabled</label></div>
+          <div class="ctrl-row"><label title="Cancel pending buys when entry price differs from current target by more than this % of mid.">stale_pending_buy_max_drift_pct</label><input type="range" id="slStaleDrift" min="0.05" max="2" step="0.05"><input type="number" id="numStaleDrift" step="0.05"><span id="valStaleDrift" class="muted">%</span></div>
           <div class="ctrl-row"><label title="Seconds between full engine cycles (5–60). Shorter = more responsive, more RPC load.">cycle_interval_seconds</label><input type="range" id="slCycle" min="5" max="60" step="1"><input type="number" id="numCycle" min="5" max="60" step="1"><span id="valCycle" class="muted">s</span></div>
           <button id="btnApplyRisk">Apply risk &amp; entry</button>
         </div>
@@ -476,6 +478,7 @@
     const syncOffset = linkSlider('slOffset', 'numOffset', 'valOffset');
     const syncSellOffset = linkSlider('slSellOffset', 'numSellOffset', 'valSellOffset');
     const syncCycle = linkSlider('slCycle', 'numCycle', 'valCycle');
+    const syncStaleDrift = linkSlider('slStaleDrift', 'numStaleDrift', 'valStaleDrift');
     const syncTargetXrp = linkSlider('slTargetXrp', 'numTargetXrp', 'valTargetXrp');
     const syncWeakness = linkSlider('slWeakness', 'numWeakness', 'valWeakness');
     const syncTrail = linkSlider('slTrail', 'numTrail');
@@ -510,6 +513,8 @@
       syncSellOffset(c.alpha_sell_limit_offset_pct ?? 0.15);
       $('numMaxBuys').value = c.alpha_max_pending_buys ?? 1;
       $('numMaxSells').value = c.alpha_max_pending_sells ?? 1;
+      $('stalePendingEnabled').checked = c.alpha_stale_pending_buy_enabled !== false;
+      syncStaleDrift(c.alpha_stale_pending_buy_max_drift_pct ?? 0.5);
       syncCycle(c.alpha_cycle_interval_seconds ?? 15);
       $('trailingEnabled').checked = !!c.bracket_trailing_enabled;
       $('tradingEnabled').checked = c.trading_enabled !== false;
@@ -561,6 +566,8 @@
         alpha_sell_limit_offset_pct: parseFloat($('numSellOffset').value),
         alpha_max_pending_buys: parseInt($('numMaxBuys').value, 10),
         alpha_max_pending_sells: parseInt($('numMaxSells').value, 10),
+        alpha_stale_pending_buy_enabled: $('stalePendingEnabled').checked,
+        alpha_stale_pending_buy_max_drift_pct: parseFloat($('numStaleDrift').value),
         alpha_cycle_interval_seconds: parseInt($('numCycle').value, 10),
       }});
       if (d?.ok) { toast('Risk & entry updated'); operatorConfig = d; poll(); }
