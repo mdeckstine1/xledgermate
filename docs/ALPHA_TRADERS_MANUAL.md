@@ -127,10 +127,34 @@ Max size of **one bracket** as a % of portfolio (also capped by book depth and r
 | Range | Vibe |
 |-------|------|
 | **0.2–0.3%** | Training wheels. |
-| **0.5%** | Normal. |
-| **1%+** | Titanium balls. One bad streak hurts. |
+| **0.5%** | Normal (config.yaml default). |
+| **2–3%** | Active bag deploy on a ~500+ XRP book. |
+| **4–5%** | Large clips — watch drawdown and leg cap. |
 
-Check **Market Conditions → max buy** to see what the book and caps allow *right now*.
+**How size is computed (each PLACE_BID):**
+
+```text
+desired   = alpha_base_order_size_xrp × (1 + |inventory deviation| × 2)
+risk_cap  = portfolio_xrp_equiv × (risk_per_trade_pct / 100)
+leg_cap   = risk_capital_xrp × max_leg_size_pct_of_capital   ← config.yaml only
+size      = min(desired, risk_cap, leg_cap, ask_depth, inventory cap)
+```
+
+The HUD shows **RLUSD notional** on offers as roughly `size_xrp × entry_price`. Engine logs show `size=` in **XRP**.
+
+Check **Market Conditions → Max buy** after **Apply** — that number is the **binding cap right now** (same formula the decision engine uses).
+
+**Example @ portfolio ≈ 584 XRP, mid ≈ 1.103** (your live box, 2026-06-23):
+
+| `risk_per_trade_pct` | Size (XRP) | ≈ RLUSD @ 1.103 |
+|----------------------|------------|-----------------|
+| **2.0%** | ~11.7 | **~12.9** ← what you saw before raising risk |
+| **3.0%** (current HUD) | ~17.5 | **~19.3** |
+| **4.0%** | ~23.3 | **~25.7** |
+| **5.0%** | ~29.2 | **~32.2** |
+| **Leg cap** (`251 XRP × 12%`) | ~30.1 | ~33.2 ← ceiling from `config.yaml` |
+
+To go bigger: raise **`risk_per_trade_pct`** on Live → Apply. **`alpha_base_order_size_xrp`** (config, default 50) only matters once risk cap exceeds desired — at your portfolio it is **not** the limiter until risk ≈ 5%+.
 
 ---
 
@@ -202,9 +226,21 @@ Pending buys are **passive limit orders**. They fill when the **best ask** trade
 | **`mid_passed_entry`** | Mid rallied above bid without fill by more than max drift |
 | **`entry_above_mid`** | Bid is above mid (off-policy — new bids are always below mid) |
 | **`excess_pending_buy`** | More pending buys than `max_pending_buys` — farthest from target pruned first |
-| **`age`** | Optional: `stale_pending_buy_max_age_seconds` in `config.yaml` (HUD does not expose this yet) |
+| **`age`** | Optional: `alpha_stale_pending_buy_max_age_seconds` in `config.yaml` or via operator overrides (e.g. **1800** = 30 min max rest) |
 
-Default **`stale_pending_buy_max_drift_pct` = 0.15%** — align with **`buy_limit_offset_pct`**. If drift is much looser (e.g. **0.5%** while offset is **0.15–0.35%**), you can accumulate **many** resting bids that look “passed” but are still considered valid.
+Default **`stale_pending_buy_max_drift_pct` = 0.15%** in code — but see **`mid_passed_entry` trap** below before matching drift to offset.
+
+**`mid_passed_entry` trap (why entries “switch” every cycle)**
+
+A new bid is placed **`buy_limit_offset_pct` below mid** — so at rest, mid is already **~offset% above your entry**. The **`mid_passed_entry`** rule cancels when `(mid − entry) / mid × 100` **>** `stale_pending_buy_max_drift_pct`.
+
+If **drift ≈ offset** (e.g. both **0.12%**), the bid is **stale almost immediately** — any spread tick or mid uptick triggers cancel → replace on the next cycle (~20–34s). Engine logs look like:
+
+```text
+stale_pending_buy_cancelled | … | mid_passed_entry=0.130%>0.12%
+```
+
+**To make entries stick:** set **`stale_pending_buy_max_drift_pct` wider than offset + typical spread**, e.g. offset **0.12%** + spread **~0.10%** → drift **0.35%** (not 0.12–0.20%). See [Scenario G](#scenario-g--entry-price-keeps-moving-cancelreplace-loop).
 
 **Cancel speed**
 
@@ -230,10 +266,11 @@ Each cancel is one **XRPL ledger transaction**. The engine typically processes *
 
 | Goal | Action |
 |------|--------|
-| Prune bids that drifted only slightly | Lower `stale_pending_buy_max_drift_pct` (e.g. **0.15%**) on Live → Risk & entry, then **Apply** |
-| Match drift to placement band | Set `stale_pending_buy_max_drift_pct` ≈ `buy_limit_offset_pct` |
-| Limit ladder size | Lower `max_pending_buys` (1–3 conservative) |
-| Time-out old bids | Set `stale_pending_buy_max_age_seconds` in `config.yaml` (e.g. **1800**) |
+| **Stick longer** (fewer cancel/replace) | Raise `stale_pending_buy_max_drift_pct` to **offset + spread + ~0.10%** (e.g. offset 0.12 → drift **0.35**) |
+| Chase market (repricing) | Keep drift **≈ offset** — expect frequent `mid_passed_entry` cancels |
+| Prune bids that drifted far | Lower `stale_pending_buy_max_drift_pct` (e.g. **0.15%**) |
+| Limit ladder size | Lower `max_pending_buys` to **1** (5 slots + fast cycles = churn) |
+| Time-out old bids | Set `alpha_stale_pending_buy_max_age_seconds` to **0** (off) or **3600+** in overrides/config |
 | Turn off auto-prune | Uncheck `stale_pending_buy_enabled` |
 | Force-cancel one bid | Brackets tab **✕** on that row |
 | Nuclear option | **Cancel all** — also kills active TP/SL (you keep XRP) |
@@ -553,10 +590,12 @@ mid (live book)
 | If you change… | Also check / change… | Why |
 |----------------|----------------------|-----|
 | **`buy_limit_offset_pct`** ↓ (closer to mid) | **`min_edge_threshold_pct`** ≤ new offset | Edge gate uses offset; too-high min edge → HOLD forever |
-| **`buy_limit_offset_pct`** | **`stale_pending_buy_max_drift_pct`** ≈ same value | Loose drift (e.g. 0.5%) + tight offset (0.15%) → old bids never “stale” |
+| **`buy_limit_offset_pct`** ↓ + want **sticky** bid | **`stale_pending_buy_max_drift_pct`** **>** offset + spread (e.g. 0.12 → **0.35**) | Drift ≈ offset → **`mid_passed_entry`** cancels every cycle |
+| **`buy_limit_offset_pct`** + want **chase** | **`stale_pending_buy_max_drift_pct`** ≈ offset | Tight drift reprices bid with mid (cancel/replace loop) |
 | **`buy_limit_offset_pct`** ↓ | Expect **worse average entry** but **more fills** | You are paying spread to be eager |
 | **`max_pending_buys`** ↑ | **`stale_pending_buy_max_drift_pct`** tight + **`cycle_interval_seconds`** | More slots = more ladder clutter; cancels are one per cycle |
 | **`stale_pending_buy_max_drift_pct`** ↓ | **`max_pending_buys`** maybe ↓ to 1–3 | Aggressive prune + one slot = simplest behavior |
+| **`risk_per_trade_pct`** ↑ | **Market Conditions → Max buy** | Confirms new clip size before live orders |
 | **`weakness_deviation`** ↓ | **`risk_per_trade_pct`** — don’t crank both at once | More buy attempts + bigger size = fast RLUSD deploy |
 | **`ta_min_buy_score`** ↑ | **`ta_weight`** = 1.0 | High gate + low weight = confusing partial blocks |
 | **`cycle_interval_seconds`** ↓ | RPC load / cancel latency | Faster cycles = faster stale cancel + new bids, more ledger traffic |
@@ -565,8 +604,8 @@ mid (live book)
 ### Rules of thumb
 
 1. **`buy_limit_offset_pct` ≥ `min_edge_threshold_pct`** — always.  
-2. **`stale_pending_buy_max_drift_pct` ≈ `buy_limit_offset_pct`** — keep them aligned (e.g. both 0.15%).  
-3. **`max_pending_buys` = 1** until you understand stale + fill behavior; then ladder to 3–5.  
+2. **Sticky bids:** **`stale_pending_buy_max_drift_pct` > `buy_limit_offset_pct` + spread** (e.g. offset 0.12%, drift 0.35%). **Chasing bids:** drift ≈ offset (expect frequent cancels).  
+3. **`max_pending_buys` = 1** until you understand stale + fill behavior; then ladder to 3–5 only with wider drift.  
 4. The bot **does not chase** resting bids — it **cancels stale** and **places new** at the current target. To “move” a bid, either wait for stale cancel or cancel manually on Brackets tab.  
 5. **Limit fills need the ask** — mid crossing your entry does not fill you. Closer offset = closer to ask = higher fill odds on mild dips.
 
@@ -577,7 +616,72 @@ mid (live book)
 | HUD **Apply** → engine sees new knobs | Next cycle (`cycle_interval_seconds`, e.g. 15–34s) |
 | Stale cancel of one pending bid | One cycle + one XRPL tx (~cycle_interval each) |
 | New bid after cancel | Next `PLACE_BID` cycle when gates pass |
-| Age-based stale cancel | `stale_pending_buy_max_age_seconds` (config only; e.g. 1800s) |
+| Age-based stale cancel | `alpha_stale_pending_buy_max_age_seconds` (config or operator overrides; **0** = off) |
+
+---
+
+## Live box snapshot (VPS mainnet · 2026-06-23)
+
+Pulled from `logs/alpha_runtime_state.json`, `logs/alpha_overrides.json`, and engine logs on your Hetzner box. Use as a baseline when tuning.
+
+### Effective knobs (HUD overrides win over `config.yaml`)
+
+| Knob | **Live (effective)** | `config.yaml` on disk |
+|------|----------------------|------------------------|
+| `risk_per_trade_pct` | **3.0%** | 0.5% |
+| `buy_limit_offset_pct` | **0.12%** | 0.15% |
+| `stale_pending_buy_max_drift_pct` | **0.20%** | 0.50% |
+| `max_pending_buys` | **5** | 1 |
+| `cycle_interval_seconds` | **20s** | 60s |
+| `min_edge_threshold_pct` | **0.08%** | 0.08% |
+| `weakness_deviation` | **0.035** | 0.05 |
+| `stale_pending_buy_max_age_seconds` | **1800** (30 min) | 0 (off) |
+| `alpha_base_order_size_xrp` | 50 (config) | 50 |
+| `max_leg_size_pct_of_capital` | 12% | 12% |
+| `risk_capital_xrp` | 251 | 251 |
+
+### Market & size right now
+
+| Field | Value |
+|-------|--------|
+| Portfolio | **~584 XRP** equiv |
+| Mid | **~1.1029** RLUSD/XRP |
+| Spread | **~0.10%** (~11 bps) |
+| Ask depth (1% band) | **~84k XRP** (not limiting size) |
+| **Max buy** (HUD) | **~17.5 XRP** ≈ **~19.3 RLUSD** ← `3% × portfolio` |
+| Leg cap ceiling | **~30.1 XRP** ≈ **~33 RLUSD** |
+
+Recent engine sizes: **11.7 XRP** (~12.9 RLUSD) at **2%** risk → **17.5 XRP** (~19.3 RLUSD) after raising to **3%**.
+
+### Why entries were switching every ~20–50s
+
+Logs show repeated **`mid_passed_entry`** cancels while offset was **0.12%** and drift was **0.12–0.20%**:
+
+```text
+stale_pending_buy_cancelled | entry=1.102025 | mid=1.103459 | mid_passed_entry=0.130%>0.12%
+```
+
+With **`max_pending_buys = 5`**, each cancel frees a slot → **`PLACE_BID` every cycle** → entry price jumps even though you only “see” one offer on the book at a time.
+
+### Recommended adjust for your goals (Live → Apply)
+
+**Stickier entry + cleaner behavior + modestly bigger clip:**
+
+```text
+buy_limit_offset_pct            = 0.12      ← keep (eager placement)
+stale_pending_buy_max_drift_pct = 0.35      ← wider than offset + spread
+max_pending_buys                = 1         ← one bid, less churn
+alpha_stale_pending_buy_max_age_seconds = 0  ← off (config or SKYNET); was 1800
+risk_per_trade_pct              = 4.0       ← ~23 XRP / ~26 RLUSD per bracket
+cycle_interval_seconds          = 20        ← keep
+min_edge_threshold_pct          = 0.08      ← keep
+```
+
+**If you only want bigger size** (keep current repricing): raise **`risk_per_trade_pct`** to **4.0** and confirm **Max buy** on Market Conditions.
+
+**If you only want stickier price:** raise **`stale_pending_buy_max_drift_pct`** to **0.35** and set **`max_pending_buys` = 1** — leave risk where it is.
+
+After **Apply**, wait 1–2 cycles and confirm logs show fewer `stale_pending_buy_cancelled` lines and **Max buy** matches your target RLUSD.
 
 ---
 
@@ -596,12 +700,12 @@ Use these as **recipes**, not gospel. Apply on **Live → Risk & entry**, watch 
 ```text
 buy_limit_offset_pct           = 0.12    ← was 0.35; nearer live (~13 bps below mid)
 min_edge_threshold_pct         = 0.08    ← must stay ≤ offset
-stale_pending_buy_max_drift_pct = 0.12   ← match offset
+stale_pending_buy_max_drift_pct = 0.35   ← wider than offset (avoid mid_passed_entry loop)
 max_pending_buys               = 1
 cycle_interval_seconds         = 20     ← optional; faster cancel/replace
 ```
 
-**If fills still rare:** ask is still above your bid — try offset **0.08–0.10** only if you accept worse entries. Use SKYNET **“Stale bid ladder”** to read `pending_buy_stale` vs live mid.
+**If fills still rare:** ask is still above your bid — try offset **0.08–0.10** only if you accept worse entries. If entries **keep moving**, drift is still too tight — see [Scenario G](#scenario-g--entry-price-keeps-moving-cancelreplace-loop).
 
 ---
 
@@ -683,6 +787,46 @@ cycle_interval_seconds         = 15–20
 
 ---
 
+### Scenario G — Entry price keeps moving (cancel/replace loop)
+
+**Symptoms:** Pending buy entry changes every **20–60s**; Activity shows **`place_bid`** almost every cycle; logs show **`mid_passed_entry`** or **`entry_drift`**.
+
+**What’s happening:** **`stale_pending_buy_max_drift_pct` is too close to `buy_limit_offset_pct`**. The bid starts below mid by ~offset%; **`mid_passed_entry`** fires when mid is above entry by more than max drift — often on the **first cycle** after placement. With **`max_pending_buys` > 1**, each cancel opens a slot for another **`PLACE_BID`**.
+
+**Fix (sticky bid):**
+
+```text
+stale_pending_buy_max_drift_pct = 0.35–0.50   ← main lever (offset 0.12 → drift 0.35+)
+max_pending_buys                = 1
+alpha_stale_pending_buy_max_age_seconds = 0     ← disable 30-min age churn if set
+buy_limit_offset_pct            = 0.12          ← keep unless you want deeper bids
+```
+
+**Nuclear stick:** uncheck **`stale_pending_buy_enabled`** — bid rests until fill or manual cancel (won’t chase a rising market).
+
+**Verify:** fewer `stale_pending_buy_cancelled` in logs; Brackets entry stable for several minutes while mid drifts.
+
+---
+
+### Scenario H — Order size stuck ~13 RLUSD (or smaller than expected)
+
+**Symptoms:** HUD / Open Offers show **~12–13 RLUSD** per buy; **Max buy** on Market Conditions matches that number.
+
+**What’s happening:** Size is capped by **`risk_per_trade_pct × portfolio`**, not book depth. At **~584 XRP** portfolio:
+
+| `risk_per_trade_pct` | ≈ RLUSD @ 1.103 |
+|----------------------|-----------------|
+| 2.0% | **~13** ← common “why so small?” |
+| 3.0% | **~19** |
+| 4.0% | **~26** |
+| 5.0% | **~32** (near **leg cap** ~33 RLUSD) |
+
+**Fix:** Live → **`risk_per_trade_pct`** → **Apply** → confirm **Market Conditions → Max buy** moved.
+
+**Not the fix (usually):** `buy_limit_offset_pct`, `max_pending_buys`, or stale drift — those change **price**, not **size**. **`alpha_base_order_size_xrp`** in config only binds when risk cap exceeds desired (unlikely below ~5% risk on your book).
+
+---
+
 ### Quick reference — your “closer to live price” checklist
 
 When you say *“price is leaving my bid behind”*:
@@ -691,7 +835,7 @@ When you say *“price is leaving my bid behind”*:
 |------|--------|
 | 1 | Lower **`buy_limit_offset_pct`** (main lever) |
 | 2 | Set **`min_edge_threshold_pct`** ≤ new offset |
-| 3 | Set **`stale_pending_buy_max_drift_pct`** ≈ new offset |
+| 3 | For **chase**: set **`stale_pending_buy_max_drift_pct`** ≈ offset · For **stick**: drift **>** offset + spread |
 | 4 | Keep **`max_pending_buys` = 1** while tuning |
 | 5 | **Apply** → wait 1–2 cycles for stale cancel + new bid |
 | 6 | Confirm on Brackets: new **pending buy** entry ≈ `mid × (1 − offset%)` |
