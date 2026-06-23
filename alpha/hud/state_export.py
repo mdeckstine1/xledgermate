@@ -454,6 +454,10 @@ def build_hud_state(
         "recent_activity": activity[-40:],
         "recent_events": list(recent_events),
         "report_text": report_text,
+        "tax_log": {
+            "path": f"logs/trades_{datetime.now(tz=timezone.utc).strftime('%Y-%m')}.csv",
+            "transfers_path": "logs/transfers.csv",
+        },
         "last_note": f"{decision.action.value}: {decision.reason}",
     }
 

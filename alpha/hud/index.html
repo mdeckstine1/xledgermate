@@ -328,6 +328,12 @@
       </section>
       <section id="reports" class="panel">
         <div class="card"><h3>Report</h3><pre id="report" class="muted" style="white-space:pre-wrap;margin:0;font-size:.78rem"></pre></div>
+        <div class="card"><h3>Tax &amp; transfer logs</h3>
+          <p class="muted" style="margin:0;font-size:.78rem;line-height:1.5">
+            Taxable fills append to <code id="taxCsvPath">logs/trades_YYYY-MM.csv</code> (BUY/SELL/TRANSFER rows, <code>taxable=Y</code>).<br>
+            Outbound payments also in <code id="transfersCsvPath">logs/transfers.csv</code> and the monthly trades file.
+          </p>
+        </div>
       </section>
       <section id="activity" class="panel">
         <div class="card activity" id="actFeed"></div>
@@ -668,12 +674,23 @@
       if (d?.ok) toast('Bracket ' + leg.toUpperCase() + ' adjust queued');
     }
 
+    function formatTrailFlags(r) {
+      const parts = [];
+      if (r.breakeven_passed) {
+        parts.push('<span title="Breakeven passed — stop-loss trailing is armed">Breakeven</span>');
+      }
+      if (r.breakout_confirmed) {
+        parts.push('<span title="Breakout confirmed on structure — take-profit trailing is armed">Breakout</span>');
+      }
+      return parts.join(' · ') || '—';
+    }
+
     function formatBracketState(r) {
       if (r.state === 'pending_buy') return 'pending buy';
       if (r.state === 'bracket_active') {
         const tags = [];
-        if (r.breakeven_passed) tags.push('BE');
-        if (r.breakout_confirmed) tags.push('BO');
+        if (r.breakeven_passed) tags.push('<span title="Breakeven passed — SL trailing armed">BE</span>');
+        if (r.breakout_confirmed) tags.push('<span title="Breakout confirmed — TP trailing armed">BO</span>');
         const suffix = tags.length ? ' · ' + tags.join(' ') : '';
         return 'active · bracket' + suffix;
       }
@@ -1172,6 +1189,8 @@
       $('preflight').textContent = s.risk?.preflight_summary || '—';
       $('exec').textContent = s.execution ? (s.execution.message || JSON.stringify(s.execution)) : '—';
       $('report').textContent = s.report_text || '';
+      if (s.tax_log?.path) $('taxCsvPath').textContent = s.tax_log.path;
+      if (s.tax_log?.transfers_path) $('transfersCsvPath').textContent = s.tax_log.transfers_path;
       renderChart(s);
       renderMarketConditions(s);
       renderTa(s);
@@ -1192,7 +1211,7 @@
         <td>${bracketRlusdLine(r)}</td>
         <td>${legLine(r.tp_price, r.tp_size_xrp)}<div class="bracket-adjust"><input id="${tpId}" placeholder="TP" value="${r.tp_price ?? ''}"><button type="button" onclick="adjustBracket('${fid}','tp','${tpId}')">Set</button></div></td>
         <td>${legLine(r.sl_price, r.sl_size_xrp)}<div class="bracket-adjust"><input id="${slId}" placeholder="SL" value="${r.sl_price ?? ''}"><button type="button" onclick="adjustBracket('${fid}','sl','${slId}')">Set</button></div></td>
-        <td>${r.breakeven_passed?'BE':''}${r.breakout_confirmed?' BO':''}</td></tr>`;
+        <td>${formatTrailFlags(r)}</td></tr>`;
       }).join('') || '<tr><td colspan="10" class="muted">No open brackets</td></tr>';
 
       $('offerTable').innerHTML = (s.open_offers || []).map(o => {

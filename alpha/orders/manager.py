@@ -1045,6 +1045,24 @@ class OrderManager:
         self._recent_events.append(label)
         logger.info("bracket_event | %s | partial=%s", label, event.partial)
 
+        record = self._store.get(event.bracket_id)
+        entry_price = record.entry_price_rlusd_per_xrp if record else event.price_rlusd_per_xrp
+        mid: Optional[float] = None
+        from alpha.decision.structure import MarketStructureSnapshot
+
+        if isinstance(self._structure, MarketStructureSnapshot) and self._structure.mid > 0:
+            mid = self._structure.mid
+
+        from alpha.reporting.tax_events import log_bracket_fill_tax_event
+
+        log_bracket_fill_tax_event(
+            event=event,
+            entry_price=entry_price,
+            network="testnet" if self._config.testnet else "mainnet",
+            dry_run=self._guard.dry_run,
+            mid=mid,
+        )
+
 
 def _open_offer_map(offers: List[dict[str, Any]]) -> Dict[int, dict[str, Any]]:
     out: Dict[int, dict[str, Any]] = {}

@@ -51,8 +51,10 @@ Cancelling a pending buy pulls the bid. Cancelling an active bracket cancels TP/
 | **Ticker / sidebar** | Mode (LIVE/dry), mid, portfolio, inventory %, drawdown, session P&L |
 | **Decision** | Last action + **reason** — this is your best friend when confused |
 | **Market Conditions** | Mid, spread, depth, max buy/sell size, TA summary |
-| **Brackets tab** | Open positions: pending buys vs active brackets; size, RLUSD, TP/SL |
+| **Brackets tab** | Open positions: pending buys vs active brackets; size, RLUSD, TP/SL, **Trail** flags |
 | **Open Offers** | Raw ledger orders (✕ cancel, ✎ reprice) |
+| **Reports** | Cycle status text + path to monthly **tax CSV** (`logs/trades_YYYY-MM.csv`) |
+| **Config** | Credentials, network, **Send / withdraw**, transfer history |
 
 If the bot is “doing nothing,” the **Decision reason** almost always explains why.
 
@@ -234,7 +236,7 @@ How much favorable move before the trail steps again.
 
 ### `breakout_pct`
 
-How far past recent structure high/low counts as a breakout (feeds trailing logic).
+How far past recent structure high/low counts as a breakout (feeds trailing logic and the **BO** flag on active brackets — see [Brackets tab: BE and BO](#brackets-tab-be-and-bo-trail-column)).
 
 ### `structure_lookback`
 
@@ -266,6 +268,24 @@ Stop distance below entry.
 | **1.5** | Conservative. |
 | **2.0–3.0** | Standard. |
 | **4.0+** | Aggressive — needs real trends to pay off. |
+
+### Brackets tab: **BE** and **BO** (Trail column)
+
+On **active** brackets only (after the buy has filled), the HUD shows short tags in **State** and spelled-out labels in **Trail**:
+
+| Tag | Full name (Trail column) | Meaning |
+|-----|--------------------------|---------|
+| **BE** | **Breakeven** | Price moved favorably enough that **stop-loss trailing is armed** — the SL can ratchet up as price rises, locking in progress. |
+| **BO** | **Breakout** | Structure confirmed a **breakout** — **take-profit trailing is armed** — the TP can ratchet up in a strong trend. |
+
+**Important:**
+
+- **BE** and **BO** are **trailing milestones**, not separate orders. They tell you which exit leg is allowed to trail.
+- They only matter when **`bracket_trailing_enabled`** is on (Live → Structure & trailing).
+- **Pending buys** never show BE/BO — nothing has filled yet.
+- Hover the Trail column labels in the HUD for the same tooltips.
+
+**Example:** Buy fills at 1.00. Price reaches ~1.015 → **BE** appears → SL may move up from 0.985 toward breakeven. Price breaks structure → **BO** appears → TP may trail above the original 1.03 target.
 
 ---
 
@@ -304,19 +324,91 @@ Off = can reload immediately (more aggressive, more knife-catching risk).
 
 ## Brackets & offers — managing live orders
 
-**Brackets tab**
+### Brackets tab
 
 | State | Meaning |
 |-------|---------|
 | **pending buy** | Limit bid resting; RLUSD committed |
 | **active · bracket** | Filled; TP/SL on book |
+| **active · bracket · BE** | Filled; SL trailing armed (breakeven passed) |
+| **active · bracket · BE · BO** | Filled; SL and TP trailing both armed |
+| **BE** (in State) | Shorthand for **Breakeven passed** — see [BE and BO](#brackets-tab-be-and-bo-trail-column) |
+| **BO** (in State) | Shorthand for **Breakout confirmed** — TP trailing armed |
+
+**Trail column** spells these out as **Breakeven** / **Breakout** (hover for detail). They are trailing milestones, not separate orders.
 
 - **✕** — Cancel that bracket’s open orders (pending bid or TP/SL legs).  
 - **✎** — Edit pending buy entry price. Active brackets: edit TP/SL with **Set**.
 
-**Open Offers tab** — every raw ledger order. Same ✕ / ✎ controls.
+### Open Offers tab
 
-**Cancel all orders** (Live tab) — nuclear option. Type `CANCEL_ALL`. Use when you want a clean slate.
+Every raw ledger order. Same ✕ / ✎ controls.
+
+### Cancel all orders
+
+Live tab — nuclear option. Type `CANCEL_ALL`. Use when you want a clean slate.
+
+---
+
+## Tax & transfer records
+
+Alpha keeps a **running CSV ledger** of taxable activity for tax prep. It uses the same monthly format as the main xLedgerMate engine.
+
+### Where the files live
+
+| File | Purpose |
+|------|---------|
+| **`logs/trades_YYYY-MM.csv`** | **Primary tax log** — buys, sells, transfers (`taxable=Y` rows) |
+| **`logs/transfers.csv`** | Simple outbound payment log from **Config → Send** (destination, tx hash) |
+
+The HUD **Reports** tab shows the current month’s `trades_*.csv` path. Copy the file from the VPS (or your local `logs/` folder) for your accountant or tax software.
+
+### CSV columns (`trades_YYYY-MM.csv`)
+
+| Column | Meaning |
+|--------|---------|
+| `timestamp_utc` | When the event was recorded (ISO UTC) |
+| `event_type` | `BUY`, `SELL`, `TRANSFER`, `MAJOR`, `OFFER_REFRESH` |
+| `taxable` | **`Y`** = taxable / include in tax prep · **`N`** = operational only |
+| `network` | `mainnet` or `testnet` |
+| `side` | `BUY`, `SELL`, or `OUT` (transfer) |
+| `xrp_amount` | XRP size of the leg |
+| `rlusd_amount` | RLUSD notional (`xrp × price` on trades) |
+| `price_rlusd_per_xrp` | Fill or payment price |
+| `profit_xrp_equiv` | Estimated P&amp;L on **sells** (TP/SL exit vs bracket entry), in XRP terms |
+| `tx_hash` | On-chain hash when available |
+| `cycle` | Engine cycle number (if applicable) |
+| `notes` | Human context, e.g. `alpha bracket buy abc12345`, `alpha bracket take-profit …` |
+| `balance_xrp_after` / `balance_rlusd_after` | Wallet snapshot after event (when available) |
+
+### What Alpha logs automatically
+
+**Live mode only** — **dry-run does not append rows** (no fake tax history).
+
+| Event | `event_type` | `taxable` | When |
+|-------|--------------|-----------|------|
+| Bracket buy fill | `BUY` | `Y` | Pending buy fills; you acquire XRP |
+| Take-profit fill | `SELL` | `Y` | TP leg fills; `profit_xrp_equiv` vs entry |
+| Stop-loss fill | `SELL` | `Y` | SL leg fills; `profit_xrp_equiv` vs entry |
+| Config → Send withdrawal | `TRANSFER` | `Y` | Also mirrored in `logs/transfers.csv` |
+
+**Not logged yet:** inventory **strength sells** (non-bracket asks) and order cancels/replaces (`OFFER_REFRESH` is used elsewhere in xLedgerMate, not Alpha bracket cancels).
+
+### Example rows (illustrative)
+
+```csv
+timestamp_utc,event_type,taxable,network,side,xrp_amount,rlusd_amount,price_rlusd_per_xrp,profit_xrp_equiv,notes
+2026-06-23T14:00:00+00:00,BUY,Y,mainnet,BUY,50.000000,55.000000,1.100000,0.000000,alpha bracket buy 441b8974
+2026-06-23T16:30:00+00:00,SELL,Y,mainnet,SELL,50.000000,57.500000,1.150000,2.272727,alpha bracket take-profit 441b8974 entry=1.100000
+2026-06-23T18:00:00+00:00,TRANSFER,Y,mainnet,OUT,100.000000,0.000000,0.000000,0.000000,Payment to rDest…
+```
+
+### Operator checklist
+
+1. Confirm **LIVE** (not dry-run) before relying on the CSV for real tax records.  
+2. After month-end, archive `logs/trades_YYYY-MM.csv` before the calendar rolls.  
+3. Cross-check bracket fills on the **Brackets** / **Activity** tabs against new CSV rows.  
+4. Withdrawals: verify both `trades_*.csv` and `transfers.csv` if you use **Config → Send**.
 
 ---
 
@@ -379,6 +471,8 @@ You are RLUSD-heavy. TA is fine. Bot still HOLD.
 | Bids at ~1.04 when mid ~1.10 | Old bracket history or deep offset | Check Brackets **State** = `pending buy`; stale cancel only hits live pending rows |
 | HOLD at max pending, bids ~1.097–1.10 | Bids match current offset (low drift) | Lower `stale_pending_buy_max_drift_pct` to prune tighter, or cancel manually |
 | Cancelled but orders still show | Active brackets ≠ pending | Check state column; active = exits on filled bags |
+| What does **BE** / **BO** mean? | Trailing flags on active brackets | **BE** = breakeven passed, SL can trail · **BO** = breakout confirmed, TP can trail · needs `bracket_trailing_enabled` |
+| No rows in tax CSV | Dry-run or no fills yet | Switch to LIVE; CSV updates on bracket buy/TP/SL fills and Config → Send |
 | `ta_warming_up` | New session / thin history | Wait; needs mid samples |
 | Preflight not OK | Trust line, balance, config | Fix alerts in status report |
 
@@ -425,7 +519,8 @@ When you understand how each knob *feels*, then turn up the aggression.
 | **Kill switch** | Hard stop — no new risk |
 | **Cancel all** | Pulls open ledger offers |
 | **Config → Send** | Withdraw XRP or RLUSD to any `r…` address (type `SEND` to confirm) |
-| **Dry run toggle** | Simulates without submitting (when enabled) |
+| **Reports tab** | Cycle report + path to `logs/trades_YYYY-MM.csv` tax log |
+| **Dry run toggle** | Simulates without submitting (when enabled); **no tax CSV rows** |
 
 The bot is live. The market is live. You are live.
 
