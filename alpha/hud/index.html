@@ -307,10 +307,10 @@
         </div>
       </section>
       <section id="brackets" class="panel">
-        <div class="card"><table><thead><tr><th>ID</th><th>State</th><th>Mode</th><th>Entry</th><th>TP</th><th>SL</th><th>Trail</th></tr></thead><tbody id="brTable"></tbody></table></div>
+        <div class="card"><table><thead><tr><th>ID</th><th>State</th><th>Mode</th><th>Entry</th><th>Size (XRP)</th><th>RLUSD</th><th>TP</th><th>SL</th><th>Trail</th></tr></thead><tbody id="brTable"></tbody></table></div>
       </section>
       <section id="offers" class="panel">
-        <div class="card"><table><thead><tr><th>Seq</th><th>Side</th><th>Price</th><th>Size XRP</th></tr></thead><tbody id="offerTable"></tbody></table></div>
+        <div class="card"><table><thead><tr><th>Seq</th><th>Side</th><th>Price</th><th>Size XRP</th><th>RLUSD</th></tr></thead><tbody id="offerTable"></tbody></table></div>
       </section>
       <section id="reports" class="panel">
         <div class="card"><h3>Report</h3><pre id="report" class="muted" style="white-space:pre-wrap;margin:0;font-size:.78rem"></pre></div>
@@ -602,6 +602,32 @@
     }
 
     function fmt(n, d=4) { return n == null || Number.isNaN(n) ? '—' : Number(n).toFixed(d); }
+
+    function bracketSizeLine(r) {
+      const size = r.size_xrp ?? r.filled_xrp ?? r.target_size_xrp;
+      const rlusd = r.entry_rlusd ?? r.committed_rlusd;
+      const tag = r.size_label || '';
+      if (size == null) return '—';
+      let line = fmt(size, 4) + ' XRP';
+      if (tag) line += ' (' + tag + ')';
+      return line;
+    }
+
+    function bracketRlusdLine(r) {
+      const rlusd = r.state === 'pending_buy'
+        ? (r.committed_rlusd ?? r.entry_rlusd)
+        : (r.entry_rlusd ?? r.committed_rlusd);
+      if (rlusd == null) return '—';
+      return fmt(rlusd, 2) + (r.state === 'pending_buy' ? ' committed' : '');
+    }
+
+    function legLine(price, sizeXrp) {
+      if (price == null) return '—';
+      const p = fmt(price, 6);
+      if (sizeXrp == null) return p;
+      const notional = Number(price) * Number(sizeXrp);
+      return p + '<div class="muted" style="font-size:.7rem">' + fmt(sizeXrp, 4) + ' XRP · ' + fmt(notional, 2) + ' RLUSD</div>';
+    }
 
     function portfolioRlusd(s) {
       if (s.xrp != null && s.rlusd != null && s.mid) return s.xrp * s.mid + s.rlusd;
@@ -1019,13 +1045,18 @@
         return `<tr>
         <td>${r.bracket_id}</td><td>${r.state}</td><td>${r.mode}</td>
         <td>${fmt(r.entry,6)}</td>
-        <td>${fmt(r.tp_price,6)}<div class="bracket-adjust"><input id="${tpId}" placeholder="TP" value="${r.tp_price ?? ''}"><button onclick="adjustBracket('${fid}','tp','${tpId}')">Set</button></div></td>
-        <td>${fmt(r.sl_price,6)}<div class="bracket-adjust"><input id="${slId}" placeholder="SL" value="${r.sl_price ?? ''}"><button onclick="adjustBracket('${fid}','sl','${slId}')">Set</button></div></td>
+        <td>${bracketSizeLine(r)}</td>
+        <td>${bracketRlusdLine(r)}</td>
+        <td>${legLine(r.tp_price, r.tp_size_xrp)}<div class="bracket-adjust"><input id="${tpId}" placeholder="TP" value="${r.tp_price ?? ''}"><button onclick="adjustBracket('${fid}','tp','${tpId}')">Set</button></div></td>
+        <td>${legLine(r.sl_price, r.sl_size_xrp)}<div class="bracket-adjust"><input id="${slId}" placeholder="SL" value="${r.sl_price ?? ''}"><button onclick="adjustBracket('${fid}','sl','${slId}')">Set</button></div></td>
         <td>${r.breakeven_passed?'BE':''}${r.breakout_confirmed?' BO':''}</td></tr>`;
-      }).join('') || '<tr><td colspan="7" class="muted">No brackets</td></tr>';
+      }).join('') || '<tr><td colspan="9" class="muted">No brackets</td></tr>';
 
-      $('offerTable').innerHTML = (s.open_offers || []).map(o => `<tr>
-        <td>${o.sequence||'—'}</td><td>${o.side||'—'}</td><td>${fmt(o.price,6)}</td><td>${fmt(o.size_xrp,4)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No open offers</td></tr>';
+      $('offerTable').innerHTML = (s.open_offers || []).map(o => {
+        const rlusd = (o.price != null && o.size_xrp != null) ? Number(o.price) * Number(o.size_xrp) : null;
+        return `<tr>
+        <td>${o.sequence||'—'}</td><td>${o.side||'—'}</td><td>${fmt(o.price,6)}</td><td>${fmt(o.size_xrp,4)}</td><td>${rlusd != null ? fmt(rlusd, 2) : '—'}</td></tr>`;
+      }).join('') || '<tr><td colspan="5" class="muted">No open offers</td></tr>';
 
       $('actFeed').innerHTML = (s.recent_activity || []).slice().reverse().map(a =>
         `<div><span class="muted">${a.ts||''}</span> <strong>${a.event||''}</strong> ${JSON.stringify(a).slice(0,120)}</div>`).join('') || '<div class="muted">No activity yet</div>';

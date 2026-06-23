@@ -49,18 +49,38 @@ def _book_payload(book: Optional[OrderBookSnapshot]) -> Dict[str, Any]:
 
 
 def _bracket_row(record: BracketRecord) -> Dict[str, Any]:
+    entry = record.entry_price_rlusd_per_xrp
+    filled = max(0.0, record.filled_xrp)
+    target = max(0.0, record.target_size_xrp)
+    size_xrp = filled if filled > 0 else target
+    entry_rlusd = round(size_xrp * entry, 4) if entry > 0 and size_xrp > 0 else None
+    committed_rlusd = (
+        round(target * entry, 4) if entry > 0 and target > 0 else None
+    )
+    tp_leg = record.tp_leg
+    sl_leg = record.sl_leg
     return {
         "bracket_id": record.bracket_id[:8],
         "bracket_id_full": record.bracket_id,
         "state": record.state.value,
         "mode": record.mode.value,
-        "entry": record.entry_price_rlusd_per_xrp,
-        "target_size_xrp": record.target_size_xrp,
-        "filled_xrp": record.filled_xrp,
+        "entry": entry,
+        "size_xrp": round(size_xrp, 4) if size_xrp > 0 else None,
+        "target_size_xrp": round(target, 4) if target > 0 else None,
+        "filled_xrp": round(filled, 4) if filled > 0 else None,
+        "entry_rlusd": entry_rlusd,
+        "committed_rlusd": committed_rlusd,
+        "size_label": (
+            "filled"
+            if filled > 0
+            else ("order" if record.state.value == "pending_buy" else "target")
+        ),
         "breakeven_passed": record.breakeven_passed,
         "breakout_confirmed": record.breakout_confirmed,
-        "tp_price": record.tp_leg.price_rlusd_per_xrp if record.tp_leg else None,
-        "sl_price": record.sl_leg.price_rlusd_per_xrp if record.sl_leg else None,
+        "tp_price": tp_leg.price_rlusd_per_xrp if tp_leg else None,
+        "tp_size_xrp": round(tp_leg.size_xrp, 4) if tp_leg else None,
+        "sl_price": sl_leg.price_rlusd_per_xrp if sl_leg else None,
+        "sl_size_xrp": round(sl_leg.size_xrp, 4) if sl_leg else None,
         "peak_mid": record.peak_mid_rlusd_per_xrp,
     }
 

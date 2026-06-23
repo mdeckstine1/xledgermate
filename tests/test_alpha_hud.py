@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from alpha.decision.engine import DecisionAction, DecisionResult
-from alpha.hud.state_export import build_hud_state
+from alpha.hud.state_export import _bracket_row, build_hud_state
 from alpha.operator.controls import OperatorControls
+from alpha.orders.types import BracketLifecycleState, BracketMode, BracketRecord
 from alpha.types import (
     BalanceSnapshot,
     BracketStatusSummary,
@@ -63,3 +64,18 @@ def test_build_hud_state_minimal():
     assert "chart" in state
     assert "candles" in state["chart"]
     assert "indicators" in state["chart"]
+
+
+def test_bracket_row_includes_size_and_rlusd():
+    record = BracketRecord(
+        bracket_id="abc12345-uuid-full",
+        state=BracketLifecycleState.PENDING_BUY,
+        mode=BracketMode.BRACKET,
+        buy_sequence=1,
+        entry_price_rlusd_per_xrp=1.10,
+        target_size_xrp=50.0,
+    )
+    row = _bracket_row(record)
+    assert row["size_xrp"] == 50.0
+    assert row["committed_rlusd"] == 55.0
+    assert row["size_label"] == "order"
