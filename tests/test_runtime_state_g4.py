@@ -14,6 +14,8 @@ def test_runtime_state_save_load_g4_fields(tmp_path) -> None:
         g4_summary="G4 peer brake",
         ws_as_version="2.1.9",
         as_mode="pure",
+        pause_bids=True,
+        pause_asks=False,
     )
     store.save(state)
     loaded = store.load()
@@ -24,3 +26,5 @@ def test_runtime_state_save_load_g4_fields(tmp_path) -> None:
     assert loaded.g4_summary == "G4 peer brake"
     assert loaded.ws_as_version == "2.1.9"
     assert loaded.as_mode == "pure"
+    assert loaded.pause_bids is True
+    assert loaded.pause_asks is False
