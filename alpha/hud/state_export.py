@@ -12,12 +12,13 @@ from alpha.decision.reentry import ReentrySnapshot
 from alpha.decision.structure import MarketStructureSnapshot, build_candle_from_mids, load_mid_history
 from alpha.decision.price_history import PRICE_HISTORY_PATH, load_price_series, effective_sample_seconds
 from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalysisSnapshot
+from alpha.ledger.market_conditions import build_market_conditions
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControls
 from alpha.operator.runtime import derive_posture, effective_config_snapshot
 from alpha.orders.types import BracketRecord
 from alpha.runtime.executor import EntryExecutionResult
-from alpha.types import BracketStatusSummary, OperatorSnapshot, OrderBookSnapshot
+from alpha.types import BracketStatusSummary, LiquidityDepth, OperatorSnapshot, OrderBookSnapshot
 from config.settings import BotConfig
 
 logger = logging.getLogger(__name__)
@@ -281,6 +282,7 @@ def build_hud_state(
     config_effective: Optional[BotConfig] = None,
     runtime_state_path: Path = DEFAULT_PATH,
     reentry: Optional[ReentrySnapshot] = None,
+    liquidity: Optional[LiquidityDepth] = None,
 ) -> Dict[str, Any]:
     """Build JSON-serializable HUD payload from one Alpha cycle."""
     snap = snapshot
@@ -343,6 +345,13 @@ def build_hud_state(
                 ref = resolved
         ta = TechnicalAnalysis(effective).analyze(price_history, mid=ref)
     ta_block = ta.to_dict() if ta is not None else {"enabled": False}
+    market_conditions = build_market_conditions(
+        book=book if isinstance(book, OrderBookSnapshot) else None,
+        liquidity=liquidity,
+        config=effective,
+        portfolio_xrp_equiv=snap.balances.portfolio_xrp_equiv,
+        ta=ta,
+    )
 
     return {
         "hud_kind": "alpha",
@@ -417,6 +426,7 @@ def build_hud_state(
         "chart": chart,
         "technical_analysis": ta_block,
         "book": _book_payload(book if isinstance(book, OrderBookSnapshot) else None),
+        "market_conditions": market_conditions,
         "recent_activity": activity[-40:],
         "recent_events": list(recent_events),
         "report_text": report_text,
@@ -450,6 +460,7 @@ def publish_cycle_to_hud(
     operator_overrides: Optional[Dict[str, Any]] = None,
     config_effective: Optional[BotConfig] = None,
     reentry: Optional[ReentrySnapshot] = None,
+    liquidity: Optional[LiquidityDepth] = None,
 ) -> None:
     try:
         state = build_hud_state(
@@ -470,6 +481,7 @@ def publish_cycle_to_hud(
             config_effective=config_effective,
             runtime_state_path=path,
             reentry=reentry,
+            liquidity=liquidity,
         )
         write_alpha_runtime_state(path, state)
     except OSError as exc:

@@ -18,8 +18,8 @@ def _gate(tmp_path: Path, **cfg_overrides: object) -> ReentryGate:
         alpha_weakness_deviation=0.02,
         inventory_target_xrp_ratio=0.75,
         alpha_reentry_tp_dip_pct=0.10,
-        alpha_reentry_tp_min_cycles=1,
-        alpha_reentry_sl_min_cycles=2,
+        alpha_reentry_tp_cooldown_cycles=1,
+        alpha_reentry_sl_cooldown_cycles=2,
         alpha_reentry_sl_stabilization_pct=0.10,
     )
     for key, value in cfg_overrides.items():
@@ -69,6 +69,19 @@ def test_tp_exit_blocks_until_dip_and_ta(tmp_path: Path) -> None:
 
     cleared = gate.blocks_buy(inventory=_weak_inv(), mid=1.79, ta=_ta_allowed())
     assert cleared is None
+
+
+def test_post_tp_cooldown_blocks_before_dip_check(tmp_path: Path) -> None:
+    gate = _gate(tmp_path, alpha_reentry_tp_cooldown_cycles=5)
+    cfg = gate._config
+    cfg = replace(cfg, alpha_technical_analysis=replace(cfg.alpha_technical_analysis, enabled=True))
+    gate._config = cfg
+
+    gate.record_tp_exit(bracket_id="b0", exit_mid=2.00)
+    # cycles_since_exit=0 — cooldown must block even with dip + strong TA
+    blocked = gate.blocks_buy(inventory=_weak_inv(), mid=1.79, ta=_ta_allowed())
+    assert blocked is not None
+    assert "post_tp_cooldown" in blocked
 
 
 def test_sl_exit_blocks_until_stabilization(tmp_path: Path) -> None:
@@ -161,5 +174,17 @@ def test_tp_reentry_blocks_low_ta_score(tmp_path: Path) -> None:
     assert blocked is not None
     assert "reentry_tp_ta_score" in blocked
 
-    cleared = gate.blocks_buy(inventory=_weak_inv(), mid=1.79, ta=_ta_allowed())
+    cleared = gate.blocks_buy(
+        inventory=_weak_inv(),
+        mid=1.79,
+        ta=replace(_ta_allowed(), buy_score=2.8),
+    )
     assert cleared is None
+
+
+def test_snapshot_reports_cooldown_remaining(tmp_path: Path) -> None:
+    gate = _gate(tmp_path, alpha_reentry_tp_cooldown_cycles=4)
+    gate.record_tp_exit(bracket_id="b5", exit_mid=2.0)
+    snap = gate.snapshot
+    assert snap.in_cooldown is True
+    assert snap.cooldown_cycles_remaining == 4

@@ -135,6 +135,23 @@ GUI **Pause** writes `logs/alpha_controls.json` without editing yaml.
 
 Runtime overrides are applied each engine cycle; dangerous actions are queued in `logs/alpha_commands.json` and processed by `AlphaApplication`.
 
+### HUD-tunable strategy keys (Aggressive Bag Growth)
+
+| Key | Default | HUD panel |
+|-----|---------|-----------|
+| `inventory_target_xrp_ratio` | 0.75 | Risk & entry |
+| `alpha_ta_weight` | 1.0 | TA |
+| `alpha_reentry_tp_cooldown_cycles` | 4 | Re-entry |
+| `alpha_reentry_tp_cooldown_minutes` | 0 | Re-entry |
+| `alpha_reentry_sl_cooldown_cycles` | 10 | Re-entry |
+| `alpha_reentry_sl_cooldown_minutes` | 0 | Re-entry |
+| `alpha_reentry_tp_min_ta_score` | 1.5 | Re-entry |
+| `alpha_reentry_sl_min_ta_score` | 2.5 | Re-entry |
+
+Legacy YAML keys `alpha_reentry_tp_min_cycles` / `alpha_reentry_sl_min_cycles` migrate automatically to `*_cooldown_cycles` on load.
+
+Re-entry cooldown reasons in logs and Decision: `post_tp_cooldown`, `post_sl_cooldown`.
+
 ---
 
 ## Flipping dry_run to live

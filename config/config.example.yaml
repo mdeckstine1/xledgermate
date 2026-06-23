@@ -48,13 +48,15 @@ alpha_sell_limit_offset_pct: 0.15
 alpha_max_inventory_imbalance_pct: 0.10
 alpha_max_pending_buys: 1
 alpha_max_pending_sells: 1
-alpha_cycle_interval_seconds: 60
+alpha_cycle_interval_seconds: 15
 # Re-entry after bracket TP/SL — wait for dip (TP) or stabilization (SL) before next buy
 alpha_reentry_enabled: true
 alpha_reentry_tp_dip_pct: 0.08
-alpha_reentry_tp_min_cycles: 1
+alpha_reentry_tp_cooldown_cycles: 4    # spread protection — wait before re-buy after TP
+alpha_reentry_tp_cooldown_minutes: 0   # 0 = use cycles only; set e.g. 15 for time-based gate
 alpha_reentry_sl_stabilization_pct: 0.12
-alpha_reentry_sl_min_cycles: 3
+alpha_reentry_sl_cooldown_cycles: 10   # longer patience after stop-loss
+alpha_reentry_sl_cooldown_minutes: 0
 alpha_reentry_tp_min_ta_score: 1.5
 alpha_reentry_sl_min_ta_score: 2.5
 alpha_ta_weight: 1.0   # 0=TA advisory (HUD display); 1=full buy gate at min_buy_score

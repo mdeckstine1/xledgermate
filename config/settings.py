@@ -129,6 +129,12 @@ def _yaml_safe_value(value: Any) -> Any:
 def _config_from_dict(cls: type["BotConfig"], data: dict) -> "BotConfig":
     from alpha.decision.ta_config import AlphaTechnicalAnalysisConfig, merge_ta_config
 
+    # Legacy re-entry cooldown keys → renamed fields
+    if "alpha_reentry_tp_min_cycles" in data and "alpha_reentry_tp_cooldown_cycles" not in data:
+        data["alpha_reentry_tp_cooldown_cycles"] = data.pop("alpha_reentry_tp_min_cycles")
+    if "alpha_reentry_sl_min_cycles" in data and "alpha_reentry_sl_cooldown_cycles" not in data:
+        data["alpha_reentry_sl_cooldown_cycles"] = data.pop("alpha_reentry_sl_min_cycles")
+
     config = cls()
     allowed = {item.name for item in fields(cls)}
     for key, value in data.items():
@@ -195,7 +201,7 @@ class BotConfig:
     alpha_max_inventory_imbalance_pct: float = 0.10  # Block buys when this far above target XRP ratio
     alpha_max_pending_buys: int = 1  # Max concurrent pending buy brackets
     alpha_max_pending_sells: int = 1  # Max concurrent strength-sell offers (non-bracket asks)
-    alpha_cycle_interval_seconds: int = 60  # Trading loop sleep between cycles
+    alpha_cycle_interval_seconds: int = 15  # Trading loop sleep between cycles (HUD: 5–60)
     alpha_breakout_pct: float = 0.02  # Min % above entry/high for breakout trailing
     alpha_structure_lookback: int = 20  # Price samples for HTF structure
     alpha_structure_price_source: str = "ask"  # bid | ask | mid | last — directional default
@@ -207,9 +213,11 @@ class BotConfig:
     # Post-exit re-entry (Aggressive Bag Growth — wait for dip after TP, stabilization after SL)
     alpha_reentry_enabled: bool = True
     alpha_reentry_tp_dip_pct: float = 0.08  # Re-buy after TP only when mid dips this % below TP exit
-    alpha_reentry_tp_min_cycles: int = 1  # Min cycles after TP before re-entry allowed
+    alpha_reentry_tp_cooldown_cycles: int = 4  # Min engine cycles after TP before re-entry (spread protection)
+    alpha_reentry_tp_cooldown_minutes: float = 0.0  # Optional minutes gate (0 = cycles only)
     alpha_reentry_sl_stabilization_pct: float = 0.12  # After SL, mid must bounce this % above recent_low
-    alpha_reentry_sl_min_cycles: int = 3  # Min cycles after SL before re-entry considered
+    alpha_reentry_sl_cooldown_cycles: int = 10  # Min engine cycles after SL before re-entry considered
+    alpha_reentry_sl_cooldown_minutes: float = 0.0  # Optional minutes gate (0 = cycles only)
     alpha_reentry_tp_min_ta_score: float = 1.5  # Min TA buy score to re-enter after TP
     alpha_reentry_sl_min_ta_score: float = 2.5  # Higher TA bar after stop-loss exit
     alpha_ta_weight: float = 1.0  # 0=TA advisory only (HUD); 1=full TA buy gate at min_buy_score

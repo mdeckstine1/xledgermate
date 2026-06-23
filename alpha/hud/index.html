@@ -74,6 +74,20 @@
     .controls-pair .controls-section.card { margin-bottom:0; }
     .ctrl-row label[title] { cursor:help; border-bottom:1px dotted var(--muted); }
     .strategy-banner { font-size:.78rem; color:var(--muted); margin-top:2px; }
+    .live-charts-row { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; align-items:stretch; }
+    .live-charts-row .chart-card { flex:1 1 calc(50% - 5px); width:auto; max-width:none; min-width:300px; margin-bottom:0; }
+    .market-conditions-card { flex:1 1 calc(50% - 5px); min-width:280px; margin-bottom:0; }
+    .mc-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; font-size:.82rem; }
+    .mc-item { padding:6px 0; border-bottom:1px solid #1f2937; }
+    .mc-label { font-size:.65rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    .mc-val { font-weight:600; margin-top:2px; }
+    .mc-grade-green { color:var(--ok); }
+    .mc-grade-yellow { color:var(--warn); }
+    .mc-grade-red { color:var(--bad); }
+    .mc-overall { font-size:.72rem; padding:4px 8px; border-radius:4px; display:inline-block; margin-bottom:8px; text-transform:uppercase; letter-spacing:.05em; }
+    .mc-overall.mc-grade-green { background:#14532d; }
+    .mc-overall.mc-grade-yellow { background:#713f12; }
+    .mc-overall.mc-grade-red { background:#7f1d1d; }
     .chart-card { margin-bottom:16px; width:50%; max-width:50%; min-width:300px; }
     .chart-wrap { display:grid; grid-template-columns:1fr 220px; gap:12px; align-items:stretch; }
     .chart-canvas-wrap { background:#0b1220; border:1px solid var(--border); border-radius:6px; padding:8px; min-height:266px; }
@@ -114,7 +128,7 @@
     @media (max-width:1100px) {
       .grid.live-grid { grid-template-columns:repeat(6, minmax(100px, 1fr)); overflow-x:auto; }
     }
-    @media (max-width:800px) { .layout { grid-template-columns:1fr; } .grid.live-grid { display:flex; flex-wrap:nowrap; overflow-x:auto; scroll-snap-type:x mandatory; } .live-grid .card { flex:0 0 140px; scroll-snap-align:start; } .chart-card { width:100%; max-width:100%; } .chart-wrap { grid-template-columns:1fr; } .controls-pair { grid-template-columns:1fr; } }
+    @media (max-width:800px) { .layout { grid-template-columns:1fr; } .grid.live-grid { display:flex; flex-wrap:nowrap; overflow-x:auto; scroll-snap-type:x mandatory; } .live-grid .card { flex:0 0 140px; scroll-snap-align:start; } .live-charts-row .chart-card, .market-conditions-card { flex:1 1 100%; width:100%; max-width:100%; } .chart-wrap { grid-template-columns:1fr; } .controls-pair { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -178,12 +192,29 @@
           <div class="card"><h3>Preflight</h3><div id="preflight" class="value">—</div></div>
           <div class="card"><h3>Execution</h3><div id="exec" class="value">—</div></div>
         </div>
+        <div class="live-charts-row">
         <div class="card chart-card">
           <h3>Mid price · RLUSD/XRP</h3>
           <div class="chart-wrap">
             <div class="chart-canvas-wrap"><canvas id="priceChart" width="800" height="220"></canvas></div>
             <div class="indicator-list" id="indicatorList"><div class="muted">Loading indicators…</div></div>
           </div>
+        </div>
+        <div class="card market-conditions-card">
+          <h3>Market Conditions</h3>
+          <div id="mcOverall" class="mc-overall mc-grade-yellow">—</div>
+          <div class="mc-grid">
+            <div class="mc-item"><div class="mc-label">Mid price</div><div id="mcMid" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Spread</div><div id="mcSpread" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Liquidity health</div><div id="mcLiquidity" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Ask depth (1% of mid)</div><div id="mcAskDepth" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Bid depth (1% of mid)</div><div id="mcBidDepth" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Max buy size</div><div id="mcMaxBuy" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Max sell size</div><div id="mcMaxSell" class="mc-val">—</div></div>
+            <div class="mc-item" style="grid-column:1/-1"><div class="mc-label">TA summary</div><div id="mcTa" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Cycle interval</div><div id="mcCycle" class="mc-val">—</div></div>
+          </div>
+        </div>
         </div>
         <div class="live-controls">
         <div class="controls-pair">
@@ -197,6 +228,7 @@
           <div class="ctrl-row"><label title="Ask limit sits this % above mid for strength sells.">sell_limit_offset_pct</label><input type="range" id="slSellOffset" min="0.05" max="1" step="0.01"><input type="number" id="numSellOffset" step="0.01"><span id="valSellOffset" class="muted"></span></div>
           <div class="ctrl-row"><label title="Max simultaneous open buy offers.">max_pending_buys</label><input type="number" id="numMaxBuys" min="1" max="5" step="1"></div>
           <div class="ctrl-row"><label title="Max simultaneous open sell offers.">max_pending_sells</label><input type="number" id="numMaxSells" min="1" max="5" step="1"></div>
+          <div class="ctrl-row"><label title="Seconds between full engine cycles (5–60). Shorter = more responsive, more RPC load.">cycle_interval_seconds</label><input type="range" id="slCycle" min="5" max="60" step="1"><input type="number" id="numCycle" min="5" max="60" step="1"><span id="valCycle" class="muted">s</span></div>
           <button id="btnApplyRisk">Apply risk &amp; entry</button>
         </div>
         <div class="controls-section card">
@@ -213,10 +245,12 @@
         <div class="controls-section card">
           <h2>Re-entry after exit</h2>
           <div class="ctrl-row toggle"><label title="Patient reload: wait for dip after TP and stabilization after SL before next buy."><input type="checkbox" id="reentryEnabled"> reentry_enabled</label></div>
-          <div class="ctrl-row"><label title="Min engine cycles after take-profit before re-entry considered.">tp_cooldown_cycles</label><input type="range" id="slReTpCycles" min="0" max="20" step="1"><input type="number" id="numReTpCycles" step="1"></div>
-          <div class="ctrl-row"><label title="Mid must dip this % below TP exit price before re-buy.">tp_dip_pct</label><input type="range" id="slReTpDip" min="0.01" max="2" step="0.01"><input type="number" id="numReTpDip" step="0.01"></div>
-          <div class="ctrl-row"><label title="Min TA buy score required to re-enter after take-profit.">tp_min_ta_score</label><input type="range" id="slReTpTa" min="0" max="10" step="0.1"><input type="number" id="numReTpTa" step="0.1"></div>
-          <div class="ctrl-row"><label title="Min engine cycles after stop-loss (longer = avoid falling knife).">sl_cooldown_cycles</label><input type="range" id="slReSlCycles" min="0" max="50" step="1"><input type="number" id="numReSlCycles" step="1"></div>
+          <div class="ctrl-row"><label title="Hard block: no PLACE_BID until this many engine cycles pass after TP (inventory/TA cannot override).">tp_cooldown_cycles</label><input type="range" id="slReTpCycles" min="1" max="50" step="1"><input type="number" id="numReTpCycles" min="1" step="1"></div>
+          <div class="ctrl-row"><label title="Optional time gate after TP (0 = cycles only). Both must pass when set.">tp_cooldown_minutes</label><input type="range" id="slReTpMin" min="0" max="120" step="1"><input type="number" id="numReTpMin" min="0" step="1"></div>
+          <div class="ctrl-row"><label title="Mid must dip this % below TP exit price before re-buy (after cooldown).">tp_dip_pct</label><input type="range" id="slReTpDip" min="0.01" max="2" step="0.01"><input type="number" id="numReTpDip" step="0.01"></div>
+          <div class="ctrl-row"><label title="Min TA buy score after cooldown expires (post-TP re-entry).">tp_min_ta_score</label><input type="range" id="slReTpTa" min="0" max="10" step="0.1"><input type="number" id="numReTpTa" step="0.1"></div>
+          <div class="ctrl-row"><label title="Hard block after SL — longer default avoids falling-knife re-buys.">sl_cooldown_cycles</label><input type="range" id="slReSlCycles" min="1" max="100" step="1"><input type="number" id="numReSlCycles" min="1" step="1"></div>
+          <div class="ctrl-row"><label title="Optional time gate after SL (0 = cycles only).">sl_cooldown_minutes</label><input type="range" id="slReSlMin" min="0" max="240" step="1"><input type="number" id="numReSlMin" min="0" step="1"></div>
           <div class="ctrl-row"><label title="After SL, mid must bounce this % above recent low.">sl_stabilization_pct</label><input type="range" id="slReSlStab" min="0.01" max="2" step="0.01"><input type="number" id="numReSlStab" step="0.01"></div>
           <div class="ctrl-row"><label title="Higher TA buy score bar after stop-loss — reversal confirmation.">sl_min_ta_score</label><input type="range" id="slReSlTa" min="0" max="10" step="0.1"><input type="number" id="numReSlTa" step="0.1"></div>
           <button id="btnApplyReentry">Apply re-entry</button>
@@ -381,6 +415,7 @@
     const syncEdge = linkSlider('slEdge', 'numEdge', 'valEdge');
     const syncOffset = linkSlider('slOffset', 'numOffset', 'valOffset');
     const syncSellOffset = linkSlider('slSellOffset', 'numSellOffset', 'valSellOffset');
+    const syncCycle = linkSlider('slCycle', 'numCycle', 'valCycle');
     const syncTargetXrp = linkSlider('slTargetXrp', 'numTargetXrp', 'valTargetXrp');
     const syncWeakness = linkSlider('slWeakness', 'numWeakness', 'valWeakness');
     const syncTrail = linkSlider('slTrail', 'numTrail');
@@ -390,9 +425,11 @@
     const syncTp = linkSlider('slTp', 'numTp');
     const syncRr = linkSlider('slRr', 'numRr');
     const syncReTpCycles = linkSlider('slReTpCycles', 'numReTpCycles');
+    const syncReTpMin = linkSlider('slReTpMin', 'numReTpMin');
     const syncReTpDip = linkSlider('slReTpDip', 'numReTpDip');
     const syncReTpTa = linkSlider('slReTpTa', 'numReTpTa');
     const syncReSlCycles = linkSlider('slReSlCycles', 'numReSlCycles');
+    const syncReSlMin = linkSlider('slReSlMin', 'numReSlMin');
     const syncReSlStab = linkSlider('slReSlStab', 'numReSlStab');
     const syncReSlTa = linkSlider('slReSlTa', 'numReSlTa');
     const syncTaWeight = linkSlider('slTaWeight', 'numTaWeight', 'valTaWeight');
@@ -413,13 +450,16 @@
       syncSellOffset(c.alpha_sell_limit_offset_pct ?? 0.15);
       $('numMaxBuys').value = c.alpha_max_pending_buys ?? 1;
       $('numMaxSells').value = c.alpha_max_pending_sells ?? 1;
+      syncCycle(c.alpha_cycle_interval_seconds ?? 15);
       $('trailingEnabled').checked = !!c.bracket_trailing_enabled;
       $('tradingEnabled').checked = c.trading_enabled !== false;
       $('reentryEnabled').checked = c.alpha_reentry_enabled !== false;
-      syncReTpCycles(c.alpha_reentry_tp_min_cycles ?? 1);
+      syncReTpCycles(c.alpha_reentry_tp_cooldown_cycles ?? 4);
+      syncReTpMin(c.alpha_reentry_tp_cooldown_minutes ?? 0);
       syncReTpDip(c.alpha_reentry_tp_dip_pct ?? 0.08);
       syncReTpTa(c.alpha_reentry_tp_min_ta_score ?? 1.5);
-      syncReSlCycles(c.alpha_reentry_sl_min_cycles ?? 3);
+      syncReSlCycles(c.alpha_reentry_sl_cooldown_cycles ?? 10);
+      syncReSlMin(c.alpha_reentry_sl_cooldown_minutes ?? 0);
       syncReSlStab(c.alpha_reentry_sl_stabilization_pct ?? 0.12);
       syncReSlTa(c.alpha_reentry_sl_min_ta_score ?? 2.5);
       if ($('taEnabled')) $('taEnabled').checked = !!c.alpha_ta_enabled;
@@ -461,16 +501,19 @@
         alpha_sell_limit_offset_pct: parseFloat($('numSellOffset').value),
         alpha_max_pending_buys: parseInt($('numMaxBuys').value, 10),
         alpha_max_pending_sells: parseInt($('numMaxSells').value, 10),
+        alpha_cycle_interval_seconds: parseInt($('numCycle').value, 10),
       }});
       if (d?.ok) { toast('Risk & entry updated'); operatorConfig = d; poll(); }
     };
     $('btnApplyReentry').onclick = async () => {
       const d = await patchJson('/operator/config', { overrides: {
         alpha_reentry_enabled: $('reentryEnabled').checked,
-        alpha_reentry_tp_min_cycles: parseInt($('numReTpCycles').value, 10),
+        alpha_reentry_tp_cooldown_cycles: parseInt($('numReTpCycles').value, 10),
+        alpha_reentry_tp_cooldown_minutes: parseFloat($('numReTpMin').value),
         alpha_reentry_tp_dip_pct: parseFloat($('numReTpDip').value),
         alpha_reentry_tp_min_ta_score: parseFloat($('numReTpTa').value),
-        alpha_reentry_sl_min_cycles: parseInt($('numReSlCycles').value, 10),
+        alpha_reentry_sl_cooldown_cycles: parseInt($('numReSlCycles').value, 10),
+        alpha_reentry_sl_cooldown_minutes: parseFloat($('numReSlMin').value),
         alpha_reentry_sl_stabilization_pct: parseFloat($('numReSlStab').value),
         alpha_reentry_sl_min_ta_score: parseFloat($('numReSlTa').value),
       }});
@@ -790,6 +833,48 @@
       ctx.fillText(`${candles.length} candles · ${chart.bucket_samples || '?'}×${sec}s`, plotRight, 12);
     }
 
+    function mcGradeClass(grade) {
+      return grade === 'green' ? 'mc-grade-green' : (grade === 'red' ? 'mc-grade-red' : 'mc-grade-yellow');
+    }
+
+    function renderMarketConditions(s) {
+      const mc = s.market_conditions || {};
+      const overall = $('mcOverall');
+      const grade = mc.overall_grade || 'yellow';
+      overall.textContent = 'Conditions: ' + grade;
+      overall.className = 'mc-overall ' + mcGradeClass(grade);
+      $('mcMid').textContent = mc.mid != null ? Number(mc.mid).toFixed(6) : '—';
+      const sp = $('mcSpread');
+      if (mc.spread_pct != null) {
+        sp.textContent = Number(mc.spread_pct).toFixed(3) + '%';
+        sp.className = 'mc-val ' + mcGradeClass(mc.spread_grade || 'yellow');
+      } else {
+        sp.textContent = '—';
+        sp.className = 'mc-val';
+      }
+      const liq = $('mcLiquidity');
+      const liqGrade = mc.liquidity_health || 'yellow';
+      liq.textContent = liqGrade.toUpperCase();
+      liq.className = 'mc-val ' + mcGradeClass(liqGrade);
+      const ask = $('mcAskDepth');
+      ask.textContent = mc.ask_depth_xrp != null ? Number(mc.ask_depth_xrp).toFixed(2) + ' XRP' : '—';
+      ask.className = 'mc-val ' + mcGradeClass(mc.ask_depth_grade || 'yellow');
+      const bid = $('mcBidDepth');
+      bid.textContent = mc.bid_depth_xrp != null ? Number(mc.bid_depth_xrp).toFixed(2) + ' XRP' : '—';
+      bid.className = 'mc-val ' + mcGradeClass(mc.bid_depth_grade || 'yellow');
+      $('mcMaxBuy').textContent = mc.recommended_max_buy_xrp > 0
+        ? Number(mc.recommended_max_buy_xrp).toFixed(2) + ' XRP' : '—';
+      $('mcMaxSell').textContent = mc.recommended_max_sell_xrp > 0
+        ? Number(mc.recommended_max_sell_xrp).toFixed(2) + ' XRP' : '—';
+      const ta = mc.ta || {};
+      $('mcTa').textContent = ta.enabled
+        ? `buy ${ta.buy_score} · sell ${ta.sell_score} · ${ta.bias || 'neutral'}`
+        : 'TA off';
+      $('mcTa').className = 'mc-val ' + (ta.bias === 'bullish' ? 'mc-grade-green' : (ta.bias === 'bearish' ? 'mc-grade-red' : ''));
+      const cycleSec = mc.cycle_interval_seconds ?? s.config_effective?.alpha_cycle_interval_seconds;
+      $('mcCycle').textContent = cycleSec != null ? cycleSec + 's' : '—';
+    }
+
     function renderChart(s) {
       lastChartState = s;
       const chart = s.chart || {};
@@ -903,7 +988,11 @@
       $('decReason').textContent = s.decision?.reason || '';
       const re = s.reentry;
       $('decReentry').textContent = re?.active
-        ? `Re-entry gate: after ${re.exit_type} exit — cycle ${re.cycles_since_exit} (exit mid ${Number(re.exit_mid).toFixed(6)})`
+        ? (re.in_cooldown
+          ? `Re-entry COOLDOWN after ${re.exit_type}: ${re.cooldown_cycles_remaining} cycles left` +
+            (re.cooldown_minutes_required > 0 ? `, ${re.cooldown_minutes_remaining} min left` : '') +
+            ` (exit mid ${Number(re.exit_mid).toFixed(6)})`
+          : `Re-entry gate: after ${re.exit_type} — cycle ${re.cycles_since_exit}, cooldown done (exit mid ${Number(re.exit_mid).toFixed(6)})`)
         : '';
       const ta = s.technical_analysis;
       $('decTa').textContent = ta?.enabled
@@ -920,6 +1009,7 @@
       $('exec').textContent = s.execution ? (s.execution.message || JSON.stringify(s.execution)) : '—';
       $('report').textContent = s.report_text || '';
       renderChart(s);
+      renderMarketConditions(s);
       renderTa(s);
 
       $('brTable').innerHTML = (s.brackets?.records || []).map(r => {

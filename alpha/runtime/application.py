@@ -31,7 +31,7 @@ from alpha.orders.manager import OrderManager, OrderManagerState
 from alpha.reporting.service import ReportingService, bracket_summary_from_store
 from alpha.risk.engine import RiskEngine
 from alpha.runtime.executor import EntryExecutionResult, EntryExecutor
-from alpha.types import BalanceSnapshot, CycleReportContext, OperatorSnapshot, OrderBookSnapshot, utc_now
+from alpha.types import BalanceSnapshot, CycleReportContext, LiquidityDepth, OperatorSnapshot, OrderBookSnapshot, utc_now
 from alpha.version import ALPHA_VERSION
 from config.settings import BotConfig
 
@@ -103,6 +103,7 @@ class AlphaApplication:
         self._last_structure: Optional[MarketStructureSnapshot] = None
         self._last_ta: Optional[TechnicalAnalysisSnapshot] = None
         self._last_book: Optional[OrderBookSnapshot] = None
+        self._last_liquidity: Optional[LiquidityDepth] = None
         self._ta = TechnicalAnalysis(config)
 
     @property
@@ -203,6 +204,7 @@ class AlphaApplication:
         except Exception as exc:
             logger.warning("liquidity_depth_degraded | error=%s", exc)
             liquidity = None
+        self._last_liquidity = liquidity
 
         inventory = self._inventory.snapshot(balances)
         risk = self._risk.evaluate(balances=balances, trust_line=trust)
@@ -326,6 +328,7 @@ class AlphaApplication:
             operator_overrides=self._runtime.load_overrides(),
             config_effective=self.config,
             reentry=self._reentry.snapshot,
+            liquidity=self._last_liquidity,
         )
 
     async def run_status_cycle(self, *, telegram: bool = True) -> AlphaCycleResult:
@@ -410,21 +413,22 @@ class AlphaApplication:
         telegram_each_cycle: bool = False,
     ) -> None:
         """Run trading cycles until interrupted or max_cycles reached."""
-        interval = max(5, int(self.config.alpha_cycle_interval_seconds))
         cycle = 0
+        consecutive_errors = 0
         self._reporting.send_startup(
             dry_run=self.config.dry_run,
             network="testnet" if self.config.testnet else "mainnet",
         )
         logger.info(
             "alpha_trading_loop_start | interval=%ds | dry_run=%s | max_cycles=%s",
-            interval,
+            self._clamp_cycle_interval(self.config.alpha_cycle_interval_seconds),
             self.config.dry_run,
             max_cycles,
         )
         try:
             while max_cycles is None or cycle < max_cycles:
                 cycle += 1
+                interval = self._clamp_cycle_interval(self.config.alpha_cycle_interval_seconds)
                 logger.info(
                     "alpha_trading_loop_cycle | n=%d | dry_run=%s | interval=%ds",
                     cycle,
@@ -433,14 +437,34 @@ class AlphaApplication:
                 )
                 try:
                     await self.run_trading_cycle(telegram=telegram_each_cycle)
+                    consecutive_errors = 0
                 except Exception as exc:
-                    logger.error("trading_cycle_error | cycle=%d | error=%s", cycle, exc, exc_info=True)
+                    consecutive_errors += 1
+                    logger.error(
+                        "trading_cycle_error | cycle=%d | error=%s | consecutive=%d",
+                        cycle,
+                        exc,
+                        consecutive_errors,
+                        exc_info=True,
+                    )
                 if max_cycles is not None and cycle >= max_cycles:
                     break
-                await self._sleep_with_price_sampling(interval)
+                sleep_seconds = interval
+                if consecutive_errors > 0:
+                    sleep_seconds = min(60, interval * min(4, consecutive_errors))
+                    logger.warning(
+                        "alpha_trading_loop_backoff | sleep=%ds | consecutive_errors=%d",
+                        sleep_seconds,
+                        consecutive_errors,
+                    )
+                await self._sleep_with_price_sampling(sleep_seconds)
         finally:
             await self.close()
             logger.info("alpha_trading_loop_stop | cycles=%d", cycle)
+
+    @staticmethod
+    def _clamp_cycle_interval(seconds: int) -> int:
+        return max(5, min(60, int(seconds)))
 
     async def _sample_book_prices(self) -> None:
         """Lightweight book poll between full trading cycles."""

@@ -89,7 +89,11 @@ def validate_alpha_config(config: BotConfig) -> AlphaConfigValidation:
         errors.append("alpha_max_pending_sells must be at least 1")
 
     if config.alpha_cycle_interval_seconds < 5:
-        warnings.append("alpha_cycle_interval_seconds < 5 may hammer RPC")
+        errors.append("alpha_cycle_interval_seconds must be at least 5")
+    elif config.alpha_cycle_interval_seconds > 60:
+        errors.append("alpha_cycle_interval_seconds must be at most 60")
+    elif config.alpha_cycle_interval_seconds < 10:
+        warnings.append("alpha_cycle_interval_seconds < 10 may increase RPC load")
 
     if config.alpha_breakout_pct <= 0:
         errors.append("alpha_breakout_pct must be positive")
@@ -115,11 +119,11 @@ def validate_alpha_config(config: BotConfig) -> AlphaConfigValidation:
     ):
         warnings.append("alpha_price_sample_interval_seconds < 5 may hammer RPC")
 
-    if config.alpha_reentry_sl_min_cycles < 1:
-        errors.append("alpha_reentry_sl_min_cycles must be at least 1")
+    if config.alpha_reentry_sl_cooldown_cycles < 1:
+        errors.append("alpha_reentry_sl_cooldown_cycles must be at least 1")
 
-    if config.alpha_reentry_tp_min_cycles < 1:
-        errors.append("alpha_reentry_tp_min_cycles must be at least 1")
+    if config.alpha_reentry_tp_cooldown_cycles < 1:
+        errors.append("alpha_reentry_tp_cooldown_cycles must be at least 1")
 
     if config.alpha_weakness_deviation <= 0 or config.alpha_strength_deviation <= 0:
         errors.append("alpha_weakness_deviation and alpha_strength_deviation must be positive")

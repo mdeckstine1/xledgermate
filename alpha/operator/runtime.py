@@ -42,6 +42,7 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_strength_deviation",
     "alpha_max_pending_buys",
     "alpha_max_pending_sells",
+    "alpha_cycle_interval_seconds",
     "alpha_ta_weight",
     "alpha_ta_enabled",
     "alpha_ta_min_buy_score",
@@ -52,10 +53,12 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_ta_engulfing_enabled",
     "alpha_reentry_enabled",
     "alpha_reentry_tp_dip_pct",
-    "alpha_reentry_tp_min_cycles",
+    "alpha_reentry_tp_cooldown_cycles",
+    "alpha_reentry_tp_cooldown_minutes",
     "alpha_reentry_tp_min_ta_score",
     "alpha_reentry_sl_stabilization_pct",
-    "alpha_reentry_sl_min_cycles",
+    "alpha_reentry_sl_cooldown_cycles",
+    "alpha_reentry_sl_cooldown_minutes",
     "alpha_reentry_sl_min_ta_score",
     "alpha_breakout_pct",
     "alpha_structure_lookback",
@@ -76,14 +79,17 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "alpha_strength_deviation": {"min": 0.01, "max": 0.25, "step": 0.01},
     "alpha_max_pending_buys": {"min": 1, "max": 5, "step": 1},
     "alpha_max_pending_sells": {"min": 1, "max": 5, "step": 1},
+    "alpha_cycle_interval_seconds": {"min": 5, "max": 60, "step": 1},
     "alpha_ta_weight": {"min": 0.0, "max": 1.0, "step": 0.05},
     "alpha_ta_min_buy_score": {"min": 0.0, "max": 10.0, "step": 0.1},
     "alpha_ta_min_sell_score": {"min": 0.0, "max": 10.0, "step": 0.1},
     "alpha_reentry_tp_dip_pct": {"min": 0.01, "max": 2.0, "step": 0.01},
-    "alpha_reentry_tp_min_cycles": {"min": 0, "max": 20, "step": 1},
+    "alpha_reentry_tp_cooldown_cycles": {"min": 0, "max": 50, "step": 1},
+    "alpha_reentry_tp_cooldown_minutes": {"min": 0.0, "max": 240.0, "step": 1.0},
     "alpha_reentry_tp_min_ta_score": {"min": 0.0, "max": 10.0, "step": 0.1},
     "alpha_reentry_sl_stabilization_pct": {"min": 0.01, "max": 2.0, "step": 0.01},
-    "alpha_reentry_sl_min_cycles": {"min": 0, "max": 50, "step": 1},
+    "alpha_reentry_sl_cooldown_cycles": {"min": 0, "max": 100, "step": 1},
+    "alpha_reentry_sl_cooldown_minutes": {"min": 0.0, "max": 480.0, "step": 1.0},
     "alpha_reentry_sl_min_ta_score": {"min": 0.0, "max": 10.0, "step": 0.1},
     "alpha_breakout_pct": {"min": 0.005, "max": 0.10, "step": 0.005},
     "alpha_structure_lookback": {"min": 3, "max": 100, "step": 1},
@@ -118,6 +124,12 @@ def apply_overrides(config: BotConfig, overrides: Optional[Dict[str, Any]] = Non
     """Return effective config with runtime overrides merged (does not mutate input)."""
     if not overrides:
         return config
+    merged = dict(overrides)
+    if "alpha_reentry_tp_min_cycles" in merged and "alpha_reentry_tp_cooldown_cycles" not in merged:
+        merged["alpha_reentry_tp_cooldown_cycles"] = merged.pop("alpha_reentry_tp_min_cycles")
+    if "alpha_reentry_sl_min_cycles" in merged and "alpha_reentry_sl_cooldown_cycles" not in merged:
+        merged["alpha_reentry_sl_cooldown_cycles"] = merged.pop("alpha_reentry_sl_min_cycles")
+    overrides = merged
     allowed = {f.name for f in fields(BotConfig)}
     kwargs: Dict[str, Any] = {}
     for key, value in overrides.items():
@@ -207,8 +219,9 @@ def _coerce_override(key: str, value: Any) -> Any:
         "alpha_max_pending_buys",
         "alpha_max_pending_sells",
         "alpha_structure_lookback",
-        "alpha_reentry_tp_min_cycles",
-        "alpha_reentry_sl_min_cycles",
+        "alpha_cycle_interval_seconds",
+        "alpha_reentry_tp_cooldown_cycles",
+        "alpha_reentry_sl_cooldown_cycles",
     }
     if key in _INT_KEYS:
         return int(value)
@@ -246,11 +259,19 @@ def _validate_merged_config(config: BotConfig, changed_keys: Any) -> List[str]:
     if "alpha_max_pending_sells" in keys and config.alpha_max_pending_sells < 1:
         errors.append("alpha_max_pending_sells must be at least 1")
 
-    if "alpha_reentry_tp_min_cycles" in keys and config.alpha_reentry_tp_min_cycles < 0:
-        errors.append("alpha_reentry_tp_min_cycles must be non-negative")
+    if "alpha_cycle_interval_seconds" in keys:
+        if config.alpha_cycle_interval_seconds < 5 or config.alpha_cycle_interval_seconds > 60:
+            errors.append("alpha_cycle_interval_seconds must be between 5 and 60")
 
-    if "alpha_reentry_sl_min_cycles" in keys and config.alpha_reentry_sl_min_cycles < 0:
-        errors.append("alpha_reentry_sl_min_cycles must be non-negative")
+    if "alpha_reentry_tp_cooldown_cycles" in keys and config.alpha_reentry_tp_cooldown_cycles < 0:
+        errors.append("alpha_reentry_tp_cooldown_cycles must be non-negative")
+
+    if "alpha_reentry_sl_cooldown_cycles" in keys and config.alpha_reentry_sl_cooldown_cycles < 0:
+        errors.append("alpha_reentry_sl_cooldown_cycles must be non-negative")
+
+    if keys & {"alpha_reentry_tp_cooldown_minutes", "alpha_reentry_sl_cooldown_minutes"}:
+        if config.alpha_reentry_tp_cooldown_minutes < 0 or config.alpha_reentry_sl_cooldown_minutes < 0:
+            errors.append("re-entry cooldown minutes must be non-negative")
 
     if "alpha_breakout_pct" in keys and config.alpha_breakout_pct <= 0:
         errors.append("alpha_breakout_pct must be positive")

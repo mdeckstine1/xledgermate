@@ -246,6 +246,14 @@ class DecisionEngine:
             return 0.0
         return cfg.min_buy_score * weight
 
+    def _ta_effective_min_sell(self) -> float:
+        """Scale sell gate by alpha_ta_weight (0=advisory only, 1=full min_sell_score)."""
+        cfg = self._config.alpha_technical_analysis
+        weight = max(0.0, min(1.0, getattr(self._config, "alpha_ta_weight", 1.0)))
+        if weight <= 0:
+            return 0.0
+        return cfg.min_sell_score * weight
+
     def _ta_blocks_buy(self, ta: Optional["TechnicalAnalysisSnapshot"]) -> Optional[str]:
         cfg = self._config.alpha_technical_analysis
         weight = getattr(self._config, "alpha_ta_weight", 1.0)
@@ -259,16 +267,30 @@ class DecisionEngine:
                 f"ta_buy_blocked score={ta.buy_score:.2f}<{effective_min:.2f} "
                 f"weight={weight:.2f} sell={ta.sell_score:.2f} bias={ta.bias}"
             )
+        if ta.bias == "bearish":
+            return (
+                f"ta_buy_blocked bearish bias={ta.bias} "
+                f"buy={ta.buy_score:.2f} sell={ta.sell_score:.2f}"
+            )
         return None
 
     def _ta_blocks_sell(self, ta: Optional["TechnicalAnalysisSnapshot"]) -> Optional[str]:
         cfg = self._config.alpha_technical_analysis
-        if not cfg.enabled or ta is None or not ta.enabled:
+        weight = getattr(self._config, "alpha_ta_weight", 1.0)
+        if not cfg.enabled or weight <= 0:
             return None
-        if not ta.entry_sell_allowed:
+        if ta is None or not ta.enabled:
+            return None
+        effective_min = self._ta_effective_min_sell()
+        if ta.sell_score < effective_min:
             return (
-                f"ta_sell_blocked score={ta.sell_score:.2f}<{cfg.min_sell_score} "
-                f"buy={ta.buy_score:.2f} bias={ta.bias}"
+                f"ta_sell_blocked score={ta.sell_score:.2f}<{effective_min:.2f} "
+                f"weight={weight:.2f} buy={ta.buy_score:.2f} bias={ta.bias}"
+            )
+        if ta.bias == "bullish" and ta.buy_score >= effective_min:
+            return (
+                f"ta_sell_deferred bullish bias={ta.bias} "
+                f"buy={ta.buy_score:.2f}>={effective_min:.2f} — hold XRP strength"
             )
         return None
 

@@ -32,6 +32,7 @@ def _run_pytest(quiet: bool) -> int:
         "tests/test_alpha_trailing.py",
         "tests/test_alpha_offer_events.py",
         "tests/test_alpha_reentry.py",
+        "tests/test_alpha_market_conditions.py",
         "tests/test_alpha_technical_analysis.py",
         "tests/test_alpha_price_history.py",
         "tests/test_alpha_hud.py",

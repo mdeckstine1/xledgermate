@@ -53,7 +53,15 @@ def test_apply_overrides_inventory_and_ta_virtual_keys():
     assert effective.alpha_technical_analysis.rsi.enabled is False
 
 
-def test_validate_override_rejects_bad_values():
+def test_validate_override_accepts_cycle_interval():
+    sanitized, errors = validate_override_updates({"alpha_cycle_interval_seconds": 20})
+    assert not errors
+    assert sanitized["alpha_cycle_interval_seconds"] == 20
+
+
+def test_validate_override_rejects_cycle_interval_out_of_range():
+    _, errors = validate_override_updates({"alpha_cycle_interval_seconds": 3})
+    assert errors
     _, errors = validate_override_updates({"alpha_risk_per_trade_pct": 0})
     assert errors
     assert any("alpha_risk_per_trade_pct" in e for e in errors)

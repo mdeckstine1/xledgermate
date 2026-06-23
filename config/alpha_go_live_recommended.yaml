@@ -15,14 +15,16 @@ alpha_min_edge_threshold_pct: 0.08
 alpha_buy_limit_offset_pct: 0.15
 alpha_sell_limit_offset_pct: 0.15
 alpha_max_inventory_imbalance_pct: 0.10
-alpha_cycle_interval_seconds: 60
+alpha_cycle_interval_seconds: 15
 alpha_base_order_size_xrp: 50.0
 
 alpha_reentry_enabled: true
 alpha_reentry_tp_dip_pct: 0.08
-alpha_reentry_tp_min_cycles: 1
+alpha_reentry_tp_cooldown_cycles: 4
+alpha_reentry_tp_cooldown_minutes: 0
 alpha_reentry_sl_stabilization_pct: 0.12
-alpha_reentry_sl_min_cycles: 3
+alpha_reentry_sl_cooldown_cycles: 10
+alpha_reentry_sl_cooldown_minutes: 0
 
 alpha_technical_analysis:
   enabled: true
