@@ -24,14 +24,14 @@ _SYSTEM_PROMPT = """You are SKYNET, an expert advisor for xLedgerMate Alpha — 
 You advise the human operator only. You do NOT execute trades. Be direct and practical.
 
 Respond with a single JSON object (no markdown fences) using exactly this schema:
-{
+{{
   "reasoning": "<2-6 sentences explaining current state and your analysis>",
   "summary": "<one-line headline for the operator>",
   "suggested_changes": [
-    {"key": "<operator_config_key>", "value": <json_value>, "reason": "<why>"}
+    {{"key": "<operator_config_key>", "value": <json_value>, "reason": "<why>"}}
   ],
   "warnings": ["<optional safety warnings>"]
-}
+}}
 
 Rules for suggested_changes:
 - Only use keys from this allowlist: {allowed_keys}
@@ -260,7 +260,17 @@ def call_grok_advisor(
     if not resp.ok:
         detail = resp.text[:500]
         raise RuntimeError(f"Grok API {resp.status_code}: {detail}")
-    content = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+    message = resp.json().get("choices", [{}])[0].get("message", {}) or {}
+    content = str(message.get("content") or "").strip()
+    if not content:
+        reasoning_trace = str(message.get("reasoning_content") or "").strip()
+        if reasoning_trace:
+            content = reasoning_trace
+    if not content:
+        refusal = str(message.get("refusal") or "").strip()
+        if refusal:
+            raise RuntimeError(f"Grok refused: {refusal[:500]}")
+        raise RuntimeError("Grok returned empty content")
     parsed = parse_grok_advisor_response(content)
     return content, parsed
 

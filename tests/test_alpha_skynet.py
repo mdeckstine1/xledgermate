@@ -7,11 +7,21 @@ import json
 import pytest
 
 from alpha.hud.skynet import (
+    _SYSTEM_PROMPT,
     build_skynet_context,
     filter_applicable_suggestions,
     parse_grok_advisor_response,
 )
+from alpha.operator.runtime import OPERATOR_TUNABLE_KEYS
 from config.settings import BotConfig
+
+
+def test_system_prompt_format_escapes_json_braces():
+    allowed = ", ".join(sorted(OPERATOR_TUNABLE_KEYS)[:5])
+    rendered = _SYSTEM_PROMPT.format(allowed_keys=allowed)
+    assert allowed in rendered
+    assert '"reasoning"' in rendered
+    assert "{allowed_keys}" not in rendered
 
 
 def test_parse_grok_advisor_response_json():
