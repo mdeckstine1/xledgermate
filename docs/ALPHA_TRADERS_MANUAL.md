@@ -303,7 +303,9 @@ TA produces **buy** and **sell** scores from RSI, Stochastic, Bollinger, engulfi
 | **`min_buy_score`** | Minimum buy score to allow PLACE_BID (scaled by weight). |
 | **`min_sell_score`** | Minimum sell score for strength sells. |
 
-**Warm-up:** Early on you may see `ta_warming_up` — not enough price history yet. Normal.
+**Warm-up:** Early on you may see `ta_warming_up` — not enough price history yet. Normal. → [Scenario Q](#scenario-q--ta_warming_up--insufficient-history)
+
+**Blocked in chop:** `ta_buy_blocked` / bearish bias with RLUSD-heavy inventory → [Scenario J](#scenario-j--ta-blocking-buys-in-chop)
 
 ---
 
@@ -399,7 +401,7 @@ Off = can reload immediately (more aggressive, more knife-catching risk).
 | **`tp_dip_pct`** | After cooldown, mid must dip X% below exit price before buy. |
 | **`tp_min_ta_score`** | TA buy score required for reload. |
 
-**Example:** Sold at 1.10, `tp_dip_pct` 0.08 → need ~1.012 or lower before re-entry is even considered.
+**Example:** Sold at 1.10, `tp_dip_pct` 0.08 → need mid **≤ ~1.0991** (0.08% below exit) before re-entry is considered. See [Scenario L](#scenario-l--post-tp-re-entry-waiting-for-dip).
 
 ### After stop-loss (SL)
 
@@ -410,7 +412,7 @@ Off = can reload immediately (more aggressive, more knife-catching risk).
 | **`sl_stabilization_pct`** | Price must bounce X% off recent low. |
 | **`sl_min_ta_score`** | **Higher** bar than TP — demand real reversal confirmation. |
 
-**Real save:** SL hits at 1.00. Bot waits. Price dumps to 0.85. You are *not* auto-buying at 0.95 because TA and stabilization said no. That is the feature working.
+**Real save:** SL hits at 1.00. Bot waits. Price dumps to 0.85. You are *not* auto-buying at 0.95 because TA and stabilization said no. That is the feature working. See [Scenario K](#scenario-k--post-sl-re-entry-bot-wont-reload).
 
 ---
 
@@ -541,14 +543,19 @@ The bot becomes a gambler with limit orders. You either print or get rekt. **Kil
 
 You are RLUSD-heavy. TA is fine. Bot still HOLD.
 
-**Check Decision reason:**
+**Check Decision reason** — then jump to the scenario:
 
-1. **Edge mismatch** — `buy_limit_offset_pct` < `min_edge_threshold_pct` → fix the table above.  
-2. **Re-entry cooldown** — `post_tp_cooldown` / `post_sl_cooldown` in reason.  
-3. **TA block** — score below gate; raise weight/score or wait.  
-4. **Depth** — `insufficient_ask_depth` in Market Conditions.  
-5. **Pause / kill** — sidebar badges.  
-6. **Max pending** — already at `max_pending_buys`. If stale auto-cancel is on, check whether pending entries are still within `stale_pending_buy_max_drift_pct` of target (they may be valid, not stuck).
+| Reason pattern | Scenario |
+|----------------|----------|
+| `edge_below_threshold` / edge < min | [D](#scenario-d--hold-forever-edge-in-the-reason) |
+| `post_sl_` / `post_tp_` / `reentry_` | [K](#scenario-k--post-sl-re-entry-bot-wont-reload) · [L](#scenario-l--post-tp-re-entry-waiting-for-dip) |
+| `ta_buy_blocked` / `ta_warming_up` | [J](#scenario-j--ta-blocking-buys-in-chop) · [Q](#scenario-q--ta_warming_up--insufficient-history) |
+| `balanced dev=` | [M](#scenario-m--balanced-inventory-nothing-to-do) |
+| `max_pending_buys=` | [C](#scenario-c--ladder-clutter-many-pending-buys-none-filling) · [G](#scenario-g--entry-price-keeps-moving-cancelreplace-loop) |
+| `insufficient_ask_depth` | [R](#scenario-r--insufficient_ask_depth) |
+| `kill_switch` / `pause_bids` / preflight | [P](#scenario-p--kill-switch-drawdown-or-pause) |
+| Pending buy exists, no fill | [N](#scenario-n--bid-on-book-mid-looks-good-still-no-fill) |
+| `weakness dev=` but no bid | [I](#scenario-i--rlusd-heavy-sell-blocked-buys-only) — check weakness threshold |
 
 ---
 
@@ -556,20 +563,31 @@ You are RLUSD-heavy. TA is fine. Bot still HOLD.
 
 | Problem | Likely cause | What to do |
 |---------|--------------|------------|
-| Stuck on HOLD, edge in reason | Offset < min edge | Raise offset or lower min edge |
-| No buys, RLUSD-heavy | Weakness too high | Lower `weakness_deviation` or raise target |
-| Buying too soon after sells | Cooldowns too short | Raise `tp_cooldown_cycles` / `tp_min_ta_score` |
-| Bids way below mid (~5%) | Offset set very high | Lower `buy_limit_offset_pct` if you want nearer fills |
+| Stuck on HOLD, edge in reason | Offset < min edge | [Scenario D](#scenario-d--hold-forever-edge-in-the-reason) |
+| RLUSD-heavy, only bids, no sells | Normal `sell_block` | [Scenario I](#scenario-i--rlusd-heavy-sell-blocked-buys-only) |
+| `ta_buy_blocked` / bearish | TA gate in chop | [Scenario J](#scenario-j--ta-blocking-buys-in-chop) |
+| Quiet after SL | Re-entry gate | [Scenario K](#scenario-k--post-sl-re-entry-bot-wont-reload) |
+| Quiet after TP | Await dip + cooldown | [Scenario L](#scenario-l--post-tp-re-entry-waiting-for-dip) |
+| `balanced dev=…` | On target band | [Scenario M](#scenario-m--balanced-inventory-nothing-to-do) |
+| Bid resting, no fill | Passive limit | [Scenario N](#scenario-n--bid-on-book-mid-looks-good-still-no-fill) |
+| XRP-heavy, no asks | Strength threshold | [Scenario O](#scenario-o--xrp-heavy-want-strength-sells) |
+| Kill / pause / preflight | Risk state | [Scenario P](#scenario-p--kill-switch-drawdown-or-pause) |
+| Entry keeps jumping | Stale `mid_passed_entry` | [Scenario G](#scenario-g--entry-price-keeps-moving-cancelreplace-loop) |
+| Size ~13 RLUSD | `risk_per_trade_pct` cap | [Scenario H](#scenario-h--order-size-stuck-13-rlusd-or-smaller-than-expected) |
+| No buys, RLUSD-heavy | Weakness too high | Lower `weakness_deviation` or [Scenario M](#scenario-m--balanced-inventory-nothing-to-do) |
+| Buying too soon after sells | Cooldowns too short | [Scenario L/K](#scenario-l--post-tp-re-entry-waiting-for-dip) |
+| Bids way below mid (~5%) | Offset set very high | [Scenario A](#scenario-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) |
 | Bids at ~1.04 when mid ~1.10 | Old bracket history or deep offset | Check Brackets **State** = `pending buy`; stale cancel only hits live pending rows |
-| HOLD at max pending, bids ~1.097–1.10 | Bids match current offset (low drift) | Lower `stale_pending_buy_max_drift_pct` to prune tighter, or cancel manually |
-| Many pending bids, mid “passed”, no cancel | `max_drift` too loose (e.g. 0.5%) vs offset 0.15–0.35% | Align drift to offset; check SKYNET `pending_buy_stale.would_cancel_count` |
-| Bid feels left behind as price rises | `buy_limit_offset_pct` too high vs movement | [Scenario A](#scenario-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) — lower offset + align stale drift |
+| HOLD at max pending, bids ~1.097–1.10 | Bids match current offset (low drift) | [Scenario C](#scenario-c--ladder-clutter-many-pending-buys-none-filling) |
+| Many pending bids, mid “passed”, no cancel | `max_drift` too loose (e.g. 0.5%) vs offset 0.15–0.35% | [Scenario C](#scenario-c--ladder-clutter-many-pending-buys-none-filling) |
+| Bid feels left behind as price rises | Offset too high vs movement | [Scenario A](#scenario-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) |
 | Cancels very slow | One XRPL cancel per engine cycle | Normal — wait or lower pending count / use Cancel all |
 | Cancelled but orders still show | Active brackets ≠ pending | Check state column; active = exits on filled bags |
 | What does **BE** / **BO** mean? | Trailing flags on active brackets | **BE** = breakeven passed, SL can trail · **BO** = breakout confirmed, TP can trail · needs `bracket_trailing_enabled` |
 | No rows in tax CSV | Dry-run or no fills yet | Switch to LIVE; CSV updates on bracket buy/TP/SL fills and Config → Send |
-| `ta_warming_up` | New session / thin history | Wait; needs mid samples |
-| Preflight not OK | Trust line, balance, config | Fix alerts in status report |
+| `ta_warming_up` | New session / thin history | [Scenario Q](#scenario-q--ta_warming_up--insufficient-history) |
+| Max buy = 0 | Thin book | [Scenario R](#scenario-r--insufficient_ask_depth) |
+| Preflight not OK | Trust line, balance, config | [Scenario P](#scenario-p--kill-switch-drawdown-or-pause) |
 
 ---
 
@@ -688,6 +706,31 @@ After **Apply**, wait 1–2 cycles and confirm logs show fewer `stale_pending_bu
 ## Scenarios & suggested presets
 
 Use these as **recipes**, not gospel. Apply on **Live → Risk & entry**, watch **Decision reason** for 10–20 cycles, adjust one knob at a time.
+
+### Scenario index
+
+| | Scenario | When to use |
+|---|----------|-------------|
+| **A** | [Bid left behind in uptrend](#scenario-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) | RLUSD-heavy, price rising, want nearer bids |
+| **B** | [Patient dip sniper](#scenario-b--patient-dip-sniper-default-philosophy) | Deep offsets, can wait hours |
+| **C** | [Ladder clutter](#scenario-c--ladder-clutter-many-pending-buys-none-filling) | Many pending buys, none filling |
+| **D** | [HOLD, edge in reason](#scenario-d--hold-forever-edge-in-the-reason) | `edge_below_threshold` |
+| **E** | [Buying too often in downtrend](#scenario-e--buying-too-often-in-a-downtrend) | SL streak, knife catching |
+| **F** | [Chop, want more action](#scenario-f--chop--mild-dips-want-more-action) | Tight spread, rare fills |
+| **G** | [Entry keeps moving](#scenario-g--entry-price-keeps-moving-cancelreplace-loop) | Cancel/replace every cycle |
+| **H** | [Size stuck ~13 RLUSD](#scenario-h--order-size-stuck-13-rlusd-or-smaller-than-expected) | Clip smaller than expected |
+| **I** | [RLUSD-heavy, sell blocked](#scenario-i--rlusd-heavy-sell-blocked-buys-only) | Heavy RLUSD, only bids fire |
+| **J** | [TA blocking buys in chop](#scenario-j--ta-blocking-buys-in-chop) | `ta_buy_blocked` / bearish |
+| **K** | [Post-SL re-entry](#scenario-k--post-sl-re-entry-bot-wont-reload) | After stop-loss, quiet bot |
+| **L** | [Post-TP re-entry](#scenario-l--post-tp-re-entry-waiting-for-dip) | After take-profit, no reload |
+| **M** | [Balanced HOLD](#scenario-m--balanced-inventory-nothing-to-do) | `balanced dev=…` |
+| **N** | [Bid resting, no fill](#scenario-n--bid-on-book-mid-looks-good-still-no-fill) | Passive limit mechanics |
+| **O** | [XRP-heavy, want sells](#scenario-o--xrp-heavy-want-strength-sells) | Strength asks / unload XRP |
+| **P** | [Kill / drawdown / pause](#scenario-p--kill-switch-drawdown-or-pause) | Hard stops, no trading |
+| **Q** | [TA warming up](#scenario-q--ta_warming_up--insufficient-history) | New session, thin history |
+| **R** | [Thin book](#scenario-r--insufficient_ask_depth) | Depth gate blocks size |
+
+---
 
 ### Scenario A — RLUSD-heavy, price drifting up, bid feels “left behind”
 
@@ -824,6 +867,240 @@ buy_limit_offset_pct            = 0.12          ← keep unless you want deeper 
 **Fix:** Live → **`risk_per_trade_pct`** → **Apply** → confirm **Market Conditions → Max buy** moved.
 
 **Not the fix (usually):** `buy_limit_offset_pct`, `max_pending_buys`, or stale drift — those change **price**, not **size**. **`alpha_base_order_size_xrp`** in config only binds when risk cap exceeds desired (unlikely below ~5% risk on your book).
+
+---
+
+### Scenario I — RLUSD-heavy, sell blocked, buys only
+
+**Symptoms:** Sidebar shows **~20–30% XRP** vs **95% target**; inventory label **`heavy_rlusd`** or **`rlusd_heavy`**; Decision **`place_bid`** or **`weakness dev=…`**; **`sell_block=True`** in logs; no strength sells.
+
+**What’s happening:** This is **normal bag-deploy posture**. You are far below target XRP allocation, so the engine **deploys RLUSD via limit bids**. **`sell_blocked_imbalance`** blocks unloading XRP until you are closer to target — you are not “missing” sells; the bot is correctly refusing to sell XRP while RLUSD-heavy.
+
+| Signal | Meaning |
+|--------|---------|
+| `dev ≈ -0.70` @ target 95% | ~25% XRP actual — deep RLUSD bag |
+| `sell_block=True` | Won’t place strength asks until less RLUSD-heavy |
+| `buy_block=False` | Buys allowed when `dev ≤ -weakness_deviation` |
+
+**If buys are too aggressive:** raise **`weakness_deviation`** (e.g. **0.05–0.08**) or lower **`risk_per_trade_pct`**.
+
+**If you want faster XRP accumulation:** lower **`weakness_deviation`** (e.g. **0.03**) + nearer **`buy_limit_offset_pct`** — see [Scenario F](#scenario-f--chop--mild-dips-want-more-action). Don’t expect strength sells until **`dev`** recovers toward target.
+
+**Config note:** **`inventory_target_xrp_ratio`** (HUD: target XRP %) sets the north star. At **95%** target with **25%** actual, large deviation is expected until many fills land.
+
+---
+
+### Scenario J — TA blocking buys in chop
+
+**Symptoms:** RLUSD-heavy, inventory OK, but HOLD with reasons like:
+
+```text
+ta_buy_blocked score=1.20<2.00 weight=1.00 sell=0.80 bias=neutral
+ta_buy_blocked bearish bias=bearish buy=1.50 sell=3.20
+ta_warming_up — insufficient price history for buy gate
+```
+
+**What’s happening:** With **`ta_enabled`** and **`ta_weight` = 1**, buys need **`buy_score ≥ min_buy_score`** and **non-bearish bias**. In chop, scores flicker; bearish bias blocks even when you “feel” RLUSD-heavy enough to buy.
+
+**Loosen (more buys in chop):**
+
+```text
+ta_min_buy_score     = 1.0–1.5     ← was 2.0+
+ta_weight            = 0.5–0.7     ← partial gate; 0 = advisory only
+ta_enabled           = on
+```
+
+**Tighten (fewer knife catches):**
+
+```text
+ta_min_buy_score     = 2.0–2.5
+ta_weight            = 1.0
+reentry_sl_min_ta_score = 2.0+     ← pairs with [Scenario K](#scenario-k--post-sl-re-entry-bot-wont-reload)
+```
+
+**Coupling:** Lower **`ta_min_buy_score`** + lower **`weakness_deviation`** together = very eager reload in sideways markets. Change one at a time.
+
+**Verify:** Decision reason no longer contains `ta_buy_blocked`; TA panel shows buy score above your gate.
+
+---
+
+### Scenario K — Post-SL re-entry (bot won’t reload)
+
+**Symptoms:** Stop-loss filled; bot goes quiet for cycles/minutes; Decision shows:
+
+```text
+post_sl_cooldown cycles=2/8
+reentry_sl_await_bounce mid=1.098 need>=1.101 (0.03% above recent_low)
+reentry_sl_await_stabilization trend=bearish breakout_down=True
+reentry_sl_ta_score=1.80<2.00
+reentry_sl_await_weakness dev=-0.45
+```
+
+**What’s happening:** After an **SL exit**, **`reentry_enabled`** runs a **mandatory cooldown** first — inventory and TA **cannot bypass** cooldown. Then the gate requires **structure stabilization** (no bearish breakout), optional **bounce above recent low**, **TA score**, and **weakness** again.
+
+**Default-ish live overrides:** `sl_cooldown_cycles = 1` (short) — raise if reloading too fast after SL.
+
+**Patient reload after SL:**
+
+```text
+reentry_enabled              = on
+sl_cooldown_cycles           = 8–15
+sl_stabilization_pct         = 0.03–0.05
+sl_min_ta_score              = 2.0–2.5
+weakness_deviation           = 0.05–0.08
+buy_limit_offset_pct         = 0.20+        ← deeper bids after damage
+```
+
+**Eager reload (riskier):**
+
+```text
+sl_cooldown_cycles           = 1–3
+sl_min_ta_score              = 1.0–1.5
+sl_stabilization_pct         = 0.02
+```
+
+**Nuclear:** `reentry_enabled = off` — SL exits do not block the next buy (see [Scenario E](#scenario-e--buying-too-often-in-a-downtrend) trade-offs).
+
+**Verify:** `logs/alpha_reentry.json` shows cooldown counting down; reason shifts from `post_sl_cooldown` → stabilization/TA → then **`place_bid`**.
+
+---
+
+### Scenario L — Post-TP re-entry (waiting for dip)
+
+**Symptoms:** Take-profit filled; bot won’t immediately rebuy; Decision shows:
+
+```text
+post_tp_cooldown cycles=1/4
+reentry_tp_await_dip mid=1.105 need<=1.102 (0.08% below tp_exit=1.103)
+reentry_tp_await_weakness dev=-0.40
+reentry_tp_ta_score=1.20<1.50
+```
+
+**What’s happening:** After **TP**, the gate enforces cooldown, then waits for mid to dip **`reentry_tp_dip_pct`** below the **TP exit price**, plus weakness + TA. Prevents instantly rebuying the top after a winner.
+
+**Default live:** `tp_cooldown_cycles = 4`, `tp_dip_pct = 0.08`, `tp_min_ta_score = 1.5`.
+
+**Reload sooner after winners:**
+
+```text
+tp_cooldown_cycles     = 2–3
+tp_dip_pct             = 0.03–0.05
+tp_min_ta_score        = 1.0
+weakness_deviation     = 0.03
+```
+
+**More discipline (don’t chase green candles):**
+
+```text
+tp_cooldown_cycles     = 6–10
+tp_dip_pct             = 0.10–0.15
+tp_min_ta_score        = 2.0
+```
+
+**Verify:** After cooldown, mid must trade **below** `tp_exit × (1 − dip_pct/100)` before a new bid — check reason clears `reentry_tp_await_dip`.
+
+---
+
+### Scenario M — Balanced inventory, nothing to do
+
+**Symptoms:** Decision **`HOLD — balanced dev=+0.02`** (or similar small deviation); neither buy nor sell; inventory label **`balanced`**.
+
+**What’s happening:** **`deviation`** is between **`−weakness_deviation`** and **`+strength_deviation`**. The bot considers the book **on target enough** — no weakness buys, no strength sells.
+
+**To buy anyway:** lower **`weakness_deviation`** so current **`dev`** qualifies (e.g. dev **−0.04** needs weakness **≥ 0.04**).
+
+**To sell anyway:** raise **`strength_deviation`** in config (default **0.04**; HUD exposes weakness only today) or wait until XRP allocation rises.
+
+**Often confused with:** [Scenario D](#scenario-d--hold-forever-edge-in-the-reason) (edge gate) or [Scenario J](#scenario-j--ta-blocking-buys-in-chop) (TA gate) — read the **exact reason string**.
+
+---
+
+### Scenario N — Bid on book, mid looks good, still no fill
+
+**Symptoms:** Brackets show **pending buy**; mid at or below entry on HUD; **`place_bid`** already executed; offer rests for minutes; no fill.
+
+**What’s happening:** **Limit bids are passive.** Fill requires **best ask ≤ your bid** (or a seller hitting your price). **Mid crossing entry does not fill you.** Large **ask depth** above your bid means liquidity exists **higher**, not at your level.
+
+| Check | Action |
+|-------|--------|
+| **Best ask** vs your entry (Market Conditions) | Ask must drop to bid |
+| Spread ~10+ bps | Need a trade through the spread |
+| Entry below best bid | You’re behind the touch — lower offset or wait |
+
+**Fix for more fills:** lower **`buy_limit_offset_pct`** (nearer ask) — see [Scenario A/F](#scenario-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind). **Not a bug** if mid dips visually but ask never trades to your bid.
+
+---
+
+### Scenario O — XRP-heavy, want strength sells
+
+**Symptoms:** **70%+ XRP**, target lower or at cap; HOLD **`sell_blocked_imbalance`** when too RLUSD-heavy *or* **`place_ask` / strength** when **`dev ≥ strength_deviation`**; TA may show **`ta_sell_deferred bullish`**.
+
+**What’s happening:** Strength sells deploy when **`deviation ≥ alpha_strength_deviation`** (default **0.04** — config/SKYNET, not a Live slider today). **`sell_limit_offset_pct`** sets ask above mid. **`ta_sell_deferred`** holds XRP when bias is bullish and buy score is strong.
+
+**Unload XRP into RLUSD faster:**
+
+```text
+strength_deviation       = 0.03        ← config / SKYNET
+sell_limit_offset_pct    = 0.10–0.15   ← nearer mid = more sell fills
+ta_min_sell_score        = 1.0–1.5
+inventory_target_xrp_ratio = lower target if you want less XRP ambition
+```
+
+**Hold winners longer:**
+
+```text
+ta_min_sell_score        = 2.5+
+sell_limit_offset_pct    = 0.30+
+ta_sell_deferred         ← respect bullish deferral in reason
+```
+
+**Verify:** Decision **`place_ask`** or **`strength dev=…`**; Open Offers shows RLUSD bid side (you sell XRP).
+
+---
+
+### Scenario P — Kill switch, drawdown, or pause
+
+**Symptoms:** Sidebar **Kill** or **Pause**; Decision **`kill_switch: …`**, **`risk_trading_not_allowed`**, **`preflight_not_ready`**, **`pause_bids`**, or **`buy_blocked_imbalance`** when XRP **too high** (opposite of RLUSD-heavy).
+
+**What’s happening:**
+
+| Reason | Meaning |
+|--------|---------|
+| **`kill_switch`** | Hard stop — daily drawdown or manual kill file |
+| **`preflight_not_ready`** | Trust line, balance, or config issue |
+| **`pause_bids`** | Inventory circuit breaker — too XRP-heavy vs target |
+| **`buy_blocked_imbalance`** | Beyond **`alpha_max_inventory_imbalance_pct`** on buy side |
+
+**Fix:** Resolve alerts in **Reports / status** first. **Kill** requires clearing kill state and fixing drawdown cause. **Pause** on HUD stops new entries but keeps brackets.
+
+**Do not** crank aggression knobs while kill/preflight active — fix risk state first.
+
+---
+
+### Scenario Q — `ta_warming_up` / insufficient history
+
+**Symptoms:** Early session or after restart; Decision **`ta_warming_up — insufficient price history for buy gate`**; TA panel sparse.
+
+**What’s happening:** TA needs **`min_candles`** in price history (`alpha_price_history.json` samples). Until warmed, **`ta_weight` = 1** blocks buys.
+
+**Fix:** Wait **15–30 min** of engine cycles (depends on **`alpha_price_sample_interval_seconds`** and chart bucket). Or temporarily:
+
+```text
+ta_weight = 0          ← advisory only until warmed
+ta_enabled = off       ← last resort while learning
+```
+
+**Not the fix:** Lowering offset or weakness — gate is history, not inventory.
+
+---
+
+### Scenario R — `insufficient_ask_depth`
+
+**Symptoms:** HOLD **`insufficient_ask_depth depth=0.XX`**; Market Conditions **Max buy** = **0** or tiny.
+
+**What’s happening:** Book depth within **±1% of mid** is below **`min_order_size_xrp`**. Rare on RLUSD/XRP mainnet; can happen during outages, bad book snapshot, or testnet.
+
+**Fix:** Check **best bid/ask** sanity on HUD. Wait for next engine cycle book refresh. If persistent, verify RPC/book health (preflight). **Do not** raise **`risk_per_trade_pct`** — depth is the binder, not risk cap.
 
 ---
 
