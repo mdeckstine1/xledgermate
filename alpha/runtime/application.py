@@ -202,6 +202,14 @@ class AlphaApplication:
                     dry_run=self.config.dry_run,
                 )
 
+    async def _refresh_after_operator_commands(self) -> None:
+        """Process queued HUD commands and republish state without placing entries."""
+        if not self._runtime.has_pending_commands():
+            return
+        await self._sync_operator_runtime()
+        snap, _validation, decision, orders = await self._gather_cycle_context()
+        self._publish_hud_state(snap, decision, orders, None, "")
+
     @classmethod
     def from_config_file(cls, *, state_dir: Path | None = None) -> tuple[AlphaApplication, AlphaConfigValidation]:
         config, validation = load_validated_config()
@@ -432,6 +440,8 @@ class AlphaApplication:
         ctx = self._build_report(snap, decision, orders, execution)
         report_text = self._reporting.publish_cycle(ctx, to_telegram=telegram)
         self._publish_hud_state(snap, decision, orders, execution, report_text)
+        while self._runtime.has_pending_commands():
+            await self._refresh_after_operator_commands()
         return AlphaCycleResult(
             snapshot=snap,
             decision=decision,
@@ -512,19 +522,23 @@ class AlphaApplication:
 
     async def _sleep_with_price_sampling(self, total_seconds: int) -> None:
         sample_iv = int(self.config.alpha_price_sample_interval_seconds)
-        if sample_iv <= 0 or sample_iv >= total_seconds:
-            await asyncio.sleep(total_seconds)
-            return
         elapsed = 0
         while elapsed < total_seconds:
-            chunk = min(sample_iv, total_seconds - elapsed)
+            chunk = min(1, sample_iv if sample_iv > 0 else 1, total_seconds - elapsed)
             await asyncio.sleep(chunk)
             elapsed += chunk
-            if elapsed < total_seconds:
+            if self._runtime.has_pending_commands():
                 try:
-                    await self._sample_book_prices()
+                    await self._refresh_after_operator_commands()
                 except Exception as exc:
-                    logger.warning("price_sample_failed | %s", exc)
+                    logger.warning("operator_command_refresh_failed | %s", exc)
+                continue
+            if sample_iv <= 0 or sample_iv >= total_seconds or elapsed >= total_seconds:
+                continue
+            try:
+                await self._sample_book_prices()
+            except Exception as exc:
+                logger.warning("price_sample_failed | %s", exc)
 
     async def close(self) -> None:
         try:

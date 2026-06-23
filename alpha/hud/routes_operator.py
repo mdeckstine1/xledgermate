@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -12,6 +14,7 @@ _STATE_DIR = Path("logs")
 _OVERRIDES = _STATE_DIR / "alpha_overrides.json"
 _COMMANDS = _STATE_DIR / "alpha_commands.json"
 _KILL = _STATE_DIR / "kill_switch.json"
+_COMMAND_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 
 
 def register_operator_routes(app: Any) -> None:
@@ -36,6 +39,13 @@ def register_operator_routes(app: Any) -> None:
 
     def _effective() -> BotConfig:
         return apply_overrides(_base_config(), _runtime().load_overrides())
+
+    async def _queue_and_run(command: Dict[str, Any]) -> Dict[str, Any]:
+        from alpha.operator.command_runner import process_queued_commands_sync
+
+        _runtime().queue_command(command)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(_COMMAND_EXECUTOR, process_queued_commands_sync)
 
     @app.get("/operator/config")
     async def get_operator_config() -> JSONResponse:
@@ -126,8 +136,8 @@ def register_operator_routes(app: Any) -> None:
                 {"ok": False, "message": 'confirm must be "CANCEL_ALL"'},
                 status_code=400,
             )
-        _runtime().queue_command({"type": "cancel_all"})
-        return JSONResponse({"ok": True, "queued": "cancel_all"})
+        result = await _queue_and_run({"type": "cancel_all"})
+        return JSONResponse({**result, "queued": "cancel_all"})
 
     @app.post("/brackets/{bracket_id}/adjust")
     async def bracket_adjust(
@@ -146,7 +156,7 @@ def register_operator_routes(app: Any) -> None:
             return JSONResponse({"ok": False, "message": "price float required"}, status_code=400)
         if price <= 0:
             return JSONResponse({"ok": False, "message": "price must be positive"}, status_code=400)
-        _runtime().queue_command(
+        result = await _queue_and_run(
             {
                 "type": "bracket_adjust",
                 "bracket_id": bracket_id,
@@ -156,7 +166,7 @@ def register_operator_routes(app: Any) -> None:
         )
         return JSONResponse(
             {
-                "ok": True,
+                **result,
                 "queued": "bracket_adjust",
                 "bracket_id": bracket_id,
                 "leg": leg,
@@ -166,15 +176,13 @@ def register_operator_routes(app: Any) -> None:
 
     @app.post("/brackets/{bracket_id}/cancel")
     async def bracket_cancel(bracket_id: str) -> JSONResponse:
-        _runtime().queue_command({"type": "bracket_cancel", "bracket_id": bracket_id})
-        return JSONResponse(
-            {"ok": True, "queued": "bracket_cancel", "bracket_id": bracket_id}
-        )
+        result = await _queue_and_run({"type": "bracket_cancel", "bracket_id": bracket_id})
+        return JSONResponse({**result, "queued": "bracket_cancel", "bracket_id": bracket_id})
 
     @app.post("/offers/{sequence}/cancel")
     async def offer_cancel(sequence: int) -> JSONResponse:
-        _runtime().queue_command({"type": "offer_cancel", "sequence": sequence})
-        return JSONResponse({"ok": True, "queued": "offer_cancel", "sequence": sequence})
+        result = await _queue_and_run({"type": "offer_cancel", "sequence": sequence})
+        return JSONResponse({**result, "queued": "offer_cancel", "sequence": sequence})
 
     @app.post("/offers/{sequence}/adjust")
     async def offer_adjust(
@@ -187,12 +195,12 @@ def register_operator_routes(app: Any) -> None:
             return JSONResponse({"ok": False, "message": "price float required"}, status_code=400)
         if price <= 0:
             return JSONResponse({"ok": False, "message": "price must be positive"}, status_code=400)
-        _runtime().queue_command(
+        result = await _queue_and_run(
             {"type": "offer_adjust", "sequence": sequence, "new_price": price}
         )
         return JSONResponse(
             {
-                "ok": True,
+                **result,
                 "queued": "offer_adjust",
                 "sequence": sequence,
                 "price": price,

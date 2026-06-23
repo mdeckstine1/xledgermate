@@ -389,7 +389,11 @@ class OperatorRuntimeStore:
         return []
 
     def _write_commands(self, commands: List[Dict[str, Any]]) -> None:
+        self.commands_path.parent.mkdir(parents=True, exist_ok=True)
         self.commands_path.write_text(json.dumps(commands, indent=2), encoding="utf-8")
+
+    def has_pending_commands(self) -> bool:
+        return bool(self._load_commands())
 
 
 def derive_posture(

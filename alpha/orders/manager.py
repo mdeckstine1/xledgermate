@@ -516,8 +516,8 @@ class OrderManager:
             self._store.touch_persist()
             return True
 
-        if record.state == BracketLifecycleState.PENDING_BUY and record.buy_sequence:
-            await self._ledger.cancel_offer(record.buy_sequence)
+        if record.state == BracketLifecycleState.PENDING_BUY:
+            await self._cancel_pending_buy_offer(record)
         elif record.state in (
             BracketLifecycleState.BRACKET_ACTIVE,
             BracketLifecycleState.TRAILING_PLACEHOLDER,
@@ -531,6 +531,41 @@ class OrderManager:
         logger.info("bracket_cancelled | id=%s | state_was=%s", record.bracket_id, state_was)
         return True
 
+    async def _cancel_pending_buy_offer(self, record: BracketRecord) -> None:
+        """Cancel the ledger buy for a pending bracket (handles stale sequences)."""
+        offers = await self._ledger.get_open_offers()
+        open_map = _open_offer_map(offers)
+        buy_open = open_map.get(record.buy_sequence)
+        if buy_open is not None:
+            await self._ledger.cancel_offer(record.buy_sequence)
+            return
+        for offer in offers:
+            if offer.get("side") != "bid":
+                continue
+            seq = int(offer.get("sequence", 0))
+            if seq <= 0 or self._store.get_by_buy_sequence(seq) is not None:
+                continue
+            price = float(offer.get("price", 0.0))
+            size = float(offer.get("size_xrp", 0.0))
+            if (
+                abs(price - record.entry_price_rlusd_per_xrp) < 0.0002
+                and abs(size - record.target_size_xrp) < 0.05
+            ):
+                logger.info(
+                    "bracket_cancel_orphan_buy | id=%s | seq=%s | price=%.6f",
+                    record.bracket_id,
+                    seq,
+                    price,
+                )
+                await self._ledger.cancel_offer(seq)
+                return
+        logger.warning(
+            "bracket_cancel_buy_missing | id=%s | buy_seq=%s | open_bids=%d",
+            record.bracket_id,
+            record.buy_sequence,
+            sum(1 for o in offers if o.get("side") == "bid"),
+        )
+
     async def cancel_open_offer(self, sequence: int) -> bool:
         """Cancel one ledger offer; update bracket registry when mapped."""
         seq = int(sequence)
@@ -538,6 +573,17 @@ class OrderManager:
             return False
         offers = await self._ledger.get_open_offers()
         if not any(int(o.get("sequence", 0)) == seq for o in offers):
+            record = self._store.get_by_buy_sequence(seq)
+            if record is not None and record.state == BracketLifecycleState.PENDING_BUY:
+                record.state = BracketLifecycleState.CANCELLED
+                record.touch()
+                self._store.touch_persist()
+                logger.info(
+                    "offer_cancel_missing_mark_bracket | bracket_id=%s | seq=%s",
+                    record.bracket_id,
+                    seq,
+                )
+                return True
             logger.warning("offer_cancel_missing | seq=%s", seq)
             return False
 

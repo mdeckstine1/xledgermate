@@ -97,7 +97,7 @@ def test_dry_run_enable_requires_confirm(client):
     assert r.status_code == 200
 
 
-def test_cancel_all_requires_confirm(client):
+def test_cancel_all_requires_confirm(client, mock_command_runner):
     r = client.post("/controls/cancel-all", json={"confirm": "NOPE"})
     assert r.status_code == 400
     r = client.post("/controls/cancel-all", json={"confirm": "CANCEL_ALL"})
@@ -120,7 +120,15 @@ def test_config_reload_queues(client):
     assert r.json()["queued"] == "config_reload"
 
 
-def test_bracket_adjust_queues(client):
+@pytest.fixture
+def mock_command_runner(monkeypatch):
+    monkeypatch.setattr(
+        "alpha.operator.command_runner.process_queued_commands_sync",
+        lambda publish_hud=True: {"ok": True, "processed": 1, "message": "commands_processed"},
+    )
+
+
+def test_bracket_adjust_queues(client, mock_command_runner):
     r = client.post(
         "/brackets/abc12345/adjust",
         json={"leg": "tp", "price": 2.5},
@@ -129,7 +137,7 @@ def test_bracket_adjust_queues(client):
     assert r.json()["queued"] == "bracket_adjust"
 
 
-def test_bracket_adjust_entry_queues(client):
+def test_bracket_adjust_entry_queues(client, mock_command_runner):
     r = client.post(
         "/brackets/abc12345/adjust",
         json={"leg": "entry", "price": 1.05},
@@ -138,19 +146,20 @@ def test_bracket_adjust_entry_queues(client):
     assert r.json()["leg"] == "entry"
 
 
-def test_bracket_cancel_queues(client):
+def test_bracket_cancel_queues(client, mock_command_runner):
     r = client.post("/brackets/abc12345/cancel")
     assert r.status_code == 200
     assert r.json()["queued"] == "bracket_cancel"
+    assert r.json()["message"] == "commands_processed"
 
 
-def test_offer_cancel_queues(client):
+def test_offer_cancel_queues(client, mock_command_runner):
     r = client.post("/offers/12345/cancel")
     assert r.status_code == 200
     assert r.json()["queued"] == "offer_cancel"
 
 
-def test_offer_adjust_queues(client):
+def test_offer_adjust_queues(client, mock_command_runner):
     r = client.post("/offers/12345/adjust", json={"price": 1.08})
     assert r.status_code == 200
     assert r.json()["queued"] == "offer_adjust"

@@ -607,10 +607,24 @@
       if (d?.ok) toast('Bracket ' + leg.toUpperCase() + ' adjust queued');
     }
 
+    function formatBracketState(r) {
+      if (r.state === 'pending_buy') return 'pending buy';
+      if (r.state === 'bracket_active') {
+        const tags = [];
+        if (r.breakeven_passed) tags.push('BE');
+        if (r.breakout_confirmed) tags.push('BO');
+        const suffix = tags.length ? ' · ' + tags.join(' ') : '';
+        return 'active · bracket' + suffix;
+      }
+      return r.state || '—';
+    }
+
     async function cancelBracket(fullId) {
       const d = await postJson('/brackets/' + encodeURIComponent(fullId) + '/cancel', {});
-      if (d?.ok) toast('Bracket cancel queued');
-      else toast(d?.message || 'Cancel failed', true);
+      if (d?.ok) {
+        toast(d.message === 'commands_processed' ? 'Bracket cancelled' : (d.message || 'Cancel sent'));
+        poll();
+      }
     }
 
     function editBracket(fullId, state) {
@@ -627,8 +641,10 @@
 
     async function cancelOffer(seq) {
       const d = await postJson('/offers/' + encodeURIComponent(seq) + '/cancel', {});
-      if (d?.ok) toast('Offer cancel queued');
-      else toast(d?.message || 'Cancel failed', true);
+      if (d?.ok) {
+        toast(d.message === 'commands_processed' ? 'Offer cancelled' : (d.message || 'Cancel sent'));
+        poll();
+      }
     }
 
     function editOffer(seq) {
@@ -1109,7 +1125,7 @@
           : fmt(r.entry,6);
         return `<tr>
         ${bracketActions(r, fid)}
-        <td>${r.bracket_id}</td><td>${r.state}</td><td>${r.mode}</td>
+        <td>${r.bracket_id}</td><td>${formatBracketState(r)}</td><td>${r.mode}</td>
         <td>${entryCell}</td>
         <td>${bracketSizeLine(r)}</td>
         <td>${bracketRlusdLine(r)}</td>
