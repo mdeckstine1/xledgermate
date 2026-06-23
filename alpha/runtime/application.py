@@ -374,6 +374,7 @@ class AlphaApplication:
             reentry=self._reentry.snapshot,
             liquidity=self._last_liquidity,
             engine_cycle=self._engine_cycle,
+            orphan_bids=orders.orphan_bids,
         )
 
     async def run_status_cycle(self, *, telegram: bool = True) -> AlphaCycleResult:

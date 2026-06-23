@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from pathlib import Path
 from typing import Any, Dict, List
 
 from alpha.decision.engine import DecisionAction, DecisionEngine
@@ -198,12 +199,12 @@ class _IntegrationLedger:
         return None
 
 
-def test_executor_dry_run_logs_without_register():
+def test_executor_dry_run_logs_without_register(tmp_path: Path):
     async def _run() -> None:
         ledger = _IntegrationLedger()
         cfg = _entry_config(dry_run=True)
         guard = DryRunGuard(dry_run=True, network="mainnet")
-        orders = OrderManager(ledger, guard, cfg)
+        orders = OrderManager(ledger, guard, cfg, state_dir=tmp_path)
         executor = EntryExecutor(ledger, orders, guard, cfg)
         from alpha.decision.engine import DecisionResult
 
@@ -222,12 +223,12 @@ def test_executor_dry_run_logs_without_register():
     asyncio.run(_run())
 
 
-def test_executor_registers_buy_and_bracket_on_fill():
+def test_executor_registers_buy_and_bracket_on_fill(tmp_path: Path):
     async def _run() -> None:
         ledger = _IntegrationLedger()
         cfg = _entry_config(dry_run=False)
         guard = DryRunGuard(dry_run=False, network="mainnet")
-        orders = OrderManager(ledger, guard, cfg)
+        orders = OrderManager(ledger, guard, cfg, state_dir=tmp_path)
         executor = EntryExecutor(ledger, orders, guard, cfg)
         from alpha.decision.engine import DecisionResult
 

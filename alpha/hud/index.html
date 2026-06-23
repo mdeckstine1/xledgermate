@@ -1518,7 +1518,8 @@
       $('structTrend').textContent = s.structure?.trend || '—';
       $('structSum').textContent = s.structure?.summary || '';
       const bs = s.brackets?.summary || {};
-      $('brSum').textContent = (bs.pending_buys||0) + ' pending · ' + (bs.active_fixed||0) + ' fixed';
+      $('brSum').textContent = (bs.pending_buys||0) + ' pending · ' + (bs.active_fixed||0) + ' fixed'
+        + (bs.orphan_bids > 0 ? ' · ' + bs.orphan_bids + ' untracked bids' : '');
       $('brDetail').textContent = (bs.active_sl_trailing||0) + ' SL trail · ' + (bs.active_breakout_trailing||0) + ' breakout trail';
       $('preflight').textContent = s.risk?.preflight_summary || '—';
       $('exec').textContent = s.execution ? (s.execution.message || JSON.stringify(s.execution)) : '—';

@@ -85,9 +85,9 @@ class _RecordingConnector:
         self.place_calls: List[tuple[str, float, float]] = []
         self.cancel_calls: List[int] = []
 
-    async def place_quote(self, intent: Any) -> str:
+    async def place_quote(self, intent: Any) -> tuple[str, int | None]:
         self.place_calls.append((intent.side, intent.size_xrp, intent.price))
-        return "FAKE_HASH"
+        return "FAKE_HASH", 2001
 
     async def cancel_offer(self, sequence: int) -> str:
         self.cancel_calls.append(sequence)

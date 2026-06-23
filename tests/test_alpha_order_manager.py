@@ -562,6 +562,7 @@ def test_excess_pending_buys_pruned_to_cap(bracket_state):
             alpha_max_pending_buys=2,
             alpha_stale_pending_buy_enabled=True,
             alpha_stale_pending_buy_max_drift_pct=0.5,
+            alpha_rlusd_price_decimals=6,
         )
         mgr = OrderManager(
             ledger,

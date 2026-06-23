@@ -227,6 +227,37 @@ class XRPLConnector:
             raise RuntimeError("XRPL transaction returned no hash")
         return tx_hash
 
+    @staticmethod
+    def extract_created_offer_sequence(response) -> Optional[int]:
+        """Parse Offer sequence from OfferCreate transaction meta (AffectedNodes)."""
+        result = response.result if hasattr(response, "result") else {}
+        meta = result.get("meta", {})
+        if not isinstance(meta, dict):
+            return None
+        nodes = meta.get("AffectedNodes") or meta.get("affected_nodes") or []
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            created = node.get("CreatedNode") or node.get("created_node")
+            if not isinstance(created, dict):
+                continue
+            entry_type = created.get("LedgerEntryType") or created.get("ledger_entry_type")
+            if entry_type != "Offer":
+                continue
+            fields = created.get("NewFields") or created.get("new_fields") or {}
+            if not isinstance(fields, dict):
+                continue
+            seq_raw = fields.get("Sequence") or fields.get("sequence")
+            if seq_raw is None:
+                continue
+            try:
+                seq = int(seq_raw)
+            except (TypeError, ValueError):
+                continue
+            if seq > 0:
+                return seq
+        return None
+
     def _rlusd_limit_amount(self, value: str) -> IssuedCurrencyAmount:
         return IssuedCurrencyAmount(
             currency=self._issued_rlusd_currency_code(),
@@ -489,7 +520,7 @@ class XRPLConnector:
             )
         return cancelled
 
-    async def place_quote(self, intent: QuoteIntent) -> str:
+    async def place_quote(self, intent: QuoteIntent) -> tuple[str, Optional[int]]:
         wallet = self.load_wallet()
         dec = getattr(intent, "price_decimals", 6) or 6
         rlusd_amount = intent.size_xrp * intent.price
@@ -518,15 +549,17 @@ class XRPLConnector:
         )
         response = await self._sign_and_submit(tx, wallet)
         tx_hash = self._validate_tx_response(response)
+        offer_seq = self.extract_created_offer_sequence(response)
         logger.info(
-            "Placed %s L%s offer | size=%.4f XRP price=%s hash=%s",
+            "Placed %s L%s offer | size=%.4f XRP price=%s seq=%s hash=%s",
             intent.side,
             intent.level,
             intent.size_xrp,
             format_rlusd_price(intent.price, dec),
+            offer_seq if offer_seq is not None else "n/a",
             tx_hash,
         )
-        return tx_hash
+        return tx_hash, offer_seq
 
     def _parse_offer_legs(self, gets, pays) -> tuple[Optional[str], float, float]:
         if isinstance(gets, str) and isinstance(pays, dict):

@@ -309,6 +309,7 @@ def build_hud_state(
     reentry: Optional[ReentrySnapshot] = None,
     liquidity: Optional[LiquidityDepth] = None,
     engine_cycle: int = 0,
+    orphan_bids: int = 0,
 ) -> Dict[str, Any]:
     """Build JSON-serializable HUD payload from one Alpha cycle."""
     snap = snapshot
@@ -444,6 +445,7 @@ def build_hud_state(
                 "active_fixed": bracket_summary.active_fixed,
                 "active_sl_trailing": bracket_summary.active_sl_trailing,
                 "active_breakout_trailing": bracket_summary.active_breakout_trailing,
+                "orphan_bids": orphan_bids,
                 "labels": list(bracket_summary.labels),
             },
             "records": [_bracket_row(r) for r in brackets],
@@ -532,6 +534,7 @@ def publish_cycle_to_hud(
     reentry: Optional[ReentrySnapshot] = None,
     liquidity: Optional[LiquidityDepth] = None,
     engine_cycle: int = 0,
+    orphan_bids: int = 0,
 ) -> None:
     try:
         state = build_hud_state(
@@ -554,6 +557,7 @@ def publish_cycle_to_hud(
             reentry=reentry,
             liquidity=liquidity,
             engine_cycle=engine_cycle,
+            orphan_bids=orphan_bids,
         )
         write_alpha_runtime_state(path, state)
     except OSError as exc:

@@ -197,9 +197,15 @@ class XrplLedgerAdapter(LedgerInterface):
             level=1,
             price_decimals=dec,
         )
-        tx_hash = await self._connector.place_quote(intent)
-        logger.info("ledger_place_buy | %s | hash=%s", action, tx_hash)
-        return LedgerOfferResult(submitted=True, dry_run=False, action=action, tx_hash=tx_hash)
+        tx_hash, offer_seq = await self._connector.place_quote(intent)
+        logger.info("ledger_place_buy | %s | hash=%s | seq=%s", action, tx_hash, offer_seq)
+        return LedgerOfferResult(
+            submitted=True,
+            dry_run=False,
+            action=action,
+            tx_hash=tx_hash,
+            sequence=offer_seq,
+        )
 
     async def place_limit_sell_xrp(
         self,
@@ -221,9 +227,15 @@ class XrplLedgerAdapter(LedgerInterface):
             level=1,
             price_decimals=dec,
         )
-        tx_hash = await self._connector.place_quote(intent)
-        logger.info("ledger_place_sell | %s | hash=%s", action, tx_hash)
-        return LedgerOfferResult(submitted=True, dry_run=False, action=action, tx_hash=tx_hash)
+        tx_hash, offer_seq = await self._connector.place_quote(intent)
+        logger.info("ledger_place_sell | %s | hash=%s | seq=%s", action, tx_hash, offer_seq)
+        return LedgerOfferResult(
+            submitted=True,
+            dry_run=False,
+            action=action,
+            tx_hash=tx_hash,
+            sequence=offer_seq,
+        )
 
     async def cancel_offer(self, sequence: int) -> LedgerOfferResult:
         action = f"cancel_offer seq={sequence}"

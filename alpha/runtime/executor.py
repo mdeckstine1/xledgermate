@@ -128,12 +128,16 @@ class EntryExecutor:
                 size_xrp=size,
             )
         if seq is None:
-            logger.error("entry_buy_sequence_unresolved | size=%.4f price=%.6f", size, price)
+            logger.warning(
+                "entry_buy_sequence_deferred | size=%.4f price=%.6f — will reconcile on next sync",
+                size,
+                price,
+            )
             return EntryExecutionResult(
-                executed=False,
+                executed=True,
                 dry_run=False,
                 action="place_bid",
-                message="sequence_unresolved",
+                message=f"{decision.reason}|sequence_deferred_reconcile",
             )
 
         bracket_id = self._orders.register_pending_buy(

@@ -17,7 +17,7 @@ from alpha.ledger.interface import LedgerInterface
 from alpha.orders.bracket import compute_bracket_prices, normalize_partial_fill_mode
 from alpha.orders.stale_pending import stale_pending_buy_reason as _stale_pending_buy_reason
 from alpha.orders.stale_pending import target_buy_limit_price
-from alpha.precision import price_decimals
+from alpha.precision import price_decimals, price_eps
 from alpha.orders.state import BracketStateStore
 from alpha.orders.trailing import TrailingEvalResult, evaluate_trailing
 from alpha.orders.types import (
@@ -48,6 +48,8 @@ class OrderManagerState:
     bracket_count: int = 0
     active_brackets: int = 0
     pending_buys: int = 0
+    orphan_bids: int = 0
+    reconciled_bids: int = 0
     bracket_states: tuple[str, ...] = ()
     recent_events: tuple[str, ...] = ()
 
@@ -124,6 +126,7 @@ class OrderManager:
             price=price,
             size_xrp=size_xrp,
             submitted=True,
+            retries=4,
         )
 
     def register_pending_buy(
@@ -135,6 +138,9 @@ class OrderManager:
         bracket_id: Optional[str] = None,
     ) -> str:
         """Register a limit buy awaiting fill; bracket legs placed after fill."""
+        existing = self._store.get_by_buy_sequence(buy_sequence)
+        if existing is not None and existing.state == BracketLifecycleState.PENDING_BUY:
+            return existing.bracket_id
         bid = bracket_id or str(uuid.uuid4())
         record = BracketRecord(
             bracket_id=bid,
@@ -163,6 +169,9 @@ class OrderManager:
         """Poll ledger offers, detect fills, place/cancel bracket legs."""
         self._last_risk = risk
         offers = await self._ledger.get_open_offers()
+        reconciled = await self._reconcile_orphan_bids(offers)
+        if reconciled:
+            offers = await self._ledger.get_open_offers()
         open_map = _open_offer_map(offers)
 
         from alpha.decision.structure import MarketStructureSnapshot
@@ -202,15 +211,20 @@ class OrderManager:
             bracket_count=len(self._store.all_records()),
             active_brackets=self._store.active_bracket_count(),
             pending_buys=self._store.pending_buy_count(),
+            orphan_bids=self._count_orphan_bids(offers),
+            reconciled_bids=reconciled,
             bracket_states=self._store.state_labels(),
             recent_events=tuple(self._recent_events[-20:]),
         )
         logger.info(
-            "order_manager_sync | open_offers=%d | brackets=%d | active=%d | pending_buys=%d | dry_run=%s",
+            "order_manager_sync | open_offers=%d | brackets=%d | active=%d | pending_buys=%d | "
+            "orphan_bids=%d | reconciled=%d | dry_run=%s",
             len(offers),
             state.bracket_count,
             state.active_brackets,
             state.pending_buys,
+            state.orphan_bids,
+            state.reconciled_bids,
             self._guard.dry_run,
         )
         return state
@@ -591,8 +605,8 @@ class OrderManager:
             price = float(offer.get("price", 0.0))
             size = float(offer.get("size_xrp", 0.0))
             if (
-                abs(price - record.entry_price_rlusd_per_xrp) < 0.0002
-                and abs(size - record.target_size_xrp) < 0.05
+                self._offer_price_match(price, record.entry_price_rlusd_per_xrp)
+                and self._offer_size_match(size, record.target_size_xrp)
             ):
                 logger.info(
                     "bracket_cancel_orphan_buy | id=%s | seq=%s | price=%.6f",
@@ -718,6 +732,114 @@ class OrderManager:
         logger.info("offer_adjusted | seq=%s→%s | side=%s | price=%.6f", seq, new_seq, side, new_price)
         return True
 
+    def _price_match_tol(self) -> float:
+        dec = price_decimals(self._config)
+        return max(price_eps(dec), 1e-5)
+
+    def _offer_price_match(self, a: float, b: float) -> bool:
+        return abs(float(a) - float(b)) <= self._price_match_tol()
+
+    def _offer_size_match(self, a: float, b: float) -> bool:
+        return abs(float(a) - float(b)) <= 0.05
+
+    def _count_orphan_bids(self, offers: List[dict[str, Any]]) -> int:
+        orphan = 0
+        for offer in offers:
+            if offer.get("side") != "bid":
+                continue
+            seq = int(offer.get("sequence", 0) or 0)
+            if seq <= 0:
+                continue
+            record = self._store.get_by_buy_sequence(seq)
+            if record is not None and record.state == BracketLifecycleState.PENDING_BUY:
+                continue
+            if self._store.get_by_leg_sequence(seq) is not None:
+                continue
+            orphan += 1
+        return orphan
+
+    async def _reconcile_orphan_bids(self, offers: List[dict[str, Any]]) -> int:
+        """Link resting ledger bids that were never registered (or wrongly cancelled)."""
+        linked = 0
+        for offer in offers:
+            if offer.get("side") != "bid":
+                continue
+            seq = int(offer.get("sequence", 0) or 0)
+            if seq <= 0:
+                continue
+            price = float(offer.get("price", 0.0))
+            size = float(offer.get("size_xrp", 0.0))
+            if size < self._config.min_order_size_xrp or price <= 0:
+                continue
+
+            existing = self._store.get_by_buy_sequence(seq)
+            if existing is not None:
+                if existing.state == BracketLifecycleState.CANCELLED:
+                    self._revive_pending_buy(existing, seq, price, size)
+                    linked += 1
+                continue
+
+            if self._store.get_by_leg_sequence(seq) is not None:
+                continue
+
+            if self._revive_cancelled_by_match(price, size, seq):
+                linked += 1
+                continue
+
+            self.register_pending_buy(
+                buy_sequence=seq,
+                size_xrp=size,
+                entry_price_rlusd_per_xrp=price,
+            )
+            linked += 1
+            logger.info(
+                "bracket_reconcile_orphan_bid | seq=%s | size=%.4f | price=%.6f",
+                seq,
+                size,
+                price,
+            )
+        return linked
+
+    def _revive_pending_buy(
+        self,
+        record: BracketRecord,
+        seq: int,
+        price: float,
+        size: float,
+    ) -> None:
+        record.state = BracketLifecycleState.PENDING_BUY
+        record.entry_price_rlusd_per_xrp = price
+        record.target_size_xrp = size
+        record.filled_xrp = 0.0
+        if record.buy_sequence != seq:
+            self._store.update_buy_sequence(record, seq)
+        record.touch()
+        self._store.touch_persist()
+        logger.info(
+            "bracket_revive_pending | id=%s | seq=%s | size=%.4f | price=%.6f",
+            record.bracket_id[:8],
+            seq,
+            size,
+            price,
+        )
+
+    def _revive_cancelled_by_match(self, price: float, size: float, seq: int) -> bool:
+        for record in self._store.all_records():
+            if record.state != BracketLifecycleState.CANCELLED:
+                continue
+            if not self._offer_price_match(record.entry_price_rlusd_per_xrp, price):
+                continue
+            if not self._offer_size_match(record.target_size_xrp, size):
+                continue
+            self._revive_pending_buy(record, seq, price, size)
+            logger.info(
+                "bracket_revive_cancelled_match | id=%s | seq=%s",
+                record.bracket_id[:8],
+                seq,
+            )
+            return True
+        return False
+
     def _target_buy_limit_price(self, mid: float) -> float:
         return target_buy_limit_price(
             mid,
@@ -785,10 +907,9 @@ class OrderManager:
         target = self._target_buy_limit_price(mid)
         pending.sort(
             key=lambda record: abs(record.entry_price_rlusd_per_xrp - target),
-            reverse=True,
         )
         cancelled = 0
-        for record in pending[cap:]:
+        for record in reversed(pending[cap:]):
             if await self.cancel_bracket(record.bracket_id):
                 cancelled += 1
                 logger.info(
@@ -1174,6 +1295,7 @@ class OrderManager:
                 price=price,
                 size_xrp=size_xrp,
                 exclude_seqs=known,
+                price_tol=self._price_match_tol(),
             )
             if seq is not None:
                 return seq, False
@@ -1197,22 +1319,40 @@ class OrderManager:
         price: float,
         size_xrp: float,
         submitted: bool,
+        retries: int = 1,
     ) -> Optional[int]:
         if not submitted:
             return None
-        offers = await self._ledger.get_open_offers()
-        after = {int(o["sequence"]) for o in offers if o.get("sequence")}
-        new_seqs = after - before
-        if len(new_seqs) == 1:
-            return next(iter(new_seqs))
-        for offer in offers:
-            if offer.get("side") != side:
-                continue
-            if abs(float(offer.get("price", 0.0)) - price) > 1e-5:
-                continue
-            if abs(float(offer.get("size_xrp", 0.0)) - size_xrp) > 0.05:
-                continue
-            return int(offer["sequence"])
+        price_tol = self._price_match_tol()
+        for attempt in range(max(1, retries)):
+            offers = await self._ledger.get_open_offers()
+            after = {int(o["sequence"]) for o in offers if o.get("sequence")}
+            new_seqs = after - before
+            if len(new_seqs) == 1:
+                return next(iter(new_seqs))
+            if new_seqs:
+                matched = _match_offer_in_set(
+                    offers,
+                    side=side,
+                    price=price,
+                    size_xrp=size_xrp,
+                    exclude_seqs=before,
+                    price_tol=price_tol,
+                )
+                if matched is not None and matched in new_seqs:
+                    return matched
+            matched = _match_offer_in_set(
+                offers,
+                side=side,
+                price=price,
+                size_xrp=size_xrp,
+                exclude_seqs=before,
+                price_tol=price_tol,
+            )
+            if matched is not None:
+                return matched
+            if attempt < retries - 1:
+                await asyncio.sleep(0.35 * (attempt + 1))
         return None
 
     def _emit_event(self, event: BracketFillEvent) -> None:
@@ -1249,6 +1389,7 @@ def _match_offer_in_set(
     price: float,
     size_xrp: float,
     exclude_seqs: Optional[Set[int]] = None,
+    price_tol: float = 1e-5,
 ) -> Optional[int]:
     excluded = exclude_seqs or set()
     for offer in offers:
@@ -1257,7 +1398,7 @@ def _match_offer_in_set(
         seq = int(offer.get("sequence", 0) or 0)
         if seq <= 0 or seq in excluded:
             continue
-        if abs(float(offer.get("price", 0.0)) - price) > 1e-5:
+        if abs(float(offer.get("price", 0.0)) - price) > price_tol:
             continue
         if abs(float(offer.get("size_xrp", 0.0)) - size_xrp) > 0.05:
             continue
