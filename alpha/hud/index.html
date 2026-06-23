@@ -231,6 +231,7 @@
         <div class="live-charts-row">
         <div class="card chart-card">
           <h3>Mid price · RLUSD/XRP</h3>
+          <div id="chartMeta" class="muted" style="font-size:.72rem;margin:-4px 0 8px">—</div>
           <div class="chart-wrap">
             <div class="chart-canvas-wrap"><canvas id="priceChart" width="800" height="220"></canvas></div>
             <div class="indicator-list" id="indicatorList"><div class="muted">Loading indicators…</div></div>
@@ -241,6 +242,8 @@
           <div id="mcOverall" class="mc-overall mc-grade-yellow">—</div>
           <div class="mc-grid">
             <div class="mc-item"><div class="mc-label">Mid price</div><div id="mcMid" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Best bid</div><div id="mcBestBid" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Best ask</div><div id="mcBestAsk" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Spread</div><div id="mcSpread" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Liquidity health</div><div id="mcLiquidity" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Ask depth (1% of mid)</div><div id="mcAskDepth" class="mc-val">—</div></div>
@@ -253,6 +256,7 @@
             <div class="mc-item"><div class="mc-label">Sell orders</div><div id="mcSellOrders" class="mc-val">—</div></div>
             <div class="mc-item" style="grid-column:1/-1"><div class="mc-label">TA summary</div><div id="mcTa" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Cycle interval</div><div id="mcCycle" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Price sample</div><div id="mcSample" class="mc-val">—</div></div>
           </div>
         </div>
         </div>
@@ -1032,9 +1036,12 @@
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     }
 
-    function drawCandleChart(canvas, chart) {
+    function drawCandleChart(canvas, chart, live) {
       const candles = chart?.candles || [];
       const indicators = (chart?.indicators || []).filter(i => i.kind === 'line' && typeof i.value === 'number');
+      const liveMid = live?.mid != null ? Number(live.mid) : null;
+      const liveBid = live?.best_bid != null ? Number(live.best_bid) : null;
+      const liveAsk = live?.best_ask != null ? Number(live.best_ask) : null;
       const wrap = canvas.parentElement;
       const w = Math.max(320, Math.floor(wrap?.clientWidth || 800) - 16);
       const h = 250;
@@ -1066,6 +1073,9 @@
         hi = Math.max(hi, c.h, c.o, c.c);
       });
       indicators.forEach(i => { lo = Math.min(lo, i.value); hi = Math.max(hi, i.value); });
+      if (liveBid != null) { lo = Math.min(lo, liveBid); hi = Math.max(hi, liveBid); }
+      if (liveAsk != null) { lo = Math.min(lo, liveAsk); hi = Math.max(hi, liveAsk); }
+      if (liveMid != null) { lo = Math.min(lo, liveMid); hi = Math.max(hi, liveMid); }
       const pad = (hi - lo) * 0.06 || 0.0001;
       lo -= pad;
       hi += pad;
@@ -1085,7 +1095,8 @@
         totalW = n * bodyW + (n - 1) * gapPx;
       }
       const pitch = bodyW + gapPx;
-      const startX = plotLeft + (plotW - totalW) / 2;
+      // Right-align: newest candle at the right edge (live trading chart convention)
+      const startX = plotRight - totalW;
       const candleCenter = (i) => startX + i * pitch + bodyW / 2;
 
       // Price axis (left) + horizontal grid
@@ -1138,6 +1149,45 @@
         ctx.fillRect(cx - bodyW / 2, top, bodyW, bh);
       });
 
+      // Live L1 overlay (updates every HUD poll — candles lag on sample interval)
+      const drawLiveLine = (price, color, label) => {
+        if (price == null || !Number.isFinite(price)) return;
+        const yy = y(price);
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.85;
+        ctx.setLineDash([3, 3]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(plotLeft, yy);
+        ctx.lineTo(plotRight, yy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = color;
+        ctx.font = '9px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(label + ' ' + price.toFixed(5), plotLeft + 2, yy - 3);
+      };
+      drawLiveLine(liveBid, '#86efac', 'bid');
+      drawLiveLine(liveAsk, '#fca5a5', 'ask');
+      if (liveMid != null) {
+        const yy = y(liveMid);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(plotLeft, yy);
+        ctx.lineTo(plotRight, yy);
+        ctx.stroke();
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = '9px system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText('mid ' + liveMid.toFixed(5), plotRight - 2, yy - 3);
+        // Live tick at right edge
+        ctx.beginPath();
+        ctx.arc(plotRight - 1, yy, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       // Time axis (bottom)
       const timeLabels = [];
       if (candles.length === 1) {
@@ -1173,6 +1223,16 @@
       overall.textContent = 'Conditions: ' + grade;
       overall.className = 'mc-overall ' + mcGradeClass(grade);
       $('mcMid').textContent = mc.mid != null ? Number(mc.mid).toFixed(6) : '—';
+      const book = s.book || {};
+      $('mcBestBid').textContent = book.best_bid != null ? Number(book.best_bid).toFixed(6) : '—';
+      $('mcBestAsk').textContent = book.best_ask != null ? Number(book.best_ask).toFixed(6) : '—';
+      const gapBps = (liveMid(s) && book.best_bid != null && book.best_ask != null)
+        ? ((Number(book.best_ask) - Number(book.best_bid)) / liveMid(s) * 10000).toFixed(1)
+        : null;
+      if (gapBps != null && $('mcBestAsk').title !== undefined) {
+        $('mcBestBid').title = 'Gap to your buy fill: ask must trade down to your bid';
+        $('mcBestAsk').title = 'Spread ≈ ' + gapBps + ' bps — sellers hit bids at ask, not mid';
+      }
       const sp = $('mcSpread');
       if (mc.spread_pct != null) {
         sp.textContent = Number(mc.spread_pct).toFixed(3) + '%';
@@ -1231,18 +1291,44 @@
       $('mcTa').className = 'mc-val ' + (ta.bias === 'bullish' ? 'mc-grade-green' : (ta.bias === 'bearish' ? 'mc-grade-red' : ''));
       const cycleSec = mc.cycle_interval_seconds ?? s.config_effective?.alpha_cycle_interval_seconds;
       $('mcCycle').textContent = cycleSec != null ? cycleSec + 's' : '—';
+      const sampleSec = s.config_effective?.alpha_price_sample_interval_seconds;
+      $('mcSample').textContent = sampleSec != null
+        ? (Number(sampleSec) > 0 ? sampleSec + 's' : 'cycle only')
+        : '—';
+    }
+
+    function renderChartMeta(s, chart) {
+      const el = $('chartMeta');
+      if (!el) return;
+      const q = quoteAgeMeta(s);
+      const candleSec = chart?.candle_seconds;
+      const bucket = chart?.bucket_samples;
+      const cycle = s.config_effective?.alpha_cycle_interval_seconds ?? s.market_conditions?.cycle_interval_seconds;
+      const sample = s.config_effective?.alpha_price_sample_interval_seconds;
+      const parts = [];
+      parts.push('Quote ' + q.label + (q.stale ? ' (stale)' : ''));
+      if (candleSec) parts.push('candles ~' + candleSec + 's each');
+      if (cycle) parts.push('engine ' + cycle + 's');
+      if (sample != null && Number(sample) > 0) parts.push('book sample ' + sample + 's');
+      el.textContent = parts.join(' · ');
+      el.style.color = q.stale ? 'var(--warn)' : 'var(--muted)';
     }
 
     function renderChart(s) {
       lastChartState = s;
       const chart = s.chart || {};
       renderIndicatorList(chart);
-      drawCandleChart($('priceChart'), chart);
+      renderChartMeta(s, chart);
+      drawCandleChart($('priceChart'), chart, {
+        mid: liveMid(s),
+        best_bid: s.book?.best_bid,
+        best_ask: s.book?.best_ask,
+      });
     }
 
     if (typeof ResizeObserver !== 'undefined') {
       const chartObs = new ResizeObserver(() => {
-        if (lastChartState) drawCandleChart($('priceChart'), lastChartState.chart || {});
+        if (lastChartState) renderChart(lastChartState);
       });
       const wrap = document.querySelector('.chart-canvas-wrap');
       if (wrap) chartObs.observe(wrap);

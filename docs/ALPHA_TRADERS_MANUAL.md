@@ -49,14 +49,42 @@ Cancelling a pending buy pulls the bid. Cancelling an active bracket cancels TP/
 | Where | What it tells you |
 |--------|-------------------|
 | **Ticker / sidebar** | Mode (LIVE/dry), mid, portfolio, inventory %, drawdown, session P&L |
+| **Quote age** | How fresh the L1 book patch is (sidebar). Stale >25s = waiting for next book sample |
+| **Chart** | Candle history (lags) + **live** bid/ask/mid lines (1s HUD poll). Candles right-aligned |
+| **Market Conditions** | Spread, **bid/ask depth ±1% of mid**, max buy size, best bid/ask |
 | **Decision** | Last action + **reason** — this is your best friend when confused |
-| **Market Conditions** | Mid, spread, depth, max buy/sell size, TA summary |
 | **Brackets tab** | Open positions: pending buys vs active brackets; size, RLUSD, TP/SL, **Trail** flags |
 | **Open Offers** | Raw ledger orders (✕ cancel, ✎ reprice) |
 | **Reports** | Cycle status text + path to monthly **tax CSV** (`logs/trades_YYYY-MM.csv`) |
 | **Config** | Credentials, network, **Send / withdraw**, transfer history |
 
 If the bot is “doing nothing,” the **Decision reason** almost always explains why.
+
+### Data speed — what updates how fast
+
+| Layer | Typical interval (your box) | What it drives |
+|-------|----------------------------|----------------|
+| **HUD poll** | **1s** | Ticker mid, live chart lines, sidebar |
+| **Book sample** (`alpha_price_sample_interval_seconds`, default 15s) | ~**15s** between full engine cycles | Mid/quote age, chart candle history |
+| **Engine cycle** (`alpha_cycle_interval_seconds`, e.g. 34s) | **34s** | Decision, liquidity depth, TA, place/cancel orders |
+| **Chart candle** | `bucket_samples × sample_seconds` (e.g. 5×15s = **75s**) | Each candle body on the chart |
+
+The **chart candles lag** the live mid line on purpose — candles are built from saved samples, while the cyan **mid** / green **bid** / red **ask** lines use the latest book patch every second.
+
+**Liquidity on the ledger:** Market Conditions shows **ask depth** and **bid depth** within **±1% of mid** (XRP available to trade through that band), plus **recommended max buy** sized from that depth. This is DEX book liquidity, not “will someone sell into my bid.” Depth refreshes on each **engine cycle**, not every HUD poll.
+
+### Why we place bids but nobody sells (no fill)
+
+Limit buys are **passive**. You join the bid side of the book and wait for a **seller** (or ask liquidity) to trade down to your price.
+
+| You see | Meaning |
+|---------|---------|
+| Mid **above** your entry | Normal — you bid below mid |
+| Best **ask above** your entry | **No fill yet** — sellers are still asking higher |
+| Large **ask depth** (e.g. 85k XRP) | Liquidity exists **above** you, not at your bid |
+| Mid crosses your entry | **Still no fill** — mid ≠ trade price; need **ask ≤ your bid** |
+
+**To fill more often:** lower `buy_limit_offset_pct` (bid closer to ask), or wait for a dip that trades through your level. The spread gap in bps on best bid vs best ask is the minimum move needed for interaction.
 
 ---
 
