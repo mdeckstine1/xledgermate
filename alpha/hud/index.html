@@ -112,7 +112,15 @@
     .ta-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px; margin-bottom:12px; }
     .ta-toggle { display:flex; align-items:center; gap:8px; font-size:.9rem; cursor:pointer; }
     .ctrl-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px; }
-    .ctrl-row label { min-width:160px; font-size:.85rem; }
+    .ctrl-row label { min-width:160px; font-size:.85rem; transition: color .2s ease; }
+    label.knob-agent-suggest,
+    .ta-toggle.knob-agent-suggest,
+    .sidebar-toggle.knob-agent-suggest { color: #c4b5fd !important; border-bottom-color: #a78bfa !important; }
+    label.knob-agent-suggest::after,
+    .ta-toggle.knob-agent-suggest::after,
+    .sidebar-toggle.knob-agent-suggest::after { content: ' ◆'; font-size: .62rem; color: #a78bfa; vertical-align: super; }
+    .agent-knob-legend { font-size: .72rem; margin: -2px 0 10px; color: var(--muted); }
+    .agent-knob-legend .knob-swatch { color: #c4b5fd; }
     input[type=range] { flex:1; min-width:120px; max-width:280px; }
     input[type=number] { width:80px; background:#0f172a; border:1px solid var(--border); color:var(--text); padding:6px; border-radius:4px; }
     .toggle { display:flex; align-items:center; gap:8px; }
@@ -204,7 +212,7 @@
         <div class="label">Trading mode</div>
         <div id="dryRunLabel" class="value" style="font-size:.9rem">dry-run</div>
         <button id="btnToggleDryRun" class="warn">Enable LIVE trading…</button>
-        <label class="sidebar-toggle"><input type="checkbox" id="tradingEnabled"> trading_enabled</label>
+        <label class="sidebar-toggle" data-knob="trading_enabled" title="Master switch for new entries."><input type="checkbox" id="tradingEnabled"> trading_enabled</label>
         <button id="btnApplyTrading" class="secondary">Apply trading</button>
       </div>
     </aside>
@@ -264,41 +272,42 @@
         <div class="controls-pair">
         <div class="controls-section card">
           <h2>Risk &amp; entry</h2>
-          <div class="ctrl-row"><label title="Target XRP share of portfolio. Buys deploy RLUSD when below target; sells trim when above.">target_xrp_pct</label><input type="range" id="slTargetXrp" min="0" max="100" step="1"><input type="number" id="numTargetXrp" min="0" max="100" step="1"><span id="valTargetXrp" class="muted">%</span></div>
-          <div class="ctrl-row"><label title="How far below target XRP ratio before weakness triggers RLUSD deployment buys.">weakness_deviation</label><input type="range" id="slWeakness" min="0.005" max="0.15" step="0.005"><input type="number" id="numWeakness" step="0.005"><span id="valWeakness" class="muted"></span></div>
-          <div class="ctrl-row"><label title="Percent of risk capital allocated per buy bracket.">risk_per_trade_pct</label><input type="range" id="slRisk" min="0.1" max="5" step="0.1"><input type="number" id="numRisk" step="0.1"><span id="valRisk" class="muted"></span></div>
-          <div class="ctrl-row"><label title="Minimum expected edge (spread capture) required before placing a bid.">min_edge_threshold_pct</label><input type="range" id="slEdge" min="0" max="1" step="0.01"><input type="number" id="numEdge" step="0.01"><span id="valEdge" class="muted"></span></div>
-          <div class="ctrl-row"><label title="Bid limit sits this % below mid — deeper = more patient fills.">buy_limit_offset_pct</label><input type="range" id="slOffset" min="0.05" max="1" step="0.01"><input type="number" id="numOffset" step="0.01"><span id="valOffset" class="muted"></span></div>
-          <div class="ctrl-row"><label title="Ask limit sits this % above mid for strength sells.">sell_limit_offset_pct</label><input type="range" id="slSellOffset" min="0.05" max="1" step="0.01"><input type="number" id="numSellOffset" step="0.01"><span id="valSellOffset" class="muted"></span></div>
-          <div class="ctrl-row"><label title="Max simultaneous open buy offers.">max_pending_buys</label><input type="number" id="numMaxBuys" min="1" max="5" step="1"></div>
-          <div class="ctrl-row"><label title="Max simultaneous open sell offers.">max_pending_sells</label><input type="number" id="numMaxSells" min="1" max="5" step="1"></div>
-          <div class="ctrl-row toggle"><label title="Each cycle, cancel resting buy bids that drift too far from the current buy_limit_offset target."><input type="checkbox" id="stalePendingEnabled" checked> stale_pending_buy_enabled</label></div>
-          <div class="ctrl-row"><label title="Cancel pending buys when entry price differs from current target by more than this % of mid.">stale_pending_buy_max_drift_pct</label><input type="range" id="slStaleDrift" min="0.05" max="2" step="0.05"><input type="number" id="numStaleDrift" step="0.05"><span id="valStaleDrift" class="muted">%</span></div>
-          <div class="ctrl-row"><label title="Seconds between full engine cycles (5–60). Shorter = more responsive, more RPC load.">cycle_interval_seconds</label><input type="range" id="slCycle" min="5" max="60" step="1"><input type="number" id="numCycle" min="5" max="60" step="1"><span id="valCycle" class="muted">s</span></div>
+          <p id="agentKnobLegend" class="agent-knob-legend" style="display:none"><span class="knob-swatch">◆</span> Purple = SKYNET proposes this knob (agent safe changes or Ask → Apply)</p>
+          <div class="ctrl-row"><label data-knob="inventory_target_xrp_ratio" title="Target XRP share of portfolio. Buys deploy RLUSD when below target; sells trim when above.">target_xrp_pct</label><input type="range" id="slTargetXrp" min="0" max="100" step="1"><input type="number" id="numTargetXrp" min="0" max="100" step="1"><span id="valTargetXrp" class="muted">%</span></div>
+          <div class="ctrl-row"><label data-knob="alpha_weakness_deviation" title="How far below target XRP ratio before weakness triggers RLUSD deployment buys.">weakness_deviation</label><input type="range" id="slWeakness" min="0.005" max="0.15" step="0.005"><input type="number" id="numWeakness" step="0.005"><span id="valWeakness" class="muted"></span></div>
+          <div class="ctrl-row"><label data-knob="alpha_risk_per_trade_pct" title="Percent of risk capital allocated per buy bracket.">risk_per_trade_pct</label><input type="range" id="slRisk" min="0.1" max="5" step="0.1"><input type="number" id="numRisk" step="0.1"><span id="valRisk" class="muted"></span></div>
+          <div class="ctrl-row"><label data-knob="alpha_min_edge_threshold_pct" title="Minimum expected edge (spread capture) required before placing a bid.">min_edge_threshold_pct</label><input type="range" id="slEdge" min="0" max="1" step="0.01"><input type="number" id="numEdge" step="0.01"><span id="valEdge" class="muted"></span></div>
+          <div class="ctrl-row"><label data-knob="alpha_buy_limit_offset_pct" title="Bid limit sits this % below mid — deeper = more patient fills.">buy_limit_offset_pct</label><input type="range" id="slOffset" min="0.05" max="1" step="0.01"><input type="number" id="numOffset" step="0.01"><span id="valOffset" class="muted"></span></div>
+          <div class="ctrl-row"><label data-knob="alpha_sell_limit_offset_pct" title="Ask limit sits this % above mid for strength sells.">sell_limit_offset_pct</label><input type="range" id="slSellOffset" min="0.05" max="1" step="0.01"><input type="number" id="numSellOffset" step="0.01"><span id="valSellOffset" class="muted"></span></div>
+          <div class="ctrl-row"><label data-knob="alpha_max_pending_buys" title="Max simultaneous open buy offers.">max_pending_buys</label><input type="number" id="numMaxBuys" min="1" max="5" step="1"></div>
+          <div class="ctrl-row"><label data-knob="alpha_max_pending_sells" title="Max simultaneous open sell offers.">max_pending_sells</label><input type="number" id="numMaxSells" min="1" max="5" step="1"></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_stale_pending_buy_enabled" title="Each cycle, cancel resting buy bids that drift too far from the current buy_limit_offset target."><input type="checkbox" id="stalePendingEnabled" checked> stale_pending_buy_enabled</label></div>
+          <div class="ctrl-row"><label data-knob="alpha_stale_pending_buy_max_drift_pct" title="Cancel pending buys when entry price differs from current target by more than this % of mid.">stale_pending_buy_max_drift_pct</label><input type="range" id="slStaleDrift" min="0.05" max="2" step="0.05"><input type="number" id="numStaleDrift" step="0.05"><span id="valStaleDrift" class="muted">%</span></div>
+          <div class="ctrl-row"><label data-knob="alpha_cycle_interval_seconds" title="Seconds between full engine cycles (5–60). Shorter = more responsive, more RPC load.">cycle_interval_seconds</label><input type="range" id="slCycle" min="5" max="60" step="1"><input type="number" id="numCycle" min="5" max="60" step="1"><span id="valCycle" class="muted">s</span></div>
           <button id="btnApplyRisk">Apply risk &amp; entry</button>
         </div>
         <div class="controls-section card">
           <h2>Structure &amp; trailing</h2>
-          <div class="ctrl-row toggle"><label title="Ratchet TP/SL after breakeven or breakout confirmation."><input type="checkbox" id="trailingEnabled"> bracket_trailing_enabled</label></div>
-          <div class="ctrl-row"><label title="% favorable move before trailing step ratchets bracket legs.">trailing_step_pct</label><input type="range" id="slTrail" min="0.5" max="5" step="0.1"><input type="number" id="numTrail" step="0.1"></div>
-          <div class="ctrl-row"><label title="Price move % beyond structure high/low to confirm breakout.">breakout_pct</label><input type="range" id="slBreakout" min="0.005" max="0.1" step="0.005"><input type="number" id="numBreakout" step="0.005"></div>
-          <div class="ctrl-row"><label title="Price samples used for HTF structure trend.">structure_lookback</label><input type="range" id="slLookback" min="3" max="100" step="1"><input type="number" id="numLookback" step="1"></div>
-          <div class="ctrl-row"><label title="Stop-loss limit % below entry (RLUSD/XRP).">initial_stop_loss_pct</label><input type="range" id="slSl" min="0.005" max="0.1" step="0.001"><input type="number" id="numSl" step="0.001"></div>
-          <div class="ctrl-row"><label title="Fixed take-profit % above entry when RR is not used.">take_profit_pct</label><input type="range" id="slTp" min="0.01" max="0.2" step="0.01"><input type="number" id="numTp" step="0.01"></div>
-          <div class="ctrl-row"><label title="TP distance = SL distance × RR (preferred when &gt; 0).">take_profit_rr</label><input type="range" id="slRr" min="0.5" max="5" step="0.1"><input type="number" id="numRr" step="0.1"></div>
+          <div class="ctrl-row toggle"><label data-knob="bracket_trailing_enabled" title="Ratchet TP/SL after breakeven or breakout confirmation."><input type="checkbox" id="trailingEnabled"> bracket_trailing_enabled</label></div>
+          <div class="ctrl-row"><label data-knob="trailing_step_pct" title="% favorable move before trailing step ratchets bracket legs.">trailing_step_pct</label><input type="range" id="slTrail" min="0.5" max="5" step="0.1"><input type="number" id="numTrail" step="0.1"></div>
+          <div class="ctrl-row"><label data-knob="alpha_breakout_pct" title="Price move % beyond structure high/low to confirm breakout.">breakout_pct</label><input type="range" id="slBreakout" min="0.005" max="0.1" step="0.005"><input type="number" id="numBreakout" step="0.005"></div>
+          <div class="ctrl-row"><label data-knob="alpha_structure_lookback" title="Price samples used for HTF structure trend.">structure_lookback</label><input type="range" id="slLookback" min="3" max="100" step="1"><input type="number" id="numLookback" step="1"></div>
+          <div class="ctrl-row"><label data-knob="initial_stop_loss_pct" title="Stop-loss limit % below entry (RLUSD/XRP).">initial_stop_loss_pct</label><input type="range" id="slSl" min="0.005" max="0.1" step="0.001"><input type="number" id="numSl" step="0.001"></div>
+          <div class="ctrl-row"><label data-knob="take_profit_pct" title="Fixed take-profit % above entry when RR is not used.">take_profit_pct</label><input type="range" id="slTp" min="0.01" max="0.2" step="0.01"><input type="number" id="numTp" step="0.01"></div>
+          <div class="ctrl-row"><label data-knob="take_profit_rr" title="TP distance = SL distance × RR (preferred when &gt; 0).">take_profit_rr</label><input type="range" id="slRr" min="0.5" max="5" step="0.1"><input type="number" id="numRr" step="0.1"></div>
           <button id="btnApplyStructure">Apply structure &amp; trailing</button>
         </div>
         <div class="controls-section card">
           <h2>Re-entry after exit</h2>
-          <div class="ctrl-row toggle"><label title="Patient reload: wait for dip after TP and stabilization after SL before next buy."><input type="checkbox" id="reentryEnabled"> reentry_enabled</label></div>
-          <div class="ctrl-row"><label title="Hard block: no PLACE_BID until this many engine cycles pass after TP (inventory/TA cannot override).">tp_cooldown_cycles</label><input type="range" id="slReTpCycles" min="1" max="50" step="1"><input type="number" id="numReTpCycles" min="1" step="1"></div>
-          <div class="ctrl-row"><label title="Optional time gate after TP (0 = cycles only). Both must pass when set.">tp_cooldown_minutes</label><input type="range" id="slReTpMin" min="0" max="120" step="1"><input type="number" id="numReTpMin" min="0" step="1"></div>
-          <div class="ctrl-row"><label title="Mid must dip this % below TP exit price before re-buy (after cooldown).">tp_dip_pct</label><input type="range" id="slReTpDip" min="0.01" max="2" step="0.01"><input type="number" id="numReTpDip" step="0.01"></div>
-          <div class="ctrl-row"><label title="Min TA buy score after cooldown expires (post-TP re-entry).">tp_min_ta_score</label><input type="range" id="slReTpTa" min="0" max="10" step="0.1"><input type="number" id="numReTpTa" step="0.1"></div>
-          <div class="ctrl-row"><label title="Hard block after SL — longer default avoids falling-knife re-buys.">sl_cooldown_cycles</label><input type="range" id="slReSlCycles" min="1" max="100" step="1"><input type="number" id="numReSlCycles" min="1" step="1"></div>
-          <div class="ctrl-row"><label title="Optional time gate after SL (0 = cycles only).">sl_cooldown_minutes</label><input type="range" id="slReSlMin" min="0" max="240" step="1"><input type="number" id="numReSlMin" min="0" step="1"></div>
-          <div class="ctrl-row"><label title="After SL, mid must bounce this % above recent low.">sl_stabilization_pct</label><input type="range" id="slReSlStab" min="0.01" max="2" step="0.01"><input type="number" id="numReSlStab" step="0.01"></div>
-          <div class="ctrl-row"><label title="Higher TA buy score bar after stop-loss — reversal confirmation.">sl_min_ta_score</label><input type="range" id="slReSlTa" min="0" max="10" step="0.1"><input type="number" id="numReSlTa" step="0.1"></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_reentry_enabled" title="Patient reload: wait for dip after TP and stabilization after SL before next buy."><input type="checkbox" id="reentryEnabled"> reentry_enabled</label></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_tp_cooldown_cycles" title="Hard block: no PLACE_BID until this many engine cycles pass after TP (inventory/TA cannot override).">tp_cooldown_cycles</label><input type="range" id="slReTpCycles" min="1" max="50" step="1"><input type="number" id="numReTpCycles" min="1" step="1"></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_tp_cooldown_minutes" title="Optional time gate after TP (0 = cycles only). Both must pass when set.">tp_cooldown_minutes</label><input type="range" id="slReTpMin" min="0" max="120" step="1"><input type="number" id="numReTpMin" min="0" step="1"></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_tp_dip_pct" title="Mid must dip this % below TP exit price before re-buy (after cooldown).">tp_dip_pct</label><input type="range" id="slReTpDip" min="0.01" max="2" step="0.01"><input type="number" id="numReTpDip" step="0.01"></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_tp_min_ta_score" title="Min TA buy score after cooldown expires (post-TP re-entry).">tp_min_ta_score</label><input type="range" id="slReTpTa" min="0" max="10" step="0.1"><input type="number" id="numReTpTa" step="0.1"></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_sl_cooldown_cycles" title="Hard block after SL — longer default avoids falling-knife re-buys.">sl_cooldown_cycles</label><input type="range" id="slReSlCycles" min="1" max="100" step="1"><input type="number" id="numReSlCycles" min="1" step="1"></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_sl_cooldown_minutes" title="Optional time gate after SL (0 = cycles only).">sl_cooldown_minutes</label><input type="range" id="slReSlMin" min="0" max="240" step="1"><input type="number" id="numReSlMin" min="0" step="1"></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_sl_stabilization_pct" title="After SL, mid must bounce this % above recent low.">sl_stabilization_pct</label><input type="range" id="slReSlStab" min="0.01" max="2" step="0.01"><input type="number" id="numReSlStab" step="0.01"></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_sl_min_ta_score" title="Higher TA buy score bar after stop-loss — reversal confirmation.">sl_min_ta_score</label><input type="range" id="slReSlTa" min="0" max="10" step="0.1"><input type="number" id="numReSlTa" step="0.1"></div>
           <button id="btnApplyReentry">Apply re-entry</button>
         </div>
         </div>
@@ -315,18 +324,18 @@
       </section>
       <section id="ta" class="panel">
         <div class="card ta-toolbar">
-          <label class="ta-toggle" title="Master switch — when off, TA scores display but do not gate entries."><input type="checkbox" id="taEnabled"> <strong>Technical analysis</strong></label>
+          <label class="ta-toggle" data-knob="alpha_ta_enabled" title="Master switch — when off, TA scores display but do not gate entries."><input type="checkbox" id="taEnabled"> <strong>Technical analysis</strong></label>
           <span id="taHint" class="muted">TA intelligence + HUD knobs: weight gates vs inventory/edge. Applies next cycle.</span>
         </div>
         <div class="card" style="margin-bottom:12px">
           <h3 style="margin:0 0 10px;font-size:.75rem;color:var(--muted);text-transform:uppercase">TA tuning</h3>
-          <div class="ctrl-row"><label title="0 = TA advisory only (HUD display); 1 = full buy gate at min buy score.">ta_weight</label><input type="range" id="slTaWeight" min="0" max="1" step="0.05"><input type="number" id="numTaWeight" step="0.05"><span id="valTaWeight" class="muted"></span></div>
-          <div class="ctrl-row"><label title="Minimum composite buy score to allow PLACE_BID (scaled by ta_weight).">min_buy_score</label><input type="range" id="slTaBuyScore" min="0" max="10" step="0.1"><input type="number" id="numTaBuyScore" step="0.1"></div>
-          <div class="ctrl-row"><label title="Minimum sell score for strength sells when TA gates asks.">min_sell_score</label><input type="range" id="slTaSellScore" min="0" max="10" step="0.1"><input type="number" id="numTaSellScore" step="0.1"></div>
-          <div class="ctrl-row toggle"><label title="RSI oversold/overbought contribution to buy/sell scores."><input type="checkbox" id="taRsiEnabled"> RSI</label></div>
-          <div class="ctrl-row toggle"><label title="Stochastic momentum for entries and breakouts."><input type="checkbox" id="taStochEnabled"> Stochastic</label></div>
-          <div class="ctrl-row toggle"><label title="Bollinger band squeeze and band-touch signals."><input type="checkbox" id="taBbEnabled"> Bollinger</label></div>
-          <div class="ctrl-row toggle"><label title="Bullish/bearish engulfing candle patterns."><input type="checkbox" id="taEngulfEnabled"> Engulfing</label></div>
+          <div class="ctrl-row"><label data-knob="alpha_ta_weight" title="0 = TA advisory only (HUD display); 1 = full buy gate at min buy score.">ta_weight</label><input type="range" id="slTaWeight" min="0" max="1" step="0.05"><input type="number" id="numTaWeight" step="0.05"><span id="valTaWeight" class="muted"></span></div>
+          <div class="ctrl-row"><label data-knob="alpha_ta_min_buy_score" title="Minimum composite buy score to allow PLACE_BID (scaled by ta_weight).">min_buy_score</label><input type="range" id="slTaBuyScore" min="0" max="10" step="0.1"><input type="number" id="numTaBuyScore" step="0.1"></div>
+          <div class="ctrl-row"><label data-knob="alpha_ta_min_sell_score" title="Minimum sell score for strength sells when TA gates asks.">min_sell_score</label><input type="range" id="slTaSellScore" min="0" max="10" step="0.1"><input type="number" id="numTaSellScore" step="0.1"></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_ta_rsi_enabled" title="RSI oversold/overbought contribution to buy/sell scores."><input type="checkbox" id="taRsiEnabled"> RSI</label></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_ta_stoch_enabled" title="Stochastic momentum for entries and breakouts."><input type="checkbox" id="taStochEnabled"> Stochastic</label></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_ta_bollinger_enabled" title="Bollinger band squeeze and band-touch signals."><input type="checkbox" id="taBbEnabled"> Bollinger</label></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_ta_engulfing_enabled" title="Bullish/bearish engulfing candle patterns."><input type="checkbox" id="taEngulfEnabled"> Engulfing</label></div>
           <button id="btnApplyTa">Apply TA settings</button>
         </div>
         <div id="taDisabled" class="card ta-disabled-msg" style="display:none">
@@ -1617,7 +1626,70 @@
 
     let skynetLastApplicable = null;
     let skynetAgentSafeCount = 0;
+    let skynetAgentKnobChanges = [];
+    let skynetAskKnobChanges = [];
     let skynetTabActive = false;
+
+    function _knobTitleBase(el) {
+      if (!el.dataset.knobTitleBase) {
+        el.dataset.knobTitleBase = el.getAttribute('title') || '';
+      }
+      return el.dataset.knobTitleBase;
+    }
+
+    function updateAgentKnobHighlights(changes) {
+      skynetAgentKnobChanges = filterPendingKnobChanges(changes);
+      refreshKnobHighlights();
+    }
+
+    function updateAskKnobHighlights(changes) {
+      skynetAskKnobChanges = filterPendingKnobChanges(changes);
+      refreshKnobHighlights();
+    }
+
+    function knobValueMatchesEffective(key, value) {
+      if (!operatorConfig) return false;
+      const c = operatorConfig.config_effective || operatorConfig;
+      const cur = c[key];
+      if (typeof cur === 'boolean' || typeof value === 'boolean') return !!cur === !!value;
+      const a = Number(cur);
+      const b = Number(value);
+      if (!Number.isNaN(a) && !Number.isNaN(b)) return Math.abs(a - b) < 1e-6;
+      return String(cur) === String(value);
+    }
+
+    function filterPendingKnobChanges(changes) {
+      return (changes || []).filter(c => c && c.key && !knobValueMatchesEffective(c.key, c.value));
+    }
+
+    function refreshKnobHighlights() {
+      const merged = [];
+      const seen = new Set();
+      [...skynetAgentKnobChanges, ...skynetAskKnobChanges].forEach(c => {
+        const key = c && c.key;
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        merged.push(c);
+      });
+      document.querySelectorAll('[data-knob]').forEach(el => {
+        el.classList.remove('knob-agent-suggest');
+        const base = _knobTitleBase(el);
+        if (base) el.setAttribute('title', base);
+        else el.removeAttribute('title');
+      });
+      const legend = $('agentKnobLegend');
+      if (legend) legend.style.display = merged.length ? 'block' : 'none';
+      merged.forEach(c => {
+        const el = document.querySelector(`[data-knob="${CSS.escape(c.key)}"]`);
+        if (!el) return;
+        el.classList.add('knob-agent-suggest');
+        const base = _knobTitleBase(el);
+        const val = c.value != null ? String(c.value) : '?';
+        const src = skynetAgentKnobChanges.some(x => x.key === c.key) ? 'Agent' : 'SKYNET';
+        const extra = c.reason ? ` — ${c.reason}` : '';
+        el.setAttribute('title', `${base} · ${src} suggests → ${val}${extra}`.trim());
+      });
+    }
 
     function setSkynetResponse(text) {
       const el = $('skynetResponse');
@@ -1666,6 +1738,7 @@
         skynetAgentSafeCount = 0;
         $('btnSkynetApplySafe').disabled = true;
         $('skynetAgentApplyHint').textContent = '';
+        updateAgentKnobHighlights([]);
         return;
       }
       box.style.display = 'block';
@@ -1686,8 +1759,9 @@
       skynetAgentSafeCount = safe.length;
       $('btnSkynetApplySafe').disabled = skynetAgentSafeCount === 0;
       $('skynetAgentApplyHint').textContent = skynetAgentSafeCount
-        ? skynetAgentSafeCount + ' safe change(s) ready — review before applying'
+        ? skynetAgentSafeCount + ' safe change(s) ready — purple knobs on Live/TA tabs'
         : 'No safe changes in latest agent run';
+      updateAgentKnobHighlights(safe);
       if (proposal.display && skynetTabActive) {
         setSkynetResponse(proposal.display);
       }
@@ -1917,6 +1991,8 @@
         toast(d.message || 'Safe changes applied');
         $('btnSkynetApplySafe').disabled = true;
         $('skynetAgentApplyHint').textContent = 'Applied — check Live tab knobs';
+        updateAgentKnobHighlights([]);
+        updateAskKnobHighlights([]);
         loadOperatorConfig();
         poll();
         loadSkynetAgent();
@@ -1937,6 +2013,7 @@
       setSkynetResponse('Thinking…');
       $('btnSkynetApply').disabled = true;
       skynetLastApplicable = null;
+      updateAskKnobHighlights([]);
       $('skynetApplyHint').textContent = '';
       const d = await postJson('/operator/skynet/ask', { prompt });
       $('btnSkynetSend').disabled = false;
@@ -1946,6 +2023,7 @@
       }
       setSkynetResponse(d.display || d.raw_response || '(empty response)');
       skynetLastApplicable = d.applicable_changes || [];
+      updateAskKnobHighlights(skynetLastApplicable);
       const n = skynetLastApplicable.length;
       $('btnSkynetApply').disabled = n === 0;
       const applyList = n ? skynetLastApplicable.map(c => `${c.key} → ${c.value}`).join(', ') : '';
@@ -1966,6 +2044,7 @@
       if (d?.ok) {
         toast(d.message || 'Changes applied');
         skynetLastApplicable = null;
+        updateAskKnobHighlights([]);
         $('btnSkynetApply').disabled = true;
         $('skynetApplyHint').textContent = 'Applied — check Live tab knobs';
         loadOperatorConfig();
@@ -1977,6 +2056,7 @@
       $('skynetPrompt').value = '';
       setSkynetResponse('');
       skynetLastApplicable = null;
+      updateAskKnobHighlights([]);
       $('btnSkynetApply').disabled = true;
       $('skynetApplyHint').textContent = '';
     };
@@ -1995,8 +2075,9 @@
     }
     poll();
     loadOperatorConfig();
+    loadSkynetAgent();
     setInterval(poll, 1000);
-    setInterval(() => { if (skynetTabActive) loadSkynetAgent(); }, 12000);
+    setInterval(loadSkynetAgent, 12000);
   </script>
 </body>
 </html>

@@ -1194,6 +1194,8 @@ If **Apply** stays disabled, name settings explicitly (percent values help) or c
 
 Grok uses the scenario playbook + `pending_buy_stale` for ladder and sizing issues. Quick prompts: **Stale bid ladder**, **Preset: sticky + 4% risk**.
 
+**Purple knob labels (Live / TA tabs):** When Agent mode proposes safe changes (or SKYNET Ask returns applicable changes), matching knob labels turn **purple ◆** with the suggested value in the tooltip. Legend appears under Risk & entry. Highlights clear after Apply or when values already match effective config.
+
 ---
 
 ## Emergency controls
