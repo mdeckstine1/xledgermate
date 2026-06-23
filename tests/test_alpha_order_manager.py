@@ -40,6 +40,7 @@ class _BracketFakeLedger:
         self._next_seq = 1000
         self.cancelled: List[int] = []
         self.placed_sells: List[tuple[float, float]] = []
+        self._cancelled_seqs: set[int] = set()
 
     async def connect(self) -> None:
         return None
@@ -89,6 +90,12 @@ class _BracketFakeLedger:
 
     async def close(self) -> None:
         return None
+
+    def offer_cancel_seen(self, offer_sequence: int) -> bool:
+        return offer_sequence in self._cancelled_seqs
+
+    def mark_cancelled(self, offer_sequence: int) -> None:
+        self._cancelled_seqs.add(offer_sequence)
 
 
 def test_compute_bracket_prices_rr_mode():
@@ -194,7 +201,24 @@ def test_proportional_partial_fill_places_bracket_early():
     asyncio.run(_run())
 
 
-def test_cancel_all_dry_run_logs_only():
+def test_cancelled_buy_skips_bracket_placement():
+    async def _run() -> None:
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config()
+        mgr = OrderManager(ledger, DryRunGuard(dry_run=False, network="mainnet"), cfg)
+        mgr.register_pending_buy(buy_sequence=504, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
+        ledger.add_buy(504, 10.0)
+        ledger.mark_cancelled(504)
+        ledger.remove_offer(504)
+
+        await mgr.sync_brackets()
+        record = mgr.store.get_by_buy_sequence(504)
+        assert record is not None
+        assert record.state == BracketLifecycleState.CANCELLED
+        assert ledger.placed_sells == []
+
+    asyncio.run(_run())
+
     async def _run() -> None:
         ledger = _BracketFakeLedger()
         ledger.add_buy(600, 5.0)

@@ -302,7 +302,10 @@ Enable **bracket_trailing_enabled** on Live tab for trailing SL after breakeven/
 | `max_pending_buys=1` | Already one pending buy | Wait for fill/cancel; **sells still allowed** |
 | `max_pending_sells=1` | Already one strength sell open | Wait for fill/cancel on Open offers |
 | `insufficient_bid_depth` | Bid book too thin for sell size | Smaller size or wait |
-| `edge_below_threshold` | Limit too close to mid | Lower `min_edge_threshold` or raise offset |
+| `edge_below_threshold` | Limit too close to mid | Lower `min_edge_threshold` or raise buy/sell offset |
+| `buy_blocked_imbalance` | Too XRP-heavy for new buys | Rebalance or wait |
+| `sell_blocked_imbalance` | Too RLUSD-heavy for strength sells | Rebalance or wait |
+| `pause_bids` / `pause_asks` | Inventory hard-pause active | Check drawdown / inventory limits |
 | `ta_buy_blocked` | TA scores too low | TA tab: wait, tune thresholds, or disable TA |
 | `kill_switch: ...` | Kill active | **Clear kill** |
 | `preflight_not_ready` | Book/trust/RPC issue | Check logs; fix trust line / connectivity |

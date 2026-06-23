@@ -250,6 +250,84 @@ def _qd_intent_mix_in_window(log_path: Path, *, since: datetime) -> str:
         return ""
 
 
+def _alpha_runtime_state(logs: Path) -> dict[str, Any]:
+    return _load_json(logs / "alpha_runtime_state.json")
+
+
+def _is_alpha_deploy(logs: Path) -> bool:
+    return _alpha_runtime_state(logs).get("hud_kind") == "alpha"
+
+
+def _alpha_cycles_since(logs: Path, *, since: datetime) -> int:
+    path = logs / "alpha_activity.jsonl"
+    if not path.exists():
+        return 0
+    count = 0
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("event") != "cycle":
+                continue
+            ts = _parse_ts(str(row.get("ts") or ""))
+            if ts is not None and ts >= since:
+                count += 1
+    except (json.JSONDecodeError, OSError):
+        return 0
+    return count
+
+
+def build_alpha_report(
+    *,
+    window_hours: float = 1.0,
+    hud_url: str = "",
+    logs_dir: Optional[Path] = None,
+    now: Optional[datetime] = None,
+) -> str:
+    """Hourly digest for Trading Bot Alpha (reads alpha_runtime_state.json)."""
+    logs = logs_dir or LOGS
+    now = now or datetime.now(tz=timezone.utc)
+    since = now - timedelta(hours=window_hours)
+    state = _alpha_runtime_state(logs)
+    kill = _load_json(logs / "kill_switch.json")
+
+    mode = "DRY-RUN" if state.get("dry_run", True) else "LIVE"
+    inv = state.get("inventory") or {}
+    risk = state.get("risk") or {}
+    decision = state.get("decision") or {}
+    brackets = (state.get("brackets") or {}).get("summary") or {}
+    cycles = _alpha_cycles_since(logs, since=since)
+
+    kill_active = bool(kill.get("active")) or bool(risk.get("kill_switch_active"))
+    kill_reason = str(kill.get("reason") or risk.get("kill_switch_reason") or "").strip()
+
+    lines = [
+        "XLedgerMate Alpha hourly",
+        f"{now.strftime('%Y-%m-%d %H:%M')} UTC",
+        "",
+        f"Mode: {mode} | Network: {state.get('network', '?')}",
+        f"Posture: {state.get('posture', '?')} | Cycles ({window_hours:g}h): {cycles}",
+        f"Decision: {decision.get('action', '?')} — {decision.get('reason', '')}",
+        "",
+        f"Portfolio: {float(state.get('portfolio_xrp_equiv') or 0):.4f} XRP equiv",
+        f"XRP: {float(state.get('xrp') or 0):.4f} | RLUSD: {float(state.get('rlusd') or 0):.4f}",
+        f"Mid: {float(state.get('mid') or 0):.6f} RLUSD/XRP",
+        f"Inventory: {inv.get('label', '?')} dev={float(inv.get('deviation') or 0):+.3f}",
+        f"Session P&L: {float(risk.get('session_pnl_xrp') or 0):+.4f} XRP | Drawdown: {float(risk.get('drawdown_pct') or 0):.2f}%",
+        "",
+        f"Brackets: pending={brackets.get('pending_buys', 0)} fixed={brackets.get('active_fixed', 0)} "
+        f"sl_trail={brackets.get('active_sl_trailing', 0)} breakout={brackets.get('active_breakout_trailing', 0)}",
+        f"Open offers: {int(state.get('open_offers_count') or 0)}",
+    ]
+    if kill_active:
+        lines.append(f"KILL: {kill_reason[:200] if kill_reason else 'active'}")
+    hud = (hud_url or "").strip()
+    if hud:
+        lines.extend(["", f"HUD: {hud}"])
+    return "\n".join(lines)
+
+
 def build_report(
     *,
     window_hours: float = 1.0,
@@ -258,6 +336,13 @@ def build_report(
     now: Optional[datetime] = None,
 ) -> str:
     logs = logs_dir or LOGS
+    if _is_alpha_deploy(logs):
+        return build_alpha_report(
+            window_hours=window_hours,
+            hud_url=hud_url,
+            logs_dir=logs,
+            now=now,
+        )
     now = now or datetime.now(tz=timezone.utc)
     since_hour = now - timedelta(hours=window_hours)
     rows = _all_trade_rows() if logs_dir is None else _trade_rows_from_dir(logs)

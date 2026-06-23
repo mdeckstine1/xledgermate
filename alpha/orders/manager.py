@@ -447,7 +447,28 @@ class OrderManager:
                 )
             return
 
-        # Buy offer gone — treat as filled (cancelled buys indistinguishable here; Phase 4 may refine)
+        if self._buy_offer_was_cancelled(record.buy_sequence):
+            record.state = BracketLifecycleState.CANCELLED
+            record.touch()
+            self._store.touch_persist()
+            logger.warning(
+                "bracket_buy_cancelled | id=%s | buy_seq=%s | no_bracket_placed",
+                record.bracket_id,
+                record.buy_sequence,
+            )
+            self._emit_event(
+                BracketFillEvent(
+                    bracket_id=record.bracket_id,
+                    leg="buy",
+                    filled_xrp=0.0,
+                    price_rlusd_per_xrp=record.entry_price_rlusd_per_xrp,
+                    partial=False,
+                    new_state=BracketLifecycleState.CANCELLED,
+                )
+            )
+            return
+
+        # Buy offer gone — treat as filled (WS cancel check passed)
         if (
             record.state == BracketLifecycleState.BRACKET_ACTIVE
             and record.bracketed_xrp + _SIZE_EPS >= record.filled_xrp
@@ -473,6 +494,12 @@ class OrderManager:
                 new_state=record.state,
             )
         )
+
+    def _buy_offer_was_cancelled(self, buy_sequence: int) -> bool:
+        checker = getattr(self._ledger, "offer_cancel_seen", None)
+        if callable(checker):
+            return bool(checker(buy_sequence))
+        return False
 
     async def _ensure_bracket_legs(
         self,

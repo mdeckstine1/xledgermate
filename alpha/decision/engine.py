@@ -116,6 +116,28 @@ class DecisionEngine:
                 "decision_engine | buy_blocked_imbalance | dev=%+.3f",
                 inventory.deviation,
             )
+            return DecisionResult(
+                action=DecisionAction.HOLD,
+                reason=f"buy_blocked_imbalance dev={inventory.deviation:+.3f}",
+            )
+
+        if inventory.pause_bids and inventory.deviation <= -self._config.alpha_weakness_deviation:
+            return DecisionResult(
+                action=DecisionAction.HOLD,
+                reason=f"pause_bids dev={inventory.deviation:+.3f}",
+            )
+
+        if inventory.sell_blocked_imbalance and inventory.deviation >= self._config.alpha_strength_deviation:
+            return DecisionResult(
+                action=DecisionAction.HOLD,
+                reason=f"sell_blocked_imbalance dev={inventory.deviation:+.3f}",
+            )
+
+        if inventory.pause_asks and inventory.deviation >= self._config.alpha_strength_deviation:
+            return DecisionResult(
+                action=DecisionAction.HOLD,
+                reason=f"pause_asks dev={inventory.deviation:+.3f}",
+            )
 
         if self._inventory is not None and self._inventory.allows_sell(inventory):
             return self._build_ask(
