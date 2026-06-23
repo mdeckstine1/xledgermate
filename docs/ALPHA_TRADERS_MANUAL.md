@@ -153,11 +153,39 @@ How many open orders of each type at once.
 
 Each engine cycle, the bot can **auto-cancel resting buy bids** that no longer match where it would place a new entry (mid moved, or your `buy_limit_offset_pct` changed).
 
-- **Enabled (default):** cancel when `|entry − target_entry| / mid` exceeds `stale_pending_buy_max_drift_pct` (default **0.5%**).  
-- Example: mid at **1.10**, offset **0.05%** → target ≈ **1.099**. A bid still at **1.04** (~5% drift) is cancelled and frees a `max_pending_buys` slot.  
-- **Manual fallback:** Brackets tab **✕** per row, or **Cancel all** (nuclear — also kills active TP/SL).
+**How it decides “stale”**
 
-Optional `stale_pending_buy_max_age_seconds` in config (0 = off) cancels bids older than N seconds regardless of drift.
+1. Compute **target entry** = `mid × (1 − buy_limit_offset_pct / 100)`  
+2. For each **pending buy** bracket, compute **drift** = `|entry − target| / mid × 100`  
+3. If drift **>** `stale_pending_buy_max_drift_pct` (default **0.5%**), cancel that bid and free a `max_pending_buys` slot.
+
+**Example — clearly stale**
+
+- Mid **1.10**, offset **0.05%** → target ≈ **1.099**  
+- A bid still at **1.04** → drift ≈ **5.5%** → **cancelled**
+
+**Example — still valid (why you may keep 5 pending)**
+
+- Mid **1.102**, offset **0.5%** → target ≈ **1.097**  
+- Pending bids at **1.097 – 1.100** → drift ≈ **0.2%** → **kept** (within 0.5%)  
+- HOLD reason `max_pending_buys=5` is correct here — slots are full with *current* bids, not stuck legacy ones.
+
+**Don’t confuse Brackets history with live pending**
+
+`logs/alpha_brackets.json` lists old entries (e.g. **~1.04** from an earlier deep-offset session). Check the HUD **Brackets** tab **State** column: only rows marked **`pending buy`** count toward the cap. Filled or cancelled brackets (and active TP/SL legs) are separate.
+
+**Tuning**
+
+| Goal | Action |
+|------|--------|
+| Prune bids that drifted only slightly | Lower `stale_pending_buy_max_drift_pct` (e.g. **0.15%**) on Live → Risk & entry, then **Apply** |
+| Turn off auto-prune | Uncheck `stale_pending_buy_enabled` |
+| Force-cancel one bid | Brackets tab **✕** on that row |
+| Nuclear option | **Cancel all** — also kills active TP/SL (you keep XRP) |
+
+Optional `stale_pending_buy_max_age_seconds` in `config.yaml` (0 = off) cancels bids older than N seconds regardless of drift.
+
+Watch **Activity** or engine logs for `stale_pending_buy_cancelled` after a cycle.
 
 ---
 
@@ -336,7 +364,7 @@ You are RLUSD-heavy. TA is fine. Bot still HOLD.
 3. **TA block** — score below gate; raise weight/score or wait.  
 4. **Depth** — `insufficient_ask_depth` in Market Conditions.  
 5. **Pause / kill** — sidebar badges.  
-6. **Max pending** — already at `max_pending_buys`.
+6. **Max pending** — already at `max_pending_buys`. If stale auto-cancel is on, check whether pending entries are still within `stale_pending_buy_max_drift_pct` of target (they may be valid, not stuck).
 
 ---
 
@@ -348,7 +376,8 @@ You are RLUSD-heavy. TA is fine. Bot still HOLD.
 | No buys, RLUSD-heavy | Weakness too high | Lower `weakness_deviation` or raise target |
 | Buying too soon after sells | Cooldowns too short | Raise `tp_cooldown_cycles` / `tp_min_ta_score` |
 | Bids way below mid (~5%) | Offset set very high | Lower `buy_limit_offset_pct` if you want nearer fills |
-| Bids at ~1.04 when mid ~1.10 | Deep offset (~5%) | Intentional patience — or lower offset for tighter bids |
+| Bids at ~1.04 when mid ~1.10 | Old bracket history or deep offset | Check Brackets **State** = `pending buy`; stale cancel only hits live pending rows |
+| HOLD at max pending, bids ~1.097–1.10 | Bids match current offset (low drift) | Lower `stale_pending_buy_max_drift_pct` to prune tighter, or cancel manually |
 | Cancelled but orders still show | Active brackets ≠ pending | Check state column; active = exits on filled bags |
 | `ta_warming_up` | New session / thin history | Wait; needs mid samples |
 | Preflight not OK | Trust line, balance, config | Fix alerts in status report |
