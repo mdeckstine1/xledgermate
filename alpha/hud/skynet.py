@@ -10,6 +10,11 @@ import requests
 
 from alpha.operator.runtime import OPERATOR_TUNABLE_KEYS, validate_override_updates
 from alpha.orders.stale_pending import build_pending_buy_stale_snapshot
+from alpha.hud.skynet_scenarios import (
+    build_scenario_playbook,
+    build_skynet_user_message,
+    infer_scenario_hints,
+)
 from config.settings import BotConfig
 from utils.env_secrets import resolve_grok_key
 
@@ -42,15 +47,19 @@ Rules for suggested_changes:
 - Prefer small, incremental knob adjustments aligned with bag growth and risk.
 - If no changes are warranted, return an empty suggested_changes array.
 - Explain HOLD reasons using inventory deviation, edge gates, re-entry cooldowns, TA, depth, and max_pending_buys.
+- Use the Scenario playbook section in context: map decision.reason to scenario letters (A–R), then suggest aligned knob bundles.
+- When the operator describes desired settings in natural language (e.g. "risk 4%", "stickier bids", "max pending 1", "~26 RLUSD orders"), translate into concrete suggested_changes — do not answer with prose only.
 - Pending buy limits are passive: they fill when best ask hits the bid, NOT when mid crosses entry.
 - Stale pending buy policy (see context `pending_buy_stale`):
   - `entry_drift` — |entry − target| / mid exceeds `alpha_stale_pending_buy_max_drift_pct`
-  - `mid_passed_entry` — mid rallied above bid without fill beyond max drift
+  - `mid_passed_entry` — mid rallied above bid without fill beyond max drift (common when drift ≈ buy_offset — use Scenario G: widen drift)
   - `entry_above_mid` — bid above mid (off-policy)
   - `excess_pending_buy` — count > `alpha_max_pending_buys` (farthest pruned)
-  - Default max drift ≈ `alpha_buy_limit_offset_pct` (0.15%). Loose drift (e.g. 0.5%) keeps large ladders resting.
+  - STICKY bids: set `alpha_stale_pending_buy_max_drift_pct` > `alpha_buy_limit_offset_pct` + spread (~0.35% when offset 0.12%).
+  - CHASE bids: drift ≈ offset — expect frequent cancel/replace.
   - Cancels are one XRPL offer per engine cycle — clearing many bids takes minutes.
-- When many pending buys sit unfilled, check `pending_buy_stale` and suggest tightening `alpha_stale_pending_buy_max_drift_pct`, lowering `alpha_max_pending_buys`, or enabling `alpha_stale_pending_buy_max_age_seconds`.
+- When many pending buys sit unfilled, check `pending_buy_stale`; for ladder clutter tighten drift and max_pending; for entry churn widen drift (Scenario G).
+- Prefer operator key names from allowlist; aliases like risk_per_trade_pct map to alpha_risk_per_trade_pct.
 """
 
 
@@ -95,6 +104,12 @@ def build_skynet_context(
         )
         if mid > 0
         else {"note": "mid unavailable — stale pending analysis skipped"}
+    )
+    scenario_hints = infer_scenario_hints(
+        decision_reason=str(decision.get("reason") or ""),
+        inventory=inv if isinstance(inv, dict) else {},
+        reentry=reentry if isinstance(reentry, dict) else {},
+        stale_snapshot=stale_snapshot if isinstance(stale_snapshot, dict) else {},
     )
 
     lines = [
@@ -147,6 +162,11 @@ def build_skynet_context(
         "",
         "=== Pending buy stale diagnostics (for ladder / unfilled bid issues) ===",
         json.dumps(stale_snapshot, default=str)[:4000],
+        "",
+        "=== Scenario hints (auto from state) ===",
+        f"likely_scenarios={scenario_hints or ['none']}",
+        "",
+        build_scenario_playbook(),
         "",
         "=== Open offers (sample) ===",
         json.dumps((hud_state.get("open_offers") or [])[:15], default=str)[:2000],
@@ -272,7 +292,7 @@ def call_grok_advisor(
     system = system_prompt or _SYSTEM_PROMPT.format(allowed_keys=allowed)
     user_body = user_message
     if user_body is None:
-        user_body = f"Context:\n{context}\n\n---\n\nOperator prompt:\n{user_prompt.strip()}"
+        user_body = build_skynet_user_message(user_prompt=user_prompt, context=context)
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user_body},
@@ -316,7 +336,7 @@ def format_advisor_display(parsed: Dict[str, Any]) -> str:
         lines.append("")
     changes = parsed.get("suggested_changes") or []
     if changes:
-        lines.append("Suggested changes:")
+        lines.append("Suggested changes (Apply in HUD when applicable):")
         for c in changes:
             lines.append(f"  • {c.get('key')} → {c.get('value')} — {c.get('reason', '')}")
     warnings = parsed.get("warnings") or []

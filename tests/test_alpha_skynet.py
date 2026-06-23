@@ -94,3 +94,23 @@ def test_build_skynet_context_includes_decision():
     )
     assert "max_pending_buys=5" in ctx
     assert "heavy_rlusd" in ctx
+    assert "Scenario playbook" in ctx
+    assert "likely_scenarios=" in ctx
+
+
+def test_build_skynet_user_message_settings_intent():
+    from alpha.hud.skynet_scenarios import build_skynet_user_message
+
+    msg = build_skynet_user_message(
+        user_prompt="Set risk to 4% and stickier bids",
+        context="=== snapshot ===",
+    )
+    assert "suggested_changes must list" in msg
+    assert "Set risk to 4%" in msg
+
+
+def test_infer_scenario_hints_post_sl():
+    from alpha.hud.skynet_scenarios import infer_scenario_hints
+
+    hints = infer_scenario_hints(decision_reason="post_sl_cooldown cycles=1/8")
+    assert "K" in hints

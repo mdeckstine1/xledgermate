@@ -1167,8 +1167,22 @@ When you understand how each knob *feels*, then turn up the aggression.
 
 SKYNET sends Grok a **runtime context** each ask/agent cycle. Besides inventory, decision, TA, and brackets, it includes:
 
-- **`pending_buy_stale`** — target entry, per pending bid `would_cancel` / `reason`, `over_cap_count`, and policy notes (same rules as `stale_pending_buy_*` above)
-- **Operator knobs (effective)** — including `alpha_stale_pending_buy_*`, `alpha_max_pending_buys`, `alpha_buy_limit_offset_pct`
+- **`pending_buy_stale`** — target entry, per pending bid `would_cancel` / `reason`, `over_cap_count`
+- **`likely_scenarios`** — auto hints (A–R) from decision reason + inventory
+- **Scenario playbook (A–R)** — condensed presets matching this manual (stick vs chase stale drift, size formula, re-entry)
+- **Operator knobs (effective)** — current HUD overrides
+
+**Natural language → Apply**
+
+On the SKYNET tab, type what you want in plain English, click **Send**, then **Apply suggested changes**:
+
+```text
+sticky bids, risk 4%, max pending 1, offset 0.12, drift 0.35, ~26 RLUSD orders
+```
+
+Grok maps your goals to allowlisted keys (`alpha_risk_per_trade_pct`, `alpha_stale_pending_buy_max_drift_pct`, etc.). Quick buttons **Preset: sticky + 4% risk** and **My settings → Apply** pre-fill example prompts.
+
+If **Apply** stays disabled, name settings explicitly (percent values help) or check the hint for guardrail errors.
 
 **Modes**
 
@@ -1178,7 +1192,7 @@ SKYNET sends Grok a **runtime context** each ask/agent cycle. Besides inventory,
 | **Agent mode** | Grok runs every 3–5 cycles; **Apply safe** for guardrailed suggestions |
 | **Full SKYNET** | Auto-applies guardrailed changes (confirm with `ENABLE_FULL_SKYNET`) |
 
-Grok is instructed to use `pending_buy_stale` when diagnosing unfilled bid ladders. Quick prompt: **Stale bid ladder** on the SKYNET tab.
+Grok uses the scenario playbook + `pending_buy_stale` for ladder and sizing issues. Quick prompts: **Stale bid ladder**, **Preset: sticky + 4% risk**.
 
 ---
 

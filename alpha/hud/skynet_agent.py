@@ -78,7 +78,8 @@ Hard rules:
 - Explain each suggested knob change with reference to current effective values in context.
 - If no safe improvement is warranted, return an empty suggested_changes array and explain why in reasoning.
 - Small incremental adjustments only — no reckless risk increases.
-- Pending buys are passive limit bids (fill when ask hits bid, not when mid crosses). Use `pending_buy_stale` in context: if `would_cancel_count` is high or `over_cap_count` > 0, consider lowering `alpha_stale_pending_buy_max_drift_pct` (align with `alpha_buy_limit_offset_pct`), reducing `alpha_max_pending_buys`, or setting `alpha_stale_pending_buy_max_age_seconds`.
+- Pending buys are passive limit bids (fill when ask hits bid, not when mid crosses). Use `pending_buy_stale` in context: ladder clutter → tighten drift + max_pending; entry churn (mid_passed_entry) → widen drift (Scenario G), max_pending=1.
+- When the operator describes desired settings in natural language, output concrete suggested_changes — use scenario playbook presets in context.
 """
 
 _AGENT_USER_PROMPT = """Autonomous agent review (Phase 2). Analyze the full runtime context below.
@@ -122,7 +123,7 @@ Max {max_changes} change(s) per response.
 
 Emergency context: if drawdown is elevated or session P&L is negative, bias toward defense (lower risk, widen cooldowns, reduce TA aggression) — never the opposite without strong justification.
 
-Pending buy ladder: context includes `pending_buy_stale` with per-bid `would_cancel` / `reason`. Loose `alpha_stale_pending_buy_max_drift_pct` (e.g. 0.5% vs offset 0.15–0.35%) lets many old bids rest unfilled. Prefer aligning drift to offset and capping `alpha_max_pending_buys`. Cancels are one ledger offer per engine cycle.
+Pending buy ladder: context includes `pending_buy_stale`, scenario playbook (A–R), and `likely_scenarios`. Entry churn → widen stale drift above offset+spread (G). Ladder clutter → tighten drift, cap max_pending (C). Natural-language setting requests → concrete suggested_changes.
 """
 
 _FULL_MODE_USER_PROMPT = """Full SKYNET autonomy review (Phase 3). Analyze the complete runtime context.
