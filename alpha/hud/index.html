@@ -136,6 +136,14 @@
     .config-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:12px; margin-bottom:16px; }
     .transfer-form .ctrl-row input[type=number] { width:120px; }
     .transfer-log { font-size:.78rem; max-height:240px; overflow:auto; }
+    .skynet-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    @media (max-width:900px) { .skynet-grid { grid-template-columns:1fr; } }
+    .skynet-prompt { width:100%; min-height:120px; background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:10px; font-size:.9rem; font-family:inherit; resize:vertical; }
+    .skynet-response { width:100%; min-height:220px; background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:10px; font-size:.85rem; font-family:ui-monospace,monospace; white-space:pre-wrap; overflow:auto; max-height:420px; }
+    .skynet-quick { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+    .skynet-quick button { font-size:.75rem; padding:6px 10px; }
+    .skynet-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
+    .skynet-status { font-size:.78rem; color:var(--muted); margin-bottom:8px; }
     @media (max-width:1100px) {
       .grid.live-grid { grid-template-columns:repeat(6, minmax(100px, 1fr)); overflow-x:auto; }
     }
@@ -194,6 +202,7 @@
         <div class="tab" data-tab="reports">Reports</div>
         <div class="tab" data-tab="activity">Activity</div>
         <div class="tab" data-tab="config">Config</div>
+        <div class="tab" data-tab="skynet">SKYNET</div>
       </div>
       <section id="live" class="panel active">
         <div class="grid live-grid">
@@ -385,6 +394,36 @@
           <div id="transferLog" class="transfer-log muted">Loading…</div>
         </div>
       </section>
+      <section id="skynet" class="panel">
+        <p class="skynet-status" id="skynetStatus">Loading SKYNET status…</p>
+        <div class="skynet-grid">
+          <div class="card">
+            <h2 style="margin:0 0 10px;font-size:1rem;color:var(--accent)">Grok Advisor — Phase 1</h2>
+            <p class="muted" style="margin:0 0 10px;font-size:.78rem">Manual prompts only. Review suggestions before applying. Does not trade autonomously.</p>
+            <label class="label" for="skynetPrompt">Your prompt</label>
+            <textarea id="skynetPrompt" class="skynet-prompt" placeholder="Ask SKYNET about market state, knobs, re-entry, risk…"></textarea>
+            <div class="skynet-quick">
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Analyze current market state, inventory posture, and explain why the bot is HOLD or placing orders. Be specific.">Market + HOLD</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Suggest conservative knob changes to increase long-term XRP bag growth without reckless risk. List specific operator keys and values.">Bag growth knobs</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Evaluate the re-entry gate and cooldown situation. Should we wait or adjust re-entry settings?">Re-entry / cooldown</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Perform a risk and safety check: drawdown, kill switch, preflight, inventory imbalance, and anything dangerous in current settings.">Risk check</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Give a full structured summary of current bot state: portfolio, decision, TA, brackets, and top priority for the operator.">Full summary</button>
+            </div>
+            <div class="skynet-actions">
+              <button type="button" id="btnSkynetSend">Send to Grok</button>
+              <button type="button" id="btnSkynetClear" class="secondary">Clear chat</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Response</h3>
+            <div id="skynetResponse" class="skynet-response muted">Responses appear here…</div>
+            <div class="skynet-actions">
+              <button type="button" id="btnSkynetApply" class="warn" disabled>Apply suggested changes</button>
+              <span id="skynetApplyHint" class="muted" style="font-size:.75rem"></span>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
   <div id="toast" class="status-toast"></div>
@@ -414,6 +453,7 @@
       if (el.dataset.tab === 'live' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'ta' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'config') loadAccountConfig();
+      if (el.dataset.tab === 'skynet') loadSkynetStatus();
     }));
 
     function toast(msg, isErr) {
@@ -1339,6 +1379,90 @@
       } else {
         $('sendResult').textContent = d?.message || 'Send failed';
       }
+    };
+
+    let skynetLastApplicable = null;
+
+    async function loadSkynetStatus() {
+      try {
+        const r = await fetch('/operator/skynet/status?_=' + Date.now());
+        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+        const d = await r.json();
+        const el = $('skynetStatus');
+        if (!el) return;
+        if (!d.ok) { el.textContent = 'SKYNET status unavailable'; return; }
+        if (!d.enabled) {
+          el.textContent = 'SKYNET disabled in config.';
+          $('btnSkynetSend').disabled = true;
+          return;
+        }
+        if (!d.configured) {
+          el.textContent = 'Grok API key missing — set XLG_GROK_KEY or XAI_API_KEY in .env on the server.';
+          $('btnSkynetSend').disabled = true;
+          return;
+        }
+        el.textContent = `Grok ready · model ${d.model}${d.key_hint ? ' · key ' + d.key_hint : ''} · Phase 1 manual advisor`;
+        $('btnSkynetSend').disabled = false;
+      } catch (e) {
+        $('skynetStatus').textContent = 'SKYNET status error: ' + e;
+      }
+    }
+
+    document.querySelectorAll('.skynet-quick-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        $('skynetPrompt').value = btn.dataset.prompt || '';
+        $('skynetPrompt').focus();
+      });
+    });
+
+    $('btnSkynetSend').onclick = async () => {
+      const prompt = $('skynetPrompt').value.trim();
+      if (!prompt) { toast('Enter a prompt', true); return; }
+      $('btnSkynetSend').disabled = true;
+      $('skynetResponse').textContent = 'Thinking…';
+      $('btnSkynetApply').disabled = true;
+      skynetLastApplicable = null;
+      $('skynetApplyHint').textContent = '';
+      const d = await postJson('/operator/skynet/ask', { prompt });
+      $('btnSkynetSend').disabled = false;
+      if (!d?.ok) {
+        $('skynetResponse').textContent = d?.message || 'SKYNET request failed';
+        return;
+      }
+      $('skynetResponse').textContent = d.display || d.raw_response || '(empty response)';
+      skynetLastApplicable = d.applicable_changes || [];
+      const n = skynetLastApplicable.length;
+      $('btnSkynetApply').disabled = n === 0;
+      $('skynetApplyHint').textContent = n
+        ? `${n} change(s) pass guardrails — review before applying`
+        : (d.apply_preview_errors?.length ? d.apply_preview_errors.join('; ') : 'No auto-applicable changes');
+      toast('SKYNET response received');
+    };
+
+    $('btnSkynetApply').onclick = async () => {
+      if (!skynetLastApplicable || !skynetLastApplicable.length) {
+        toast('No applicable suggestions', true);
+        return;
+      }
+      const summary = skynetLastApplicable.map(c => `${c.key} → ${c.value}`).join('\n');
+      if (!confirm('Apply these operator overrides?\n\n' + summary + '\n\nTakes effect on next engine cycle.')) return;
+      const d = await postJson('/operator/skynet/apply', { suggested_changes: skynetLastApplicable });
+      if (d?.ok) {
+        toast(d.message || 'Changes applied');
+        skynetLastApplicable = null;
+        $('btnSkynetApply').disabled = true;
+        $('skynetApplyHint').textContent = 'Applied — check Live tab knobs';
+        loadOperatorConfig();
+        poll();
+      }
+    };
+
+    $('btnSkynetClear').onclick = () => {
+      $('skynetPrompt').value = '';
+      $('skynetResponse').textContent = 'Responses appear here…';
+      skynetLastApplicable = null;
+      $('btnSkynetApply').disabled = true;
+      $('skynetApplyHint').textContent = '';
     };
 
     async function poll() {

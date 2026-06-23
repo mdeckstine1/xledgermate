@@ -70,6 +70,9 @@ alpha_chart_price_source: mid    # fullest history on Live chart
 alpha_price_sample_interval_seconds: 15
 alpha_gui_refresh_seconds: 30
 alpha_gui_bind_host: ""   # empty = hud_bind_host; use 0.0.0.0 on VPS for browser without SSH tunnel
+alpha_skynet_enabled: true
+alpha_skynet_grok_model: grok-3
+# alpha_grok_api_key: ""   # optional; prefer XLG_GROK_KEY or XAI_API_KEY in .env
 
 # Bracket legs after buy fill (application-level OCO — not XRPL native)
 initial_stop_loss_pct: 0.015

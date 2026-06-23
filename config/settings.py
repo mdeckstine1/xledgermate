@@ -213,6 +213,9 @@ class BotConfig:
     alpha_gui_refresh_seconds: int = 30  # Streamlit auto-refresh hint
     alpha_gui_bind_host: str = ""  # Empty = use hud_bind_host; 0.0.0.0 for public VPS access
     alpha_hud_port: int = 8765  # Operator HUD (FastAPI) — replaces legacy ws-hud port
+    alpha_skynet_enabled: bool = True  # HUD SKYNET tab (Grok advisor — Phase 1 manual)
+    alpha_skynet_grok_model: str = "grok-3"
+    alpha_grok_api_key: str = ""  # Optional; prefer XLG_GROK_KEY / XAI_API_KEY in .env
     # Post-exit re-entry (Aggressive Bag Growth — wait for dip after TP, stabilization after SL)
     alpha_reentry_enabled: bool = True
     alpha_reentry_tp_dip_pct: float = 0.08  # Re-buy after TP only when mid dips this % below TP exit
