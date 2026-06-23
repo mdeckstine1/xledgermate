@@ -131,6 +131,8 @@ That is not a bug. You told it to bid too close to mid while demanding too much 
 | 0.50 | 0.50 | ✅ Works |
 | 0.05 | 0.50 | ❌ Stuck on HOLD forever |
 
+**Coupling:** Lowering `buy_limit_offset_pct` to chase price → lower `min_edge_threshold_pct` to match. Set `stale_pending_buy_max_drift_pct` ≈ offset. See [Knob coupling](#knob-coupling--change-x-change-y).
+
 ---
 
 ### `buy_limit_offset_pct` / `sell_limit_offset_pct`
@@ -141,6 +143,8 @@ How far below mid (buy) or above mid (sell) the bot places limits.
 **Lower = eager.** Near mid, faster fills, worse average price.
 
 HUD range is roughly **0.05% – 1.0%** per side. This is *not* “5% below market” unless you type a large number in the number box — and the slider may cap you.
+
+**Formula:** `target bid ≈ mid × (1 − buy_limit_offset_pct / 100)` — this is where **new** bids land after a stale cancel, not where old resting bids move to.
 
 ---
 
@@ -209,6 +213,8 @@ Each cancel is one **XRPL ledger transaction**. The engine typically processes *
 Watch **Activity** or engine logs for `stale_pending_buy_cancelled` after a cycle.
 
 **SKYNET / Grok** (manual ask, Agent mode, or Full SKYNET) receives a **`pending_buy_stale`** block in context: target entry, per-bid `would_cancel` / `reason`, `over_cap_count`, and tuning notes. Use the SKYNET quick prompt **“Stale bid ladder”** or ask why bids are not canceling.
+
+**Coupling:** See [Knob coupling](#knob-coupling--change-x-change-y) — when you change offset, also align `min_edge`, `stale_max_drift`, and often `max_pending_buys`.
 
 ---
 
@@ -492,12 +498,185 @@ You are RLUSD-heavy. TA is fine. Bot still HOLD.
 | Bids at ~1.04 when mid ~1.10 | Old bracket history or deep offset | Check Brackets **State** = `pending buy`; stale cancel only hits live pending rows |
 | HOLD at max pending, bids ~1.097–1.10 | Bids match current offset (low drift) | Lower `stale_pending_buy_max_drift_pct` to prune tighter, or cancel manually |
 | Many pending bids, mid “passed”, no cancel | `max_drift` too loose (e.g. 0.5%) vs offset 0.15–0.35% | Align drift to offset; check SKYNET `pending_buy_stale.would_cancel_count` |
+| Bid feels left behind as price rises | `buy_limit_offset_pct` too high vs movement | [Scenario A](#scenario-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) — lower offset + align stale drift |
 | Cancels very slow | One XRPL cancel per engine cycle | Normal — wait or lower pending count / use Cancel all |
 | Cancelled but orders still show | Active brackets ≠ pending | Check state column; active = exits on filled bags |
 | What does **BE** / **BO** mean? | Trailing flags on active brackets | **BE** = breakeven passed, SL can trail · **BO** = breakout confirmed, TP can trail · needs `bracket_trailing_enabled` |
 | No rows in tax CSV | Dry-run or no fills yet | Switch to LIVE; CSV updates on bracket buy/TP/SL fills and Config → Send |
 | `ta_warming_up` | New session / thin history | Wait; needs mid samples |
 | Preflight not OK | Trust line, balance, config | Fix alerts in status report |
+
+---
+
+## Knob coupling — change X, change Y
+
+Alpha is not “set and forget.” Several knobs **must move together** or you get confusing behavior (bids that never fill, HOLD forever, or ladders that never cancel).
+
+### The bid placement chain
+
+```text
+mid (live book)
+  → target bid = mid × (1 − buy_limit_offset_pct / 100)
+  → edge on buy ≈ buy_limit_offset_pct
+  → must pass min_edge_threshold_pct
+  → resting bid kept until stale rules fire OR fill OR max_age
+```
+
+| If you change… | Also check / change… | Why |
+|----------------|----------------------|-----|
+| **`buy_limit_offset_pct`** ↓ (closer to mid) | **`min_edge_threshold_pct`** ≤ new offset | Edge gate uses offset; too-high min edge → HOLD forever |
+| **`buy_limit_offset_pct`** | **`stale_pending_buy_max_drift_pct`** ≈ same value | Loose drift (e.g. 0.5%) + tight offset (0.15%) → old bids never “stale” |
+| **`buy_limit_offset_pct`** ↓ | Expect **worse average entry** but **more fills** | You are paying spread to be eager |
+| **`max_pending_buys`** ↑ | **`stale_pending_buy_max_drift_pct`** tight + **`cycle_interval_seconds`** | More slots = more ladder clutter; cancels are one per cycle |
+| **`stale_pending_buy_max_drift_pct`** ↓ | **`max_pending_buys`** maybe ↓ to 1–3 | Aggressive prune + one slot = simplest behavior |
+| **`weakness_deviation`** ↓ | **`risk_per_trade_pct`** — don’t crank both at once | More buy attempts + bigger size = fast RLUSD deploy |
+| **`ta_min_buy_score`** ↑ | **`ta_weight`** = 1.0 | High gate + low weight = confusing partial blocks |
+| **`cycle_interval_seconds`** ↓ | RPC load / cancel latency | Faster cycles = faster stale cancel + new bids, more ledger traffic |
+| **`reentry_*` cooldowns** ↓ | **`ta_min_buy_score`** on re-entry | Shorter wait + weak TA = reload into chop |
+
+### Rules of thumb
+
+1. **`buy_limit_offset_pct` ≥ `min_edge_threshold_pct`** — always.  
+2. **`stale_pending_buy_max_drift_pct` ≈ `buy_limit_offset_pct`** — keep them aligned (e.g. both 0.15%).  
+3. **`max_pending_buys` = 1** until you understand stale + fill behavior; then ladder to 3–5.  
+4. The bot **does not chase** resting bids — it **cancels stale** and **places new** at the current target. To “move” a bid, either wait for stale cancel or cancel manually on Brackets tab.  
+5. **Limit fills need the ask** — mid crossing your entry does not fill you. Closer offset = closer to ask = higher fill odds on mild dips.
+
+### Timing reference (typical)
+
+| Event | Rough delay |
+|-------|-------------|
+| HUD **Apply** → engine sees new knobs | Next cycle (`cycle_interval_seconds`, e.g. 15–34s) |
+| Stale cancel of one pending bid | One cycle + one XRPL tx (~cycle_interval each) |
+| New bid after cancel | Next `PLACE_BID` cycle when gates pass |
+| Age-based stale cancel | `stale_pending_buy_max_age_seconds` (config only; e.g. 1800s) |
+
+---
+
+## Scenarios & suggested presets
+
+Use these as **recipes**, not gospel. Apply on **Live → Risk & entry**, watch **Decision reason** for 10–20 cycles, adjust one knob at a time.
+
+### Scenario A — RLUSD-heavy, price drifting up, bid feels “left behind”
+
+**Symptoms:** One (or few) pending buys ~0.3%+ below mid; market moving up; you want to participate without waiting for a deep dip.
+
+**What’s happening:** `buy_limit_offset_pct` = 0.35% places target ~36 bps below mid. `mid_passed_entry` stale cancel will pull the old bid (~34s per cycle), but the **replacement** bid is still 0.35% below **new** mid unless you lower offset.
+
+**Suggested adjust (eager bag deploy):**
+
+```text
+buy_limit_offset_pct           = 0.12    ← was 0.35; nearer live (~13 bps below mid)
+min_edge_threshold_pct         = 0.08    ← must stay ≤ offset
+stale_pending_buy_max_drift_pct = 0.12   ← match offset
+max_pending_buys               = 1
+cycle_interval_seconds         = 20     ← optional; faster cancel/replace
+```
+
+**If fills still rare:** ask is still above your bid — try offset **0.08–0.10** only if you accept worse entries. Use SKYNET **“Stale bid ladder”** to read `pending_buy_stale` vs live mid.
+
+---
+
+### Scenario B — Patient dip sniper (default philosophy)
+
+**Symptoms:** You want better entries, can wait; RLUSD-heavy is fine for hours.
+
+```text
+buy_limit_offset_pct           = 0.25–0.35
+min_edge_threshold_pct         = 0.08
+stale_pending_buy_max_drift_pct = 0.25   ← match offset so ladder doesn’t over-prune
+max_pending_buys               = 1–2
+weakness_deviation             = 0.05–0.08
+```
+
+**Coupling:** Do **not** set `stale_max_drift` to 0.15% while offset is 0.35% — bids within the placement band look “valid” and sit through rallies.
+
+---
+
+### Scenario C — Ladder clutter (many pending buys, none filling)
+
+**Symptoms:** 10–20+ pending buys; HOLD `max_pending_buys=N`; mid moved; orders “just sit there.”
+
+```text
+stale_pending_buy_max_drift_pct = 0.15   ← tighten (align to offset, not 0.5%)
+buy_limit_offset_pct           = 0.15    ← if you want nearer market too
+max_pending_buys               = 1–3
+stale_pending_buy_enabled      = on
+```
+
+Optional in `config.yaml`: `alpha_stale_pending_buy_max_age_seconds: 1800` (30 min max rest).
+
+**Manual:** Brackets **Cancel all** clears ledger bids (kills active TP/SL too — use only if you mean it).
+
+---
+
+### Scenario D — HOLD forever, edge in the reason
+
+**Symptoms:** `edge 0.050% < min 0.500%` or similar.
+
+```text
+Either: buy_limit_offset_pct  = 0.50   (bid deeper — more edge)
+Or:     min_edge_threshold_pct = 0.08   (accept smaller edge)
+```
+
+Never leave **offset < min edge**.
+
+---
+
+### Scenario E — Buying too often in a downtrend
+
+**Symptoms:** Repeated fills, SL hits, bag not growing.
+
+```text
+weakness_deviation             = 0.06–0.08   ↑ patience
+ta_min_buy_score               = 2.0–2.5     ↑
+reentry_sl_cooldown_cycles     = 10–15       ↑
+risk_per_trade_pct             = 0.3–0.5     ↓
+buy_limit_offset_pct           = 0.20+       ↑ (deeper bids only)
+```
+
+**Coupling:** Tightening entries (higher TA) + deeper offset + longer SL re-entry — move together.
+
+---
+
+### Scenario F — Chop / mild dips, want more action
+
+**Symptoms:** RLUSD-heavy, TA OK, bot buys but fills are rare; spread is tight.
+
+```text
+buy_limit_offset_pct           = 0.08–0.12
+min_edge_threshold_pct         = 0.05–0.08
+weakness_deviation             = 0.03–0.04
+max_pending_buys               = 1
+cycle_interval_seconds         = 15–20
+```
+
+**Trade-off:** More fills, worse average entry, more bracket management.
+
+---
+
+### Quick reference — your “closer to live price” checklist
+
+When you say *“price is leaving my bid behind”*:
+
+| Step | Action |
+|------|--------|
+| 1 | Lower **`buy_limit_offset_pct`** (main lever) |
+| 2 | Set **`min_edge_threshold_pct`** ≤ new offset |
+| 3 | Set **`stale_pending_buy_max_drift_pct`** ≈ new offset |
+| 4 | Keep **`max_pending_buys` = 1** while tuning |
+| 5 | **Apply** → wait 1–2 cycles for stale cancel + new bid |
+| 6 | Confirm on Brackets: new **pending buy** entry ≈ `mid × (1 − offset%)` |
+| 7 | SKYNET **Stale bid ladder** — verify `would_cancel` / `target_entry` |
+
+**Example @ mid 1.1037:**
+
+| offset | Approx target bid | Gap below mid |
+|--------|-------------------|---------------|
+| 0.35% (old) | 1.0999 | ~38 bps |
+| 0.15% | 1.1021 | ~17 bps |
+| 0.12% (suggested eager) | 1.1024 | ~12 bps |
+| 0.08% | 1.1028 | ~9 bps |
 
 ---
 
