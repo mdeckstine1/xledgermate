@@ -460,3 +460,101 @@ def test_stale_pending_buy_disabled_skips_auto_cancel(bracket_state):
         assert ledger.cancelled == []
 
     asyncio.run(_run())
+
+
+class _ImmediateFillSellLedger(_BracketFakeLedger):
+    """Simulates XRPL immediate fill when a sell is marketable (at/through touch)."""
+
+    async def place_limit_sell_xrp(
+        self,
+        *,
+        size_xrp: float,
+        price_rlusd_per_xrp: float,
+    ) -> LedgerOfferResult:
+        self.placed_sells.append((size_xrp, price_rlusd_per_xrp))
+        return LedgerOfferResult(submitted=True, dry_run=False, action="sell")
+
+
+def test_sl_trail_immediate_fill_detected(bracket_state):
+    from alpha.decision.structure import MarketStructureSnapshot
+
+    async def _run() -> None:
+        ledger = _ImmediateFillSellLedger()
+        cfg = _bracket_config(bracket_trailing_enabled=True, trailing_step_pct=1.5)
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+        bid = mgr.register_pending_buy(buy_sequence=800, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
+        ledger.remove_offer(800)
+        await mgr.sync_brackets()
+        record = mgr.store.get(bid)
+        assert record and record.sl_leg and record.tp_leg
+        record.breakeven_passed = True
+        record.sl_leg.price_rlusd_per_xrp = 1.96
+        record.sl_leg.sequence = 1001
+        ledger._offers[1001] = {
+            "sequence": 1001,
+            "side": "ask",
+            "price": 1.96,
+            "size_xrp": 10.0,
+        }
+        mgr.set_structure(
+            MarketStructureSnapshot(
+                mid=2.01,
+                sample_count=1,
+                mean_mid=2.01,
+                recent_high=2.01,
+                recent_low=2.0,
+                trend="neutral",
+                breakout_up=False,
+                breakout_down=False,
+                summary="test",
+                swing_high=2.01,
+            )
+        )
+        await mgr.sync_brackets()
+        record = mgr.store.get(bid)
+        assert record is not None
+        assert record.state == BracketLifecycleState.SL_FILLED
+
+    asyncio.run(_run())
+
+
+def test_repair_attaches_missing_sl_sequence(bracket_state):
+    async def _run() -> None:
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config()
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+        bid = mgr.register_pending_buy(buy_sequence=801, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
+        ledger.remove_offer(801)
+        await mgr.sync_brackets()
+        record = mgr.store.get(bid)
+        assert record and record.sl_leg
+        sl_price = record.sl_leg.price_rlusd_per_xrp
+        old_sl_seq = record.sl_leg.sequence
+        assert old_sl_seq is not None
+        # Simulate trail cancel+replace where sequence was lost but the offer is on book.
+        record.sl_leg.sequence = None
+        mgr.store.unregister_leg_sequence(old_sl_seq)
+        ledger.remove_offer(old_sl_seq)
+        ledger._offers[9001] = {
+            "sequence": 9001,
+            "side": "ask",
+            "price": sl_price,
+            "size_xrp": 10.0,
+        }
+        await mgr.sync_brackets()
+        record = mgr.store.get(bid)
+        assert record is not None
+        assert record.sl_leg is not None
+        assert record.sl_leg.sequence == 9001
+
+    asyncio.run(_run())

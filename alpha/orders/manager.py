@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from alpha.orders.types import (
     BracketMode,
     BracketRecord,
 )
+from alpha.types import LedgerOfferResult
 from alpha.decision.reentry import ReentryGate
 
 logger = logging.getLogger(__name__)
@@ -171,6 +173,7 @@ class OrderManager:
             if record.state == BracketLifecycleState.PENDING_BUY:
                 await self._advance_pending_buy(record, open_map)
             elif record.state == BracketLifecycleState.BRACKET_ACTIVE:
+                await self._reconcile_leg_sequences(record, open_map)
                 await self._advance_active_bracket(record, open_map)
 
         from alpha.decision.structure import CandleData, build_confirmation_candle
@@ -351,13 +354,41 @@ class OrderManager:
             size_xrp=size_xrp,
             price_rlusd_per_xrp=new_price,
         )
-        new_seq = await self._resolve_sequence(
+        open_map = _open_offer_map(await self._ledger.get_open_offers())
+        new_seq, immediate_fill = await self._resolve_leg_sequence(
             before_seqs,
             side="ask",
             price=new_price,
             size_xrp=size_xrp,
-            submitted=place_result.submitted,
+            place_result=place_result,
         )
+
+        if immediate_fill:
+            leg.price_rlusd_per_xrp = new_price
+            leg.sequence = None
+            logger.info(
+                "bracket_trail_immediate_fill | id=%s | leg=%s | price=%.6f | size=%.4f | mode=%s",
+                record.bracket_id,
+                leg_name,
+                new_price,
+                size_xrp,
+                reason,
+            )
+            await self._on_leg_fill(record, role, size_xrp, open_map)
+            return True
+
+        if new_seq is None:
+            logger.error(
+                "bracket_trail_failed | id=%s | leg=%s | price=%.6f | cancelled_seq=%s | mode=%s",
+                record.bracket_id,
+                leg_name,
+                new_price,
+                old_seq,
+                reason,
+            )
+            leg.price_rlusd_per_xrp = new_price
+            leg.sequence = None
+            return False
 
         leg.sequence = new_seq
         leg.price_rlusd_per_xrp = new_price
@@ -862,12 +893,12 @@ class OrderManager:
             size_xrp=size_xrp,
             price_rlusd_per_xrp=prices.take_profit_price,
         )
-        tp_seq = await self._resolve_sequence(
+        tp_seq, _ = await self._resolve_leg_sequence(
             before_seqs,
             side="ask",
             price=prices.take_profit_price,
             size_xrp=size_xrp,
-            submitted=tp_result.submitted,
+            place_result=tp_result,
         )
         if tp_seq:
             before_seqs.add(tp_seq)
@@ -876,12 +907,12 @@ class OrderManager:
             size_xrp=size_xrp,
             price_rlusd_per_xrp=prices.stop_loss_price,
         )
-        sl_seq = await self._resolve_sequence(
+        sl_seq, sl_immediate = await self._resolve_leg_sequence(
             before_seqs,
             side="ask",
             price=prices.stop_loss_price,
             size_xrp=size_xrp,
-            submitted=sl_result.submitted,
+            place_result=sl_result,
         )
 
         record.tp_leg = BracketLeg(
@@ -907,6 +938,15 @@ class OrderManager:
         record.state = BracketLifecycleState.BRACKET_ACTIVE
         record.touch()
         self._store.touch_persist()
+
+        if sl_immediate and record.sl_leg is not None:
+            open_map = _open_offer_map(await self._ledger.get_open_offers())
+            await self._on_leg_fill(
+                record,
+                BracketLegRole.STOP_LOSS,
+                size_xrp,
+                open_map,
+            )
 
     async def _advance_active_bracket(
         self,
@@ -1007,6 +1047,106 @@ class OrderManager:
             self._store.unregister_leg_sequence(leg.sequence)
             leg.remaining_xrp = 0.0
 
+    async def _reconcile_leg_sequences(
+        self,
+        record: BracketRecord,
+        open_map: Dict[int, dict[str, Any]],
+    ) -> None:
+        """Repair missing leg sequences and detect vanished offers (fills)."""
+        if record.state != BracketLifecycleState.BRACKET_ACTIVE:
+            return
+
+        for role, leg in (
+            (BracketLegRole.TAKE_PROFIT, record.tp_leg),
+            (BracketLegRole.STOP_LOSS, record.sl_leg),
+        ):
+            if leg is None or leg.remaining_xrp <= _SIZE_EPS:
+                continue
+
+            if leg.sequence is not None:
+                if leg.sequence in open_map:
+                    continue
+                filled = leg.remaining_xrp if leg.remaining_xrp > _SIZE_EPS else leg.size_xrp
+                logger.info(
+                    "bracket_leg_vanished | id=%s | leg=%s | seq=%s | infer_fill=%.4f",
+                    record.bracket_id,
+                    role.value,
+                    leg.sequence,
+                    filled,
+                )
+                await self._on_leg_fill(record, role, filled, open_map)
+                continue
+
+            matched = _match_offer_for_leg(leg, open_map, self._store, record)
+            if matched is not None:
+                leg.sequence = matched
+                self._store.register_leg_sequence(matched, record.bracket_id)
+                record.touch()
+                self._store.touch_persist()
+                logger.info(
+                    "bracket_leg_repaired | id=%s | leg=%s | seq=%s | price=%.6f",
+                    record.bracket_id,
+                    role.value,
+                    matched,
+                    leg.price_rlusd_per_xrp,
+                )
+                continue
+
+            if not self._guard.require_live(f"repair_{role.value}"):
+                continue
+
+            logger.warning(
+                "bracket_leg_missing | id=%s | leg=%s | price=%.6f | re-placing",
+                record.bracket_id,
+                role.value,
+                leg.price_rlusd_per_xrp,
+            )
+            await self._replace_leg(
+                record,
+                role,
+                leg.price_rlusd_per_xrp,
+                reason="leg_repair",
+            )
+
+    async def _resolve_leg_sequence(
+        self,
+        before: Set[int],
+        *,
+        side: str,
+        price: float,
+        size_xrp: float,
+        place_result: LedgerOfferResult,
+    ) -> tuple[Optional[int], bool]:
+        """
+        Resolve a newly placed leg sequence.
+
+        Returns (sequence, immediate_fill). immediate_fill is True when the offer
+        was submitted but is not on the book (e.g. breakeven SL filled at once).
+        """
+        if not place_result.submitted:
+            return None, False
+        if place_result.sequence is not None and place_result.sequence > 0:
+            return place_result.sequence, False
+
+        known = set(before)
+        for attempt in range(3):
+            seq = _match_offer_in_set(
+                await self._ledger.get_open_offers(),
+                side=side,
+                price=price,
+                size_xrp=size_xrp,
+                exclude_seqs=known,
+            )
+            if seq is not None:
+                return seq, False
+            new_seqs = (await self._open_sequences()) - known
+            if len(new_seqs) == 1:
+                return next(iter(new_seqs)), False
+            if attempt < 2:
+                await asyncio.sleep(0.6)
+
+        return None, True
+
     async def _open_sequences(self) -> Set[int]:
         offers = await self._ledger.get_open_offers()
         return {int(o["sequence"]) for o in offers if o.get("sequence")}
@@ -1062,6 +1202,58 @@ class OrderManager:
             dry_run=self._guard.dry_run,
             mid=mid,
         )
+
+
+def _match_offer_in_set(
+    offers: List[dict[str, Any]],
+    *,
+    side: str,
+    price: float,
+    size_xrp: float,
+    exclude_seqs: Optional[Set[int]] = None,
+) -> Optional[int]:
+    excluded = exclude_seqs or set()
+    for offer in offers:
+        if offer.get("side") != side:
+            continue
+        seq = int(offer.get("sequence", 0) or 0)
+        if seq <= 0 or seq in excluded:
+            continue
+        if abs(float(offer.get("price", 0.0)) - price) > 1e-5:
+            continue
+        if abs(float(offer.get("size_xrp", 0.0)) - size_xrp) > 0.05:
+            continue
+        return seq
+    return None
+
+
+def _match_offer_for_leg(
+    leg: BracketLeg,
+    open_map: Dict[int, dict[str, Any]],
+    store: BracketStateStore,
+    record: BracketRecord,
+) -> Optional[int]:
+    """Find an open offer matching a leg missing its sequence."""
+    size = leg.remaining_xrp if leg.remaining_xrp > _SIZE_EPS else leg.size_xrp
+    opposing_seq: Optional[int] = None
+    if leg.role == BracketLegRole.STOP_LOSS and record.tp_leg is not None:
+        opposing_seq = record.tp_leg.sequence
+    elif leg.role == BracketLegRole.TAKE_PROFIT and record.sl_leg is not None:
+        opposing_seq = record.sl_leg.sequence
+    for seq, offer in open_map.items():
+        if seq == opposing_seq:
+            continue
+        owner = store.get_by_leg_sequence(seq)
+        if owner is not None and owner.bracket_id != record.bracket_id:
+            continue
+        if offer.get("side") != "ask":
+            continue
+        if abs(float(offer.get("price", 0.0)) - leg.price_rlusd_per_xrp) > 1e-5:
+            continue
+        if abs(float(offer.get("size_xrp", 0.0)) - size) > 0.05:
+            continue
+        return seq
+    return None
 
 
 def _open_offer_map(offers: List[dict[str, Any]]) -> Dict[int, dict[str, Any]]:
