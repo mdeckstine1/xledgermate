@@ -12,7 +12,7 @@ from alpha.decision.reentry import ReentrySnapshot
 from alpha.decision.structure import MarketStructureSnapshot, build_candle_from_mids, load_mid_history
 from alpha.decision.price_history import PRICE_HISTORY_PATH, load_price_series, effective_sample_seconds
 from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalysisSnapshot
-from alpha.ledger.market_conditions import build_market_conditions
+from alpha.ledger.market_conditions import build_market_conditions, refresh_dca_vs_mid
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControls
 from alpha.operator.runtime import derive_posture, effective_config_snapshot
@@ -376,6 +376,8 @@ def build_hud_state(
         config=effective,
         portfolio_xrp_equiv=snap.balances.portfolio_xrp_equiv,
         ta=ta,
+        brackets=brackets,
+        log_dir=runtime_state_path.parent,
     )
 
     return {
@@ -497,6 +499,7 @@ def patch_runtime_book_quote(path: Path, book: OrderBookSnapshot) -> bool:
         mc["mid"] = book.mid
         if book.spread_pct is not None:
             mc["spread_pct"] = book.spread_pct
+        refresh_dca_vs_mid(mc, float(book.mid))
         state["market_conditions"] = mc
     state["book_updated_utc"] = _iso(datetime.now(tz=timezone.utc))
     try:

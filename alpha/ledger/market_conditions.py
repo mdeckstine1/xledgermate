@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+import csv
+from pathlib import Path
+from typing import Any, Dict, Iterable, Optional, TYPE_CHECKING
 
 from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
 from alpha.ledger.liquidity import depth_within_mid_band
 from alpha.types import LiquidityDepth, OrderBookSnapshot
 from config.settings import BotConfig
+
+if TYPE_CHECKING:
+    from alpha.orders.types import BracketRecord
 
 # HUD card: XRP depth within this % band around mid.
 HUD_DEPTH_MID_BAND_PCT = 1.0
@@ -44,6 +49,129 @@ def _recommended_cap(
     return round(capped, 4) if capped >= min_size else 0.0
 
 
+def _dca_grade(vs_mid_pct: Optional[float]) -> str:
+    if vs_mid_pct is None:
+        return "yellow"
+    if vs_mid_pct >= 0.5:
+        return "green"
+    if vs_mid_pct <= -0.5:
+        return "red"
+    return "yellow"
+
+
+def compute_bracket_dca(
+    brackets: Iterable["BracketRecord"],
+    *,
+    mid: float,
+) -> Dict[str, Any]:
+    """Volume-weighted average entry for XRP in active brackets (open bag cost basis)."""
+    from alpha.orders.types import BracketLifecycleState
+
+    total_xrp = 0.0
+    total_rlusd = 0.0
+    lots = 0
+
+    for record in brackets:
+        if record.state != BracketLifecycleState.BRACKET_ACTIVE:
+            continue
+        entry = float(record.entry_price_rlusd_per_xrp or 0.0)
+        if entry <= 0:
+            continue
+        size = float(record.bracketed_xrp or record.filled_xrp or 0.0)
+        if size <= 0:
+            continue
+        total_xrp += size
+        total_rlusd += size * entry
+        lots += 1
+
+    if total_xrp <= 0:
+        return {
+            "avg_entry_rlusd_per_xrp": None,
+            "total_xrp": 0.0,
+            "position_count": 0,
+            "vs_mid_pct": None,
+            "grade": "yellow",
+        }
+
+    avg_entry = total_rlusd / total_xrp
+    vs_mid_pct: Optional[float] = None
+    if mid > 0:
+        vs_mid_pct = (mid - avg_entry) / avg_entry * 100.0
+
+    return {
+        "avg_entry_rlusd_per_xrp": round(avg_entry, 6),
+        "total_xrp": round(total_xrp, 4),
+        "position_count": lots,
+        "vs_mid_pct": round(vs_mid_pct, 3) if vs_mid_pct is not None else None,
+        "grade": _dca_grade(vs_mid_pct),
+    }
+
+
+def refresh_dca_vs_mid(market_conditions: Dict[str, Any], mid: float) -> None:
+    """Update DCA vs-mid after a live book quote patch."""
+    dca = market_conditions.get("dca")
+    if not isinstance(dca, dict):
+        return
+    avg = dca.get("avg_entry_rlusd_per_xrp")
+    if avg is None or mid <= 0:
+        return
+    vs_mid_pct = (mid - float(avg)) / float(avg) * 100.0
+    dca["vs_mid_pct"] = round(vs_mid_pct, 3)
+    dca["grade"] = _dca_grade(vs_mid_pct)
+
+
+def count_filled_trades(log_dir: Path = Path("logs")) -> Dict[str, int]:
+    """Count taxable BUY/SELL fill rows across all monthly trade CSVs."""
+    purchases = 0
+    sells = 0
+    if not log_dir.is_dir():
+        return {"purchase_fills": 0, "sell_fills": 0}
+    for path in sorted(log_dir.glob("trades_*.csv")):
+        try:
+            with path.open(encoding="utf-8", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    event = str(row.get("event_type") or "").strip().upper()
+                    if event == "BUY":
+                        purchases += 1
+                    elif event == "SELL":
+                        sells += 1
+        except OSError:
+            continue
+    return {"purchase_fills": purchases, "sell_fills": sells}
+
+
+def compute_open_order_counts(brackets: Iterable["BracketRecord"]) -> Dict[str, int]:
+    """Open purchase (pending buy) and sell (TP/SL legs on book) order counts."""
+    from alpha.orders.types import BracketLifecycleState
+
+    open_buys = 0
+    open_sells = 0
+    for record in brackets:
+        if record.state == BracketLifecycleState.PENDING_BUY:
+            open_buys += 1
+            continue
+        if record.state != BracketLifecycleState.BRACKET_ACTIVE:
+            continue
+        for leg in (record.tp_leg, record.sl_leg):
+            if leg is not None and leg.sequence is not None and leg.remaining_xrp > 0:
+                open_sells += 1
+    return {"open_purchases": open_buys, "open_sells": open_sells}
+
+
+def compute_order_counts(
+    brackets: Iterable["BracketRecord"],
+    *,
+    log_dir: Path = Path("logs"),
+) -> Dict[str, Any]:
+    """Filled trade totals (tax CSV) plus open bracket orders."""
+    filled = count_filled_trades(log_dir)
+    open_counts = compute_open_order_counts(brackets)
+    return {
+        **filled,
+        **open_counts,
+    }
+
+
 def build_market_conditions(
     *,
     book: Optional[OrderBookSnapshot],
@@ -51,6 +179,8 @@ def build_market_conditions(
     config: BotConfig,
     portfolio_xrp_equiv: float,
     ta: Optional[TechnicalAnalysisSnapshot],
+    brackets: Optional[Iterable["BracketRecord"]] = None,
+    log_dir: Path = Path("logs"),
 ) -> Dict[str, Any]:
     """Serialize live market conditions for the operator HUD."""
     mid = book.mid if book and book.mid else (liquidity.mid if liquidity else None)
@@ -116,6 +246,9 @@ def build_market_conditions(
     elif bid_grade == "yellow" or ask_grade == "yellow" or spread_grade == "yellow":
         overall = "yellow"
 
+    dca = compute_bracket_dca(brackets or [], mid=mid_f)
+    order_counts = compute_order_counts(brackets or [], log_dir=log_dir)
+
     return {
         "mid": mid,
         "spread_pct": spread_pct,
@@ -131,4 +264,6 @@ def build_market_conditions(
         "ta": ta_summary,
         "cycle_interval_seconds": int(config.alpha_cycle_interval_seconds),
         "overall_grade": overall,
+        "dca": dca,
+        "order_counts": order_counts,
     }

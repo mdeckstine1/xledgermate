@@ -247,6 +247,10 @@
             <div class="mc-item"><div class="mc-label">Bid depth (1% of mid)</div><div id="mcBidDepth" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Max buy size</div><div id="mcMaxBuy" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Max sell size</div><div id="mcMaxSell" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">DCA avg entry</div><div id="mcDcaEntry" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">DCA vs mid</div><div id="mcDcaVsMid" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Purchase orders</div><div id="mcPurchaseOrders" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Sell orders</div><div id="mcSellOrders" class="mc-val">—</div></div>
             <div class="mc-item" style="grid-column:1/-1"><div class="mc-label">TA summary</div><div id="mcTa" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Cycle interval</div><div id="mcCycle" class="mc-val">—</div></div>
           </div>
@@ -1190,6 +1194,35 @@
         ? Number(mc.recommended_max_buy_xrp).toFixed(2) + ' XRP' : '—';
       $('mcMaxSell').textContent = mc.recommended_max_sell_xrp > 0
         ? Number(mc.recommended_max_sell_xrp).toFixed(2) + ' XRP' : '—';
+      const dca = mc.dca || {};
+      const dcaEntry = $('mcDcaEntry');
+      if (dca.avg_entry_rlusd_per_xrp != null && dca.total_xrp > 0) {
+        dcaEntry.textContent = Number(dca.avg_entry_rlusd_per_xrp).toFixed(6)
+          + ' · ' + Number(dca.total_xrp).toFixed(2) + ' XRP'
+          + (dca.position_count ? ' (' + dca.position_count + ' lots)' : '');
+        dcaEntry.className = 'mc-val';
+      } else {
+        dcaEntry.textContent = '—';
+        dcaEntry.className = 'mc-val';
+      }
+      const dcaVs = $('mcDcaVsMid');
+      if (dca.vs_mid_pct != null) {
+        const sign = dca.vs_mid_pct >= 0 ? '+' : '';
+        dcaVs.textContent = sign + Number(dca.vs_mid_pct).toFixed(2) + '%';
+        dcaVs.className = 'mc-val ' + mcGradeClass(dca.grade || 'yellow');
+      } else {
+        dcaVs.textContent = '—';
+        dcaVs.className = 'mc-val';
+      }
+      const oc = mc.order_counts || {};
+      const fmtCount = (filled, open) => {
+        const parts = [];
+        if (filled != null) parts.push(filled + ' filled');
+        if (open != null) parts.push(open + ' open');
+        return parts.length ? parts.join(' · ') : '—';
+      };
+      $('mcPurchaseOrders').textContent = fmtCount(oc.purchase_fills, oc.open_purchases);
+      $('mcSellOrders').textContent = fmtCount(oc.sell_fills, oc.open_sells);
       const ta = mc.ta || {};
       $('mcTa').textContent = ta.enabled
         ? `buy ${ta.buy_score} · sell ${ta.sell_score} · ${ta.bias || 'neutral'}`

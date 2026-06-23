@@ -5,7 +5,20 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
-from alpha.ledger.market_conditions import build_market_conditions
+from alpha.ledger.market_conditions import (
+    build_market_conditions,
+    compute_bracket_dca,
+    compute_order_counts,
+    count_filled_trades,
+    refresh_dca_vs_mid,
+)
+from alpha.orders.types import (
+    BracketLeg,
+    BracketLegRole,
+    BracketLifecycleState,
+    BracketMode,
+    BracketRecord,
+)
 from alpha.types import BookLevel, LiquidityDepth, OrderBookSnapshot
 from config.settings import BotConfig
 
@@ -67,3 +80,142 @@ def test_market_conditions_depth_and_sizes() -> None:
     assert mc["cycle_interval_seconds"] == 15
     assert mc["ta"]["buy_score"] == 2.0
     assert mc["liquidity_health"] in ("green", "yellow", "red")
+
+
+def test_bracket_dca_weighted_average() -> None:
+    records = [
+        BracketRecord(
+            bracket_id="a",
+            state=BracketLifecycleState.BRACKET_ACTIVE,
+            mode=BracketMode.BRACKET,
+            buy_sequence=1,
+            entry_price_rlusd_per_xrp=1.00,
+            target_size_xrp=10.0,
+            filled_xrp=10.0,
+            bracketed_xrp=10.0,
+        ),
+        BracketRecord(
+            bracket_id="b",
+            state=BracketLifecycleState.BRACKET_ACTIVE,
+            mode=BracketMode.BRACKET,
+            buy_sequence=2,
+            entry_price_rlusd_per_xrp=1.10,
+            target_size_xrp=10.0,
+            filled_xrp=10.0,
+            bracketed_xrp=10.0,
+        ),
+        BracketRecord(
+            bracket_id="c",
+            state=BracketLifecycleState.PENDING_BUY,
+            mode=BracketMode.BRACKET,
+            buy_sequence=3,
+            entry_price_rlusd_per_xrp=1.20,
+            target_size_xrp=5.0,
+        ),
+    ]
+    dca = compute_bracket_dca(records, mid=1.08)
+    assert dca["avg_entry_rlusd_per_xrp"] == 1.05
+    assert dca["total_xrp"] == 20.0
+    assert dca["position_count"] == 2
+    assert dca["vs_mid_pct"] is not None
+    assert dca["grade"] == "green"
+
+
+def test_market_conditions_includes_dca() -> None:
+    cfg = BotConfig(min_order_size_xrp=1.0, alpha_base_order_size_xrp=50.0)
+    record = BracketRecord(
+        bracket_id="x",
+        state=BracketLifecycleState.BRACKET_ACTIVE,
+        mode=BracketMode.BRACKET,
+        buy_sequence=9,
+        entry_price_rlusd_per_xrp=1.05,
+        target_size_xrp=8.0,
+        filled_xrp=8.0,
+        bracketed_xrp=8.0,
+    )
+    mc = build_market_conditions(
+        book=_book(),
+        liquidity=None,
+        config=cfg,
+        portfolio_xrp_equiv=100.0,
+        ta=None,
+        brackets=[record],
+    )
+    assert mc["dca"]["avg_entry_rlusd_per_xrp"] == 1.05
+    assert mc["dca"]["total_xrp"] == 8.0
+
+
+def test_refresh_dca_vs_mid_on_book_patch() -> None:
+    mc = {"dca": {"avg_entry_rlusd_per_xrp": 1.0, "total_xrp": 5.0, "position_count": 1}}
+    refresh_dca_vs_mid(mc, 1.02)
+    assert mc["dca"]["vs_mid_pct"] == 2.0
+    assert mc["dca"]["grade"] == "green"
+
+
+def test_count_filled_trades_from_csv(tmp_path: Path) -> None:
+    header = (
+        "timestamp_utc,event_type,taxable,network,side,xrp_amount,rlusd_amount,"
+        "price_rlusd_per_xrp,profit_xrp_equiv,tx_hash,cycle,notes,balance_xrp_after,balance_rlusd_after\n"
+    )
+    (tmp_path / "trades_2026-06.csv").write_text(
+        header
+        + "t,BUY,Y,mainnet,BUY,1,1,1,0,,0,,,\n"
+        + "t,BUY,Y,mainnet,BUY,1,1,1,0,,0,,,\n"
+        + "t,SELL,Y,mainnet,SELL,1,1,1,0,,0,,,\n"
+        + "t,MAJOR,N,mainnet,,0,0,0,0,,0,,,\n",
+        encoding="utf-8",
+    )
+    counts = count_filled_trades(tmp_path)
+    assert counts["purchase_fills"] == 2
+    assert counts["sell_fills"] == 1
+
+
+def test_order_counts_open_and_filled(tmp_path: Path) -> None:
+    header = (
+        "timestamp_utc,event_type,taxable,network,side,xrp_amount,rlusd_amount,"
+        "price_rlusd_per_xrp,profit_xrp_equiv,tx_hash,cycle,notes,balance_xrp_after,balance_rlusd_after\n"
+    )
+    (tmp_path / "trades_2026-06.csv").write_text(
+        header + "t,BUY,Y,mainnet,BUY,1,1,1,0,,0,,,\n", encoding="utf-8"
+    )
+    tp = BracketLeg(
+        role=BracketLegRole.TAKE_PROFIT,
+        sequence=100,
+        price_rlusd_per_xrp=1.2,
+        size_xrp=5.0,
+        remaining_xrp=5.0,
+    )
+    sl = BracketLeg(
+        role=BracketLegRole.STOP_LOSS,
+        sequence=101,
+        price_rlusd_per_xrp=0.9,
+        size_xrp=5.0,
+        remaining_xrp=5.0,
+    )
+    records = [
+        BracketRecord(
+            bracket_id="open-buy",
+            state=BracketLifecycleState.PENDING_BUY,
+            mode=BracketMode.BRACKET,
+            buy_sequence=1,
+            entry_price_rlusd_per_xrp=1.0,
+            target_size_xrp=5.0,
+        ),
+        BracketRecord(
+            bracket_id="active",
+            state=BracketLifecycleState.BRACKET_ACTIVE,
+            mode=BracketMode.BRACKET,
+            buy_sequence=2,
+            entry_price_rlusd_per_xrp=1.0,
+            target_size_xrp=5.0,
+            filled_xrp=5.0,
+            bracketed_xrp=5.0,
+            tp_leg=tp,
+            sl_leg=sl,
+        ),
+    ]
+    oc = compute_order_counts(records, log_dir=tmp_path)
+    assert oc["purchase_fills"] == 1
+    assert oc["sell_fills"] == 0
+    assert oc["open_purchases"] == 1
+    assert oc["open_sells"] == 2
