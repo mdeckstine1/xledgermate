@@ -46,7 +46,8 @@ class DecisionEngine:
     """
     MVP entry logic integrated with InventoryManager and RiskEngine.
 
-    Limit buy below mid on weakness when edge, depth, and risk gates pass.
+    Limit buy below mid on weakness; limit sell above mid on strength.
+    Edge, depth, and risk gates apply symmetrically to both sides.
   """
 
     def __init__(
@@ -69,6 +70,7 @@ class DecisionEngine:
         book: Optional[OrderBookSnapshot] = None,
         liquidity: Optional[LiquidityDepth] = None,
         pending_buy_count: int = 0,
+        pending_sell_count: int = 0,
         balances: Optional[BalanceSnapshot] = None,
         ta: Optional["TechnicalAnalysisSnapshot"] = None,
     ) -> DecisionResult:
@@ -83,18 +85,13 @@ class DecisionEngine:
         if book is None or book.mid is None or book.mid <= 0:
             return DecisionResult(action=DecisionAction.HOLD, reason="no_book_mid")
 
-        if pending_buy_count >= self._config.alpha_max_pending_buys:
-            return DecisionResult(
-                action=DecisionAction.HOLD,
-                reason=f"max_pending_buys={self._config.alpha_max_pending_buys}",
-            )
-
         if self._inventory is not None and self._inventory.allows_buy(inventory):
             return self._build_bid(
                 inventory=inventory,
                 risk=risk,
                 book=book,
                 liquidity=liquidity,
+                pending_buy_count=pending_buy_count,
                 balances=balances or (operator.balances if operator else None),
                 ta=ta,
             )
@@ -109,6 +106,7 @@ class DecisionEngine:
                 risk=risk,
                 book=book,
                 liquidity=liquidity,
+                pending_buy_count=pending_buy_count,
                 balances=balances or (operator.balances if operator else None),
                 ta=ta,
             )
@@ -125,6 +123,7 @@ class DecisionEngine:
                 risk=risk,
                 book=book,
                 liquidity=liquidity,
+                pending_sell_count=pending_sell_count,
                 balances=balances or (operator.balances if operator else None),
                 ta=ta,
             )
@@ -138,6 +137,7 @@ class DecisionEngine:
                 risk=risk,
                 book=book,
                 liquidity=liquidity,
+                pending_sell_count=pending_sell_count,
                 balances=balances or (operator.balances if operator else None),
                 ta=ta,
             )
@@ -165,10 +165,15 @@ class DecisionEngine:
             return explicit
         return self._config.alpha_bid_offset_pct
 
-    def _edge_pct(self, *, mid: float, limit_price: float) -> float:
+    def _buy_edge_pct(self, *, mid: float, limit_price: float) -> float:
         if mid <= 0:
             return 0.0
         return max(0.0, ((mid - limit_price) / mid) * 100.0)
+
+    def _sell_edge_pct(self, *, mid: float, limit_price: float) -> float:
+        if mid <= 0:
+            return 0.0
+        return max(0.0, ((limit_price - mid) / mid) * 100.0)
 
     def _cap_size_xrp(
         self,
@@ -226,6 +231,19 @@ class DecisionEngine:
             )
         return None
 
+    def _effective_sell_offset_pct(self) -> float:
+        explicit = getattr(self._config, "alpha_sell_limit_offset_pct", 0.0)
+        if explicit > 0:
+            return explicit
+        return self._config.alpha_ask_offset_pct
+
+    def _sell_limit_price(self, book: OrderBookSnapshot) -> Optional[float]:
+        mid = book.mid
+        if mid is None or mid <= 0:
+            return None
+        offset_pct = self._effective_sell_offset_pct()
+        return round(mid * (1.0 + offset_pct / 100.0), 6)
+
     def _build_bid(
         self,
         *,
@@ -233,9 +251,15 @@ class DecisionEngine:
         risk: RiskSnapshot,
         book: OrderBookSnapshot,
         liquidity: Optional[LiquidityDepth],
+        pending_buy_count: int = 0,
         balances: Optional[BalanceSnapshot],
         ta: Optional["TechnicalAnalysisSnapshot"] = None,
     ) -> DecisionResult:
+        if pending_buy_count >= self._config.alpha_max_pending_buys:
+            return DecisionResult(
+                action=DecisionAction.HOLD,
+                reason=f"max_pending_buys={self._config.alpha_max_pending_buys}",
+            )
         blocked = self._ta_blocks_buy(ta)
         if blocked:
             return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
@@ -245,7 +269,7 @@ class DecisionEngine:
         if price is None or price <= 0:
             return DecisionResult(action=DecisionAction.HOLD, reason="invalid_buy_price")
 
-        edge = self._edge_pct(mid=mid, limit_price=price)
+        edge = self._buy_edge_pct(mid=mid, limit_price=price)
         if self._risk is not None:
             ok, msg = self._risk.validate_entry(risk, edge_pct=edge)
             if not ok:
@@ -315,24 +339,48 @@ class DecisionEngine:
         risk: RiskSnapshot,
         book: OrderBookSnapshot,
         liquidity: Optional[LiquidityDepth],
+        pending_sell_count: int = 0,
         balances: Optional[BalanceSnapshot],
         ta: Optional["TechnicalAnalysisSnapshot"] = None,
     ) -> DecisionResult:
+        if pending_sell_count >= self._config.alpha_max_pending_sells:
+            return DecisionResult(
+                action=DecisionAction.HOLD,
+                reason=f"max_pending_sells={self._config.alpha_max_pending_sells}",
+            )
         blocked = self._ta_blocks_sell(ta)
         if blocked:
             return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
-        if self._risk is not None:
-            ok, msg = self._risk.validate_entry(risk)
-            if not ok:
-                return DecisionResult(action=DecisionAction.HOLD, reason=msg)
-
         mid = book.mid
         assert mid is not None
-        best_ask = book.best_ask or mid
-        offset = self._config.alpha_ask_offset_pct / 100.0
-        price = round(best_ask * (1.0 + offset), 6)
+        price = self._sell_limit_price(book)
+        if price is None or price <= 0:
+            return DecisionResult(action=DecisionAction.HOLD, reason="invalid_sell_price")
+
+        edge = self._sell_edge_pct(mid=mid, limit_price=price)
+        if self._risk is not None:
+            ok, msg = self._risk.validate_entry(risk, edge_pct=edge)
+            if not ok:
+                return DecisionResult(
+                    action=DecisionAction.HOLD,
+                    reason=msg,
+                    edge_pct=edge,
+                )
+        elif edge < self._config.alpha_min_edge_threshold_pct:
+            return DecisionResult(
+                action=DecisionAction.HOLD,
+                reason=f"edge_below_threshold edge={edge:.3f}%",
+                edge_pct=edge,
+            )
 
         depth_cap = liquidity.bid_depth_xrp if liquidity else self._config.alpha_base_order_size_xrp
+        if depth_cap < self._config.min_order_size_xrp:
+            return DecisionResult(
+                action=DecisionAction.HOLD,
+                reason=f"insufficient_bid_depth depth={depth_cap:.2f}",
+                edge_pct=edge,
+            )
+
         portfolio = inventory.portfolio_xrp_equiv or (balances.portfolio_xrp_equiv if balances else 0.0)
         desired = self._config.alpha_base_order_size_xrp * (1.0 + abs(inventory.deviation) * 2.0)
         size = self._cap_size_xrp(
@@ -345,11 +393,15 @@ class DecisionEngine:
             balances=balances,
         )
         if size <= 0:
-            return DecisionResult(action=DecisionAction.HOLD, reason="ask_size_below_min_after_caps")
+            return DecisionResult(
+                action=DecisionAction.HOLD,
+                reason="ask_size_below_min_after_caps",
+                edge_pct=edge,
+            )
 
         reason = (
-            f"strength dev={inventory.deviation:+.3f} depth_cap={depth_cap:.2f} "
-            f"alloc_xrp={inventory.xrp_allocation_pct:.1f}%"
+            f"strength dev={inventory.deviation:+.3f} edge={edge:.3f}% "
+            f"depth_cap={depth_cap:.2f} alloc_xrp={inventory.xrp_allocation_pct:.1f}%"
         )
         if ta is not None and ta.enabled:
             reason += f" ta_sell={ta.sell_score:.2f}"
@@ -365,4 +417,5 @@ class DecisionEngine:
             side="ask",
             size_xrp=size,
             price_rlusd_per_xrp=price,
+            edge_pct=edge,
         )

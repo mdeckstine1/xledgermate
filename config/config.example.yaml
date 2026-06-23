@@ -44,8 +44,10 @@ alpha_ask_offset_pct: 0.02
 alpha_risk_per_trade_pct: 0.5
 alpha_min_edge_threshold_pct: 0.08
 alpha_buy_limit_offset_pct: 0.15
+alpha_sell_limit_offset_pct: 0.15
 alpha_max_inventory_imbalance_pct: 0.10
 alpha_max_pending_buys: 1
+alpha_max_pending_sells: 1
 alpha_cycle_interval_seconds: 60
 alpha_breakout_pct: 0.02
 alpha_structure_lookback: 20

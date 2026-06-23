@@ -89,6 +89,18 @@ class OrderManager:
     def pending_buy_count(self) -> int:
         return self._store.pending_buy_count()
 
+    def count_strength_sells(self, open_offers: List[dict[str, Any]]) -> int:
+        """Open ask offers that are not bracket TP/SL legs (inventory strength sells)."""
+        leg_seqs = self._store.bracket_leg_sequences()
+        count = 0
+        for offer in open_offers:
+            if offer.get("side") != "ask":
+                continue
+            seq = int(offer.get("sequence") or 0)
+            if seq > 0 and seq not in leg_seqs:
+                count += 1
+        return count
+
     async def open_sequences(self) -> Set[int]:
         return await self._open_sequences()
 

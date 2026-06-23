@@ -29,6 +29,13 @@ def _run_pytest(quiet: bool) -> int:
         "tests/test_alpha_phase6.py",
         "tests/test_alpha_phase7.py",
         "tests/test_alpha_integration.py",
+        "tests/test_alpha_trailing.py",
+        "tests/test_alpha_technical_analysis.py",
+        "tests/test_alpha_price_history.py",
+        "tests/test_alpha_hud.py",
+        "tests/test_alpha_hud_controls.py",
+        "tests/test_alpha_hud_auth.py",
+        "tests/test_alpha_operator_runtime.py",
     ]
     if quiet:
         cmd.append("-q")

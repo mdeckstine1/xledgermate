@@ -76,11 +76,17 @@ def validate_alpha_config(config: BotConfig) -> AlphaConfigValidation:
     if config.alpha_buy_limit_offset_pct <= 0:
         errors.append("alpha_buy_limit_offset_pct must be positive")
 
+    if config.alpha_sell_limit_offset_pct <= 0:
+        errors.append("alpha_sell_limit_offset_pct must be positive")
+
     if config.alpha_max_inventory_imbalance_pct < 0:
         errors.append("alpha_max_inventory_imbalance_pct must be non-negative")
 
     if config.alpha_max_pending_buys < 1:
         errors.append("alpha_max_pending_buys must be at least 1")
+
+    if config.alpha_max_pending_sells < 1:
+        errors.append("alpha_max_pending_sells must be at least 1")
 
     if config.alpha_cycle_interval_seconds < 5:
         warnings.append("alpha_cycle_interval_seconds < 5 may hammer RPC")
@@ -121,6 +127,11 @@ def validate_alpha_config(config: BotConfig) -> AlphaConfigValidation:
     if config.alpha_buy_limit_offset_pct < config.alpha_min_edge_threshold_pct:
         warnings.append(
             "alpha_buy_limit_offset_pct < alpha_min_edge_threshold_pct — buys may never pass edge gate"
+        )
+
+    if config.alpha_sell_limit_offset_pct < config.alpha_min_edge_threshold_pct:
+        warnings.append(
+            "alpha_sell_limit_offset_pct < alpha_min_edge_threshold_pct — sells may never pass edge gate"
         )
 
     if config.inventory_target_xrp_ratio <= 0 or config.inventory_target_xrp_ratio >= 1:

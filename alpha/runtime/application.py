@@ -247,6 +247,7 @@ class AlphaApplication:
             book=book,
             liquidity=liquidity,
             pending_buy_count=self._orders.pending_buy_count(),
+            pending_sell_count=self._orders.count_strength_sells(orders.open_offers),
             balances=balances,
             ta=ta_snapshot,
         )

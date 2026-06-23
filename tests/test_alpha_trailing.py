@@ -273,6 +273,39 @@ def test_order_manager_trailing_dry_run_updates_sl_price():
     asyncio.run(_run())
 
 
+def test_order_manager_trailing_live_replaces_sl_on_ledger():
+    async def _run() -> None:
+        ledger = _TrailFakeLedger()
+        ledger._offers[100] = {"sequence": 100, "side": "ask", "price": 1.96, "size_xrp": 10.0}
+        ledger._offers[101] = {"sequence": 101, "side": "ask", "price": 2.08, "size_xrp": 10.0}
+
+        cfg = _trailing_config(trailing_step_pct=1.0, dry_run=False)
+        mgr = OrderManager(ledger, DryRunGuard(dry_run=False, network="mainnet"), cfg)
+
+        record = _active_record(entry=2.0, sl=2.0)
+        record.breakeven_passed = True
+        record.last_sl_trail_anchor_mid = 2.0
+        record.peak_mid_rlusd_per_xrp = 2.0
+        mgr.store._by_id[record.bracket_id] = record
+        mgr.store.register_leg_sequence(100, record.bracket_id)
+        mgr.store.register_leg_sequence(101, record.bracket_id)
+
+        strong = CandleData(open=2.0, high=2.06, low=1.99, close=2.05)
+        structure = _structure(2.03, swing_high=2.0, candle=strong)
+        mgr.set_structure(structure)
+
+        updates = await mgr.update_trailing_orders(2.03, structure.confirmation_candle, structure=structure)
+        assert updates >= 1
+        assert 100 in ledger.cancelled
+        assert len(ledger.placed) >= 1
+        assert record.sl_leg is not None
+        assert record.sl_leg.price_rlusd_per_xrp > 2.0
+        assert record.sl_leg.sequence is not None
+        assert record.sl_leg.sequence != 100
+
+    asyncio.run(_run())
+
+
 def test_analyze_structure_includes_confirmation_candle(tmp_path: Path):
     from alpha.decision.price_history import BookPrices, append_book_prices
 

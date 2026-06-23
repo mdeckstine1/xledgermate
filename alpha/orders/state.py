@@ -182,6 +182,16 @@ class BracketStateStore:
     def pending_buy_count(self) -> int:
         return sum(1 for r in self._by_id.values() if r.state.value == "pending_buy")
 
+    def bracket_leg_sequences(self) -> frozenset[int]:
+        return frozenset(self._leg_seq.keys())
+
+    def pending_buy_sequences(self) -> frozenset[int]:
+        return frozenset(
+            r.buy_sequence
+            for r in self._by_id.values()
+            if r.state.value == "pending_buy"
+        )
+
     def state_labels(self) -> tuple[str, ...]:
         return tuple(f"{r.bracket_id}:{r.state.value}" for r in self._by_id.values())
 

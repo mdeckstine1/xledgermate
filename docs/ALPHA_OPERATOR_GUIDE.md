@@ -5,6 +5,8 @@
 
 This guide is for the **new Alpha bot**, not the legacy `ws-engine` market maker.
 
+> **Going live?** Read **[`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md)** first — step-by-step HUD walkthrough, how orders are created (there is no manual Buy button), inventory requirements, and HOLD troubleshooting.
+
 ---
 
 ## What Alpha does
@@ -86,11 +88,13 @@ XLG_HUD_PASSWORD=your-strong-password
 
 Auth auto-enables on public bind when credentials are set. Localhost-only bind (`127.0.0.1`) skips login unless `hud_auth_enabled: true`.
 
-Streamlit `:8503` is optional lab UI — use SSH tunnel if enabled.
+| Command | Purpose |
+|---------|---------|
 | `python main.py --mode alpha-run` | Same as `python -m alpha run` |
 | `python scripts/alpha_validate.py` | Pre-cutover checks + tests |
 
----
+Streamlit `:8503` is optional lab UI — use SSH tunnel if enabled.
+
 
 ## Key config parameters (conservative mainnet defaults)
 
@@ -99,9 +103,11 @@ Streamlit `:8503` is optional lab UI — use SSH tunnel if enabled.
 | `dry_run` | `true` | **Must stay true for soak** |
 | `trading_enabled` | `true` | Master switch (yaml) |
 | `alpha_risk_per_trade_pct` | `0.5` | Max entry size as % of portfolio |
-| `alpha_min_edge_threshold_pct` | `0.08` | Min edge vs mid to buy |
+| `alpha_min_edge_threshold_pct` | `0.08` | Min edge vs mid for buy **and** sell |
 | `alpha_buy_limit_offset_pct` | `0.15` | Limit buy % below mid |
-| `alpha_max_pending_buys` | `1` | One entry at a time |
+| `alpha_sell_limit_offset_pct` | `0.15` | Limit sell % above mid |
+| `alpha_max_pending_buys` | `1` | Max pending buy entries |
+| `alpha_max_pending_sells` | `1` | Max strength-sell offers (non-bracket) |
 | `alpha_max_inventory_imbalance_pct` | `0.10` | Block buys when too XRP-heavy |
 | `initial_stop_loss_pct` | `0.015` | Bracket SL below entry |
 | `take_profit_rr` | `2.0` | TP = 2× SL distance |
@@ -179,6 +185,7 @@ Runtime overrides are applied each engine cycle; dangerous actions are queued in
 
 ## Further reading
 
+- **[`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md)** — **start here for live trading & orders**
 - [`PROJECT_INSTRUCTIONS.md`](../PROJECT_INSTRUCTIONS.md)
 - [`ALPHA_MAINNET_CUTOVER.md`](ALPHA_MAINNET_CUTOVER.md)
 - [`ALPHA_FINAL_REPORT.md`](ALPHA_FINAL_REPORT.md)

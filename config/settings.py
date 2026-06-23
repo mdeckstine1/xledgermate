@@ -189,10 +189,12 @@ class BotConfig:
     alpha_ask_offset_pct: float = 0.02
     # Phase 4 entry — conservative mainnet defaults
     alpha_risk_per_trade_pct: float = 0.5  # Max XRP size as % of portfolio per entry
-    alpha_min_edge_threshold_pct: float = 0.08  # Min edge (mid vs limit) to place buy
+    alpha_min_edge_threshold_pct: float = 0.08  # Min edge (mid vs limit) for buy and sell entries
     alpha_buy_limit_offset_pct: float = 0.15  # Limit buy % below mid (also sets edge)
+    alpha_sell_limit_offset_pct: float = 0.15  # Limit sell % above mid (symmetric to buy offset)
     alpha_max_inventory_imbalance_pct: float = 0.10  # Block buys when this far above target XRP ratio
     alpha_max_pending_buys: int = 1  # Max concurrent pending buy brackets
+    alpha_max_pending_sells: int = 1  # Max concurrent strength-sell offers (non-bracket asks)
     alpha_cycle_interval_seconds: int = 60  # Trading loop sleep between cycles
     alpha_breakout_pct: float = 0.02  # Min % above entry/high for breakout trailing
     alpha_structure_lookback: int = 20  # Price samples for HTF structure

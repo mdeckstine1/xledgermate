@@ -23,9 +23,11 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_risk_per_trade_pct",
     "alpha_min_edge_threshold_pct",
     "alpha_buy_limit_offset_pct",
+    "alpha_sell_limit_offset_pct",
     "alpha_weakness_deviation",
     "alpha_strength_deviation",
     "alpha_max_pending_buys",
+    "alpha_max_pending_sells",
     "alpha_breakout_pct",
     "alpha_structure_lookback",
     "bracket_trailing_enabled",
@@ -41,9 +43,11 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "alpha_risk_per_trade_pct": {"min": 0.1, "max": 5.0, "step": 0.1},
     "alpha_min_edge_threshold_pct": {"min": 0.0, "max": 1.0, "step": 0.01},
     "alpha_buy_limit_offset_pct": {"min": 0.05, "max": 1.0, "step": 0.01},
+    "alpha_sell_limit_offset_pct": {"min": 0.05, "max": 1.0, "step": 0.01},
     "alpha_weakness_deviation": {"min": 0.01, "max": 0.25, "step": 0.01},
     "alpha_strength_deviation": {"min": 0.01, "max": 0.25, "step": 0.01},
     "alpha_max_pending_buys": {"min": 1, "max": 5, "step": 1},
+    "alpha_max_pending_sells": {"min": 1, "max": 5, "step": 1},
     "alpha_breakout_pct": {"min": 0.005, "max": 0.10, "step": 0.005},
     "alpha_structure_lookback": {"min": 3, "max": 100, "step": 1},
     "trailing_step_pct": {"min": 0.5, "max": 5.0, "step": 0.1},
@@ -121,7 +125,7 @@ def _coerce_override(key: str, value: Any) -> Any:
         if isinstance(value, str):
             return value.lower() in ("1", "true", "yes", "on")
         return bool(value)
-    if key == "alpha_max_pending_buys":
+    if key in ("alpha_max_pending_buys", "alpha_max_pending_sells"):
         return int(value)
     if key == "alpha_structure_lookback":
         return int(value)
@@ -142,8 +146,14 @@ def _validate_merged_config(config: BotConfig, changed_keys: Any) -> List[str]:
     if "alpha_buy_limit_offset_pct" in keys and config.alpha_buy_limit_offset_pct <= 0:
         errors.append("alpha_buy_limit_offset_pct must be positive")
 
+    if "alpha_sell_limit_offset_pct" in keys and config.alpha_sell_limit_offset_pct <= 0:
+        errors.append("alpha_sell_limit_offset_pct must be positive")
+
     if "alpha_max_pending_buys" in keys and config.alpha_max_pending_buys < 1:
         errors.append("alpha_max_pending_buys must be at least 1")
+
+    if "alpha_max_pending_sells" in keys and config.alpha_max_pending_sells < 1:
+        errors.append("alpha_max_pending_sells must be at least 1")
 
     if "alpha_breakout_pct" in keys and config.alpha_breakout_pct <= 0:
         errors.append("alpha_breakout_pct must be positive")

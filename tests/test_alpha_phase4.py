@@ -234,3 +234,119 @@ def test_executor_registers_buy_and_bracket_on_fill():
         assert record.tp_leg is not None and record.sl_leg is not None
 
     asyncio.run(_run())
+
+
+def _strong_inventory() -> InventorySnapshot:
+    return InventorySnapshot(
+        xrp_ratio=0.70,
+        target_xrp_ratio=0.55,
+        deviation=0.15,
+        label="xrp_heavy",
+        pause_bids=False,
+        pause_asks=False,
+        summary="test",
+    )
+
+
+def test_sell_signal_requires_edge_threshold():
+    cfg = _entry_config(alpha_sell_limit_offset_pct=0.05, alpha_min_edge_threshold_pct=0.10)
+    engine = DecisionEngine(cfg)
+    book = _book_snapshot()
+    liquidity = compute_liquidity_depth(book, max_slippage_pct=0.5)
+    result = engine.evaluate(
+        inventory=_strong_inventory(),
+        risk=_risk_ready(),
+        book=book,
+        liquidity=liquidity,
+        operator=_operator(),
+    )
+    assert result.action == DecisionAction.HOLD
+    assert "edge" in result.reason.lower()
+
+
+def test_sell_signal_with_edge_and_strength():
+    cfg = _entry_config(alpha_sell_limit_offset_pct=0.15)
+    engine = DecisionEngine(cfg)
+    book = _book_snapshot()
+    liquidity = compute_liquidity_depth(book, max_slippage_pct=0.5)
+    result = engine.evaluate(
+        inventory=_strong_inventory(),
+        risk=_risk_ready(),
+        book=book,
+        liquidity=liquidity,
+        operator=_operator(portfolio=10_000.0),
+    )
+    assert result.action == DecisionAction.PLACE_ASK
+    assert result.size_xrp is not None and result.size_xrp > 0
+    assert result.edge_pct is not None and result.edge_pct >= cfg.alpha_min_edge_threshold_pct
+    mid = book.mid
+    assert mid is not None
+    expected_price = round(mid * (1.0 + cfg.alpha_sell_limit_offset_pct / 100.0), 6)
+    assert result.price_rlusd_per_xrp == expected_price
+
+
+def test_max_pending_buys_does_not_block_sell():
+    cfg = _entry_config(alpha_max_pending_buys=1)
+    engine = DecisionEngine(cfg)
+    book = _book_snapshot()
+    liquidity = compute_liquidity_depth(book, max_slippage_pct=0.5)
+    result = engine.evaluate(
+        inventory=_strong_inventory(),
+        risk=_risk_ready(),
+        book=book,
+        liquidity=liquidity,
+        pending_buy_count=1,
+        operator=_operator(),
+    )
+    assert result.action == DecisionAction.PLACE_ASK
+
+
+def test_executor_sell_dry_run_logs_without_ledger_write():
+    async def _run() -> None:
+        ledger = _IntegrationLedger()
+        cfg = _entry_config(dry_run=True)
+        guard = DryRunGuard(dry_run=True, network="mainnet")
+        orders = OrderManager(ledger, guard, cfg)
+        executor = EntryExecutor(ledger, orders, guard, cfg)
+        from alpha.decision.engine import DecisionResult
+
+        decision = DecisionResult(
+            action=DecisionAction.PLACE_ASK,
+            reason="test",
+            size_xrp=10.0,
+            price_rlusd_per_xrp=2.05,
+            edge_pct=0.15,
+        )
+        result = await executor.execute(decision)
+        assert not result.executed
+        assert result.dry_run
+        assert result.action == "place_ask"
+        assert len(await ledger.get_open_offers()) == 0
+
+    asyncio.run(_run())
+
+
+def test_executor_places_strength_sell_live(tmp_path):
+    async def _run() -> None:
+        ledger = _IntegrationLedger()
+        cfg = _entry_config(dry_run=False)
+        guard = DryRunGuard(dry_run=False, network="mainnet")
+        orders = OrderManager(ledger, guard, cfg, state_dir=tmp_path)
+        executor = EntryExecutor(ledger, orders, guard, cfg)
+        from alpha.decision.engine import DecisionResult
+
+        decision = DecisionResult(
+            action=DecisionAction.PLACE_ASK,
+            reason="test",
+            size_xrp=10.0,
+            price_rlusd_per_xrp=2.05,
+            edge_pct=0.15,
+        )
+        result = await executor.execute(decision)
+        assert result.executed
+        offers = await ledger.get_open_offers()
+        assert len(offers) == 1
+        assert offers[0]["side"] == "ask"
+        assert orders.count_strength_sells(offers) == 1
+
+    asyncio.run(_run())
