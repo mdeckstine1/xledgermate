@@ -731,11 +731,23 @@ class OrderManager:
         if mid <= 0 or entry <= 0:
             return None
 
-        target = self._target_buy_limit_price(mid)
-        drift_pct = abs(entry - target) / mid * 100.0
         max_drift = self._config.alpha_stale_pending_buy_max_drift_pct
-        if max_drift > 0 and drift_pct > max_drift + _PRICE_EPS:
-            return f"entry_drift={drift_pct:.3f}%>{max_drift:g}%"
+        if max_drift > 0:
+            # New bids are always below mid; a resting bid above mid is off-policy.
+            if entry > mid + _PRICE_EPS:
+                overshoot_pct = (entry - mid) / mid * 100.0
+                return f"entry_above_mid={overshoot_pct:.3f}%"
+
+            # Market rallied through the bid without a fill — dip was missed.
+            if mid > entry + _PRICE_EPS:
+                passed_pct = (mid - entry) / mid * 100.0
+                if passed_pct > max_drift + _PRICE_EPS:
+                    return f"mid_passed_entry={passed_pct:.3f}%>{max_drift:g}%"
+
+            target = self._target_buy_limit_price(mid)
+            drift_pct = abs(entry - target) / mid * 100.0
+            if drift_pct > max_drift + _PRICE_EPS:
+                return f"entry_drift={drift_pct:.3f}%>{max_drift:g}%"
 
         max_age = self._config.alpha_stale_pending_buy_max_age_seconds
         if max_age > 0:
@@ -762,6 +774,38 @@ class OrderManager:
                     mid,
                     self._target_buy_limit_price(mid),
                     reason,
+                )
+        cancelled += await self._prune_excess_pending_buys(mid)
+        return cancelled
+
+    async def _prune_excess_pending_buys(self, mid: float) -> int:
+        """Cancel farthest-from-target pending buys when over max_pending_buys."""
+        if not self._config.alpha_stale_pending_buy_enabled:
+            return 0
+        cap = self._config.alpha_max_pending_buys
+        pending = [
+            record
+            for record in self._store.iter_open()
+            if record.state == BracketLifecycleState.PENDING_BUY
+        ]
+        if len(pending) <= cap:
+            return 0
+
+        target = self._target_buy_limit_price(mid)
+        pending.sort(
+            key=lambda record: abs(record.entry_price_rlusd_per_xrp - target),
+            reverse=True,
+        )
+        cancelled = 0
+        for record in pending[cap:]:
+            if await self.cancel_bracket(record.bracket_id):
+                cancelled += 1
+                logger.info(
+                    "excess_pending_buy_cancelled | id=%s | entry=%.6f | target=%.6f | cap=%d",
+                    record.bracket_id,
+                    record.entry_price_rlusd_per_xrp,
+                    target,
+                    cap,
                 )
         return cancelled
 

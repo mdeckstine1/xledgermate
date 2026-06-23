@@ -639,7 +639,7 @@
       $('numMaxBuys').value = c.alpha_max_pending_buys ?? 1;
       $('numMaxSells').value = c.alpha_max_pending_sells ?? 1;
       $('stalePendingEnabled').checked = c.alpha_stale_pending_buy_enabled !== false;
-      syncStaleDrift(c.alpha_stale_pending_buy_max_drift_pct ?? 0.5);
+      syncStaleDrift(c.alpha_stale_pending_buy_max_drift_pct ?? 0.15);
       syncCycle(c.alpha_cycle_interval_seconds ?? 15);
       $('trailingEnabled').checked = !!c.bracket_trailing_enabled;
       $('tradingEnabled').checked = c.trading_enabled !== false;

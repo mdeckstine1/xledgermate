@@ -159,7 +159,13 @@ Each engine cycle, the bot can **auto-cancel resting buy bids** that no longer m
 
 1. Compute **target entry** = `mid × (1 − buy_limit_offset_pct / 100)`  
 2. For each **pending buy** bracket, compute **drift** = `|entry − target| / mid × 100`  
-3. If drift **>** `stale_pending_buy_max_drift_pct` (default **0.5%**), cancel that bid and free a `max_pending_buys` slot.
+3. If drift **>** `stale_pending_buy_max_drift_pct` (default **0.15%**, match `buy_limit_offset_pct`), cancel that bid and free a `max_pending_buys` slot.
+
+Also cancels when:
+
+- **`entry_above_mid`** — bid is above mid (off-policy; new bids are always below mid)
+- **`mid_passed_entry`** — mid rallied more than `max_drift_pct` above the bid without a fill
+- **`excess_pending_buy`** — more open pending buys than `max_pending_buys` (farthest from target pruned first)
 
 **Example — clearly stale**
 
