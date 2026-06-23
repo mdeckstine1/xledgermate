@@ -45,9 +45,11 @@ def _load_state() -> Dict[str, Any]:
 
 
 if app is not None:
+    from alpha.hud.routes_config import register_config_routes
     from alpha.hud.routes_operator import register_operator_routes
 
     register_operator_routes(app)
+    register_config_routes(app)
 
     @app.get("/", response_class=HTMLResponse)
     @app.get("/hud", response_class=HTMLResponse)

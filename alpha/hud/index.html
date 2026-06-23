@@ -131,6 +131,11 @@
     .btn-row-edit { background:#1e3a5f; border-color:#2563eb; color:#bfdbfe; }
     .entry-edit { display:none; }
     .entry-edit.open { display:flex; }
+    .config-form .ctrl-row input[type=text], .config-form .ctrl-row input[type=password], .config-form .ctrl-row input[type=url] { flex:1; min-width:200px; max-width:480px; width:auto; }
+    .config-form .ctrl-row label { min-width:180px; }
+    .config-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:12px; margin-bottom:16px; }
+    .transfer-form .ctrl-row input[type=number] { width:120px; }
+    .transfer-log { font-size:.78rem; max-height:240px; overflow:auto; }
     @media (max-width:1100px) {
       .grid.live-grid { grid-template-columns:repeat(6, minmax(100px, 1fr)); overflow-x:auto; }
     }
@@ -188,6 +193,7 @@
         <div class="tab" data-tab="offers">Open offers</div>
         <div class="tab" data-tab="reports">Reports</div>
         <div class="tab" data-tab="activity">Activity</div>
+        <div class="tab" data-tab="config">Config</div>
       </div>
       <section id="live" class="panel active">
         <div class="grid live-grid">
@@ -324,6 +330,53 @@
       <section id="activity" class="panel">
         <div class="card activity" id="actFeed"></div>
       </section>
+      <section id="config" class="panel">
+        <p class="muted" style="margin:0 0 12px">Account credentials save to <code>config/credentials.local.yaml</code> (gitignored). Never commit secrets.</p>
+        <div class="config-grid">
+          <div class="card controls-section config-form">
+            <h2>Bot account &amp; network</h2>
+            <div class="ctrl-row"><label>bot_account_address</label><input type="text" id="cfgBotAddr" placeholder="r…" autocomplete="off"></div>
+            <div class="ctrl-row"><label>bot_secret_key</label><input type="password" id="cfgBotSecret" placeholder="Leave blank to keep existing" autocomplete="new-password"><span id="cfgSecretHint" class="muted"></span></div>
+            <div class="ctrl-row toggle"><label><input type="checkbox" id="cfgTestnet"> testnet</label></div>
+            <div class="ctrl-row"><label>rlusd_issuer override</label><input type="text" id="cfgRlusdIssuer" placeholder="blank = network default"></div>
+            <div class="ctrl-row"><label>private_node_url</label><input type="text" id="cfgPrivateRpc" placeholder="optional custom RPC"></div>
+            <div class="ctrl-row"><label>xrp_reserve</label><input type="number" id="cfgXrpReserve" step="0.1" min="0"></div>
+            <div class="ctrl-row"><label>RPC (read-only)</label><span id="cfgRpcUrl" class="muted">—</span></div>
+            <div class="ctrl-row"><label>Network</label><span id="cfgNetwork" class="muted">—</span></div>
+          </div>
+          <div class="card controls-section config-form">
+            <h2>Telegram &amp; HUD auth</h2>
+            <div class="ctrl-row toggle"><label><input type="checkbox" id="cfgTelegramEnabled"> telegram_enabled</label></div>
+            <div class="ctrl-row"><label>telegram_token</label><input type="password" id="cfgTelegramToken" placeholder="Leave blank to keep" autocomplete="new-password"><span id="cfgTgTokenHint" class="muted"></span></div>
+            <div class="ctrl-row"><label>telegram_chat_id</label><input type="text" id="cfgTelegramChat" placeholder="numeric or @channel"></div>
+            <div class="ctrl-row"><label>telegram_hud_url</label><input type="text" id="cfgTelegramHudUrl" placeholder="http://host:8765"></div>
+            <div class="ctrl-row"><label>hud_auth_username</label><input type="text" id="cfgHudUser" autocomplete="username"></div>
+            <div class="ctrl-row"><label>hud_auth_password</label><input type="password" id="cfgHudPass" placeholder="Leave blank to keep" autocomplete="new-password"></div>
+            <div class="ctrl-row"><label>default withdraw address</label><input type="text" id="cfgSendDefault" placeholder="r… saved after send"></div>
+            <button type="button" id="btnSaveAccountConfig">Save account config</button>
+          </div>
+        </div>
+        <div class="card controls-section transfer-form">
+          <h2>Send / withdraw from bot</h2>
+          <p class="muted" style="margin:0 0 10px">Signed XRPL payment from the bot account. Logged to <code>logs/transfers.csv</code>. Pause trading and stop the engine before large withdrawals.</p>
+          <div class="ctrl-row"><label>Destination (r…)</label><input type="text" id="sendDest" placeholder="r…" autocomplete="off"></div>
+          <div class="ctrl-row"><label>Asset</label>
+            <select id="sendAsset" style="background:#0f172a;border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px">
+              <option value="XRP">XRP</option>
+              <option value="RLUSD">RLUSD</option>
+            </select>
+          </div>
+          <div class="ctrl-row"><label>Amount</label><input type="number" id="sendAmount" step="any" min="0" placeholder="0.0"></div>
+          <div class="ctrl-row toggle"><label><input type="checkbox" id="sendConfirmEngine"> I confirm engine is stopped / paused</label></div>
+          <div class="ctrl-row"><label>Type SEND to confirm</label><input type="text" id="sendConfirmText" placeholder="SEND" autocomplete="off"></div>
+          <button type="button" id="btnSendFunds" class="danger">Send payment</button>
+          <span id="sendResult" class="muted" style="margin-left:8px"></span>
+        </div>
+        <div class="card">
+          <h3>Recent transfers</h3>
+          <div id="transferLog" class="transfer-log muted">Loading…</div>
+        </div>
+      </section>
     </main>
   </div>
   <div id="toast" class="status-toast"></div>
@@ -352,6 +405,7 @@
       $(el.dataset.tab).classList.add('active');
       if (el.dataset.tab === 'live' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'ta' && !operatorConfig) loadOperatorConfig();
+      if (el.dataset.tab === 'config') loadAccountConfig();
     }));
 
     function toast(msg, isErr) {
@@ -1147,7 +1201,119 @@
 
       $('actFeed').innerHTML = (s.recent_activity || []).slice().reverse().map(a =>
         `<div><span class="muted">${a.ts||''}</span> <strong>${a.event||''}</strong> ${JSON.stringify(a).slice(0,120)}</div>`).join('') || '<div class="muted">No activity yet</div>';
+
+      if (s.balances) {
+        const balHint = `Bot balance: ${fmt(s.balances.xrp, 4)} XRP · ${fmt(s.balances.rlusd, 2)} RLUSD`;
+        if ($('sendResult') && !$('sendResult').dataset.busy) {
+          $('sendResult').dataset.balHint = balHint;
+        }
+      }
     }
+
+    function renderTransferLog(rows) {
+      const el = $('transferLog');
+      if (!el) return;
+      if (!rows || !rows.length) {
+        el.innerHTML = '<div class="muted">No transfers yet.</div>';
+        return;
+      }
+      el.innerHTML = '<table><thead><tr><th>Time</th><th>Asset</th><th>Amount</th><th>Destination</th><th>Tx</th></tr></thead><tbody>' +
+        rows.map(t => `<tr>
+          <td>${(t.timestamp_utc||'').slice(0,19)}</td>
+          <td>${t.asset||'—'}</td>
+          <td>${t.amount||'—'}</td>
+          <td style="font-size:.7rem;word-break:break-all">${t.destination||'—'}</td>
+          <td style="font-size:.7rem;word-break:break-all">${(t.tx_hash||'').slice(0,12)}…</td>
+        </tr>`).join('') + '</tbody></table>';
+    }
+
+    async function loadAccountConfig() {
+      try {
+        const r = await fetch('/operator/account-config');
+        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+        const d = await r.json();
+        if (!d.ok) return;
+        const c = d.account_config || {};
+        $('cfgBotAddr').value = c.bot_account_address || '';
+        $('cfgBotSecret').value = '';
+        $('cfgSecretHint').textContent = c.has_bot_secret ? ('set (' + (c.bot_secret_masked || '••••') + ')') : 'not set';
+        $('cfgTestnet').checked = !!c.testnet;
+        $('cfgRlusdIssuer').value = c.rlusd_issuer_override || '';
+        $('cfgPrivateRpc').value = c.private_node_url || '';
+        $('cfgXrpReserve').value = c.xrp_reserve ?? 12;
+        $('cfgRpcUrl').textContent = c.rpc_url || '—';
+        $('cfgNetwork').textContent = (c.network || '—') + (c.engine_running ? ' · engine running' : ' · engine stopped');
+        $('cfgTelegramEnabled').checked = !!c.telegram_enabled;
+        $('cfgTelegramToken').value = '';
+        $('cfgTgTokenHint').textContent = c.has_telegram_token ? ('set (' + (c.telegram_token_masked || '') + ')') : '';
+        $('cfgTelegramChat').value = c.telegram_chat_id || '';
+        $('cfgTelegramHudUrl').value = c.telegram_hud_url || '';
+        $('cfgHudUser').value = c.hud_auth_username || '';
+        $('cfgHudPass').value = '';
+        $('cfgSendDefault').value = c.send_destination_default || '';
+        if (c.send_destination_default && !$('sendDest').value) $('sendDest').value = c.send_destination_default;
+        const tr = await fetch('/operator/transfers');
+        const td = await tr.json();
+        if (td.ok) renderTransferLog(td.transfers);
+      } catch (e) {
+        toast('Config load failed: ' + e, true);
+      }
+    }
+
+    $('btnSaveAccountConfig').onclick = async () => {
+      const updates = {
+        bot_account_address: $('cfgBotAddr').value.trim(),
+        testnet: $('cfgTestnet').checked,
+        rlusd_issuer: $('cfgRlusdIssuer').value.trim(),
+        private_node_url: $('cfgPrivateRpc').value.trim(),
+        xrp_reserve: parseFloat($('cfgXrpReserve').value),
+        telegram_enabled: $('cfgTelegramEnabled').checked,
+        telegram_chat_id: $('cfgTelegramChat').value.trim(),
+        telegram_hud_url: $('cfgTelegramHudUrl').value.trim(),
+        hud_auth_username: $('cfgHudUser').value.trim(),
+        send_destination_default: $('cfgSendDefault').value.trim(),
+      };
+      const secret = $('cfgBotSecret').value;
+      if (secret) updates.bot_secret_key = secret;
+      const tg = $('cfgTelegramToken').value;
+      if (tg) updates.telegram_token = tg;
+      const hp = $('cfgHudPass').value;
+      if (hp) updates.hud_auth_password = hp;
+      const d = await patchJson('/operator/account-config', { updates });
+      if (d?.ok) {
+        toast('Account config saved');
+        $('cfgBotSecret').value = '';
+        $('cfgTelegramToken').value = '';
+        $('cfgHudPass').value = '';
+        loadAccountConfig();
+      }
+    };
+
+    $('btnSendFunds').onclick = async () => {
+      const dest = $('sendDest').value.trim();
+      const amount = parseFloat($('sendAmount').value);
+      if (!dest || !amount || amount <= 0) { toast('Enter destination and amount', true); return; }
+      if (!confirm('Send ' + amount + ' ' + $('sendAsset').value + ' to ' + dest + '?')) return;
+      $('sendResult').dataset.busy = '1';
+      $('sendResult').textContent = 'Submitting…';
+      const d = await postJson('/operator/send-funds', {
+        destination: dest,
+        asset: $('sendAsset').value,
+        amount,
+        confirm_text: $('sendConfirmText').value,
+        confirm_engine_running: $('sendConfirmEngine').checked,
+      });
+      delete $('sendResult').dataset.busy;
+      if (d?.ok) {
+        $('sendResult').textContent = (d.message || 'Sent') + (d.tx_hash ? ' · ' + d.tx_hash.slice(0,12) + '…' : '');
+        $('sendConfirmText').value = '';
+        renderTransferLog(d.transfers);
+        toast('Payment sent');
+        poll();
+      } else {
+        $('sendResult').textContent = d?.message || 'Send failed';
+      }
+    };
 
     async function poll() {
       try {

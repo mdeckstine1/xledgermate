@@ -23,7 +23,7 @@ xLedgerMate Alpha is a **limit-order bag-growth bot** on XRPL (XRP / RLUSD).
 
 The bot has **eyes** (technical analysis) and **hands** (limit orders + brackets). **You** are the brain that decides how aggressive those hands should be — via the HUD at `:8765`.
 
-For install, VPS, and dry-run cutover, see [`ALPHA_OPERATOR_GUIDE.md`](ALPHA_OPERATOR_GUIDE.md) and [`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md). This manual is about **how it feels to run it**.
+For install, VPS, dry-run cutover, and the **Config** tab (credentials + withdraw), see [`ALPHA_OPERATOR_GUIDE.md`](ALPHA_OPERATOR_GUIDE.md) and [`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md). This manual is about **how it feels to run it**.
 
 ---
 
@@ -385,6 +385,7 @@ When you understand how each knob *feels*, then turn up the aggression.
 | **Pause** | Stops new entries; existing brackets remain |
 | **Kill switch** | Hard stop — no new risk |
 | **Cancel all** | Pulls open ledger offers |
+| **Config → Send** | Withdraw XRP or RLUSD to any `r…` address (type `SEND` to confirm) |
 | **Dry run toggle** | Simulates without submitting (when enabled) |
 
 The bot is live. The market is live. You are live.
