@@ -136,10 +136,11 @@
     .config-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:12px; margin-bottom:16px; }
     .transfer-form .ctrl-row input[type=number] { width:120px; }
     .transfer-log { font-size:.78rem; max-height:240px; overflow:auto; }
-    .skynet-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .skynet-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
     @media (max-width:900px) { .skynet-grid { grid-template-columns:1fr; } }
-    .skynet-prompt { width:100%; min-height:120px; background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:10px; font-size:.9rem; font-family:inherit; resize:vertical; }
-    .skynet-response { width:100%; min-height:220px; background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:10px; font-size:.85rem; font-family:ui-monospace,monospace; white-space:pre-wrap; overflow:auto; max-height:420px; }
+    .skynet-response-card { display:flex; flex-direction:column; min-height:min(72vh, 640px); }
+    .skynet-prompt { width:100%; min-height:120px; background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:10px; font-size:.9rem; font-family:inherit; resize:vertical; box-sizing:border-box; }
+    .skynet-response { flex:1 1 auto; width:100%; min-height:280px; height:min(58vh, 520px); max-height:min(58vh, 520px); background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:10px; font-size:.85rem; font-family:ui-monospace,monospace; line-height:1.45; white-space:pre-wrap; overflow-y:auto; overflow-x:hidden; resize:vertical; box-sizing:border-box; overscroll-behavior:contain; }
     .skynet-quick { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
     .skynet-quick button { font-size:.75rem; padding:6px 10px; }
     .skynet-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
@@ -414,9 +415,9 @@
               <button type="button" id="btnSkynetClear" class="secondary">Clear chat</button>
             </div>
           </div>
-          <div class="card">
+          <div class="card skynet-response-card">
             <h3>Response</h3>
-            <div id="skynetResponse" class="skynet-response muted">Responses appear here…</div>
+            <textarea id="skynetResponse" class="skynet-response muted" readonly spellcheck="false" placeholder="Responses appear here…"></textarea>
             <div class="skynet-actions">
               <button type="button" id="btnSkynetApply" class="warn" disabled>Apply suggested changes</button>
               <span id="skynetApplyHint" class="muted" style="font-size:.75rem"></span>
@@ -1383,6 +1384,12 @@
 
     let skynetLastApplicable = null;
 
+    function setSkynetResponse(text) {
+      const el = $('skynetResponse');
+      el.value = text || '';
+      el.scrollTop = 0;
+    }
+
     async function loadSkynetStatus() {
       try {
         const r = await fetch('/operator/skynet/status?_=' + Date.now());
@@ -1419,17 +1426,17 @@
       const prompt = $('skynetPrompt').value.trim();
       if (!prompt) { toast('Enter a prompt', true); return; }
       $('btnSkynetSend').disabled = true;
-      $('skynetResponse').textContent = 'Thinking…';
+      setSkynetResponse('Thinking…');
       $('btnSkynetApply').disabled = true;
       skynetLastApplicable = null;
       $('skynetApplyHint').textContent = '';
       const d = await postJson('/operator/skynet/ask', { prompt });
       $('btnSkynetSend').disabled = false;
       if (!d?.ok) {
-        $('skynetResponse').textContent = d?.message || 'SKYNET request failed';
+        setSkynetResponse(d?.message || 'SKYNET request failed');
         return;
       }
-      $('skynetResponse').textContent = d.display || d.raw_response || '(empty response)';
+      setSkynetResponse(d.display || d.raw_response || '(empty response)');
       skynetLastApplicable = d.applicable_changes || [];
       const n = skynetLastApplicable.length;
       $('btnSkynetApply').disabled = n === 0;
@@ -1459,7 +1466,7 @@
 
     $('btnSkynetClear').onclick = () => {
       $('skynetPrompt').value = '';
-      $('skynetResponse').textContent = 'Responses appear here…';
+      setSkynetResponse('');
       skynetLastApplicable = null;
       $('btnSkynetApply').disabled = true;
       $('skynetApplyHint').textContent = '';
