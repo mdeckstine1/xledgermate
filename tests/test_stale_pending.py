@@ -21,6 +21,7 @@ def test_stale_mid_passed_entry():
         offset_pct=0.15,
         max_drift_pct=0.15,
         stale_enabled=True,
+        price_decimals=6,
     )
     assert reason is not None
     assert "mid_passed_entry" in reason
@@ -47,6 +48,7 @@ def test_stale_snapshot_counts_cancel_candidates():
             "alpha_stale_pending_buy_max_drift_pct": 0.15,
             "alpha_stale_pending_buy_enabled": True,
             "alpha_max_pending_buys": 1,
+            "alpha_rlusd_price_decimals": 6,
         },
         pending_records=[
             {"state": "pending_buy", "entry": 1.098, "bracket_id": "a"},

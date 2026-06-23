@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, Optional, TYPE_CHECKING
 
 from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
 from alpha.ledger.liquidity import depth_within_mid_band
+from alpha.precision import DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS, price_decimals, round_rlusd_price
 from alpha.types import LiquidityDepth, OrderBookSnapshot
 from config.settings import BotConfig
 
@@ -63,6 +64,7 @@ def compute_bracket_dca(
     brackets: Iterable["BracketRecord"],
     *,
     mid: float,
+    price_decimals: int = DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS,
 ) -> Dict[str, Any]:
     """Volume-weighted average entry for XRP in active brackets (open bag cost basis)."""
     from alpha.orders.types import BracketLifecycleState
@@ -99,7 +101,7 @@ def compute_bracket_dca(
         vs_mid_pct = (mid - avg_entry) / avg_entry * 100.0
 
     return {
-        "avg_entry_rlusd_per_xrp": round(avg_entry, 6),
+        "avg_entry_rlusd_per_xrp": round_rlusd_price(avg_entry, price_decimals),
         "total_xrp": round(total_xrp, 4),
         "position_count": lots,
         "vs_mid_pct": round(vs_mid_pct, 3) if vs_mid_pct is not None else None,
@@ -246,7 +248,11 @@ def build_market_conditions(
     elif bid_grade == "yellow" or ask_grade == "yellow" or spread_grade == "yellow":
         overall = "yellow"
 
-    dca = compute_bracket_dca(brackets or [], mid=mid_f)
+    dca = compute_bracket_dca(
+        brackets or [],
+        mid=mid_f,
+        price_decimals=price_decimals(config),
+    )
     order_counts = compute_order_counts(brackets or [], log_dir=log_dir)
 
     return {
@@ -263,6 +269,7 @@ def build_market_conditions(
         "recommended_max_sell_xrp": max_sell,
         "ta": ta_summary,
         "cycle_interval_seconds": int(config.alpha_cycle_interval_seconds),
+        "price_decimals": price_decimals(config),
         "overall_grade": overall,
         "dca": dca,
         "order_counts": order_counts,

@@ -16,6 +16,7 @@ from alpha.types import (
     RiskSnapshot,
 )
 from alpha.decision.reentry import ReentryGate
+from alpha.precision import price_decimals, round_rlusd_price
 from config.settings import BotConfig
 
 if TYPE_CHECKING:
@@ -186,7 +187,9 @@ class DecisionEngine:
         if mid is None or mid <= 0:
             return None
         offset_pct = self._effective_buy_offset_pct()
-        return round(mid * (1.0 - offset_pct / 100.0), 6)
+        dec = price_decimals(self._config)
+        raw = mid * (1.0 - offset_pct / 100.0)
+        return round_rlusd_price(raw, dec, direction="down")
 
     def _effective_buy_offset_pct(self) -> float:
         explicit = getattr(self._config, "alpha_buy_limit_offset_pct", 0.0)
@@ -305,7 +308,9 @@ class DecisionEngine:
         if mid is None or mid <= 0:
             return None
         offset_pct = self._effective_sell_offset_pct()
-        return round(mid * (1.0 + offset_pct / 100.0), 6)
+        dec = price_decimals(self._config)
+        raw = mid * (1.0 + offset_pct / 100.0)
+        return round_rlusd_price(raw, dec, direction="up")
 
     def _build_bid(
         self,

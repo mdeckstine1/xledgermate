@@ -15,6 +15,7 @@ from alpha.decision.structure import (
 )
 from alpha.dry_run import DryRunGuard
 from alpha.orders.manager import OrderManager
+from alpha.precision import price_decimals, round_rlusd_price
 from alpha.orders.state import BracketStateStore
 from alpha.orders.trailing import (
     TrailingEvalResult,
@@ -44,6 +45,7 @@ def _trailing_config(**overrides: Any) -> BotConfig:
         breakout_confirmation_tf="15m",
         alpha_cycle_interval_seconds=60,
         alpha_breakout_pct=0.02,
+        alpha_rlusd_price_decimals=6,
         initial_stop_loss_pct=0.02,
         take_profit_rr=2.0,
         min_order_size_xrp=1.0,
@@ -135,7 +137,8 @@ def test_evaluate_trailing_sl_ratchets_after_step():
     new_sl = evaluate_trailing_sl(record, 2.03, cfg)
     assert new_sl is not None
     assert new_sl >= 2.0
-    assert new_sl == round(2.03 * 0.99, 6)
+    dec = price_decimals(cfg)
+    assert new_sl == round_rlusd_price(2.03 * 0.99, dec, direction="down")
 
 
 def test_evaluate_trailing_tp_only_after_breakout():
@@ -148,7 +151,8 @@ def test_evaluate_trailing_tp_only_after_breakout():
     new_tp = evaluate_trailing_tp(record, 2.12, cfg)
     assert new_tp is not None
     assert new_tp > 2.08
-    assert new_tp == round(2.12 * 1.01, 6)
+    dec = price_decimals(cfg)
+    assert new_tp == round_rlusd_price(2.12 * 1.01, dec, direction="up")
 
 
 def test_is_breakout_confirmed_requires_momentum_candle():

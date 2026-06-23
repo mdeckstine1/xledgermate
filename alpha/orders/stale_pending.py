@@ -5,13 +5,25 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-_PRICE_EPS = 1e-9
+from alpha.precision import (
+    DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS,
+    clamp_price_decimals,
+    price_eps,
+    round_rlusd_price,
+)
 
 
-def target_buy_limit_price(mid: float, offset_pct: float, *, bid_offset_pct: float = 0.0) -> float:
+def target_buy_limit_price(
+    mid: float,
+    offset_pct: float,
+    *,
+    bid_offset_pct: float = 0.0,
+    price_decimals: int = DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS,
+) -> float:
     if offset_pct <= 0:
         offset_pct = bid_offset_pct
-    return round(mid * (1.0 - offset_pct / 100.0), 6)
+    raw = mid * (1.0 - offset_pct / 100.0)
+    return round_rlusd_price(raw, price_decimals, direction="down")
 
 
 def stale_pending_buy_reason(
@@ -24,26 +36,33 @@ def stale_pending_buy_reason(
     max_age_seconds: float = 0.0,
     age_seconds: Optional[float] = None,
     bid_offset_pct: float = 0.0,
+    price_decimals: int = DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS,
 ) -> Optional[str]:
     """Return cancel reason when a resting bid no longer matches current entry policy."""
+    eps = price_eps(price_decimals)
     if not stale_enabled:
         return None
     if mid <= 0 or entry <= 0:
         return None
 
     if max_drift_pct > 0:
-        if entry > mid + _PRICE_EPS:
+        if entry > mid + eps:
             overshoot_pct = (entry - mid) / mid * 100.0
             return f"entry_above_mid={overshoot_pct:.3f}%"
 
-        if mid > entry + _PRICE_EPS:
+        if mid > entry + eps:
             passed_pct = (mid - entry) / mid * 100.0
-            if passed_pct > max_drift_pct + _PRICE_EPS:
+            if passed_pct > max_drift_pct + eps:
                 return f"mid_passed_entry={passed_pct:.3f}%>{max_drift_pct:g}%"
 
-        target = target_buy_limit_price(mid, offset_pct, bid_offset_pct=bid_offset_pct)
+        target = target_buy_limit_price(
+            mid,
+            offset_pct,
+            bid_offset_pct=bid_offset_pct,
+            price_decimals=price_decimals,
+        )
         drift_pct = abs(entry - target) / mid * 100.0
-        if drift_pct > max_drift_pct + _PRICE_EPS:
+        if drift_pct > max_drift_pct + eps:
             return f"entry_drift={drift_pct:.3f}%>{max_drift_pct:g}%"
 
     if max_age_seconds > 0 and age_seconds is not None and age_seconds > max_age_seconds:
@@ -79,8 +98,9 @@ def build_pending_buy_stale_snapshot(
     stale_on = operator_config.get("alpha_stale_pending_buy_enabled", True) is not False
     cap = int(operator_config.get("alpha_max_pending_buys") or 1)
     bid_offset = float(operator_config.get("alpha_bid_offset_pct") or 0.0)
+    dec = price_decimals_from_config(operator_config)
 
-    target = target_buy_limit_price(mid, offset, bid_offset_pct=bid_offset) if mid > 0 else 0.0
+    target = target_buy_limit_price(mid, offset, bid_offset_pct=bid_offset, price_decimals=dec) if mid > 0 else 0.0
     rows: List[Dict[str, Any]] = []
     would_cancel = 0
     for record in pending_records:
@@ -99,6 +119,7 @@ def build_pending_buy_stale_snapshot(
             max_age_seconds=max_age,
             age_seconds=age_s,
             bid_offset_pct=bid_offset,
+            price_decimals=dec,
         )
         drift_pct = abs(entry - target) / mid * 100.0 if mid > 0 and target > 0 else 0.0
         passed_pct = (mid - entry) / mid * 100.0 if mid > entry else 0.0
@@ -107,7 +128,7 @@ def build_pending_buy_stale_snapshot(
         rows.append(
             {
                 "bracket_id": record.get("bracket_id"),
-                "entry": round(entry, 6),
+                "entry": round_rlusd_price(entry, dec),
                 "buy_sequence": record.get("buy_sequence"),
                 "drift_pct": round(drift_pct, 3),
                 "mid_passed_pct": round(passed_pct, 3),
@@ -123,6 +144,7 @@ def build_pending_buy_stale_snapshot(
         "max_drift_pct": max_drift,
         "max_age_seconds": max_age,
         "max_pending_buys": cap,
+        "price_decimals": dec,
         "target_entry": target,
         "pending_count": len(rows),
         "would_cancel_count": would_cancel,
@@ -135,3 +157,13 @@ def build_pending_buy_stale_snapshot(
         ),
         "pending_bids": rows[:25],
     }
+
+
+def price_decimals_from_config(operator_config: Dict[str, Any]) -> int:
+    raw = operator_config.get("alpha_rlusd_price_decimals")
+    if raw is None:
+        return DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS
+    try:
+        return clamp_price_decimals(int(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS

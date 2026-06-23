@@ -18,6 +18,7 @@ from alpha.types import (
     OrderBookSnapshot,
     TrustLineSnapshot,
 )
+from alpha.precision import format_rlusd_amount, format_rlusd_price, price_decimals
 from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig
 from core.runtime_state import QuoteIntent
@@ -182,10 +183,20 @@ class XrplLedgerAdapter(LedgerInterface):
         size_xrp: float,
         price_rlusd_per_xrp: float,
     ) -> LedgerOfferResult:
-        action = f"place_limit_buy_xrp size={size_xrp:.4f} price={price_rlusd_per_xrp:.6f}"
+        dec = price_decimals(self._config)
+        action = (
+            f"place_limit_buy_xrp size={size_xrp:.4f} "
+            f"price={format_rlusd_price(price_rlusd_per_xrp, dec)}"
+        )
         if not self._guard.require_live(action):
             return LedgerOfferResult(submitted=False, dry_run=True, action=action)
-        intent = QuoteIntent(side="bid", size_xrp=size_xrp, price=price_rlusd_per_xrp, level=1)
+        intent = QuoteIntent(
+            side="bid",
+            size_xrp=size_xrp,
+            price=price_rlusd_per_xrp,
+            level=1,
+            price_decimals=dec,
+        )
         tx_hash = await self._connector.place_quote(intent)
         logger.info("ledger_place_buy | %s | hash=%s", action, tx_hash)
         return LedgerOfferResult(submitted=True, dry_run=False, action=action, tx_hash=tx_hash)
@@ -196,10 +207,20 @@ class XrplLedgerAdapter(LedgerInterface):
         size_xrp: float,
         price_rlusd_per_xrp: float,
     ) -> LedgerOfferResult:
-        action = f"place_limit_sell_xrp size={size_xrp:.4f} price={price_rlusd_per_xrp:.6f}"
+        dec = price_decimals(self._config)
+        action = (
+            f"place_limit_sell_xrp size={size_xrp:.4f} "
+            f"price={format_rlusd_price(price_rlusd_per_xrp, dec)}"
+        )
         if not self._guard.require_live(action):
             return LedgerOfferResult(submitted=False, dry_run=True, action=action)
-        intent = QuoteIntent(side="ask", size_xrp=size_xrp, price=price_rlusd_per_xrp, level=1)
+        intent = QuoteIntent(
+            side="ask",
+            size_xrp=size_xrp,
+            price=price_rlusd_per_xrp,
+            level=1,
+            price_decimals=dec,
+        )
         tx_hash = await self._connector.place_quote(intent)
         logger.info("ledger_place_sell | %s | hash=%s", action, tx_hash)
         return LedgerOfferResult(submitted=True, dry_run=False, action=action, tx_hash=tx_hash)
@@ -226,4 +247,4 @@ class XrplLedgerAdapter(LedgerInterface):
     async def close(self) -> None:
         if self._ws is not None:
             await self._ws.close()
-
+

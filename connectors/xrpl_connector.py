@@ -9,6 +9,7 @@ from typing import Deque, Dict, List, Optional, Any
 
 from core.perception import LiquidityMetrics
 from core.runtime_state import QuoteIntent
+from alpha.precision import format_rlusd_amount, format_rlusd_price
 from utils.rpc_health import amendment_blocked_message, is_retryable_rpc_error, request_with_retry
 from utils.wallet_credentials import wallet_from_bot_secret
 
@@ -490,19 +491,21 @@ class XRPLConnector:
 
     async def place_quote(self, intent: QuoteIntent) -> str:
         wallet = self.load_wallet()
+        dec = getattr(intent, "price_decimals", 6) or 6
         rlusd_amount = intent.size_xrp * intent.price
+        rlusd_value = format_rlusd_amount(rlusd_amount, dec)
         if intent.side == "ask":
             taker_gets = str(xrp_to_drops(intent.size_xrp))
             taker_pays = IssuedCurrencyAmount(
                 currency=self._issued_rlusd_currency_code(),
                 issuer=self.rlusd_issuer,
-                value=f"{rlusd_amount:.6f}",
+                value=rlusd_value,
             )
         elif intent.side == "bid":
             taker_gets = IssuedCurrencyAmount(
                 currency=self._issued_rlusd_currency_code(),
                 issuer=self.rlusd_issuer,
-                value=f"{rlusd_amount:.6f}",
+                value=rlusd_value,
             )
             taker_pays = str(xrp_to_drops(intent.size_xrp))
         else:
@@ -516,11 +519,11 @@ class XRPLConnector:
         response = await self._sign_and_submit(tx, wallet)
         tx_hash = self._validate_tx_response(response)
         logger.info(
-            "Placed %s L%s offer | size=%.4f XRP price=%.6f hash=%s",
+            "Placed %s L%s offer | size=%.4f XRP price=%s hash=%s",
             intent.side,
             intent.level,
             intent.size_xrp,
-            intent.price,
+            format_rlusd_price(intent.price, dec),
             tx_hash,
         )
         return tx_hash

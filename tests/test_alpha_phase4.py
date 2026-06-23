@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 from alpha.decision.engine import DecisionAction, DecisionEngine
 from alpha.dry_run import DryRunGuard
 from alpha.orders.manager import OrderManager
+from alpha.precision import price_decimals, round_rlusd_price
 from alpha.runtime.executor import EntryExecutor
 from alpha.types import (
     BalanceSnapshot,
@@ -80,7 +81,11 @@ def _operator(portfolio: float = 10_000.0) -> OperatorSnapshot:
 
 
 def test_buy_signal_requires_edge_threshold():
-    cfg = _entry_config(alpha_buy_limit_offset_pct=0.05, alpha_min_edge_threshold_pct=0.10)
+    cfg = _entry_config(
+        alpha_buy_limit_offset_pct=0.05,
+        alpha_min_edge_threshold_pct=0.10,
+        alpha_rlusd_price_decimals=6,
+    )
     engine = DecisionEngine(cfg)
     book = _book_snapshot()
     liquidity = compute_liquidity_depth(book, max_slippage_pct=0.5)
@@ -130,7 +135,12 @@ def test_buy_signal_with_edge_and_weakness():
     assert result.edge_pct is not None and result.edge_pct >= cfg.alpha_min_edge_threshold_pct
     mid = book.mid
     assert mid is not None
-    expected_price = round(mid * (1.0 - cfg.alpha_buy_limit_offset_pct / 100.0), 6)
+    dec = price_decimals(cfg)
+    expected_price = round_rlusd_price(
+        mid * (1.0 - cfg.alpha_buy_limit_offset_pct / 100.0),
+        dec,
+        direction="down",
+    )
     assert result.price_rlusd_per_xrp == expected_price
 
 
@@ -254,7 +264,11 @@ def _strong_inventory() -> InventorySnapshot:
 
 
 def test_sell_signal_requires_edge_threshold():
-    cfg = _entry_config(alpha_sell_limit_offset_pct=0.05, alpha_min_edge_threshold_pct=0.10)
+    cfg = _entry_config(
+        alpha_sell_limit_offset_pct=0.05,
+        alpha_min_edge_threshold_pct=0.10,
+        alpha_rlusd_price_decimals=6,
+    )
     engine = DecisionEngine(cfg)
     book = _book_snapshot()
     liquidity = compute_liquidity_depth(book, max_slippage_pct=0.5)
@@ -286,7 +300,12 @@ def test_sell_signal_with_edge_and_strength():
     assert result.edge_pct is not None and result.edge_pct >= cfg.alpha_min_edge_threshold_pct
     mid = book.mid
     assert mid is not None
-    expected_price = round(mid * (1.0 + cfg.alpha_sell_limit_offset_pct / 100.0), 6)
+    dec = price_decimals(cfg)
+    expected_price = round_rlusd_price(
+        mid * (1.0 + cfg.alpha_sell_limit_offset_pct / 100.0),
+        dec,
+        direction="up",
+    )
     assert result.price_rlusd_per_xrp == expected_price
 
 

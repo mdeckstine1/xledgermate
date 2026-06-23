@@ -52,6 +52,7 @@ alpha_stale_pending_buy_enabled: true
 alpha_stale_pending_buy_max_drift_pct: 0.15  # cancel bids farther than ~buy_limit_offset from target
 alpha_stale_pending_buy_max_age_seconds: 0   # 0 = off; e.g. 3600 to cancel bids older than 1h
 alpha_cycle_interval_seconds: 15
+alpha_rlusd_price_decimals: 2   # RLUSD/XRP order & HUD display precision (Market Conditions card)
 # Re-entry after bracket TP/SL — wait for dip (TP) or stabilization (SL) before next buy
 alpha_reentry_enabled: true
 alpha_reentry_tp_dip_pct: 0.08

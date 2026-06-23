@@ -14,11 +14,12 @@ from alpha.decision.structure import (
     recent_swing_high,
 )
 from alpha.orders.types import BracketLifecycleState, BracketMode, BracketRecord
+from alpha.precision import price_decimals, price_eps, round_rlusd_price
 from config.settings import BotConfig
 
 logger = logging.getLogger(__name__)
 
-_PRICE_EPS = 1e-6
+_COMPARE_EPS = 1e-9
 
 
 @dataclass(frozen=True)
@@ -45,7 +46,7 @@ def is_breakeven_passed(entry_price: float, current_price: float) -> bool:
     """
     if entry_price <= 0 or current_price <= 0:
         return False
-    return current_price >= entry_price - _PRICE_EPS
+    return current_price >= entry_price - _COMPARE_EPS
 
 
 def is_breakeven_passed_for_record(record: BracketRecord, mid: float) -> bool:
@@ -85,9 +86,11 @@ def evaluate_trailing_sl(
 
     entry = record.entry_price_rlusd_per_xrp
     current_sl = record.sl_leg.price_rlusd_per_xrp
+    dec = price_decimals(config)
+    eps = price_eps(dec)
 
     # Initial breakeven lock — SL never below entry once trailing is armed.
-    if current_sl < entry - _PRICE_EPS:
+    if current_sl < entry - eps:
         record.last_sl_trail_anchor_mid = max(record.last_sl_trail_anchor_mid, mid, entry)
         logger.info(
             "trailing_sl_activated | id=%s | entry=%.6f | price=%.6f | new_sl=%.6f",
@@ -96,7 +99,7 @@ def evaluate_trailing_sl(
             mid,
             entry,
         )
-        return round(entry, 6)
+        return round_rlusd_price(entry, dec, direction="down")
 
     step_pct = max(0.0, config.trailing_step_pct)
     if step_pct <= 0:
@@ -111,9 +114,9 @@ def evaluate_trailing_sl(
     if not _step_threshold_reached(peak, anchor, step_pct):
         return None
 
-    candidate = round(peak * (1.0 - step_pct / 100.0), 6)
+    candidate = round_rlusd_price(peak * (1.0 - step_pct / 100.0), dec, direction="down")
     new_sl = max(current_sl, entry, candidate)
-    if new_sl <= current_sl + _PRICE_EPS:
+    if new_sl <= current_sl + eps:
         record.last_sl_trail_anchor_mid = peak
         return None
 
@@ -204,9 +207,11 @@ def evaluate_trailing_tp(
         return None
 
     current_tp = record.tp_leg.price_rlusd_per_xrp
-    candidate = round(peak * (1.0 + step_pct / 100.0), 6)
+    dec = price_decimals(config)
+    eps = price_eps(dec)
+    candidate = round_rlusd_price(peak * (1.0 + step_pct / 100.0), dec, direction="up")
     new_tp = max(current_tp, candidate)
-    if new_tp <= current_tp + _PRICE_EPS:
+    if new_tp <= current_tp + eps:
         record.last_tp_trail_anchor_mid = peak
         return None
 

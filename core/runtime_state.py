@@ -13,6 +13,7 @@ class QuoteIntent:
     side: str
     price: float
     size_xrp: float
+    price_decimals: int = 6
 
 
 @dataclass

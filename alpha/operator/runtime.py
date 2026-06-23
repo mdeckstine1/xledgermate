@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from config.settings import BotConfig, patch_config_file
+from alpha.precision import MAX_ALPHA_RLUSD_PRICE_DECIMALS, MIN_ALPHA_RLUSD_PRICE_DECIMALS
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_stale_pending_buy_max_drift_pct",
     "alpha_stale_pending_buy_max_age_seconds",
     "alpha_cycle_interval_seconds",
+    "alpha_rlusd_price_decimals",
     "alpha_ta_weight",
     "alpha_ta_enabled",
     "alpha_ta_min_buy_score",
@@ -85,6 +87,7 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "alpha_stale_pending_buy_max_drift_pct": {"min": 0.05, "max": 5.0, "step": 0.05},
     "alpha_stale_pending_buy_max_age_seconds": {"min": 0, "max": 86400, "step": 60},
     "alpha_cycle_interval_seconds": {"min": 5, "max": 60, "step": 1},
+    "alpha_rlusd_price_decimals": {"min": 0, "max": 6, "step": 1},
     "alpha_ta_weight": {"min": 0.0, "max": 1.0, "step": 0.05},
     "alpha_ta_min_buy_score": {"min": 0.0, "max": 10.0, "step": 0.1},
     "alpha_ta_min_sell_score": {"min": 0.0, "max": 10.0, "step": 0.1},
@@ -228,6 +231,7 @@ def _coerce_override(key: str, value: Any) -> Any:
         "alpha_cycle_interval_seconds",
         "alpha_reentry_tp_cooldown_cycles",
         "alpha_reentry_sl_cooldown_cycles",
+        "alpha_rlusd_price_decimals",
     }
     if key in _INT_KEYS:
         return int(value)
@@ -277,6 +281,11 @@ def _validate_merged_config(config: BotConfig, changed_keys: Any) -> List[str]:
     if "alpha_cycle_interval_seconds" in keys:
         if config.alpha_cycle_interval_seconds < 5 or config.alpha_cycle_interval_seconds > 60:
             errors.append("alpha_cycle_interval_seconds must be between 5 and 60")
+
+    if "alpha_rlusd_price_decimals" in keys:
+        dec = config.alpha_rlusd_price_decimals
+        if dec < MIN_ALPHA_RLUSD_PRICE_DECIMALS or dec > MAX_ALPHA_RLUSD_PRICE_DECIMALS:
+            errors.append("alpha_rlusd_price_decimals must be between 0 and 6")
 
     if "alpha_reentry_tp_cooldown_cycles" in keys and config.alpha_reentry_tp_cooldown_cycles < 0:
         errors.append("alpha_reentry_tp_cooldown_cycles must be non-negative")

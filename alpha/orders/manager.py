@@ -17,6 +17,7 @@ from alpha.ledger.interface import LedgerInterface
 from alpha.orders.bracket import compute_bracket_prices, normalize_partial_fill_mode
 from alpha.orders.stale_pending import stale_pending_buy_reason as _stale_pending_buy_reason
 from alpha.orders.stale_pending import target_buy_limit_price
+from alpha.precision import price_decimals
 from alpha.orders.state import BracketStateStore
 from alpha.orders.trailing import TrailingEvalResult, evaluate_trailing
 from alpha.orders.types import (
@@ -722,6 +723,7 @@ class OrderManager:
             mid,
             self._config.alpha_buy_limit_offset_pct,
             bid_offset_pct=self._config.alpha_bid_offset_pct,
+            price_decimals=price_decimals(self._config),
         )
 
     def stale_pending_buy_reason(self, record: BracketRecord, mid: float) -> Optional[str]:
@@ -744,6 +746,7 @@ class OrderManager:
             max_age_seconds=max_age,
             age_seconds=age_s,
             bid_offset_pct=self._config.alpha_bid_offset_pct,
+            price_decimals=price_decimals(self._config),
         )
 
     async def _cancel_stale_pending_buys(self, mid: float) -> int:

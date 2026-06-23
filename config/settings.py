@@ -205,6 +205,7 @@ class BotConfig:
     alpha_stale_pending_buy_max_drift_pct: float = 0.15  # Cancel when bid drifts from target (match buy_limit_offset)
     alpha_stale_pending_buy_max_age_seconds: float = 0.0  # Optional max rest time (0 = age gate off)
     alpha_cycle_interval_seconds: int = 15  # Trading loop sleep between cycles (HUD: 5–60)
+    alpha_rlusd_price_decimals: int = 2  # RLUSD/XRP order & HUD display precision (0–6; 2 → 1.10)
     alpha_breakout_pct: float = 0.02  # Min % above entry/high for breakout trailing
     alpha_structure_lookback: int = 20  # Price samples for HTF structure
     alpha_structure_price_source: str = "ask"  # bid | ask | mid | last — directional default

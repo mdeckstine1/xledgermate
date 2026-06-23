@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from alpha.precision import price_decimals, round_rlusd_price
 from config.settings import BotConfig
 
 
@@ -33,7 +34,8 @@ def compute_bracket_prices(
         raise ValueError("entry_price_rlusd_per_xrp must be positive")
 
     sl_pct = max(0.0, config.initial_stop_loss_pct)
-    sl_price = round(entry_price_rlusd_per_xrp * (1.0 - sl_pct), 6)
+    dec = price_decimals(config)
+    sl_price = round_rlusd_price(entry_price_rlusd_per_xrp * (1.0 - sl_pct), dec, direction="down")
 
     if config.take_profit_rr > 0:
         tp_pct = sl_pct * config.take_profit_rr
@@ -42,7 +44,7 @@ def compute_bracket_prices(
         tp_pct = max(0.0, config.take_profit_pct)
         mode = "fixed_pct"
 
-    tp_price = round(entry_price_rlusd_per_xrp * (1.0 + tp_pct), 6)
+    tp_price = round_rlusd_price(entry_price_rlusd_per_xrp * (1.0 + tp_pct), dec, direction="up")
     return BracketPrices(
         entry_price_rlusd_per_xrp=entry_price_rlusd_per_xrp,
         take_profit_price=tp_price,
