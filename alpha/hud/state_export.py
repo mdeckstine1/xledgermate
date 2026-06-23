@@ -59,11 +59,15 @@ def _bracket_row(record: BracketRecord) -> Dict[str, Any]:
     )
     tp_leg = record.tp_leg
     sl_leg = record.sl_leg
+    open_states = ("pending_buy", "bracket_active", "trailing_placeholder")
     return {
         "bracket_id": record.bracket_id[:8],
         "bracket_id_full": record.bracket_id,
         "state": record.state.value,
         "mode": record.mode.value,
+        "buy_sequence": record.buy_sequence,
+        "can_cancel": record.state.value in open_states,
+        "can_edit_entry": record.state.value == "pending_buy",
         "entry": entry,
         "size_xrp": round(size_xrp, 4) if size_xrp > 0 else None,
         "target_size_xrp": round(target, 4) if target > 0 else None,

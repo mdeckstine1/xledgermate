@@ -135,8 +135,11 @@ def register_operator_routes(app: Any) -> None:
         body: Dict[str, Any] = Body(...),
     ) -> JSONResponse:
         leg = str(body.get("leg", "")).lower()
-        if leg not in ("tp", "sl"):
-            return JSONResponse({"ok": False, "message": 'leg must be "tp" or "sl"'}, status_code=400)
+        if leg not in ("tp", "sl", "entry"):
+            return JSONResponse(
+                {"ok": False, "message": 'leg must be "tp", "sl", or "entry"'},
+                status_code=400,
+            )
         try:
             price = float(body["price"])
         except (KeyError, TypeError, ValueError):
@@ -157,6 +160,41 @@ def register_operator_routes(app: Any) -> None:
                 "queued": "bracket_adjust",
                 "bracket_id": bracket_id,
                 "leg": leg,
+                "price": price,
+            }
+        )
+
+    @app.post("/brackets/{bracket_id}/cancel")
+    async def bracket_cancel(bracket_id: str) -> JSONResponse:
+        _runtime().queue_command({"type": "bracket_cancel", "bracket_id": bracket_id})
+        return JSONResponse(
+            {"ok": True, "queued": "bracket_cancel", "bracket_id": bracket_id}
+        )
+
+    @app.post("/offers/{sequence}/cancel")
+    async def offer_cancel(sequence: int) -> JSONResponse:
+        _runtime().queue_command({"type": "offer_cancel", "sequence": sequence})
+        return JSONResponse({"ok": True, "queued": "offer_cancel", "sequence": sequence})
+
+    @app.post("/offers/{sequence}/adjust")
+    async def offer_adjust(
+        sequence: int,
+        body: Dict[str, Any] = Body(...),
+    ) -> JSONResponse:
+        try:
+            price = float(body["price"])
+        except (KeyError, TypeError, ValueError):
+            return JSONResponse({"ok": False, "message": "price float required"}, status_code=400)
+        if price <= 0:
+            return JSONResponse({"ok": False, "message": "price must be positive"}, status_code=400)
+        _runtime().queue_command(
+            {"type": "offer_adjust", "sequence": sequence, "new_price": price}
+        )
+        return JSONResponse(
+            {
+                "ok": True,
+                "queued": "offer_adjust",
+                "sequence": sequence,
                 "price": price,
             }
         )

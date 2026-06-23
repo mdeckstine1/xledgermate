@@ -422,6 +422,213 @@ class OrderManager:
         role = BracketLegRole.TAKE_PROFIT if leg == "tp" else BracketLegRole.STOP_LOSS
         return await self._replace_leg(record, role, new_price, reason="operator_adjust")
 
+    async def adjust_bracket_entry(self, bracket_id: str, new_price: float) -> bool:
+        """Operator edit of a pending buy limit — cancel+replace at new entry price."""
+        resolved = self._resolve_bracket_id(bracket_id)
+        if not resolved:
+            logger.warning("bracket_entry_adjust_unknown | id=%s", bracket_id)
+            return False
+        record = self._store.get(resolved)
+        if record is None or record.state != BracketLifecycleState.PENDING_BUY:
+            logger.warning(
+                "bracket_entry_adjust_invalid | id=%s | state=%s",
+                bracket_id,
+                getattr(record, "state", None),
+            )
+            return False
+        if new_price <= 0:
+            return False
+        if abs(new_price - record.entry_price_rlusd_per_xrp) < _PRICE_EPS:
+            return False
+
+        size_xrp = record.target_size_xrp
+        old_price = record.entry_price_rlusd_per_xrp
+        old_seq = record.buy_sequence
+
+        if not self._guard.require_live("adjust_bracket_entry"):
+            logger.info(
+                "bracket_entry_adjust_dry_run | id=%s | old=%.6f | new=%.6f | seq=%s",
+                record.bracket_id,
+                old_price,
+                new_price,
+                old_seq,
+            )
+            record.entry_price_rlusd_per_xrp = new_price
+            record.touch()
+            self._store.touch_persist()
+            return True
+
+        if old_seq:
+            await self._ledger.cancel_offer(old_seq)
+
+        before_seqs = await self._open_sequences()
+        buy_result = await self._ledger.place_limit_buy_xrp(
+            size_xrp=size_xrp,
+            price_rlusd_per_xrp=new_price,
+        )
+        new_seq = await self._resolve_sequence(
+            before_seqs,
+            side="bid",
+            price=new_price,
+            size_xrp=size_xrp,
+            submitted=buy_result.submitted,
+        )
+        if new_seq:
+            self._store.update_buy_sequence(record, new_seq)
+        record.entry_price_rlusd_per_xrp = new_price
+        record.touch()
+        logger.info(
+            "bracket_entry_adjusted | id=%s | old=%.6f | new=%.6f | seq=%s→%s",
+            record.bracket_id,
+            old_price,
+            new_price,
+            old_seq,
+            new_seq,
+        )
+        return True
+
+    async def cancel_bracket(self, bracket_id: str) -> bool:
+        """Cancel open orders for a bracket and mark it cancelled."""
+        resolved = self._resolve_bracket_id(bracket_id)
+        if not resolved:
+            logger.warning("bracket_cancel_unknown | id=%s", bracket_id)
+            return False
+        record = self._store.get(resolved)
+        if record is None:
+            return False
+        if record.state not in (
+            BracketLifecycleState.PENDING_BUY,
+            BracketLifecycleState.BRACKET_ACTIVE,
+            BracketLifecycleState.TRAILING_PLACEHOLDER,
+        ):
+            logger.warning("bracket_cancel_inactive | id=%s | state=%s", bracket_id, record.state)
+            return False
+
+        if not self._guard.require_live("cancel_bracket"):
+            logger.info(
+                "bracket_cancel_dry_run | id=%s | state=%s | buy_seq=%s",
+                record.bracket_id,
+                record.state.value,
+                record.buy_sequence,
+            )
+            record.state = BracketLifecycleState.CANCELLED
+            record.touch()
+            self._store.touch_persist()
+            return True
+
+        if record.state == BracketLifecycleState.PENDING_BUY and record.buy_sequence:
+            await self._ledger.cancel_offer(record.buy_sequence)
+        elif record.state in (
+            BracketLifecycleState.BRACKET_ACTIVE,
+            BracketLifecycleState.TRAILING_PLACEHOLDER,
+        ):
+            await self._cancel_bracket_legs(record, reason="operator_cancel")
+
+        state_was = record.state.value
+        record.state = BracketLifecycleState.CANCELLED
+        record.touch()
+        self._store.touch_persist()
+        logger.info("bracket_cancelled | id=%s | state_was=%s", record.bracket_id, state_was)
+        return True
+
+    async def cancel_open_offer(self, sequence: int) -> bool:
+        """Cancel one ledger offer; update bracket registry when mapped."""
+        seq = int(sequence)
+        if seq <= 0:
+            return False
+        offers = await self._ledger.get_open_offers()
+        if not any(int(o.get("sequence", 0)) == seq for o in offers):
+            logger.warning("offer_cancel_missing | seq=%s", seq)
+            return False
+
+        if not self._guard.require_live("cancel_open_offer"):
+            logger.info("offer_cancel_dry_run | seq=%s", seq)
+            return False
+
+        await self._ledger.cancel_offer(seq)
+
+        record = self._store.get_by_buy_sequence(seq)
+        if record is not None and record.state == BracketLifecycleState.PENDING_BUY:
+            record.state = BracketLifecycleState.CANCELLED
+            record.touch()
+            self._store.touch_persist()
+            logger.info("offer_cancel_pending_buy | bracket_id=%s | seq=%s", record.bracket_id, seq)
+            return True
+
+        record = self._store.get_by_leg_sequence(seq)
+        if record is not None:
+            for leg in (record.tp_leg, record.sl_leg):
+                if leg is not None and leg.sequence == seq:
+                    self._store.unregister_leg_sequence(seq)
+                    leg.sequence = None
+                    leg.remaining_xrp = 0.0
+                    record.touch()
+                    self._store.touch_persist()
+                    logger.info(
+                        "offer_cancel_leg | bracket_id=%s | leg=%s | seq=%s",
+                        record.bracket_id,
+                        leg.role.value,
+                        seq,
+                    )
+                    break
+        return True
+
+    async def adjust_open_offer(self, sequence: int, new_price: float) -> bool:
+        """Reprice one open offer (bracket buy/leg or standalone ask)."""
+        seq = int(sequence)
+        if seq <= 0 or new_price <= 0:
+            return False
+
+        record = self._store.get_by_buy_sequence(seq)
+        if record is not None and record.state == BracketLifecycleState.PENDING_BUY:
+            return await self.adjust_bracket_entry(record.bracket_id, new_price)
+
+        record = self._store.get_by_leg_sequence(seq)
+        if record is not None and record.state == BracketLifecycleState.BRACKET_ACTIVE:
+            if record.tp_leg and record.tp_leg.sequence == seq:
+                return await self.adjust_bracket_leg(record.bracket_id, "tp", new_price)
+            if record.sl_leg and record.sl_leg.sequence == seq:
+                return await self.adjust_bracket_leg(record.bracket_id, "sl", new_price)
+
+        offers = await self._ledger.get_open_offers()
+        offer = next((o for o in offers if int(o.get("sequence", 0)) == seq), None)
+        if offer is None:
+            return False
+        side = str(offer.get("side", ""))
+        size_xrp = float(offer.get("size_xrp", 0.0))
+        if size_xrp <= 0:
+            return False
+        if abs(float(offer.get("price", 0.0)) - new_price) < _PRICE_EPS:
+            return False
+
+        if not self._guard.require_live("adjust_open_offer"):
+            logger.info("offer_adjust_dry_run | seq=%s | side=%s | new=%.6f", seq, side, new_price)
+            return True
+
+        await self._ledger.cancel_offer(seq)
+        before_seqs = await self._open_sequences()
+        if side == "bid":
+            result = await self._ledger.place_limit_buy_xrp(
+                size_xrp=size_xrp,
+                price_rlusd_per_xrp=new_price,
+            )
+        elif side == "ask":
+            result = await self._ledger.place_limit_sell_xrp(
+                size_xrp=size_xrp,
+                price_rlusd_per_xrp=new_price,
+            )
+        else:
+            return False
+        new_seq = await self._resolve_sequence(
+            before_seqs,
+            side=side,
+            price=new_price,
+            size_xrp=size_xrp,
+            submitted=result.submitted,
+        )
+        logger.info("offer_adjusted | seq=%s→%s | side=%s | price=%.6f", seq, new_seq, side, new_price)
+        return True
+
     async def _advance_pending_buy(
         self,
         record: BracketRecord,

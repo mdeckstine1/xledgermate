@@ -79,3 +79,5 @@ def test_bracket_row_includes_size_and_rlusd():
     assert row["size_xrp"] == 50.0
     assert row["committed_rlusd"] == 55.0
     assert row["size_label"] == "order"
+    assert row["can_cancel"] is True
+    assert row["can_edit_entry"] is True

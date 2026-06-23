@@ -153,15 +153,50 @@ class AlphaApplication:
                 self._activity.append("cancel_all", executed=cancelled, dry_run=self.config.dry_run)
                 logger.info("alpha_cancel_all_processed | executed=%s", cancelled)
             elif cmd_type == "bracket_adjust":
-                ok = await self._orders.adjust_bracket_leg(
-                    str(cmd.get("bracket_id", "")),
-                    str(cmd.get("leg", "")),
-                    float(cmd.get("new_price", 0)),
-                )
+                leg = str(cmd.get("leg", ""))
+                if leg == "entry":
+                    ok = await self._orders.adjust_bracket_entry(
+                        str(cmd.get("bracket_id", "")),
+                        float(cmd.get("new_price", 0)),
+                    )
+                else:
+                    ok = await self._orders.adjust_bracket_leg(
+                        str(cmd.get("bracket_id", "")),
+                        leg,
+                        float(cmd.get("new_price", 0)),
+                    )
                 self._activity.append(
                     "bracket_adjust",
                     bracket_id=cmd.get("bracket_id"),
                     leg=cmd.get("leg"),
+                    price=cmd.get("new_price"),
+                    executed=ok,
+                    dry_run=self.config.dry_run,
+                )
+            elif cmd_type == "bracket_cancel":
+                ok = await self._orders.cancel_bracket(str(cmd.get("bracket_id", "")))
+                self._activity.append(
+                    "bracket_cancel",
+                    bracket_id=cmd.get("bracket_id"),
+                    executed=ok,
+                    dry_run=self.config.dry_run,
+                )
+            elif cmd_type == "offer_cancel":
+                ok = await self._orders.cancel_open_offer(int(cmd.get("sequence", 0)))
+                self._activity.append(
+                    "offer_cancel",
+                    sequence=cmd.get("sequence"),
+                    executed=ok,
+                    dry_run=self.config.dry_run,
+                )
+            elif cmd_type == "offer_adjust":
+                ok = await self._orders.adjust_open_offer(
+                    int(cmd.get("sequence", 0)),
+                    float(cmd.get("new_price", 0)),
+                )
+                self._activity.append(
+                    "offer_adjust",
+                    sequence=cmd.get("sequence"),
                     price=cmd.get("new_price"),
                     executed=ok,
                     dry_run=self.config.dry_run,
@@ -320,7 +355,7 @@ class AlphaApplication:
             structure=self._last_structure,
             ta=self._last_ta,
             bracket_summary=bracket_summary_from_store(self._orders.store),
-            brackets=self._orders.store.all_records(),
+            brackets=list(self._orders.store.iter_open()),
             open_offers=orders.open_offers,
             activity_log=self._activity,
             controls=self._controls.load(),

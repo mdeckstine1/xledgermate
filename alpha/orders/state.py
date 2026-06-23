@@ -158,6 +158,13 @@ class BracketStateStore:
             del self._leg_seq[sequence]
             self.persist()
 
+    def update_buy_sequence(self, record: BracketRecord, new_sequence: int) -> None:
+        """Re-index after cancel+replace of a pending buy offer."""
+        self._buy_seq.pop(record.buy_sequence, None)
+        record.buy_sequence = new_sequence
+        self._buy_seq[new_sequence] = record.bracket_id
+        self.persist()
+
     def remove(self, bracket_id: str) -> None:
         record = self._by_id.pop(bracket_id, None)
         if record is None:

@@ -129,6 +129,33 @@ def test_bracket_adjust_queues(client):
     assert r.json()["queued"] == "bracket_adjust"
 
 
+def test_bracket_adjust_entry_queues(client):
+    r = client.post(
+        "/brackets/abc12345/adjust",
+        json={"leg": "entry", "price": 1.05},
+    )
+    assert r.status_code == 200
+    assert r.json()["leg"] == "entry"
+
+
+def test_bracket_cancel_queues(client):
+    r = client.post("/brackets/abc12345/cancel")
+    assert r.status_code == 200
+    assert r.json()["queued"] == "bracket_cancel"
+
+
+def test_offer_cancel_queues(client):
+    r = client.post("/offers/12345/cancel")
+    assert r.status_code == 200
+    assert r.json()["queued"] == "offer_cancel"
+
+
+def test_offer_adjust_queues(client):
+    r = client.post("/offers/12345/adjust", json={"price": 1.08})
+    assert r.status_code == 200
+    assert r.json()["queued"] == "offer_adjust"
+
+
 def test_pause_resume_controls(client):
     r = client.post("/controls/pause")
     assert r.status_code == 200
