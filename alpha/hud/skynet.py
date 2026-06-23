@@ -236,15 +236,17 @@ def call_grok_advisor(
     api_key: str,
     model: str = "grok-3",
     timeout: int = 90,
+    system_prompt: Optional[str] = None,
+    user_message: Optional[str] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     allowed = ", ".join(OPERATOR_TUNABLE_KEYS)
-    system = _SYSTEM_PROMPT.format(allowed_keys=allowed)
+    system = system_prompt or _SYSTEM_PROMPT.format(allowed_keys=allowed)
+    user_body = user_message
+    if user_body is None:
+        user_body = f"Context:\n{context}\n\n---\n\nOperator prompt:\n{user_prompt.strip()}"
     messages = [
         {"role": "system", "content": system},
-        {
-            "role": "user",
-            "content": f"Context:\n{context}\n\n---\n\nOperator prompt:\n{user_prompt.strip()}",
-        },
+        {"role": "user", "content": user_body},
     ]
     headers = {
         "Authorization": f"Bearer {api_key}",

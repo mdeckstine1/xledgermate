@@ -100,6 +100,7 @@ class AlphaApplication:
             risk=self._risk,
         )
         self._kill_was_active = False
+        self._engine_cycle = 0
         self._last_structure: Optional[MarketStructureSnapshot] = None
         self._last_ta: Optional[TechnicalAnalysisSnapshot] = None
         self._last_book: Optional[OrderBookSnapshot] = None
@@ -372,10 +373,12 @@ class AlphaApplication:
             config_effective=self.config,
             reentry=self._reentry.snapshot,
             liquidity=self._last_liquidity,
+            engine_cycle=self._engine_cycle,
         )
 
     async def run_status_cycle(self, *, telegram: bool = True) -> AlphaCycleResult:
         """Read-only cycle: no entry execution."""
+        self._engine_cycle += 1
         await self._sync_operator_runtime()
         self._dry_run_guard.log_mode_banner()
         self._reporting.send_startup(
@@ -397,6 +400,7 @@ class AlphaApplication:
 
     async def run_trading_cycle(self, *, telegram: bool = False) -> AlphaCycleResult:
         """Full cycle: sync brackets, evaluate, execute entry if signaled."""
+        self._engine_cycle += 1
         await self._sync_operator_runtime()
         self._dry_run_guard.log_mode_banner()
         snap, validation, decision, orders = await self._gather_cycle_context()
@@ -519,12 +523,18 @@ class AlphaApplication:
                 book_prices_from_snapshot(book),
                 path=self._state_dir / PRICE_HISTORY_PATH.name,
             )
+            from alpha.hud.state_export import patch_runtime_book_quote
+
+            patch_runtime_book_quote(self._state_dir / "alpha_runtime_state.json", book)
 
     async def _sleep_with_price_sampling(self, total_seconds: int) -> None:
         sample_iv = int(self.config.alpha_price_sample_interval_seconds)
+        if sample_iv <= 0 or sample_iv >= total_seconds:
+            sample_iv = max(5, total_seconds // 2)
         elapsed = 0
+        next_sample_at = sample_iv
         while elapsed < total_seconds:
-            chunk = min(1, sample_iv if sample_iv > 0 else 1, total_seconds - elapsed)
+            chunk = min(1, total_seconds - elapsed)
             await asyncio.sleep(chunk)
             elapsed += chunk
             if self._runtime.has_pending_commands():
@@ -533,8 +543,9 @@ class AlphaApplication:
                 except Exception as exc:
                     logger.warning("operator_command_refresh_failed | %s", exc)
                 continue
-            if sample_iv <= 0 or sample_iv >= total_seconds or elapsed >= total_seconds:
+            if elapsed < next_sample_at or elapsed >= total_seconds:
                 continue
+            next_sample_at += sample_iv
             try:
                 await self._sample_book_prices()
             except Exception as exc:

@@ -145,6 +145,12 @@
     .skynet-quick button { font-size:.75rem; padding:6px 10px; }
     .skynet-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
     .skynet-status { font-size:.78rem; color:var(--muted); margin-bottom:8px; }
+    .skynet-agent-card { margin-bottom:12px; }
+    .skynet-guardrails { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; margin:10px 0; }
+    .skynet-guardrails label { display:block; font-size:.72rem; color:var(--muted); margin-bottom:2px; }
+    .skynet-guardrails input { width:100%; box-sizing:border-box; background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:4px; padding:4px 6px; font-size:.8rem; }
+    .skynet-agent-meta { font-size:.75rem; color:var(--muted); margin:6px 0; }
+    .skynet-agent-proposal { font-size:.78rem; margin:8px 0; padding:8px; background:#0b1220; border:1px solid var(--border); border-radius:6px; max-height:160px; overflow-y:auto; white-space:pre-wrap; }
     @media (max-width:1100px) {
       .grid.live-grid { grid-template-columns:repeat(6, minmax(100px, 1fr)); overflow-x:auto; }
     }
@@ -176,7 +182,10 @@
       <img src="/Xledermate.jpg" alt="xLedgerMate" class="sidebar-logo">
       <div class="row"><div class="label">Account</div><div id="acct" class="value" style="font-size:.75rem;word-break:break-all">—</div></div>
       <div class="row"><div class="label">Mid (RLUSD/XRP)</div><div id="mid" class="value">—</div></div>
-      <div class="row"><div class="label">Portfolio (RLUSD eq)</div><div id="port" class="value">—</div></div>
+      <div class="row"><div class="label">Quote age</div><div id="midAge" class="value muted" style="font-size:.75rem">—</div></div>
+      <div class="row"><div class="label">XRP</div><div id="portXrp" class="value">—</div></div>
+      <div class="row"><div class="label">RLUSD</div><div id="portRlusd" class="value">—</div></div>
+      <div class="row"><div class="label">Total (RLUSD eq)</div><div id="port" class="value">—</div></div>
       <div class="row"><div class="label">Inventory</div><div id="inv" class="value">—</div></div>
       <div class="row"><div class="label">Drawdown</div><div id="dd" class="value">—</div></div>
       <div class="row"><div class="label">Session P&amp;L</div><div id="pnl" class="value">—</div></div>
@@ -397,10 +406,47 @@
       </section>
       <section id="skynet" class="panel">
         <p class="skynet-status" id="skynetStatus">Loading SKYNET status…</p>
+        <div class="card skynet-agent-card">
+          <h2 style="margin:0 0 8px;font-size:1rem;color:var(--accent)">Grok Agent — Phase 2</h2>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Bounded agent suggests knob changes within guardrails every 3–5 engine cycles. You review and apply — it does not trade.</p>
+          <div class="ctrl-row">
+            <label><input type="checkbox" id="skynetAgentEnabled"> Enable Grok Agent Mode</label>
+            <button type="button" id="btnSkynetSaveAgent" class="secondary">Save guardrails</button>
+            <button type="button" id="btnSkynetAgentTrigger" class="secondary">Run agent now</button>
+          </div>
+          <div class="skynet-agent-meta" id="skynetAgentMeta">Agent idle</div>
+          <details open>
+            <summary class="label" style="cursor:pointer;margin:8px 0">Guardrail bounds</summary>
+            <div class="skynet-guardrails">
+              <div><label>risk_per_trade_pct min</label><input type="number" id="grRiskMin" step="0.1" min="0.1" max="5"></div>
+              <div><label>risk_per_trade_pct max</label><input type="number" id="grRiskMax" step="0.1" min="0.1" max="5"></div>
+              <div><label>target_xrp_pct min</label><input type="number" id="grTargetMin" step="1" min="1" max="99"></div>
+              <div><label>target_xrp_pct max</label><input type="number" id="grTargetMax" step="1" min="1" max="99"></div>
+              <div><label>ta_weight min</label><input type="number" id="grTaMin" step="0.05" min="0" max="1"></div>
+              <div><label>ta_weight max</label><input type="number" id="grTaMax" step="0.05" min="0" max="1"></div>
+              <div><label>TP cooldown cycles min</label><input type="number" id="grTpCyMin" step="1" min="0"></div>
+              <div><label>TP cooldown cycles max</label><input type="number" id="grTpCyMax" step="1" min="0"></div>
+              <div><label>TP cooldown min (min)</label><input type="number" id="grTpMinMin" step="1" min="0"></div>
+              <div><label>TP cooldown min (max)</label><input type="number" id="grTpMinMax" step="1" min="0"></div>
+              <div><label>SL cooldown cycles min</label><input type="number" id="grSlCyMin" step="1" min="0"></div>
+              <div><label>SL cooldown cycles max</label><input type="number" id="grSlCyMax" step="1" min="0"></div>
+              <div><label>SL cooldown min (min)</label><input type="number" id="grSlMinMin" step="1" min="0"></div>
+              <div><label>SL cooldown min (max)</label><input type="number" id="grSlMinMax" step="1" min="0"></div>
+              <div><label>Max changes per cycle</label><input type="number" id="grMaxChanges" step="1" min="0" max="10"></div>
+              <div><label>Run every (cycles) min</label><input type="number" id="grIntervalMin" step="1" min="1" max="50"></div>
+              <div><label>Run every (cycles) max</label><input type="number" id="grIntervalMax" step="1" min="1" max="50"></div>
+            </div>
+          </details>
+          <div id="skynetAgentProposal" class="skynet-agent-proposal muted" style="display:none"></div>
+          <div class="skynet-actions">
+            <button type="button" id="btnSkynetApplySafe" class="warn" disabled>Apply All Safe Changes</button>
+            <span id="skynetAgentApplyHint" class="muted" style="font-size:.75rem"></span>
+          </div>
+        </div>
         <div class="skynet-grid">
           <div class="card">
-            <h2 style="margin:0 0 10px;font-size:1rem;color:var(--accent)">Grok Advisor — Phase 1</h2>
-            <p class="muted" style="margin:0 0 10px;font-size:.78rem">Manual prompts only. Review suggestions before applying. Does not trade autonomously.</p>
+            <h2 style="margin:0 0 10px;font-size:1rem;color:var(--accent)">Manual prompt</h2>
+            <p class="muted" style="margin:0 0 10px;font-size:.78rem">Always available. Review suggestions before applying.</p>
             <label class="label" for="skynetPrompt">Your prompt</label>
             <textarea id="skynetPrompt" class="skynet-prompt" placeholder="Ask SKYNET about market state, knobs, re-entry, risk…"></textarea>
             <div class="skynet-quick">
@@ -451,6 +497,7 @@
       document.querySelectorAll('.tab,.panel').forEach(n => n.classList.remove('active'));
       el.classList.add('active');
       $(el.dataset.tab).classList.add('active');
+      skynetTabActive = el.dataset.tab === 'skynet';
       if (el.dataset.tab === 'live' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'ta' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'config') loadAccountConfig();
@@ -825,10 +872,32 @@
       return p + '<div class="muted" style="font-size:.7rem">' + fmt(sizeXrp, 4) + ' XRP · ' + fmt(notional, 2) + ' RLUSD</div>';
     }
 
+    function portfolioBalances(s) {
+      const xrp = s.xrp ?? s.balances?.xrp;
+      const rlusd = s.rlusd ?? s.balances?.rlusd;
+      const mid = liveMid(s);
+      let rlusdEq = null;
+      if (xrp != null && rlusd != null && mid) rlusdEq = Number(xrp) * Number(mid) + Number(rlusd);
+      else if (s.portfolio_xrp_equiv != null && mid) rlusdEq = Number(s.portfolio_xrp_equiv) * Number(mid);
+      const xrpEq = s.portfolio_xrp_equiv != null ? Number(s.portfolio_xrp_equiv) : (rlusdEq && mid ? rlusdEq / Number(mid) : null);
+      return { xrp, rlusd, rlusdEq, xrpEq, mid };
+    }
+
+    function liveMid(s) {
+      const m = s.book?.mid ?? s.mid;
+      return m != null ? Number(m) : null;
+    }
+
+    function quoteAgeMeta(s) {
+      const iso = s.book_updated_utc || s.updated_utc;
+      if (!iso) return { label: '—', stale: true };
+      const ageSec = (Date.now() - new Date(iso).getTime()) / 1000;
+      const stale = ageSec > 25;
+      return { label: ago(iso), stale, ageSec };
+    }
+
     function portfolioRlusd(s) {
-      if (s.xrp != null && s.rlusd != null && s.mid) return s.xrp * s.mid + s.rlusd;
-      if (s.portfolio_xrp_equiv != null && s.mid) return s.portfolio_xrp_equiv * s.mid;
-      return null;
+      return portfolioBalances(s).rlusdEq;
     }
 
     function buildTickerHtml(s) {
@@ -840,7 +909,7 @@
       const action = (s.decision?.action || '—').toUpperCase();
       const reason = s.decision?.reason || s.last_note || '—';
 
-      const midVal = s.book?.mid ?? s.mid;
+      const midVal = liveMid(s);
       let midHtml = fmt(midVal, 6);
       if (midVal != null) {
         const m = Number(midVal);
@@ -857,14 +926,20 @@
       const bs = s.brackets?.summary || {};
       const brackets = (bs.pending_buys||0) + ' pending · ' + (bs.active_fixed||0) + ' active';
       const offers = s.open_offers_count != null ? s.open_offers_count : (s.open_offers?.length || 0);
-      const port = portfolioRlusd(s);
-      const portStr = port != null ? fmt(port, 2) + ' RLUSD' : '—';
+      const bal = portfolioBalances(s);
+      const portStr = [
+        bal.xrp != null ? fmt(bal.xrp, 4) + ' XRP' : null,
+        bal.rlusd != null ? fmt(bal.rlusd, 2) + ' RLUSD' : null,
+        bal.rlusdEq != null ? fmt(bal.rlusdEq, 2) + ' RLUSD eq' : null,
+      ].filter(Boolean).join(' · ') || '—';
+      const qAge = quoteAgeMeta(s);
 
       return [
         '<span class="' + modeCls + '">' + mode + '</span>',
         posture, paused, kill,
         'Decision <span class="info">' + action + '</span> — ' + reason,
         'Mid ' + midHtml + ' · Bid ' + bid + ' · Ask ' + ask + ' · Spread ' + spread,
+        'Quote <span class="' + (qAge.stale ? 'warn' : 'ok') + '">' + qAge.label + '</span>',
         'Portfolio ' + portStr,
         'Brackets ' + brackets + ' · Offers ' + offers,
         'Updated ' + ago(s.updated_utc),
@@ -1195,9 +1270,17 @@
       $('fresh').textContent = 'Updated ' + ago(s.updated_utc);
       updateTicker(s);
       $('acct').textContent = s.account_address || '—';
-      $('mid').textContent = fmt(s.mid, 6);
-      const portRlusd = portfolioRlusd(s);
-      $('port').textContent = portRlusd != null ? fmt(portRlusd, 2) + ' RLUSD' : '—';
+      const bal = portfolioBalances(s);
+      const qAge = quoteAgeMeta(s);
+      $('mid').textContent = bal.mid != null ? fmt(bal.mid, 6) : '—';
+      $('midAge').textContent = qAge.label + (qAge.stale ? ' (stale)' : '');
+      $('midAge').style.color = qAge.stale ? 'var(--warn)' : 'var(--muted)';
+      $('portXrp').textContent = bal.xrp != null ? fmt(bal.xrp, 4) + ' XRP' : '—';
+      $('portRlusd').textContent = bal.rlusd != null ? fmt(bal.rlusd, 2) : '—';
+      const portLine = [];
+      if (bal.rlusdEq != null) portLine.push(fmt(bal.rlusdEq, 2) + ' RLUSD');
+      if (bal.xrpEq != null) portLine.push(fmt(bal.xrpEq, 4) + ' XRP eq');
+      $('port').textContent = portLine.length ? portLine.join(' · ') : '—';
       $('inv').textContent = (s.inventory?.label || '—') + ' (' + fmt((s.inventory?.deviation||0)*100, 2) + '% dev)';
       $('dd').textContent = fmt(s.risk?.drawdown_pct, 2) + '% / ' + fmt(s.risk?.max_drawdown_pct, 2) + '%';
       $('pnl').textContent = fmt(s.risk?.session_pnl_xrp, 4) + ' XRP';
@@ -1383,6 +1466,8 @@
     };
 
     let skynetLastApplicable = null;
+    let skynetAgentSafeCount = 0;
+    let skynetTabActive = false;
 
     function setSkynetResponse(text) {
       const el = $('skynetResponse');
@@ -1390,7 +1475,104 @@
       el.scrollTop = 0;
     }
 
+    function readGuardrailsFromForm() {
+      return {
+        alpha_risk_per_trade_pct: { min: +$('grRiskMin').value, max: +$('grRiskMax').value },
+        inventory_target_xrp_pct: { min: +$('grTargetMin').value, max: +$('grTargetMax').value },
+        alpha_ta_weight: { min: +$('grTaMin').value, max: +$('grTaMax').value },
+        alpha_reentry_tp_cooldown_cycles: { min: +$('grTpCyMin').value, max: +$('grTpCyMax').value },
+        alpha_reentry_tp_cooldown_minutes: { min: +$('grTpMinMin').value, max: +$('grTpMinMax').value },
+        alpha_reentry_sl_cooldown_cycles: { min: +$('grSlCyMin').value, max: +$('grSlCyMax').value },
+        alpha_reentry_sl_cooldown_minutes: { min: +$('grSlMinMin').value, max: +$('grSlMinMax').value },
+        max_changes_per_cycle: +$('grMaxChanges').value,
+      };
+    }
+
+    function fillGuardrailsForm(g) {
+      if (!g) return;
+      const set = (id, val) => { if (val != null && !Number.isNaN(val)) $(id).value = val; };
+      set('grRiskMin', g.alpha_risk_per_trade_pct?.min);
+      set('grRiskMax', g.alpha_risk_per_trade_pct?.max);
+      set('grTargetMin', g.inventory_target_xrp_pct?.min);
+      set('grTargetMax', g.inventory_target_xrp_pct?.max);
+      set('grTaMin', g.alpha_ta_weight?.min);
+      set('grTaMax', g.alpha_ta_weight?.max);
+      set('grTpCyMin', g.alpha_reentry_tp_cooldown_cycles?.min);
+      set('grTpCyMax', g.alpha_reentry_tp_cooldown_cycles?.max);
+      set('grTpMinMin', g.alpha_reentry_tp_cooldown_minutes?.min);
+      set('grTpMinMax', g.alpha_reentry_tp_cooldown_minutes?.max);
+      set('grSlCyMin', g.alpha_reentry_sl_cooldown_cycles?.min);
+      set('grSlCyMax', g.alpha_reentry_sl_cooldown_cycles?.max);
+      set('grSlMinMin', g.alpha_reentry_sl_cooldown_minutes?.min);
+      set('grSlMinMax', g.alpha_reentry_sl_cooldown_minutes?.max);
+      set('grMaxChanges', g.max_changes_per_cycle);
+    }
+
+    function renderAgentProposal(proposal) {
+      const box = $('skynetAgentProposal');
+      if (!proposal) {
+        box.style.display = 'none';
+        box.textContent = '';
+        skynetAgentSafeCount = 0;
+        $('btnSkynetApplySafe').disabled = true;
+        $('skynetAgentApplyHint').textContent = '';
+        return;
+      }
+      box.style.display = 'block';
+      const lines = [];
+      if (proposal.summary) lines.push(proposal.summary);
+      if (proposal.reasoning) lines.push('', proposal.reasoning);
+      const safe = proposal.safe_changes || [];
+      if (safe.length) {
+        lines.push('', 'Proposed safe changes:');
+        safe.forEach(c => lines.push('  • ' + (c.description || (c.key + ' → ' + c.value)) + (c.reason ? ' — ' + c.reason : '')));
+      }
+      const rej = proposal.rejected_changes || [];
+      if (rej.length) {
+        lines.push('', 'Rejected:');
+        rej.forEach(c => lines.push('  ✗ ' + c.key + ' — ' + (c.reject_reason || '')));
+      }
+      box.textContent = lines.join('\n').trim() || '(empty proposal)';
+      skynetAgentSafeCount = safe.length;
+      $('btnSkynetApplySafe').disabled = skynetAgentSafeCount === 0;
+      $('skynetAgentApplyHint').textContent = skynetAgentSafeCount
+        ? skynetAgentSafeCount + ' safe change(s) ready — review before applying'
+        : 'No safe changes in latest agent run';
+      if (proposal.display && skynetTabActive) {
+        setSkynetResponse(proposal.display);
+      }
+    }
+
+    function renderAgentMeta(d) {
+      const el = $('skynetAgentMeta');
+      if (!el || !d) return;
+      const parts = [];
+      parts.push(d.agent_enabled ? 'Agent ON' : 'Agent OFF');
+      if (d.engine_cycle != null) parts.push('engine cycle ' + d.engine_cycle);
+      if (d.next_run_engine_cycle) parts.push('next run ≥ cycle ' + d.next_run_engine_cycle);
+      if (d.last_run_utc) parts.push('last run ' + d.last_run_utc.replace('T', ' ').slice(0, 19) + ' UTC');
+      if (d.running) parts.push('running…');
+      else if (d.due && d.agent_enabled) parts.push('due now');
+      el.textContent = parts.join(' · ');
+    }
+
+    async function loadSkynetAgent() {
+      try {
+        const r = await fetch('/operator/skynet/agent?_=' + Date.now());
+        if (r.status === 401) return;
+        const d = await r.json();
+        if (!d.ok) return;
+        $('skynetAgentEnabled').checked = !!d.agent_enabled;
+        if (d.interval_cycles_min != null) $('grIntervalMin').value = d.interval_cycles_min;
+        if (d.interval_cycles_max != null) $('grIntervalMax').value = d.interval_cycles_max;
+        fillGuardrailsForm(d.guardrails);
+        renderAgentMeta(d);
+        renderAgentProposal(d.latest_proposal);
+      } catch (_) { /* ignore */ }
+    }
+
     async function loadSkynetStatus() {
+      skynetTabActive = true;
       try {
         const r = await fetch('/operator/skynet/status?_=' + Date.now());
         if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
@@ -1408,12 +1590,66 @@
           $('btnSkynetSend').disabled = true;
           return;
         }
-        el.textContent = `Grok ready · model ${d.model}${d.key_hint ? ' · key ' + d.key_hint : ''} · Phase 1 manual advisor`;
+        el.textContent = `Grok ready · model ${d.model}${d.key_hint ? ' · key ' + d.key_hint : ''} · Phase 1 manual + Phase 2 agent`;
         $('btnSkynetSend').disabled = false;
+        if (d.guardrails) fillGuardrailsForm(d.guardrails);
+        if (d.agent_enabled != null) $('skynetAgentEnabled').checked = !!d.agent_enabled;
+        renderAgentMeta(d);
+        renderAgentProposal(d.latest_proposal);
       } catch (e) {
         $('skynetStatus').textContent = 'SKYNET status error: ' + e;
       }
+      loadSkynetAgent();
     }
+
+    $('btnSkynetSaveAgent').onclick = async () => {
+      const body = {
+        agent_enabled: $('skynetAgentEnabled').checked,
+        interval_cycles_min: +$('grIntervalMin').value,
+        interval_cycles_max: +$('grIntervalMax').value,
+        guardrails: readGuardrailsFromForm(),
+      };
+      const d = await patchJson('/operator/skynet/agent', body);
+      if (d?.ok) {
+        toast(d.message || 'Agent settings saved');
+        renderAgentMeta(d);
+      }
+    };
+
+    $('btnSkynetAgentTrigger').onclick = async () => {
+      $('btnSkynetAgentTrigger').disabled = true;
+      setSkynetResponse('Agent running…');
+      const d = await postJson('/operator/skynet/agent/trigger', {});
+      $('btnSkynetAgentTrigger').disabled = false;
+      if (!d?.ok) {
+        setSkynetResponse(d?.message || 'Agent run failed');
+        return;
+      }
+      if (d.skipped) {
+        toast('Agent skipped');
+        return;
+      }
+      if (d.proposal) {
+        renderAgentProposal(d.proposal);
+        setSkynetResponse(d.proposal.display || '');
+        toast('Agent proposal ready');
+      }
+      loadSkynetAgent();
+    };
+
+    $('btnSkynetApplySafe').onclick = async () => {
+      if (!skynetAgentSafeCount) { toast('No safe agent changes', true); return; }
+      if (!confirm('Apply all safe changes from the latest agent proposal?\n\nTakes effect on next engine cycle.')) return;
+      const d = await postJson('/operator/skynet/agent/apply-safe', {});
+      if (d?.ok) {
+        toast(d.message || 'Safe changes applied');
+        $('btnSkynetApplySafe').disabled = true;
+        $('skynetAgentApplyHint').textContent = 'Applied — check Live tab knobs';
+        loadOperatorConfig();
+        poll();
+        loadSkynetAgent();
+      }
+    };
 
     document.querySelectorAll('.skynet-quick-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1487,6 +1723,7 @@
     poll();
     loadOperatorConfig();
     setInterval(poll, 1000);
+    setInterval(() => { if (skynetTabActive) loadSkynetAgent(); }, 12000);
   </script>
 </body>
 </html>

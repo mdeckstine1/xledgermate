@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from alpha.decision.engine import DecisionAction, DecisionResult
-from alpha.hud.state_export import _bracket_row, build_hud_state
+from alpha.hud.state_export import _bracket_row, build_hud_state, patch_runtime_book_quote, write_alpha_runtime_state
 from alpha.operator.controls import OperatorControls
 from alpha.orders.types import BracketLifecycleState, BracketMode, BracketRecord
 from alpha.types import (
@@ -13,6 +13,7 @@ from alpha.types import (
     BracketStatusSummary,
     InventorySnapshot,
     OperatorSnapshot,
+    OrderBookSnapshot,
     RiskSnapshot,
     TrustLineSnapshot,
 )
@@ -81,3 +82,32 @@ def test_bracket_row_includes_size_and_rlusd():
     assert row["size_label"] == "order"
     assert row["can_cancel"] is True
     assert row["can_edit_entry"] is True
+
+
+def test_patch_runtime_book_quote_updates_mid(tmp_path):
+    path = tmp_path / "alpha_runtime_state.json"
+    write_alpha_runtime_state(
+        path,
+        {
+            "mid": 1.09,
+            "updated_utc": "2026-01-01T00:00:00+00:00",
+            "market_conditions": {"mid": 1.09, "spread_pct": 0.1},
+        },
+    )
+    book = OrderBookSnapshot(
+        bids=(),
+        asks=(),
+        best_bid=1.095,
+        best_ask=1.097,
+        mid=1.096,
+        spread=0.002,
+        spread_pct=0.18,
+        fetched_utc=datetime.now(tz=timezone.utc),
+    )
+    assert patch_runtime_book_quote(path, book) is True
+    data = __import__("json").loads(path.read_text(encoding="utf-8"))
+    assert data["mid"] == 1.096
+    assert data["book"]["mid"] == 1.096
+    assert data["market_conditions"]["mid"] == 1.096
+    assert data["book_updated_utc"]
+    assert data["updated_utc"] == "2026-01-01T00:00:00+00:00"

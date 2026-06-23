@@ -53,6 +53,20 @@ if app is not None:
     register_config_routes(app)
     register_skynet_routes(app)
 
+    import time
+
+    def _skynet_agent_background() -> None:
+        from alpha.hud.skynet_agent import maybe_run_agent_tick
+
+        while True:
+            time.sleep(25)
+            try:
+                maybe_run_agent_tick()
+            except Exception as exc:
+                logger.warning("skynet_agent_background | %s", exc)
+
+    threading.Thread(target=_skynet_agent_background, daemon=True, name="skynet-agent").start()
+
     @app.get("/", response_class=HTMLResponse)
     @app.get("/hud", response_class=HTMLResponse)
     async def index() -> HTMLResponse:

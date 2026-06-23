@@ -307,6 +307,7 @@ def build_hud_state(
     runtime_state_path: Path = DEFAULT_PATH,
     reentry: Optional[ReentrySnapshot] = None,
     liquidity: Optional[LiquidityDepth] = None,
+    engine_cycle: int = 0,
 ) -> Dict[str, Any]:
     """Build JSON-serializable HUD payload from one Alpha cycle."""
     snap = snapshot
@@ -459,6 +460,8 @@ def build_hud_state(
             "transfers_path": "logs/transfers.csv",
         },
         "last_note": f"{decision.action.value}: {decision.reason}",
+        "engine_cycle": int(engine_cycle),
+        "book_updated_utc": _iso(snap.generated_utc) if book else None,
     }
 
 
@@ -467,6 +470,41 @@ def write_alpha_runtime_state(path: Path, state: Dict[str, Any]) -> None:
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(state, indent=2, default=str), encoding="utf-8")
     tmp.replace(path)
+
+
+def patch_runtime_book_quote(path: Path, book: OrderBookSnapshot) -> bool:
+    """Merge a fresh L1 book quote into the HUD state without a full cycle publish."""
+    if not book or not (book.mid or book.best_bid or book.best_ask):
+        return False
+    if not path.is_file():
+        return False
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not isinstance(state, dict):
+        return False
+
+    payload = _book_payload(book)
+    if not payload:
+        return False
+
+    state["book"] = payload
+    if book.mid and book.mid > 0:
+        state["mid"] = book.mid
+    mc = state.get("market_conditions")
+    if isinstance(mc, dict) and book.mid and book.mid > 0:
+        mc["mid"] = book.mid
+        if book.spread_pct is not None:
+            mc["spread_pct"] = book.spread_pct
+        state["market_conditions"] = mc
+    state["book_updated_utc"] = _iso(datetime.now(tz=timezone.utc))
+    try:
+        write_alpha_runtime_state(path, state)
+    except OSError as exc:
+        logger.warning("alpha_hud_book_patch_failed | %s", exc)
+        return False
+    return True
 
 
 def publish_cycle_to_hud(
@@ -489,6 +527,7 @@ def publish_cycle_to_hud(
     config_effective: Optional[BotConfig] = None,
     reentry: Optional[ReentrySnapshot] = None,
     liquidity: Optional[LiquidityDepth] = None,
+    engine_cycle: int = 0,
 ) -> None:
     try:
         state = build_hud_state(
@@ -510,6 +549,7 @@ def publish_cycle_to_hud(
             runtime_state_path=path,
             reentry=reentry,
             liquidity=liquidity,
+            engine_cycle=engine_cycle,
         )
         write_alpha_runtime_state(path, state)
     except OSError as exc:
