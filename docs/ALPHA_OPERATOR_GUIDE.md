@@ -7,6 +7,8 @@ This guide is for the **new Alpha bot**, not the legacy `ws-engine` market maker
 
 > **Going live?** Read **[`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md)** first — step-by-step HUD walkthrough, how orders are created (there is no manual Buy button), inventory requirements, and HOLD troubleshooting.
 
+> **Want the trader’s voice?** **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — beginner-friendly knob guide, real scenarios, edge-mismatch fixes.
+
 ---
 
 ## What Alpha does

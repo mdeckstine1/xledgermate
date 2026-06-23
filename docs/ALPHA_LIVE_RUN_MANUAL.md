@@ -5,6 +5,8 @@
 **HUD:** `http://YOUR_VPS:8765` — **primary tuning surface** (no terminal edits needed after initial setup)  
 **There is no manual Buy button** — the engine places limit orders when all gates pass.
 
+> **New operator?** Read **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — plain-English guide to every HUD knob, scenarios, and troubleshooting.
+
 ---
 
 ## Core idea (vs old Balanced Aggressive)
