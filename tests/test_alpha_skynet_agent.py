@@ -1,4 +1,4 @@
-"""Tests for Alpha SKYNET Phase 2 bounded agent."""
+"""Tests for Alpha SKYNET Phase 2 bounded agent and Phase 3 full mode."""
 
 from __future__ import annotations
 
@@ -7,11 +7,18 @@ from pathlib import Path
 from alpha.hud.skynet_agent import (
     _AGENT_SYSTEM_PROMPT,
     _DEFAULT_GUARDRAILS,
+    _FULL_MODE_CONFIRM,
+    _FULL_MODE_SYSTEM_PROMPT,
+    append_audit_entry,
     default_agent_config,
     describe_knob_change,
+    detect_significant_events,
+    evaluate_emergency_rules,
     filter_guardrailed_suggestions,
     load_agent_config,
+    load_audit_entries,
     merge_agent_patch,
+    pause_full_skynet_mode,
     should_run_agent,
 )
 from config.settings import BotConfig
@@ -106,3 +113,120 @@ def test_merge_agent_patch_rejects_bad_interval(tmp_path: Path):
         path=tmp_path / "agent.json",
     )
     assert errors
+
+
+def test_full_mode_system_prompt_format():
+    rendered = _FULL_MODE_SYSTEM_PROMPT.format(
+        allowed_keys="k1",
+        guardrail_lines="- alpha_risk_per_trade_pct: min=0.1 max=2",
+        max_changes=3,
+    )
+    assert "disciplined" in rendered.lower()
+    assert '"reasoning"' in rendered
+
+
+def test_merge_full_mode_requires_confirm(tmp_path: Path):
+    path = tmp_path / "agent.json"
+    _, errors = merge_agent_patch(
+        {"agent_enabled": True, "full_mode_enabled": True},
+        path=path,
+    )
+    assert errors
+    assert any(_FULL_MODE_CONFIRM in e for e in errors)
+
+    cfg, errors = merge_agent_patch(
+        {
+            "agent_enabled": True,
+            "full_mode_enabled": True,
+            "confirm": _FULL_MODE_CONFIRM,
+        },
+        path=path,
+    )
+    assert not errors
+    assert cfg["full_mode_enabled"] is True
+
+
+def test_emergency_drawdown_pauses_trading(tmp_path: Path):
+    from alpha.operator.runtime import OperatorRuntimeStore
+
+    overrides_path = tmp_path / "overrides.json"
+    runtime = OperatorRuntimeStore(
+        overrides_path=overrides_path,
+        commands_path=tmp_path / "commands.json",
+    )
+    hud = {
+        "risk": {"drawdown_pct": 9.5, "session_pnl_xrp": 0.0},
+        "trading_enabled": True,
+    }
+    action = evaluate_emergency_rules(
+        hud,
+        emergency_rules={"enabled": True, "drawdown_pause_pct": 8.0, "session_loss_pause_xrp": 25.0},
+        runtime=runtime,
+        trading_enabled=True,
+    )
+    assert action is not None
+    assert action["applied"] is True
+    assert runtime.load_overrides().get("trading_enabled") is False
+
+
+def test_detect_significant_events():
+    hud = {
+        "engine_cycle": 10,
+        "decision": {"action": "hold"},
+        "risk": {"kill_switch_active": False, "drawdown_pct": 2.0, "session_pnl_xrp": 0.0},
+        "inventory": {"deviation": -0.4},
+        "trading_enabled": True,
+    }
+    last = {
+        "decision_action": "place_bid",
+        "kill_switch_active": False,
+        "drawdown_pct": 0.5,
+        "session_pnl_xrp": 10.0,
+        "inventory_deviation": -0.3,
+    }
+    triggered, reasons = detect_significant_events(hud, last)
+    assert triggered
+    assert any("decision_changed" in r for r in reasons)
+
+
+def test_audit_log_roundtrip(tmp_path: Path):
+    path = tmp_path / "audit.jsonl"
+    append_audit_entry({"event": "test", "summary": "hello"}, path=path)
+    entries = load_audit_entries(limit=5, path=path)
+    assert len(entries) == 1
+    assert entries[0]["summary"] == "hello"
+
+
+def test_pause_full_skynet_mode(tmp_path: Path, monkeypatch):
+    path = tmp_path / "agent.json"
+    merge_agent_patch(
+        {"agent_enabled": True, "full_mode_enabled": True, "confirm": _FULL_MODE_CONFIRM},
+        path=path,
+    )
+    audit = tmp_path / "audit.jsonl"
+    monkeypatch.setattr("alpha.hud.skynet_agent._DEFAULT_AGENT_PATH", path)
+    monkeypatch.setattr("alpha.hud.skynet_agent._AUDIT_PATH", audit)
+    cfg = pause_full_skynet_mode(path=path, audit_path=audit)
+    assert cfg["full_mode_enabled"] is False
+    assert load_audit_entries(path=audit)[0]["event"] == "full_mode_paused"
+
+
+def test_should_run_on_significant_event():
+    agent = default_agent_config()
+    agent["agent_enabled"] = True
+    agent["next_run_engine_cycle"] = 100
+    hud = {
+        "engine_cycle": 5,
+        "decision": {"action": "hold"},
+        "risk": {"kill_switch_active": True, "drawdown_pct": 1.0, "session_pnl_xrp": 0.0},
+        "inventory": {"deviation": 0.0},
+    }
+    last = {
+        "kill_switch_active": False,
+        "decision_action": "place_bid",
+        "drawdown_pct": 0.0,
+        "session_pnl_xrp": 0.0,
+        "inventory_deviation": 0.0,
+    }
+    agent["last_event_snapshot"] = last
+    assert should_run_agent(agent, 5, hud)

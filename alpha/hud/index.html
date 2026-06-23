@@ -151,6 +151,11 @@
     .skynet-guardrails input { width:100%; box-sizing:border-box; background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:4px; padding:4px 6px; font-size:.8rem; }
     .skynet-agent-meta { font-size:.75rem; color:var(--muted); margin:6px 0; }
     .skynet-agent-proposal { font-size:.78rem; margin:8px 0; padding:8px; background:#0b1220; border:1px solid var(--border); border-radius:6px; max-height:160px; overflow-y:auto; white-space:pre-wrap; }
+    .skynet-full-card { margin-bottom:12px; border:1px solid #3d2a6b; }
+    .skynet-full-badge { display:inline-block; font-size:.7rem; padding:2px 8px; border-radius:4px; background:#3d2a6b; color:#e9d5ff; margin-left:8px; }
+    .skynet-audit { font-size:.72rem; max-height:200px; overflow-y:auto; background:#0b1220; border:1px solid var(--border); border-radius:6px; padding:8px; font-family:ui-monospace,monospace; white-space:pre-wrap; }
+    .skynet-audit-entry { margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+    .skynet-emergency { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin:8px 0; }
     @media (max-width:1100px) {
       .grid.live-grid { grid-template-columns:repeat(6, minmax(100px, 1fr)); overflow-x:auto; }
     }
@@ -408,7 +413,7 @@
         <p class="skynet-status" id="skynetStatus">Loading SKYNET status…</p>
         <div class="card skynet-agent-card">
           <h2 style="margin:0 0 8px;font-size:1rem;color:var(--accent)">Grok Agent — Phase 2</h2>
-          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Bounded agent suggests knob changes within guardrails every 3–5 engine cycles. You review and apply — it does not trade.</p>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Bounded agent suggests knob changes within guardrails every 3–5 engine cycles (or on significant events). Phase 2: review and apply manually.</p>
           <div class="ctrl-row">
             <label><input type="checkbox" id="skynetAgentEnabled"> Enable Grok Agent Mode</label>
             <button type="button" id="btnSkynetSaveAgent" class="secondary">Save guardrails</button>
@@ -442,6 +447,28 @@
             <button type="button" id="btnSkynetApplySafe" class="warn" disabled>Apply All Safe Changes</button>
             <span id="skynetAgentApplyHint" class="muted" style="font-size:.75rem"></span>
           </div>
+        </div>
+        <div class="card skynet-full-card">
+          <h2 style="margin:0 0 8px;font-size:1rem;color:#c4b5fd">Full SKYNET — Phase 3 <span id="skynetFullBadge" class="skynet-full-badge" style="display:none">AUTONOMOUS</span></h2>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Supervised autonomy: Grok auto-applies guardrailed knob changes. Requires agent mode + confirmation. Does not place trades — config only. Kill switch / pause always override.</p>
+          <div class="ctrl-row">
+            <label><input type="checkbox" id="skynetFullEnabled"> Enable Full SKYNET Mode</label>
+            <button type="button" id="btnSkynetPauseFull" class="warn secondary">Pause Full Mode</button>
+            <button type="button" id="btnSkynetSaveFull" class="secondary">Save emergency rules</button>
+          </div>
+          <details open>
+            <summary class="label" style="cursor:pointer;margin:8px 0">Emergency rules</summary>
+            <div class="skynet-emergency">
+              <label><input type="checkbox" id="erEnabled" checked> Emergency rules enabled</label>
+              <div><label>Pause if drawdown ≥ %</label><input type="number" id="erDrawdown" step="0.5" min="0.5" max="50" value="8"></div>
+              <div><label>Pause if session loss ≥ XRP</label><input type="number" id="erSessionLoss" step="1" min="0" value="25"></div>
+            </div>
+          </details>
+          <div class="skynet-agent-meta" id="skynetFullMeta">Full mode off</div>
+          <details>
+            <summary class="label" style="cursor:pointer;margin:8px 0">Audit log (recent decisions)</summary>
+            <div id="skynetAuditLog" class="skynet-audit muted">No audit entries yet.</div>
+          </details>
         </div>
         <div class="skynet-grid">
           <div class="card">
@@ -1543,11 +1570,70 @@
       }
     }
 
+    function fillEmergencyForm(er) {
+      if (!er) return;
+      if ($('erEnabled')) $('erEnabled').checked = er.enabled !== false;
+      if ($('erDrawdown') && er.drawdown_pause_pct != null) $('erDrawdown').value = er.drawdown_pause_pct;
+      if ($('erSessionLoss') && er.session_loss_pause_xrp != null) $('erSessionLoss').value = er.session_loss_pause_xrp;
+    }
+
+    function readEmergencyFromForm() {
+      return {
+        enabled: $('erEnabled').checked,
+        drawdown_pause_pct: +$('erDrawdown').value,
+        session_loss_pause_xrp: +$('erSessionLoss').value,
+      };
+    }
+
+    function renderAuditLog(entries) {
+      const box = $('skynetAuditLog');
+      if (!box) return;
+      if (!entries || !entries.length) {
+        box.textContent = 'No audit entries yet.';
+        return;
+      }
+      box.innerHTML = entries.map(e => {
+        const ts = (e.ts || '').replace('T', ' ').slice(0, 19);
+        const mode = e.mode || e.event || '?';
+        let line = `<div class="skynet-audit-entry"><strong>${ts} UTC</strong> · ${mode}`;
+        if (e.summary) line += `<br>${e.summary}`;
+        if (e.event_triggers && e.event_triggers.length) line += `<br>trigger: ${e.event_triggers.join(', ')}`;
+        if (e.emergency_action && e.emergency_action.reason) line += `<br>⚠ emergency: ${e.emergency_action.reason}`;
+        const applied = e.applied_changes || [];
+        if (applied.length) {
+          line += '<br>applied: ' + applied.map(c => (c.description || c.key + '→' + c.value)).join('; ');
+        } else if (e.safe_changes && e.safe_changes.length && !e.auto_applied) {
+          line += '<br>proposed: ' + e.safe_changes.map(c => c.key).join(', ');
+        }
+        if (e.auto_applied) line += '<br>✓ auto-applied';
+        return line + '</div>';
+      }).join('');
+    }
+
+    function renderFullModeMeta(d) {
+      const el = $('skynetFullMeta');
+      const badge = $('skynetFullBadge');
+      if (!el) return;
+      const parts = [];
+      if (d.full_mode_enabled) {
+        parts.push('FULL MODE ACTIVE — auto-apply on');
+        if (badge) badge.style.display = 'inline';
+      } else {
+        parts.push('Full mode off — manual apply (Phase 2)');
+        if (badge) badge.style.display = 'none';
+      }
+      if (d.event_triggered && d.event_reasons && d.event_reasons.length) {
+        parts.push('event: ' + d.event_reasons.join(', '));
+      }
+      el.textContent = parts.join(' · ');
+    }
+
     function renderAgentMeta(d) {
       const el = $('skynetAgentMeta');
       if (!el || !d) return;
       const parts = [];
       parts.push(d.agent_enabled ? 'Agent ON' : 'Agent OFF');
+      if (d.full_mode_enabled) parts.push('FULL');
       if (d.engine_cycle != null) parts.push('engine cycle ' + d.engine_cycle);
       if (d.next_run_engine_cycle) parts.push('next run ≥ cycle ' + d.next_run_engine_cycle);
       if (d.last_run_utc) parts.push('last run ' + d.last_run_utc.replace('T', ' ').slice(0, 19) + ' UTC');
@@ -1563,11 +1649,15 @@
         const d = await r.json();
         if (!d.ok) return;
         $('skynetAgentEnabled').checked = !!d.agent_enabled;
+        if ($('skynetFullEnabled')) $('skynetFullEnabled').checked = !!d.full_mode_enabled;
         if (d.interval_cycles_min != null) $('grIntervalMin').value = d.interval_cycles_min;
         if (d.interval_cycles_max != null) $('grIntervalMax').value = d.interval_cycles_max;
         fillGuardrailsForm(d.guardrails);
+        fillEmergencyForm(d.emergency_rules);
         renderAgentMeta(d);
+        renderFullModeMeta(d);
         renderAgentProposal(d.latest_proposal);
+        renderAuditLog(d.recent_audit);
       } catch (_) { /* ignore */ }
     }
 
@@ -1590,12 +1680,16 @@
           $('btnSkynetSend').disabled = true;
           return;
         }
-        el.textContent = `Grok ready · model ${d.model}${d.key_hint ? ' · key ' + d.key_hint : ''} · Phase 1 manual + Phase 2 agent`;
+        el.textContent = `Grok ready · model ${d.model}${d.key_hint ? ' · key ' + d.key_hint : ''} · Phase 1 manual + Phase 2 agent + Phase 3 full mode`;
         $('btnSkynetSend').disabled = false;
         if (d.guardrails) fillGuardrailsForm(d.guardrails);
+        if (d.emergency_rules) fillEmergencyForm(d.emergency_rules);
         if (d.agent_enabled != null) $('skynetAgentEnabled').checked = !!d.agent_enabled;
+        if ($('skynetFullEnabled') && d.full_mode_enabled != null) $('skynetFullEnabled').checked = !!d.full_mode_enabled;
         renderAgentMeta(d);
+        renderFullModeMeta(d);
         renderAgentProposal(d.latest_proposal);
+        if (d.recent_audit) renderAuditLog(d.recent_audit);
       } catch (e) {
         $('skynetStatus').textContent = 'SKYNET status error: ' + e;
       }
@@ -1608,11 +1702,65 @@
         interval_cycles_min: +$('grIntervalMin').value,
         interval_cycles_max: +$('grIntervalMax').value,
         guardrails: readGuardrailsFromForm(),
+        emergency_rules: readEmergencyFromForm(),
       };
+      if (!body.agent_enabled && $('skynetFullEnabled').checked) {
+        body.full_mode_enabled = false;
+        $('skynetFullEnabled').checked = false;
+      }
       const d = await patchJson('/operator/skynet/agent', body);
       if (d?.ok) {
         toast(d.message || 'Agent settings saved');
         renderAgentMeta(d);
+        renderFullModeMeta(d);
+      }
+    };
+
+    $('btnSkynetSaveFull').onclick = async () => {
+      const d = await patchJson('/operator/skynet/agent', { emergency_rules: readEmergencyFromForm() });
+      if (d?.ok) toast('Emergency rules saved');
+    };
+
+    $('skynetFullEnabled').onchange = async () => {
+      const want = $('skynetFullEnabled').checked;
+      if (!want) {
+        const d = await patchJson('/operator/skynet/agent', { full_mode_enabled: false });
+        if (d?.ok) { renderFullModeMeta(d); toast('Full SKYNET mode off'); }
+        return;
+      }
+      if (!$('skynetAgentEnabled').checked) {
+        $('skynetFullEnabled').checked = false;
+        toast('Enable Grok Agent Mode first', true);
+        return;
+      }
+      const ok = await confirmModal(
+        'Enable Full SKYNET Mode',
+        'Grok will AUTO-APPLY guardrailed knob changes every 3–5 cycles. Type ENABLE_FULL_SKYNET to confirm. Kill switch and Pause always override.',
+        'ENABLE_FULL_SKYNET'
+      );
+      if (!ok) { $('skynetFullEnabled').checked = false; return; }
+      const d = await patchJson('/operator/skynet/agent', {
+        agent_enabled: true,
+        full_mode_enabled: true,
+        confirm: 'ENABLE_FULL_SKYNET',
+        guardrails: readGuardrailsFromForm(),
+        emergency_rules: readEmergencyFromForm(),
+      });
+      if (d?.ok) {
+        toast('Full SKYNET mode enabled — supervised autonomy active');
+        renderFullModeMeta(d);
+      } else {
+        $('skynetFullEnabled').checked = false;
+      }
+    };
+
+    $('btnSkynetPauseFull').onclick = async () => {
+      const d = await postJson('/operator/skynet/agent/pause-full', {});
+      if (d?.ok) {
+        $('skynetFullEnabled').checked = false;
+        renderFullModeMeta(d);
+        toast('Full SKYNET paused');
+        loadSkynetAgent();
       }
     };
 
@@ -1632,7 +1780,8 @@
       if (d.proposal) {
         renderAgentProposal(d.proposal);
         setSkynetResponse(d.proposal.display || '');
-        toast('Agent proposal ready');
+        if (d.proposal.auto_applied) toast('Agent ran — auto-applied ' + (d.proposal.applied_changes || []).length + ' change(s)');
+        else toast('Agent proposal ready');
       }
       loadSkynetAgent();
     };

@@ -28,7 +28,9 @@ def register_skynet_routes(app: Any) -> None:
     from alpha.hud.skynet_agent import (
         agent_status_payload,
         load_agent_config,
+        load_audit_entries,
         merge_agent_patch,
+        pause_full_skynet_mode,
         run_skynet_agent,
     )
     from alpha.operator.runtime import (
@@ -81,6 +83,23 @@ def register_skynet_routes(app: Any) -> None:
         if not result.get("ok"):
             return JSONResponse(result, status_code=400)
         return JSONResponse(result)
+
+    @app.get("/operator/skynet/audit")
+    async def get_skynet_audit(limit: int = 50) -> JSONResponse:
+        lim = max(1, min(200, int(limit or 50)))
+        return JSONResponse({"ok": True, "entries": load_audit_entries(limit=lim)})
+
+    @app.post("/operator/skynet/agent/pause-full")
+    async def post_skynet_pause_full() -> JSONResponse:
+        agent = pause_full_skynet_mode()
+        return JSONResponse(
+            {
+                "ok": True,
+                "full_mode_enabled": False,
+                "message": "Full SKYNET mode paused — agent suggest mode unchanged",
+                **agent_status_payload(),
+            }
+        )
 
     def _apply_suggestions(suggestions: List[Dict[str, Any]]) -> JSONResponse:
         base = BotConfig.load()
