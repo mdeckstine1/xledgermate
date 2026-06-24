@@ -1197,6 +1197,8 @@
     let lastChartState = null;
     const CHART_INTERVAL_STORAGE_KEY = 'alpha_hud_chart_interval_sec';
     const CHART_MAX_CANDLES = 96;
+    const CHART_BODY_PX = 4;
+    const CHART_GAP_PX = 1;
     let chartIntervalSec = 300;
 
     function formatChartIntervalLabel(sec) {
@@ -1237,17 +1239,15 @@
     function buildChartCandlesFromMids(mids, chart) {
       const sampleSec = Math.max(1, parseInt(chart?.sample_seconds, 10) || 15);
       const bucket = Math.max(1, Math.round(chartIntervalSec / sampleSec));
-      const maxCandles = chart?.max_candles || CHART_MAX_CANDLES;
       const clean = (mids || []).map(Number).filter(m => m > 0);
       const chunks = [];
       for (let i = 0; i < clean.length; i += bucket) {
         const chunk = clean.slice(i, i + bucket);
         if (chunk.length >= 2) chunks.push(chunk);
       }
-      const window = chunks.slice(-maxCandles);
       const endMs = Date.now();
-      return window.map((chunk, i) => {
-        const n = window.length;
+      return chunks.map((chunk, i) => {
+        const n = chunks.length;
         const offsetSec = (n - 1 - i) * bucket * sampleSec;
         return {
           o: chunk[0],
@@ -1257,6 +1257,14 @@
           t: new Date(endMs - offsetSec * 1000).toISOString(),
         };
       });
+    }
+
+    function chartCandlesForPlot(candles, plotW) {
+      const bodyW = CHART_BODY_PX;
+      const gapPx = CHART_GAP_PX;
+      const pitch = bodyW + gapPx;
+      const maxFit = Math.max(1, Math.floor((plotW + gapPx) / pitch));
+      return candles.slice(-maxFit);
     }
 
     function chartViewForRender(chart) {
@@ -1307,7 +1315,7 @@
     }
 
     function drawCandleChart(canvas, chart, live) {
-      const candles = chart?.candles || [];
+      const allCandles = chart?.candles || [];
       const indicators = (chart?.indicators || []).filter(i => i.kind === 'line' && typeof i.value === 'number');
       const liveMid = live?.mid != null ? Number(live.mid) : null;
       const liveBid = live?.best_bid != null ? Number(live.best_bid) : null;
@@ -1319,6 +1327,10 @@
       const marginRight = 10;
       const marginTop = 18;
       const marginBottom = 28;
+      const plotLeft = marginLeft;
+      const plotRight = w - marginRight;
+      const plotW = plotRight - plotLeft;
+      const candles = chartCandlesForPlot(allCandles, plotW);
       const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
@@ -1349,24 +1361,15 @@
       const pad = (hi - lo) * 0.06 || 0.0001;
       lo -= pad;
       hi += pad;
-      const plotLeft = marginLeft;
-      const plotRight = w - marginRight;
       const plotTop = marginTop;
       const plotBottom = h - marginBottom;
-      const plotW = plotRight - plotLeft;
       const plotH = plotBottom - plotTop;
       const y = (price) => plotTop + (1 - (price - lo) / (hi - lo)) * plotH;
-      const n = candles.length;
-      const gapPx = 1;
-      let bodyW = 4;
-      let totalW = n * bodyW + (n - 1) * gapPx;
-      if (totalW > plotW) {
-        bodyW = Math.max(1, (plotW - (n - 1) * gapPx) / n);
-        totalW = n * bodyW + (n - 1) * gapPx;
-      }
+      const bodyW = CHART_BODY_PX;
+      const gapPx = CHART_GAP_PX;
       const pitch = bodyW + gapPx;
-      // Right-align: newest candle at the right edge (live trading chart convention)
-      const startX = plotRight - totalW;
+      const n = candles.length;
+      const startX = plotLeft;
       const candleCenter = (i) => startX + i * pitch + bodyW / 2;
 
       // Price axis (left) + horizontal grid
@@ -1578,7 +1581,11 @@
       const parts = [];
       parts.push('Quote ' + q.label + (q.stale ? ' (stale)' : ''));
       if (candleSec) parts.push(formatChartIntervalLabel(candleSec) + ' bars');
-      if (chart?.candles?.length) parts.push(chart.candles.length + ' shown');
+      const shown = chart?.candles?.length;
+      const total = chart?._candle_total;
+      if (shown != null) {
+        parts.push(shown + ' shown' + (total != null && total > shown ? ' / ' + total + ' hist' : ''));
+      }
       if (bucket && sample) parts.push(bucket + '×' + sample + 's ticks');
       if (cycle) parts.push('engine ' + cycle + 's');
       el.textContent = parts.join(' · ');
@@ -1589,7 +1596,11 @@
       lastChartState = s;
       const raw = s.chart || {};
       loadChartIntervalSec(raw);
-      const chart = chartViewForRender(raw);
+      const built = chartViewForRender(raw);
+      const wrap = $('priceChart')?.parentElement;
+      const plotW = Math.max(320, Math.floor(wrap?.clientWidth || 800) - 16) - 58 - 10;
+      const displayCandles = chartCandlesForPlot(built.candles || [], plotW);
+      const chart = { ...built, candles: displayCandles, _candle_total: (built.candles || []).length };
       renderIndicatorList(chart);
       renderChartMeta(s, chart);
       drawCandleChart($('priceChart'), chart, {
