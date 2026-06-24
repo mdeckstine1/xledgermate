@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 from experimental.ws_feed.quote_decision.types import (
     BookMode,
-    DriftBand,
     PostureSnapshot,
     QuoteIntent,
 )
@@ -73,16 +72,6 @@ def select_quote_intent(
                 reason="solo book + viable buy edge",
                 favor_bid=True,
                 favor_ask=False,
-                allow_two_sided=False,
-            )
-
-        if sell_edge_viable and inv.band in (DriftBand.HEAVY_XRP, DriftBand.MILD_XRP):
-            # Trim only when sell edge is good — not forced unload.
-            return IntentSelection(
-                intent=QuoteIntent.PATIENT_SOLO,
-                reason="solo + xrp drift + sell edge — optional trim",
-                favor_bid=False,
-                favor_ask=True,
                 allow_two_sided=False,
             )
 
