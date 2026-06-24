@@ -557,7 +557,7 @@ timestamp_utc,event_type,taxable,network,side,xrp_amount,rlusd_amount,price_rlus
 
 Use this when you **add XRP or RLUSD** to the bot wallet on mainnet. The bot does not auto-detect narrative capital — you sync **`risk_capital_xrp`** and HUD knobs after each deposit.
 
-**Rule:** Grow the book in **tranches**. Judge each tranche on **realized** bracket P&amp;L (`profit_xrp_equiv` in tax CSV), not **Session P&amp;L** (MTM). SKYNET **operator phase** should match the tranche ([Scenario S](#scenario-s--trust-phase-skynet-bias) · [T](#scenario-t--scale-phase-modest-accumulation) · [U](#scenario-u--aggressive-phase-bag-push)).
+**Rule:** Grow the book in **tranches**. Judge each tranche on **realized** bracket P&amp;L (`profit_xrp_equiv` in tax CSV), not **Session P&amp;L** (MTM). SKYNET **operator phase** should match the tranche ([Scenario S](#scenario-s--trust-phase-skynet-bias) · [T](#scenario-t--scale-phase-modest-accumulation) · [U](#scenario-u--aggressive-phase-bag-push)). To deploy RLUSD already on the book, see [Deploy RLUSD to XRP](#deploy-rlusd-to-xrp-get-xrp-heavy).
 
 ### Before you send anything
 
@@ -831,9 +831,119 @@ Prefer **RLUSD tranche deposits** if you want the bot buying immediately without
 
 ---
 
+### Deploy RLUSD to XRP (get XRP-heavy)
+
+Use this when you are **RLUSD-heavy** and want sideline RLUSD **into XRP** — not a one-shot market buy. The bot deploys via **limit bids → bracket fills → repeat**. Default target is **75% XRP**, not 100%; raise target if you want a heavier end state.
+
+#### How the bot decides (read once)
+
+| Concept | Meaning |
+|---------|---------|
+| **`inventory_target_xrp_ratio`** | North star (HUD: **target XRP %**). Default **75%** — design keeps ~25% RLUSD dry powder. |
+| **`deviation`** | `actual_xrp_ratio − target`. **Negative** = RLUSD-heavy (e.g. **−0.29** @ 46% XRP vs 75% target). |
+| **Buys** | When `deviation ≤ −weakness_deviation` (e.g. **−0.05**) and gates pass. Deep RLUSD already qualifies. |
+| **`sell_blocked`** | **On** while RLUSD-heavy — bot **won’t** strength-sell XRP away. Correct for accumulation. |
+| **Fills** | **Passive** — ask must trade **down to your bid**. Mid dipping ≠ fill. |
+
+You are usually already in the **right posture** (`heavy_rlusd`, buys allowed). RLUSD sits on the sidelines because **clips are small**, **`max_pending_buys = 1`**, and **offset** places bids below live price.
+
+#### Why deployment feels slow
+
+1. **`risk_per_trade_pct`** caps each bracket (~**2%** of book → ~**12 XRP** on a ~600 book).  
+2. **`max_pending_buys = 1`** → **HOLD** while one bid rests (`max_pending_buys=1`).  
+3. **`buy_limit_offset_pct`** (~**0.20%**) → patient entry, slower fills.  
+4. RLUSD is split: **wallet** + **pending buy** + **open brackets** (XRP with TP/SL). TP returns RLUSD → cycle repeats.  
+5. **Target 75%** — “done” still leaves meaningful RLUSD by design.
+
+**Ballpark fills to move sideline RLUSD** (each successful buy deploys one clip):
+
+| Clip (XRP) | ~RLUSD @ 1.08 | Fills to deploy ~318 XRP (~344 RLUSD) |
+|------------|---------------|----------------------------------------|
+| ~12 (2% @ 600 book) | ~13 | **~25+** |
+| ~40 (2% @ 2k book) | ~43 | **~8** |
+| ~220 (2% @ 11k book) | ~238 | **~1–2** per wave |
+
+Raise **`risk_per_trade_pct`** and sync **`risk_capital_xrp`** as the book grows ([tranche table](#tranche-map-recommended)).
+
+#### Knob ladder (apply in order)
+
+Change **one step at a time**; watch **Decision reason** and **Market Conditions → Max buy** after **Apply**.
+
+| Step | Goal | Knobs |
+|------|------|--------|
+| **1** | More shots while RLUSD-heavy | `alpha_max_pending_buys` **1 → 2** |
+| **2** | Bigger RLUSD per fill | `alpha_risk_per_trade_pct` **2.0 → 2.5** (after `risk_capital_xrp` synced) |
+| **3** | Faster fills (more aggression) | `alpha_buy_limit_offset_pct` **0.20 → 0.18 → 0.15**; keep `min_edge ≤ offset`; `stale_max_drift` **0.35** |
+| **4** | Heavier end state | `inventory_target_xrp_ratio` **0.75 → 0.80–0.90** |
+| **5** | SKYNET alignment | Phase **scale** when trust metrics OK; prompt: *deploy RLUSD, max_pending + risk before offset↓* |
+
+**Trust phase:** do not lower offset below **0.15** until realized TP/SL in tax CSV looks acceptable ([Scenario S](#scenario-s--trust-phase-skynet-bias)).
+
+#### Preset — deploy RLUSD now (trust-safe)
+
+**Live → Risk & entry → Apply** (Structure: keep **`deferred_sl_enabled` on**, SL **2%**).
+
+```text
+inventory_target_xrp_ratio           = 0.80    # 0.85–0.90 if you want heavier bag
+alpha_risk_per_trade_pct           = 2.5
+alpha_max_pending_buys             = 2
+alpha_buy_limit_offset_pct         = 0.18
+alpha_min_edge_threshold_pct       = 0.08
+alpha_weakness_deviation           = 0.05    # already passed when dev ≈ -0.29
+alpha_stale_pending_buy_enabled    = on
+alpha_stale_pending_buy_max_drift_pct = 0.35
+alpha_deferred_sl_enabled          = on
+alpha_cycle_interval_seconds       = 20
+```
+
+**Expected @ ~600 book, mid ~1.08:** **Max buy** ≈ **15 XRP** (~**16 RLUSD**) at 2.5% risk.
+
+#### Preset — deploy faster (scale phase only)
+
+After a clean week on the trust-safe preset:
+
+```text
+inventory_target_xrp_ratio           = 0.85
+alpha_risk_per_trade_pct           = 2.5       # 3.0 on ~4k+ book if realized P&L OK
+alpha_max_pending_buys             = 2
+alpha_buy_limit_offset_pct         = 0.15
+alpha_min_edge_threshold_pct       = 0.08
+alpha_stale_pending_buy_max_drift_pct = 0.35
+alpha_weakness_deviation           = 0.04
+```
+
+See also [Scenario F](#scenario-f--chop--mild-dips-want-more-action) (eager fills) and [Scenario V](#scenario-v--deploy-sideline-rlusd-faster-xrp-heavy).
+
+#### What not to do
+
+- **`weakness_deviation` → 0.02** when already **dev ≤ −0.20** — does not speed deployment (gate already open).  
+- **`reentry_enabled = off`** — more buys after SL, more knife-catching.  
+- **`risk 4%` + `offset 0.08`** on first tranche — size without exit trust.  
+- Expect **100% XRP** — use **85–90% target** max; keep reserve RLUSD for ops/fees.  
+- **Manual DEX swap** RLUSD→XRP is fastest but bypasses limit discipline; bot then rebalances around new ratio.
+
+#### Almost all XRP (operator choice)
+
+1. Set **target 90%** (`inventory_target_xrp_ratio = 0.90`).  
+2. Scale **risk** with funding tranches.  
+3. Let **TP → RLUSD → rebuy** cycle run.  
+4. Optional: one manual swap, then let bot maintain ratio.
+
+#### Verify it’s working
+
+| Check | Good sign |
+|-------|-----------|
+| **Inventory** | XRP % climbing toward target; `sell_blocked=True` while RLUSD-heavy |
+| **Decision** | `place_bid` / `weakness dev=…` — not stuck on `max_pending` forever |
+| **Brackets** | Pending buys filling; **SL↯** on new bags (deferred SL) |
+| **Tax CSV** | BUY rows + eventual TP/SL; track **`profit_xrp_equiv`** on SELLs |
+| **SKYNET Ask** | **Realized bracket P&amp;L** block — not Session P&amp;L alone |
+
+---
+
 ### If you fund mostly RLUSD
 
-Matches current **heavy_rlusd** soak — bot buys on weakness. Use tranche **trust** presets; **`max_pending_buys = 2`** before lowering offset.
+Matches **heavy_rlusd** posture — use [Deploy RLUSD to XRP](#deploy-rlusd-to-xrp-get-xrp-heavy) presets above; **`max_pending_buys = 2`** before lowering offset.
 
 ---
 
@@ -906,7 +1016,7 @@ You are RLUSD-heavy. TA is fine. Bot still HOLD.
 | `insufficient_ask_depth` | [R](#scenario-r--insufficient_ask_depth) |
 | `kill_switch` / `pause_bids` / preflight | [P](#scenario-p--kill-switch-drawdown-or-pause) |
 | Pending buy exists, no fill | [N](#scenario-n--bid-on-book-mid-looks-good-still-no-fill) |
-| `weakness dev=` but no bid | [I](#scenario-i--rlusd-heavy-sell-blocked-buys-only) — check weakness threshold |
+| `weakness dev=` but no bid | [I](#scenario-i--rlusd-heavy-sell-blocked-buys-only) · [V](#scenario-v--deploy-sideline-rlusd-faster-xrp-heavy) |
 
 ---
 
@@ -1089,6 +1199,7 @@ Use these as **recipes**, not gospel. Apply on **Live → Risk & entry**, watch 
 | **S** | [Trust phase (SKYNET)](#scenario-s--trust-phase-skynet-bias) | Prove overnight, anti-bleed |
 | **T** | [Scale phase (SKYNET)](#scenario-t--scale-phase-modest-accumulation) | After trust earned |
 | **U** | [Aggressive phase (SKYNET)](#scenario-u--aggressive-phase-bag-push) | Bag-growth push |
+| **V** | [Deploy sideline RLUSD faster](#scenario-v--deploy-sideline-rlusd-faster-xrp-heavy) | RLUSD on sidelines, want higher XRP % |
 
 ---
 
@@ -1244,9 +1355,34 @@ buy_limit_offset_pct            = 0.12          ← keep unless you want deeper 
 
 **If buys are too aggressive:** raise **`weakness_deviation`** (e.g. **0.05–0.08**) or lower **`risk_per_trade_pct`**.
 
-**If you want faster XRP accumulation:** lower **`weakness_deviation`** (e.g. **0.03**) + nearer **`buy_limit_offset_pct`** — see [Scenario F](#scenario-f--chop--mild-dips-want-more-action). Don’t expect strength sells until **`dev`** recovers toward target.
+**If you want faster XRP accumulation:** you are usually already past the weakness gate — use **`max_pending_buys`**, **`risk_per_trade_pct`**, and **`buy_limit_offset_pct`** in that order. Full presets: [Deploy RLUSD to XRP](#deploy-rlusd-to-xrp-get-xrp-heavy) · [Scenario V](#scenario-v--deploy-sideline-rlusd-faster-xrp-heavy). Don’t expect strength sells until **`dev`** recovers toward target.
 
-**Config note:** **`inventory_target_xrp_ratio`** (HUD: target XRP %) sets the north star. At **95%** target with **25%** actual, large deviation is expected until many fills land.
+**Config note:** **`inventory_target_xrp_ratio`** (HUD: target XRP %) sets the north star. At **75%** target with **46%** actual, large negative deviation is expected until many fills land. For **85–90%** target, raise **`inventory_target_xrp_ratio`** explicitly.
+
+---
+
+### Scenario V — Deploy sideline RLUSD faster (XRP-heavy)
+
+**Symptoms:** **`heavy_rlusd`** / **`rlusd_heavy`**; **`sell_block=True`**; lots of RLUSD in wallet; XRP ratio stuck or climbing slowly; Decision often **`max_pending_buys=1`** or small **`place_bid`** clips.
+
+**What’s happening:** Normal accumulation — bot is **buying**, not broken. Deployment is limited by **passive limits**, **per-trade risk %**, and **one pending bid**. See [Deploy RLUSD to XRP](#deploy-rlusd-to-xrp-get-xrp-heavy) for mechanics.
+
+**Trust-safe preset (Live → Apply):**
+
+```text
+inventory_target_xrp_ratio           = 0.80
+alpha_risk_per_trade_pct           = 2.5
+alpha_max_pending_buys             = 2
+alpha_buy_limit_offset_pct         = 0.18
+alpha_min_edge_threshold_pct       = 0.08
+alpha_weakness_deviation           = 0.05
+alpha_stale_pending_buy_max_drift_pct = 0.35
+alpha_deferred_sl_enabled          = on
+```
+
+**Scale phase (after clean realized P&amp;L week):** target **0.85**, offset **0.15**, optional risk **3.0** on larger book.
+
+**Not the fix:** lowering **`weakness_deviation`** when **`dev` already ≤ −0.15** — gate is already open.
 
 ---
 
