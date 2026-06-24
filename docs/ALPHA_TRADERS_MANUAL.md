@@ -362,6 +362,35 @@ After a buy fills, the bot can **ratchet TP and SL higher** as price moves in yo
 **On:** Buy at 1.00, SL 0.985, TP 1.03. Price hits 1.05 → SL trails up toward 1.01, TP can move too. Locks in progress.  
 **Off:** Fixed TP/SL. Simpler. Gives back more on reversals.
 
+#### When to enable trailing (after deferred SL is trusted)
+
+Use **off** during initial soak when you are proving **entry + stop** behavior (instant SL bleed, deferred SL not arming). Turn **on** once:
+
+| Gate | Why |
+|------|-----|
+| **`deferred_sl_enabled` on** and **`deferred_sl_arm`** in logs | Stops are not crossing the book on entry |
+| **No mass instant `sl_filled` at breakeven** right after buys | Exit path is sane |
+| **Rally / consolidation break** with bags **at or above entry** | Trailing only helps when `mid ≥ entry` (**BE**) |
+| You accept **breakeven stops** on pullbacks in chop | Tighter `trailing_step_pct` → more whipsaw |
+
+**Does not help underwater bags** — entries above current mid stay on fixed SL until price recovers past entry.
+
+**Works with deferred SL:** trailing may compute a higher stop before it is safe on-ledger; engine logs `trailing_sl_deferred` until bid approaches the new stop (same family of fix as **SL↯**).
+
+**Rising market / post-consolidation preset (Structure & trailing → Apply):**
+
+```text
+bracket_trailing_enabled   = on
+trailing_step_pct          = 1.5     # 2.0 if BE stops feel too twitchy in chop
+alpha_breakout_pct         = 0.02
+alpha_structure_lookback   = 20
+initial_stop_loss_pct      = 0.02    # keep — pairs with deferred SL
+```
+
+Keep **`deferred_sl_enabled` on** (Risk & entry). Watch Brackets **Trail** column for **BE** (SL trail armed) and **BO** (TP trail armed after breakout).
+
+**Turn off again if:** `sl_filled` clusters right after `trailing_sl_update`, or you re-enter trust phase after an SL streak.
+
 ### `trailing_step_pct`
 
 How much favorable move before the trail steps again.
@@ -680,7 +709,8 @@ alpha_cycle_interval_seconds   = 20
 ```text
 initial_stop_loss_pct          = 0.02
 take_profit_pct                = 0.03      # or take_profit_rr = 2.0
-bracket_trailing_enabled       = off       # until exits are trustworthy
+bracket_trailing_enabled       = on        # after deferred SL trusted; see [When to enable trailing](#when-to-enable-trailing-after-deferred-sl-is-trusted)
+trailing_step_pct              = 1.5
 ```
 
 **Expected size @ ~2,000 book:** **Max buy** ≈ **40 XRP** (~**43 RLUSD**) at 2%.
