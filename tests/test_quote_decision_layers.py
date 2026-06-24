@@ -80,7 +80,9 @@ def test_solo_xrp_heavy_does_not_reopen_ask_when_bid_edge_fades() -> None:
     assert qd.intent == QuoteIntent.PATIENT_SOLO
     assert qd.bid.allowed is False
     assert qd.ask.allowed is False
-    assert qd.trace.ask_edge.viable is True
+    assert qd.ask.implied_edge_bps is not None
+    assert qd.ask.implied_edge_bps > qd.trace.ask_edge.min_edge_bps
+    assert qd.ask.block_reason == "intent=patient_solo no_ask"
     assert qd.would_quote is False
 
 
