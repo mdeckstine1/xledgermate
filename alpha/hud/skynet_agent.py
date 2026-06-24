@@ -239,6 +239,10 @@ def _normalize_guardrails(raw: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _guardrails_equal(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    return json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
+
+
 def merge_agent_patch(
     patch: Dict[str, Any],
     path: Path = _DEFAULT_AGENT_PATH,
@@ -284,9 +288,12 @@ def merge_agent_patch(
         errors.append("interval_cycles_min cannot exceed interval_cycles_max")
 
     if "guardrails" in patch and isinstance(patch["guardrails"], dict):
+        prior = _normalize_guardrails(current.get("guardrails") or _DEFAULT_GUARDRAILS)
         merged = deepcopy(current.get("guardrails") or _DEFAULT_GUARDRAILS)
         merged.update(patch["guardrails"])
         current["guardrails"] = _normalize_guardrails(merged)
+        if not _guardrails_equal(current["guardrails"], prior):
+            current["latest_proposal"] = None
 
     if errors:
         return current, errors
@@ -739,7 +746,7 @@ def run_skynet_agent(
 
         context = build_skynet_context(hud_state, operator_config=effective_snap)
 
-        guardrails = agent.get("guardrails") or _DEFAULT_GUARDRAILS
+        guardrails = load_agent_config(agent_path).get("guardrails") or _DEFAULT_GUARDRAILS
         max_changes = int(guardrails.get("max_changes_per_cycle", 3) or 3)
         allowed = ", ".join(OPERATOR_TUNABLE_KEYS)
         prompt_tpl = _FULL_MODE_SYSTEM_PROMPT if full_mode else _AGENT_SYSTEM_PROMPT

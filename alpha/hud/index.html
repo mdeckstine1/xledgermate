@@ -612,9 +612,11 @@
         $('modalOk').onclick = () => {
           const ok = $('modalInput').value === expected;
           $('modalBackdrop').classList.remove('open');
+          if (!ok) toast('Confirmation text did not match — try again', true);
           resolve(ok);
         };
         $('modalCancel').onclick = () => { $('modalBackdrop').classList.remove('open'); resolve(false); };
+        setTimeout(() => $('modalInput').focus(), 0);
       });
     }
 
@@ -1681,6 +1683,7 @@
     let skynetAgentKnobChanges = [];
     let skynetAskKnobChanges = [];
     let skynetTabActive = false;
+    let skynetTogglePending = false;
 
     function _knobTitleBase(el) {
       if (!el.dataset.knobTitleBase) {
@@ -1892,13 +1895,16 @@
     }
 
     async function loadSkynetAgent() {
+      if (skynetTogglePending) return;
       try {
         const r = await fetch('/operator/skynet/agent?_=' + Date.now());
         if (r.status === 401) return;
         const d = await r.json();
         if (!d.ok) return;
-        $('skynetAgentEnabled').checked = !!d.agent_enabled;
-        if ($('skynetFullEnabled')) $('skynetFullEnabled').checked = !!d.full_mode_enabled;
+        if (!skynetTogglePending) {
+          $('skynetAgentEnabled').checked = !!d.agent_enabled;
+          if ($('skynetFullEnabled')) $('skynetFullEnabled').checked = !!d.full_mode_enabled;
+        }
         if (d.interval_cycles_min != null) $('grIntervalMin').value = d.interval_cycles_min;
         if (d.interval_cycles_max != null) $('grIntervalMax').value = d.interval_cycles_max;
         fillGuardrailsForm(d.guardrails);
@@ -1933,8 +1939,8 @@
         $('btnSkynetSend').disabled = false;
         if (d.guardrails) fillGuardrailsForm(d.guardrails);
         if (d.emergency_rules) fillEmergencyForm(d.emergency_rules);
-        if (d.agent_enabled != null) $('skynetAgentEnabled').checked = !!d.agent_enabled;
-        if ($('skynetFullEnabled') && d.full_mode_enabled != null) $('skynetFullEnabled').checked = !!d.full_mode_enabled;
+        if (d.agent_enabled != null && !skynetTogglePending) $('skynetAgentEnabled').checked = !!d.agent_enabled;
+        if ($('skynetFullEnabled') && d.full_mode_enabled != null && !skynetTogglePending) $('skynetFullEnabled').checked = !!d.full_mode_enabled;
         renderAgentMeta(d);
         renderFullModeMeta(d);
         renderAgentProposal(d.latest_proposal);
@@ -1944,6 +1950,37 @@
       }
       loadSkynetAgent();
     }
+
+    async function patchSkynetAgentToggle(body, { revertOnFail } = {}) {
+      skynetTogglePending = true;
+      try {
+        const d = await patchJson('/operator/skynet/agent', body);
+        if (!d?.ok) {
+          if (revertOnFail) revertOnFail();
+          return null;
+        }
+        $('skynetAgentEnabled').checked = !!d.agent_enabled;
+        if ($('skynetFullEnabled')) $('skynetFullEnabled').checked = !!d.full_mode_enabled;
+        renderAgentMeta(d);
+        renderFullModeMeta(d);
+        return d;
+      } finally {
+        skynetTogglePending = false;
+      }
+    }
+
+    $('skynetAgentEnabled').onchange = async () => {
+      const want = $('skynetAgentEnabled').checked;
+      const body = { agent_enabled: want };
+      if (!want) body.full_mode_enabled = false;
+      const d = await patchSkynetAgentToggle(body, {
+        revertOnFail: () => { $('skynetAgentEnabled').checked = !want; },
+      });
+      if (d?.ok) {
+        toast(want ? 'Grok Agent Mode enabled' : 'Grok Agent Mode disabled');
+        if (!want && $('skynetFullEnabled')) $('skynetFullEnabled').checked = false;
+      }
+    };
 
     $('btnSkynetSaveAgent').onclick = async () => {
       const body = {
@@ -1962,6 +1999,8 @@
         toast(d.message || 'Agent settings saved');
         renderAgentMeta(d);
         renderFullModeMeta(d);
+        renderAgentProposal(d.latest_proposal);
+        if (!d.latest_proposal) setSkynetResponse('');
       }
     };
 
@@ -1973,33 +2012,34 @@
     $('skynetFullEnabled').onchange = async () => {
       const want = $('skynetFullEnabled').checked;
       if (!want) {
-        const d = await patchJson('/operator/skynet/agent', { full_mode_enabled: false });
-        if (d?.ok) { renderFullModeMeta(d); toast('Full SKYNET mode off'); }
+        const d = await patchSkynetAgentToggle(
+          { full_mode_enabled: false },
+          { revertOnFail: () => { $('skynetFullEnabled').checked = true; } },
+        );
+        if (d?.ok) toast('Full SKYNET mode off');
         return;
       }
-      if (!$('skynetAgentEnabled').checked) {
-        $('skynetFullEnabled').checked = false;
-        toast('Enable Grok Agent Mode first', true);
-        return;
-      }
+      $('skynetFullEnabled').checked = false;
       const ok = await confirmModal(
         'Enable Full SKYNET Mode',
         'Grok will AUTO-APPLY guardrailed knob changes every 3–5 cycles. Type ENABLE_FULL_SKYNET to confirm. Kill switch and Pause always override.',
         'ENABLE_FULL_SKYNET'
       );
-      if (!ok) { $('skynetFullEnabled').checked = false; return; }
-      const d = await patchJson('/operator/skynet/agent', {
-        agent_enabled: true,
-        full_mode_enabled: true,
-        confirm: 'ENABLE_FULL_SKYNET',
-        guardrails: readGuardrailsFromForm(),
-        emergency_rules: readEmergencyFromForm(),
-      });
+      if (!ok) return;
+      const d = await patchSkynetAgentToggle(
+        {
+          agent_enabled: true,
+          full_mode_enabled: true,
+          confirm: 'ENABLE_FULL_SKYNET',
+          guardrails: readGuardrailsFromForm(),
+          emergency_rules: readEmergencyFromForm(),
+        },
+        { revertOnFail: () => { $('skynetFullEnabled').checked = false; } },
+      );
       if (d?.ok) {
         toast('Full SKYNET mode enabled — supervised autonomy active');
-        renderFullModeMeta(d);
       } else {
-        $('skynetFullEnabled').checked = false;
+        toast('Failed to enable Full SKYNET — check guardrails and try again', true);
       }
     };
 

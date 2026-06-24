@@ -19,6 +19,7 @@ from alpha.hud.skynet_agent import (
     load_audit_entries,
     merge_agent_patch,
     pause_full_skynet_mode,
+    save_agent_config,
     should_run_agent,
 )
 from config.settings import BotConfig
@@ -105,6 +106,27 @@ def test_merge_agent_patch_persists(tmp_path: Path):
     loaded = load_agent_config(path)
     assert loaded["interval_cycles_min"] == 4
     assert loaded["guardrails"]["max_changes_per_cycle"] == 3
+
+
+def test_merge_agent_patch_clears_stale_proposal_on_guardrail_change(tmp_path: Path):
+    path = tmp_path / "agent.json"
+    save_agent_config(
+        {
+            **default_agent_config(),
+            "latest_proposal": {
+                "summary": "old",
+                "warnings": ["alpha_risk_per_trade_pct=4.0 exceeds guardrail max=2"],
+            },
+        },
+        path,
+    )
+    cfg, errors = merge_agent_patch(
+        {"guardrails": {"alpha_risk_per_trade_pct": {"min": 0.1, "max": 4.0}}},
+        path=path,
+    )
+    assert not errors
+    assert cfg["guardrails"]["alpha_risk_per_trade_pct"]["max"] == 4.0
+    assert cfg["latest_proposal"] is None
 
 
 def test_merge_agent_patch_rejects_bad_interval(tmp_path: Path):
