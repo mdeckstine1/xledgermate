@@ -2866,7 +2866,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
             // Key field / status is special: prefer server echo when present; during recent apply we force the "set" UI from client too.
             if (aiKey) {
-                const serverHasKey = !!(s.intel_ai_key && s.intel_ai_key.length > 0);
+                const serverHasKey = !!(s.intel_ai_key_set || (s.intel_ai_key && s.intel_ai_key.length > 0));
+                const serverKeyLen = s.intel_ai_key_len || (s.intel_ai_key ? s.intel_ai_key.length : 0);
                 const recentApply = (Date.now() <= (_intelTouched + 5000)); // a bit of extra stickiness right after Apply
                 if (serverHasKey || (recentApply && (window._lastAppliedAiKeyLen || 0) > 0)) {
                     if (aiKeyWrap) {
@@ -2880,7 +2881,7 @@ The A-S strategy itself decides presence via reservation price being inside the 
                             status.style.marginLeft = '6px';
                             aiKeyWrap.appendChild(status);
                         }
-                        const len = serverHasKey ? s.intel_ai_key.length : (window._lastAppliedAiKeyLen || 0);
+                        const len = serverHasKey ? serverKeyLen : (window._lastAppliedAiKeyLen || 0);
                         status.textContent = 'Key set (hidden for security) — length: ' + len + (recentApply ? ' (applied)' : '');
                         let clearBtn = document.getElementById('intel-ai-key-clear');
                         if (!clearBtn) {
@@ -2914,8 +2915,8 @@ The A-S strategy itself decides presence via reservation price being inside the 
             }
 
             // Remember last applied length for sticky UI even across a poll that hasn't echoed yet
-            if (s.intel_ai_key && s.intel_ai_key.length > 0) {
-                window._lastAppliedAiKeyLen = s.intel_ai_key.length;
+            if (s.intel_ai_key_set || (s.intel_ai_key && s.intel_ai_key.length > 0)) {
+                window._lastAppliedAiKeyLen = s.intel_ai_key_len || (s.intel_ai_key ? s.intel_ai_key.length : 0);
             }
 
             // Auto-suggest model when provider changes in Config (attach listeners only once)
@@ -4311,7 +4312,9 @@ The A-S strategy itself decides presence via reservation price being inside the 
 
                     if (window._current_state) {
                         window._current_state.intel_ai_provider = provider;
-                        window._current_state.intel_ai_key = keyVal;
+                        delete window._current_state.intel_ai_key;
+                        window._current_state.intel_ai_key_set = !!keyVal;
+                        window._current_state.intel_ai_key_len = keyVal ? keyVal.length : 0;
                         window._current_state.intel_ai_model = model;
                         window._current_state.intel_ai_enabled = enabled;
                     }

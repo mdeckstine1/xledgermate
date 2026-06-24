@@ -81,6 +81,20 @@ _current_state: Dict[str, Any] = {
 
 _recent_limit = 20
 
+
+def _public_hud_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a browser-safe HUD state snapshot without server-side secrets."""
+    public = dict(state)
+    raw_key = str(public.pop("intel_ai_key", "") or "")
+    if raw_key:
+        public["intel_ai_key_set"] = True
+        public["intel_ai_key_len"] = len(raw_key)
+    else:
+        public["intel_ai_key_set"] = bool(public.get("intel_ai_key_set", False))
+        public["intel_ai_key_len"] = int(public.get("intel_ai_key_len") or 0)
+    return public
+
+
 app = FastAPI(title="WS + Pure A-S Real-Time HUD") if FastAPI else None
 
 if app:
@@ -145,7 +159,7 @@ if app:
         from experimental.ws_feed.pure_quote_path import current_ws_as_version
 
         _current_state["ws_as_version"] = current_ws_as_version()
-        return _current_state
+        return _public_hud_state(_current_state)
 
     @app.post("/state")
     async def post_state(request: Request):
