@@ -10,6 +10,7 @@ from alpha.operator.runtime import (
     OperatorRuntimeStore,
     apply_overrides,
     derive_posture,
+    effective_config_snapshot,
     validate_override_updates,
 )
 from config.settings import BotConfig
@@ -51,6 +52,40 @@ def test_apply_overrides_inventory_and_ta_virtual_keys():
     assert effective.alpha_ta_weight == 0.5
     assert effective.alpha_technical_analysis.min_buy_score == 2.0
     assert effective.alpha_technical_analysis.rsi.enabled is False
+
+
+def test_apply_overrides_ta_candle_interval():
+    base = BotConfig()
+    effective = apply_overrides(base, {"alpha_ta_candle_interval_seconds": 900})
+    assert effective.alpha_technical_analysis.candle_interval_seconds == 900
+
+
+def test_validate_override_snaps_ta_candle_interval():
+    sanitized, errors = validate_override_updates({"alpha_ta_candle_interval_seconds": 750})
+    assert not errors
+    assert sanitized["alpha_ta_candle_interval_seconds"] == 600
+
+
+def test_effective_config_exposes_ta_candle_interval():
+    base = BotConfig()
+    snap = effective_config_snapshot(
+        apply_overrides(base, {"alpha_ta_candle_interval_seconds": 1800}),
+        {"alpha_ta_candle_interval_seconds": 1800},
+    )
+    assert snap["alpha_ta_candle_interval_seconds"] == 1800
+
+
+def test_recommended_price_history_for_long_candles():
+    from alpha.decision.ta_config import recommended_price_history_max_samples
+
+    cfg = apply_overrides(BotConfig(), {"alpha_ta_candle_interval_seconds": 9000})
+    needed = recommended_price_history_max_samples(
+        cfg.alpha_technical_analysis,
+        cycle_seconds=60,
+        sample_interval_seconds=15,
+        floor=32000,
+    )
+    assert needed >= 32000
 
 
 def test_validate_override_accepts_cycle_interval():

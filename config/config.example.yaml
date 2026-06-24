@@ -71,6 +71,7 @@ alpha_structure_lookback: 20
 alpha_structure_price_source: ask
 alpha_chart_price_source: mid    # fullest history on Live chart
 alpha_price_sample_interval_seconds: 15
+alpha_price_history_max_samples: 32000
 alpha_gui_refresh_seconds: 30
 alpha_gui_bind_host: ""   # empty = hud_bind_host; use 0.0.0.0 on VPS for browser without SSH tunnel
 alpha_skynet_enabled: true
@@ -96,7 +97,8 @@ alpha_technical_analysis:
   min_buy_score: 1.5
   min_sell_score: 1.0
   min_breakout_score: 1.5
-  candle_bucket_samples: 5
+  candle_interval_seconds: 300   # 5m OHLC default; HUD TA tab: 5m–2.5h (300–9000)
+  candle_bucket_samples: 5       # legacy fallback when candle_interval_seconds is 0
   min_candles: 20
   candle_price_source: ask   # bid | ask | mid | last — long entry / bullish TA default
   sell_signal_price_source: bid  # bearish pattern reference (future asymmetric scoring)

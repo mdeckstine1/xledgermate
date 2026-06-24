@@ -125,6 +125,34 @@ def validate_alpha_config(config: BotConfig) -> AlphaConfigValidation:
     ):
         warnings.append("alpha_price_sample_interval_seconds < 5 may hammer RPC")
 
+    if config.alpha_price_history_max_samples < 120:
+        errors.append("alpha_price_history_max_samples must be at least 120")
+
+    ta = config.alpha_technical_analysis
+    from alpha.decision.ta_config import (
+        recommended_price_history_max_samples,
+        resolve_ta_candle_bucket_samples,
+    )
+
+    bucket = resolve_ta_candle_bucket_samples(
+        ta,
+        cycle_seconds=config.alpha_cycle_interval_seconds,
+        sample_interval_seconds=config.alpha_price_sample_interval_seconds,
+    )
+    min_ticks = ta.min_candles * bucket
+    needed = recommended_price_history_max_samples(
+        ta,
+        cycle_seconds=config.alpha_cycle_interval_seconds,
+        sample_interval_seconds=config.alpha_price_sample_interval_seconds,
+        floor=config.alpha_price_history_max_samples,
+    )
+    if config.alpha_price_history_max_samples < min_ticks:
+        warnings.append(
+            f"alpha_price_history_max_samples ({config.alpha_price_history_max_samples}) "
+            f"may be too small for min_candles={ta.min_candles} at {bucket}-sample OHLC "
+            f"(need ~{min_ticks} ticks; runtime uses ~{needed})"
+        )
+
     if config.alpha_reentry_sl_cooldown_cycles < 1:
         errors.append("alpha_reentry_sl_cooldown_cycles must be at least 1")
 

@@ -6,7 +6,11 @@ from alpha.decision.engine import DecisionAction, DecisionEngine
 from dataclasses import replace
 
 from config.settings import BotConfig
-from alpha.decision.ta_config import AlphaTechnicalAnalysisConfig, merge_ta_config
+from alpha.decision.ta_config import (
+    AlphaTechnicalAnalysisConfig,
+    merge_ta_config,
+    resolve_ta_candle_bucket_samples,
+)
 from alpha.decision.technical_analysis import TechnicalAnalysis, mids_to_candles
 from alpha.types import (
     BalanceSnapshot,
@@ -63,6 +67,7 @@ def test_technical_analysis_bullish_trend_scores():
     cfg.alpha_technical_analysis.enabled = True
     cfg.alpha_technical_analysis.min_buy_score = 0.5
     cfg.alpha_technical_analysis.min_candles = 10
+    cfg.alpha_technical_analysis.candle_interval_seconds = 0
     cfg.alpha_technical_analysis.candle_bucket_samples = 3
     ta = TechnicalAnalysis(cfg)
     snap = ta.analyze(_rising_mids(90), mid=1.189)
@@ -135,3 +140,13 @@ def test_decision_engine_ta_blocks_buy_when_score_low():
     )
     assert result.action == DecisionAction.HOLD
     assert "ta_buy_blocked" in result.reason
+
+
+def test_resolve_ta_candle_bucket_from_interval():
+    cfg = AlphaTechnicalAnalysisConfig(candle_interval_seconds=300, candle_bucket_samples=5)
+    assert resolve_ta_candle_bucket_samples(cfg, cycle_seconds=60, sample_interval_seconds=15) == 20
+
+
+def test_resolve_ta_candle_bucket_legacy_samples():
+    cfg = AlphaTechnicalAnalysisConfig(candle_interval_seconds=0, candle_bucket_samples=5)
+    assert resolve_ta_candle_bucket_samples(cfg, cycle_seconds=60, sample_interval_seconds=15) == 5

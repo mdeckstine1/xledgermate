@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from alpha.decision.reentry import ReentrySnapshot
 from alpha.decision.structure import MarketStructureSnapshot, build_candle_from_mids, load_mid_history
 from alpha.decision.price_history import PRICE_HISTORY_PATH, load_price_series, effective_sample_seconds
+from alpha.decision.ta_config import resolve_ta_candle_bucket_samples
 from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalysisSnapshot
 from alpha.ledger.market_conditions import build_market_conditions, refresh_dca_vs_mid
 from alpha.operator.activity import ActivityLog
@@ -155,11 +156,16 @@ def _chart_payload(
     end_utc: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     lookback = max(3, int(config.alpha_structure_lookback or 20))
-    bucket = max(1, min(15, max(1, config.alpha_technical_analysis.candle_bucket_samples or 5)))
     sample_seconds = effective_sample_seconds(
         config.alpha_cycle_interval_seconds,
         config.alpha_price_sample_interval_seconds,
     )
+    bucket = resolve_ta_candle_bucket_samples(
+        config.alpha_technical_analysis,
+        cycle_seconds=config.alpha_cycle_interval_seconds,
+        sample_interval_seconds=config.alpha_price_sample_interval_seconds,
+    )
+    candle_interval_seconds = bucket * sample_seconds
     candles = _chart_candles_from_mids(
         mids,
         bucket=bucket,
@@ -177,6 +183,12 @@ def _chart_payload(
             "key": "breakout_tf",
             "label": "Breakout TF",
             "value": str(config.breakout_confirmation_tf or "15m"),
+            "kind": "meta",
+        },
+        {
+            "key": "ta_candle_interval",
+            "label": "TA candle",
+            "value": f"{candle_interval_seconds}s (~{candle_interval_seconds // 60}m)" if candle_interval_seconds >= 60 else f"{candle_interval_seconds}s",
             "kind": "meta",
         },
         {

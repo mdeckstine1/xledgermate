@@ -13,8 +13,19 @@ logger = logging.getLogger(__name__)
 PRICE_HISTORY_PATH = Path("logs/alpha_price_history.json")
 LEGACY_MID_HISTORY_PATH = Path("logs/alpha_mid_history.json")
 VALID_PRICE_SOURCES = frozenset({"bid", "ask", "mid", "last"})
-_MAX_SAMPLES = 480  # ~2h at 15s sampling
+_DEFAULT_MAX_SAMPLES = 32000  # ~5.3d at 15s; auto-sized per TA bar width at runtime
+_MAX_SAMPLES = _DEFAULT_MAX_SAMPLES
 _PRICE_EPS = 1e-9
+
+
+def configure_price_history(*, max_samples: int) -> None:
+    """Set rolling tick history depth (called from ``AlphaApplication`` on config load)."""
+    global _MAX_SAMPLES
+    _MAX_SAMPLES = max(120, int(max_samples))
+
+
+def price_history_max_samples() -> int:
+    return _MAX_SAMPLES
 
 
 @dataclass(frozen=True)

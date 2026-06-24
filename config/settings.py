@@ -213,6 +213,7 @@ class BotConfig:
     alpha_structure_price_source: str = "ask"  # bid | ask | mid | last — directional default
     alpha_chart_price_source: str = "mid"  # Live HUD chart series (mid = fullest history)
     alpha_price_sample_interval_seconds: int = 15  # Sub-cycle book samples (0 = cycle only)
+    alpha_price_history_max_samples: int = 32000  # Rolling book ticks; auto-raised for long TA bars
     alpha_gui_refresh_seconds: int = 30  # Streamlit auto-refresh hint
     alpha_gui_bind_host: str = ""  # Empty = use hud_bind_host; 0.0.0.0 for public VPS access
     alpha_hud_port: int = 8765  # Operator HUD (FastAPI) — replaces legacy ws-hud port

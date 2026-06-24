@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import pandas as pd
 
 from alpha.decision.structure import CandleData, build_candle_from_mids
-from alpha.decision.ta_config import AlphaTechnicalAnalysisConfig
+from alpha.decision.ta_config import AlphaTechnicalAnalysisConfig, resolve_ta_candle_bucket_samples
 from config.settings import BotConfig
 
 logger = logging.getLogger(__name__)
@@ -374,7 +374,14 @@ class TechnicalAnalysis:
         if not self._cfg.enabled:
             return _empty_snapshot(price, reason="ta_disabled", enabled=False)
 
-        candles = mids_to_candles(mids, bucket=self._cfg.candle_bucket_samples)
+        candles = mids_to_candles(
+            mids,
+            bucket=resolve_ta_candle_bucket_samples(
+                self._cfg,
+                cycle_seconds=self._bot_config.alpha_cycle_interval_seconds,
+                sample_interval_seconds=self._bot_config.alpha_price_sample_interval_seconds,
+            ),
+        )
         if len(candles) < self._cfg.min_candles:
             return _empty_snapshot(
                 price,

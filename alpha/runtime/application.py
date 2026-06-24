@@ -106,6 +106,19 @@ class AlphaApplication:
         self._last_book: Optional[OrderBookSnapshot] = None
         self._last_liquidity: Optional[LiquidityDepth] = None
         self._ta = TechnicalAnalysis(config)
+        self._apply_price_history_config(config)
+
+    def _apply_price_history_config(self, config: BotConfig) -> None:
+        from alpha.decision.price_history import configure_price_history
+        from alpha.decision.ta_config import recommended_price_history_max_samples
+
+        max_samples = recommended_price_history_max_samples(
+            config.alpha_technical_analysis,
+            cycle_seconds=config.alpha_cycle_interval_seconds,
+            sample_interval_seconds=config.alpha_price_sample_interval_seconds,
+            floor=config.alpha_price_history_max_samples,
+        )
+        configure_price_history(max_samples=max_samples)
 
     @property
     def controls(self) -> OperatorControlStore:
@@ -132,6 +145,7 @@ class AlphaApplication:
         self._decision._config = config  # noqa: SLF001
         self._executor._config = config  # noqa: SLF001
         self._ta = TechnicalAnalysis(config)
+        self._apply_price_history_config(config)
         self._reentry._config = config  # noqa: SLF001
 
     async def _sync_operator_runtime(self) -> None:

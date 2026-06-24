@@ -33,6 +33,7 @@ _TA_VIRTUAL_KEYS = frozenset(
         "alpha_ta_stoch_enabled",
         "alpha_ta_bollinger_enabled",
         "alpha_ta_engulfing_enabled",
+        "alpha_ta_candle_interval_seconds",
     }
 )
 
@@ -68,6 +69,7 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_ta_stoch_enabled",
     "alpha_ta_bollinger_enabled",
     "alpha_ta_engulfing_enabled",
+    "alpha_ta_candle_interval_seconds",
     "alpha_reentry_enabled",
     "alpha_reentry_tp_dip_pct",
     "alpha_reentry_tp_cooldown_cycles",
@@ -104,6 +106,7 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "alpha_ta_weight": {"min": 0.0, "max": 1.0, "step": 0.05},
     "alpha_ta_min_buy_score": {"min": 0.0, "max": 10.0, "step": 0.1},
     "alpha_ta_min_sell_score": {"min": 0.0, "max": 10.0, "step": 0.1},
+    "alpha_ta_candle_interval_seconds": {"min": 300, "max": 9000, "step": 300},
     "alpha_reentry_tp_dip_pct": {"min": 0.01, "max": 2.0, "step": 0.01},
     "alpha_reentry_tp_cooldown_cycles": {"min": 0, "max": 50, "step": 1},
     "alpha_reentry_tp_cooldown_minutes": {"min": 0.0, "max": 240.0, "step": 1.0},
@@ -138,6 +141,8 @@ def _apply_ta_virtual_overrides(config: BotConfig, overrides: Dict[str, Any]) ->
         ta = replace(ta, bollinger=replace(ta.bollinger, enabled=bool(overrides["alpha_ta_bollinger_enabled"])))
     if "alpha_ta_engulfing_enabled" in overrides:
         ta = replace(ta, engulfing=replace(ta.engulfing, enabled=bool(overrides["alpha_ta_engulfing_enabled"])))
+    if "alpha_ta_candle_interval_seconds" in overrides:
+        ta = replace(ta, candle_interval_seconds=int(overrides["alpha_ta_candle_interval_seconds"]))
     return replace(config, alpha_technical_analysis=ta)
 
 
@@ -188,6 +193,14 @@ def effective_config_snapshot(
             snap[key] = ta.bollinger.enabled
         elif key == "alpha_ta_engulfing_enabled":
             snap[key] = ta.engulfing.enabled
+        elif key == "alpha_ta_candle_interval_seconds":
+            from alpha.decision.ta_config import effective_ta_candle_interval_seconds
+
+            snap[key] = effective_ta_candle_interval_seconds(
+                ta,
+                cycle_seconds=config.alpha_cycle_interval_seconds,
+                sample_interval_seconds=config.alpha_price_sample_interval_seconds,
+            )
         else:
             snap[key] = getattr(config, key)
     snap["inventory_target_xrp_pct"] = round(config.inventory_target_xrp_ratio * 100.0, 1)
@@ -258,8 +271,12 @@ def _coerce_override(key: str, value: Any) -> Any:
         "alpha_reentry_tp_cooldown_cycles",
         "alpha_reentry_sl_cooldown_cycles",
         "alpha_rlusd_price_decimals",
+        "alpha_ta_candle_interval_seconds",
     }
     if key in _INT_KEYS:
+        if key == "alpha_ta_candle_interval_seconds":
+            sec = max(300, min(9000, int(value)))
+            return int(round(sec / 300) * 300)
         return int(value)
     if key == OPERATOR_PHASE_KEY:
         phase = str(value).strip().lower()
@@ -322,6 +339,24 @@ def _validate_merged_config(config: BotConfig, changed_keys: Any) -> List[str]:
         dec = config.alpha_rlusd_price_decimals
         if dec < MIN_ALPHA_RLUSD_PRICE_DECIMALS or dec > MAX_ALPHA_RLUSD_PRICE_DECIMALS:
             errors.append("alpha_rlusd_price_decimals must be between 0 and 6")
+
+    if "alpha_ta_candle_interval_seconds" in keys:
+        from alpha.decision.ta_config import (
+            TA_CANDLE_INTERVAL_MAX_SECONDS,
+            TA_CANDLE_INTERVAL_MIN_SECONDS,
+            effective_ta_candle_interval_seconds,
+        )
+
+        sec = effective_ta_candle_interval_seconds(
+            config.alpha_technical_analysis,
+            cycle_seconds=config.alpha_cycle_interval_seconds,
+            sample_interval_seconds=config.alpha_price_sample_interval_seconds,
+        )
+        if sec < TA_CANDLE_INTERVAL_MIN_SECONDS or sec > TA_CANDLE_INTERVAL_MAX_SECONDS:
+            errors.append(
+                f"alpha_ta_candle_interval_seconds must be between "
+                f"{TA_CANDLE_INTERVAL_MIN_SECONDS} and {TA_CANDLE_INTERVAL_MAX_SECONDS} (5m–2.5h)"
+            )
 
     if "alpha_reentry_tp_cooldown_cycles" in keys and config.alpha_reentry_tp_cooldown_cycles < 0:
         errors.append("alpha_reentry_tp_cooldown_cycles must be non-negative")

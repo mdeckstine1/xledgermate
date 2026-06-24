@@ -366,6 +366,7 @@
           <div class="ctrl-row"><label data-knob="alpha_ta_weight" title="0 = TA advisory only (HUD display); 1 = full buy gate at min buy score.">ta_weight</label><input type="range" id="slTaWeight" min="0" max="1" step="0.05"><input type="number" id="numTaWeight" step="0.05"><span id="valTaWeight" class="muted"></span></div>
           <div class="ctrl-row"><label data-knob="alpha_ta_min_buy_score" title="Minimum composite buy score to allow PLACE_BID (scaled by ta_weight).">min_buy_score</label><input type="range" id="slTaBuyScore" min="0" max="10" step="0.1"><input type="number" id="numTaBuyScore" step="0.1"></div>
           <div class="ctrl-row"><label data-knob="alpha_ta_min_sell_score" title="Minimum sell score for strength sells when TA gates asks.">min_sell_score</label><input type="range" id="slTaSellScore" min="0" max="10" step="0.1"><input type="number" id="numTaSellScore" step="0.1"></div>
+          <div class="ctrl-row"><label data-knob="alpha_ta_candle_interval_seconds" title="OHLC bar width for all TA indicators (5m–2.5h). Wider bars = slower trend view; needs warmup after change.">ta_candle_window</label><input type="range" id="slTaCandle" min="300" max="9000" step="300"><input type="number" id="numTaCandle" min="300" max="9000" step="300"><span id="valTaCandle" class="muted"></span></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_rsi_enabled" title="RSI oversold/overbought contribution to buy/sell scores."><input type="checkbox" id="taRsiEnabled"> RSI</label></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_stoch_enabled" title="Stochastic momentum for entries and breakouts."><input type="checkbox" id="taStochEnabled"> Stochastic</label></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_bollinger_enabled" title="Bollinger band squeeze and band-touch signals."><input type="checkbox" id="taBbEnabled"> Bollinger</label></div>
@@ -663,6 +664,14 @@
     $('btnPauseCtrl').onclick = async () => { const d = await post('/controls/pause'); if (d?.ok) toast('Trading paused'); poll(); };
     $('btnResumeCtrl').onclick = async () => { const d = await post('/controls/resume'); if (d?.ok) toast('Trading resumed'); poll(); };
 
+    function formatTaCandleLabel(sec) {
+      const s = parseInt(sec, 10);
+      if (!s || Number.isNaN(s)) return '—';
+      if (s < 3600) return (s / 60) + 'm bars';
+      const h = s / 3600;
+      return (Math.abs(h - Math.round(h)) < 0.01 ? Math.round(h) : h.toFixed(1)) + 'h bars';
+    }
+
     function linkSlider(sliderId, numId, valId) {
       const sl = $(sliderId), num = $(numId);
       const sync = (v) => { sl.value = v; num.value = v; if (valId) $(valId).textContent = v; };
@@ -696,6 +705,16 @@
     const syncTaWeight = linkSlider('slTaWeight', 'numTaWeight', 'valTaWeight');
     const syncTaBuyScore = linkSlider('slTaBuyScore', 'numTaBuyScore');
     const syncTaSellScore = linkSlider('slTaSellScore', 'numTaSellScore');
+    const slTaCandle = $('slTaCandle'), numTaCandle = $('numTaCandle');
+    const syncTaCandle = (v) => {
+      const sec = Math.max(300, Math.min(9000, parseInt(v, 10) || 300));
+      const snapped = Math.round(sec / 300) * 300;
+      slTaCandle.value = snapped;
+      numTaCandle.value = snapped;
+      if ($('valTaCandle')) $('valTaCandle').textContent = formatTaCandleLabel(snapped);
+    };
+    slTaCandle.oninput = () => syncTaCandle(slTaCandle.value);
+    numTaCandle.oninput = () => syncTaCandle(numTaCandle.value);
 
     function fillControlsFromConfig(cfg) {
       if (!cfg) return;
@@ -731,6 +750,7 @@
       syncTaWeight(c.alpha_ta_weight ?? 1.0);
       syncTaBuyScore(c.alpha_ta_min_buy_score ?? 1.5);
       syncTaSellScore(c.alpha_ta_min_sell_score ?? 1.0);
+      syncTaCandle(c.alpha_ta_candle_interval_seconds ?? 300);
       if ($('taRsiEnabled')) $('taRsiEnabled').checked = c.alpha_ta_rsi_enabled !== false;
       if ($('taStochEnabled')) $('taStochEnabled').checked = c.alpha_ta_stoch_enabled !== false;
       if ($('taBbEnabled')) $('taBbEnabled').checked = c.alpha_ta_bollinger_enabled !== false;
@@ -818,6 +838,7 @@
         alpha_ta_weight: parseFloat($('numTaWeight').value),
         alpha_ta_min_buy_score: parseFloat($('numTaBuyScore').value),
         alpha_ta_min_sell_score: parseFloat($('numTaSellScore').value),
+        alpha_ta_candle_interval_seconds: parseInt($('numTaCandle').value, 10),
         alpha_ta_rsi_enabled: $('taRsiEnabled').checked,
         alpha_ta_stoch_enabled: $('taStochEnabled').checked,
         alpha_ta_bollinger_enabled: $('taBbEnabled').checked,
@@ -922,8 +943,10 @@
     async function cancelBracket(fullId) {
       const d = await postJson('/brackets/' + encodeURIComponent(fullId) + '/cancel', {});
       if (d?.ok) {
-        toast(d.message === 'commands_processed' ? 'Bracket cancelled' : (d.message || 'Cancel sent'));
+        toast(d.message === 'commands_processed' ? 'Bracket cancelled' : (d.message || 'Cancel queued'));
         poll();
+      } else {
+        toast(d?.message || 'Failed to queue bracket cancel', true);
       }
     }
 
@@ -1517,7 +1540,9 @@
       }
 
       $('taStatus').textContent = 'ACTIVE';
-      $('taSummary').textContent = ta.summary || '—';
+      const candleSec = operatorConfig?.config_effective?.alpha_ta_candle_interval_seconds;
+      $('taSummary').textContent = (ta.summary || '—')
+        + (candleSec ? ' · ' + formatTaCandleLabel(candleSec) : '');
       const biasEl = $('taBias');
       biasEl.textContent = (ta.bias || 'neutral').toUpperCase();
       biasEl.className = 'big ta-bias-' + (ta.bias || 'neutral');

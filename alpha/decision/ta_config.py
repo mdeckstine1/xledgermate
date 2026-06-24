@@ -5,6 +5,13 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Dict, List, Tuple
 
+from alpha.decision.price_history import effective_sample_seconds
+
+TA_CANDLE_INTERVAL_MIN_SECONDS = 300  # 5m
+TA_CANDLE_INTERVAL_MAX_SECONDS = 9000  # 2.5h
+TA_CANDLE_INTERVAL_DEFAULT_SECONDS = 300
+TA_CANDLE_INTERVAL_STEP_SECONDS = 300
+
 
 def _merge_dataclass(cls: type, base: Any, data: Dict[str, Any]) -> Any:
     if not isinstance(data, dict):
@@ -160,6 +167,7 @@ class AlphaTechnicalAnalysisConfig:
     min_buy_score: float = 1.5
     min_sell_score: float = 1.0
     min_breakout_score: float = 1.5
+    candle_interval_seconds: int = TA_CANDLE_INTERVAL_DEFAULT_SECONDS  # 5m–2.5h; 0 = legacy bucket
     candle_bucket_samples: int = 5
     min_candles: int = 20
     candle_price_source: str = "ask"  # bid | ask | mid | last — directional long default
@@ -190,8 +198,81 @@ def merge_ta_config(
     return _merge_dataclass(AlphaTechnicalAnalysisConfig, base, data)
 
 
+def effective_ta_candle_interval_seconds(
+    cfg: AlphaTechnicalAnalysisConfig,
+    *,
+    cycle_seconds: int,
+    sample_interval_seconds: int,
+) -> int:
+    """Bar width in seconds (explicit interval or legacy bucket × sample period)."""
+    sample_seconds = effective_sample_seconds(cycle_seconds, sample_interval_seconds)
+    if int(cfg.candle_interval_seconds) > 0:
+        return int(cfg.candle_interval_seconds)
+    return max(sample_seconds, int(cfg.candle_bucket_samples) * sample_seconds)
+
+
+def resolve_ta_candle_bucket_samples(
+    cfg: AlphaTechnicalAnalysisConfig,
+    *,
+    cycle_seconds: int,
+    sample_interval_seconds: int,
+) -> int:
+    """
+    Samples per synthetic OHLC candle.
+
+    When ``candle_interval_seconds`` > 0, bucket = interval / effective sample period
+    (e.g. 300s interval @ 15s samples → 20-sample candles ≈ 5m bars).
+    """
+    sample_seconds = effective_sample_seconds(cycle_seconds, sample_interval_seconds)
+    if int(cfg.candle_interval_seconds) > 0:
+        return max(1, int(round(int(cfg.candle_interval_seconds) / sample_seconds)))
+    return max(1, int(cfg.candle_bucket_samples))
+
+
+def recommended_price_history_max_samples(
+    cfg: AlphaTechnicalAnalysisConfig,
+    *,
+    cycle_seconds: int,
+    sample_interval_seconds: int,
+    floor: int = 2880,
+) -> int:
+    """Tick depth needed for ``min_candles`` and longest indicator lookback at current bar size."""
+    bucket = resolve_ta_candle_bucket_samples(
+        cfg,
+        cycle_seconds=cycle_seconds,
+        sample_interval_seconds=sample_interval_seconds,
+    )
+    max_lookback_candles = max(
+        cfg.min_candles,
+        cfg.elliott_wave.lookback if cfg.elliott_wave.enabled else 0,
+        cfg.fibonacci.lookback if cfg.fibonacci.enabled else 0,
+        cfg.fair_value_gap.lookback if cfg.fair_value_gap.enabled else 0,
+        cfg.order_block.lookback if cfg.order_block.enabled else 0,
+        cfg.liquidity_grab.lookback if cfg.liquidity_grab.enabled else 0,
+        cfg.structure_bos.lookback if cfg.structure_bos.enabled else 0,
+        cfg.consolidation.lookback if cfg.consolidation.enabled else 0,
+        cfg.bollinger.period if cfg.bollinger.enabled else 0,
+        cfg.rsi.period if cfg.rsi.enabled else 0,
+    )
+    needed = max(120, int(max_lookback_candles) * bucket + bucket * 2)
+    return max(int(floor), needed)
+
+
 def validate_ta_config(cfg: AlphaTechnicalAnalysisConfig) -> List[str]:
     errors: List[str] = []
+    if cfg.candle_interval_seconds < 0:
+        errors.append("alpha_technical_analysis.candle_interval_seconds must be >= 0")
+    elif (
+        cfg.candle_interval_seconds > 0
+        and (
+            cfg.candle_interval_seconds < TA_CANDLE_INTERVAL_MIN_SECONDS
+            or cfg.candle_interval_seconds > TA_CANDLE_INTERVAL_MAX_SECONDS
+        )
+    ):
+        errors.append(
+            "alpha_technical_analysis.candle_interval_seconds must be between "
+            f"{TA_CANDLE_INTERVAL_MIN_SECONDS} and {TA_CANDLE_INTERVAL_MAX_SECONDS} (5m–2.5h)"
+        )
     if cfg.candle_bucket_samples < 1:
         errors.append("alpha_technical_analysis.candle_bucket_samples must be >= 1")
     if cfg.min_candles < 5:
