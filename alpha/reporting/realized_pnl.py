@@ -49,6 +49,7 @@ def build_realized_pnl_snapshot(
     hours: float = 24.0,
     now: Optional[datetime] = None,
     session_pnl_xrp: Optional[float] = None,
+    mid_rlusd_per_xrp: Optional[float] = None,
     max_recent_exits: int = 8,
 ) -> Dict[str, Any]:
     """
@@ -145,6 +146,18 @@ def build_realized_pnl_snapshot(
     out["realized_profit_xrp_equiv"] = round(float(out["realized_profit_xrp_equiv"]), 6)
     out["buy_xrp_acquired"] = round(float(out["buy_xrp_acquired"]), 6)
     out["sell_xrp_disposed"] = round(float(out["sell_xrp_disposed"]), 6)
+
+    if mid_rlusd_per_xrp is not None:
+        try:
+            mid = float(mid_rlusd_per_xrp)
+            if mid > 0:
+                out["mid_rlusd_per_xrp"] = round(mid, 6)
+                out["realized_profit_rlusd"] = round(
+                    out["realized_profit_xrp_equiv"] * mid,
+                    4,
+                )
+        except (TypeError, ValueError):
+            pass
 
     if session_pnl_xrp is not None:
         try:

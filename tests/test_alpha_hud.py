@@ -65,6 +65,8 @@ def test_build_hud_state_minimal():
     assert "chart" in state
     assert "candles" in state["chart"]
     assert "indicators" in state["chart"]
+    assert "realized_pnl_24h" in state
+    assert state["realized_pnl_24h"]["window_hours"] == 24.0
 
 
 def test_bracket_row_includes_size_and_rlusd():

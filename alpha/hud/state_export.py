@@ -16,6 +16,7 @@ from alpha.ledger.market_conditions import build_market_conditions, refresh_dca_
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControls
 from alpha.operator.runtime import derive_posture, effective_config_snapshot
+from alpha.reporting.realized_pnl import build_realized_pnl_snapshot
 from alpha.orders.types import BracketRecord
 from alpha.runtime.executor import EntryExecutionResult
 from alpha.types import BracketStatusSummary, LiquidityDepth, OperatorSnapshot, OrderBookSnapshot
@@ -387,6 +388,14 @@ def build_hud_state(
         log_dir=runtime_state_path.parent,
     )
 
+    realized_pnl_24h = build_realized_pnl_snapshot(
+        logs_dir=runtime_state_path.parent,
+        hours=24.0,
+        session_pnl_xrp=snap.risk.session_pnl_xrp,
+        mid_rlusd_per_xrp=snap.balances.mid_rlusd_per_xrp,
+        max_recent_exits=5,
+    )
+
     return {
         "hud_kind": "alpha",
         "alpha_version": snap.alpha_version,
@@ -423,6 +432,7 @@ def build_hud_state(
             "trading_allowed": snap.risk.trading_allowed,
             "alerts": list(snap.risk.alerts),
         },
+        "realized_pnl_24h": realized_pnl_24h,
         "decision": {
             "action": decision.action.value,
             "reason": decision.reason,

@@ -43,6 +43,26 @@ def test_build_realized_pnl_snapshot_tp_sl(tmp_path: Path) -> None:
     assert "session_pnl_xrp_mtm=5.0" in block
 
 
+def test_build_realized_pnl_snapshot_rlusd_at_mid(tmp_path: Path) -> None:
+    now = datetime(2026, 6, 22, 12, 0, tzinfo=timezone.utc)
+    t = (now - timedelta(hours=1)).isoformat()
+    _write_trades(
+        tmp_path / "trades_2026-06.csv",
+        [
+            f"{t},SELL,Y,mainnet,SELL,10,11.0,1.1,-0.1,,1,alpha bracket stop-loss abc,90,400",
+        ],
+    )
+    snap = build_realized_pnl_snapshot(
+        logs_dir=tmp_path,
+        hours=24,
+        now=now,
+        mid_rlusd_per_xrp=1.1,
+    )
+    assert snap["realized_profit_xrp_equiv"] == -0.1
+    assert snap["realized_profit_rlusd"] == -0.11
+    assert snap["mid_rlusd_per_xrp"] == 1.1
+
+
 def test_build_skynet_context_includes_realized_pnl(tmp_path: Path, monkeypatch) -> None:
     now = datetime.now(tz=timezone.utc)
     t = (now - timedelta(hours=1)).isoformat()
