@@ -277,7 +277,7 @@ Each cancel is one **XRPL ledger transaction**. The engine typically processes *
 
 Watch **Activity** or engine logs for `stale_pending_buy_cancelled` after a cycle.
 
-**SKYNET / Grok** (manual ask, Agent mode, or Full SKYNET) receives a **`pending_buy_stale`** block in context: target entry, per-bid `would_cancel` / `reason`, `over_cap_count`, and tuning notes. Use the SKYNET quick prompt **“Stale bid ladder”** or ask why bids are not canceling.
+**SKYNET / Grok** (manual Ask, **Agent Smith**, or Full SKYNET) receives a **`pending_buy_stale`** block in context: target entry, per-bid `would_cancel` / `reason`, `over_cap_count`, and tuning notes. Use the SKYNET quick prompt **“Stale bid ladder”** or ask why bids are not canceling.
 
 **Coupling:** See [Knob coupling](#knob-coupling--change-x-change-y) — when you change offset, also align `min_edge`, `stale_max_drift`, and often `max_pending_buys`.
 
@@ -1658,6 +1658,84 @@ alpha_stale_pending_buy_max_drift_pct = 0.35  ← sticky if offset ~0.20
 
 ---
 
+## 48-hour watch checklist (hands-off soak)
+
+Use this when the stack is deployed, deferred SL is on, and you want to **let the bot cook** instead of tuning every HOLD. Check the HUD **2–3× per day**; do a full compare **~48 hours** after the baseline timestamp.
+
+### Baseline — 2026-06-24 (post deploy `8308ecc`, trailing on)
+
+Recorded from live VPS `alpha_runtime_state.json` + activity log.
+
+| Metric | Where on HUD | Baseline (now) | 48h later | Δ | OK? |
+|--------|----------------|----------------|-----------|---|-----|
+| Portfolio (XRP equiv) | Sidebar **Portfolio** | **588.7** | | | |
+| XRP ratio (target 75%) | Sidebar **Inventory** | **51.7%** | | | ↑ or flat |
+| Session P&L (MTM) | Sidebar **Session P&L** | **+214.1 XRP** | | | informational only |
+| Realized 24h (TP/SL) | Sidebar **Realized 24h** | **−7.16 XRP** | | | not worse by >3 XRP |
+| TP exits (24h window) | Realized 24h meta line | **0** | | | any TP is a win |
+| SL exits (24h window) | Realized 24h meta line | **53** | | | not accelerating |
+| Daily drawdown | Sidebar **Drawdown** | **0.0%** / 10% | | | stay &lt; 3% |
+| Kill switch | Sidebar / Risk | **off** | | | must stay off |
+| Operator phase | SKYNET tab | **scale** | | | trust OK; scale if earned |
+| Pending buys | Brackets summary | **1** | | | 0–2 normal |
+| Active fixed TP/SL | Brackets summary | **7** | | | |
+| Active SL trail | Brackets summary | **1** | | | BE in Trail col |
+| Deferred SL | Risk & entry | **on** | | | stay on |
+| Bracket trailing | Overrides / Risk | **on** | | | off if trail→SL churn |
+| Typical HOLD reasons | Decision card | `max_pending_buys`, `reentry_sl_await_bounce`, `ta_buy_blocked` | | | patience, not stuck |
+
+**Copy row values from the sidebar at check-in.** MTM can diverge wildly from realized — judge bleed on **Realized 24h**, not Session P&L.
+
+### Daily glance (2 minutes)
+
+1. **Kill switch** off, **drawdown** under 3%.
+2. **Realized 24h** — trending flat or up? SL count not spiking?
+3. **XRP ratio** — drifting toward 75% or at least not falling?
+4. **Decision reason** — re-entry gates and `max_pending_buys` are **expected**; only worry if cycles stop entirely.
+5. **Brackets** — pending buys filling, trails arming (BE), no burst of `sl_filled` right after `trailing_sl_update` in Activity.
+
+### 48-hour decision tree
+
+```text
+After 48h, compare to baseline table:
+
+GOOD (keep cooking, no knob changes)
+  • Realized 24h improved or flat (not −3 XRP worse than baseline)
+  • XRP ratio ≥ baseline (51.7%) or clearly climbing
+  • Drawdown < 3%, kill off
+  • Some TP exits OR SL rate slowed vs baseline window
+
+WATCH (check daily, still no knobs unless bleed worsens)
+  • Realized still negative but SL count stable; ratio flat
+  • MTM green, realized red — normal; do not chase with offset↓
+
+ACT (one change only, then another 24–48h soak)
+  • Realized 24h worse by >3 XRP AND SL >> TP → SKYNET phase **trust**, review offset (do not go below 0.15)
+  • Trailing SL churn (fills right after trail update) → run disable trailing script; stay trust
+  • Drawdown > 5% → pause, review; kill if > 8%
+
+SCALE (only if GOOD + ratio climbing + TP:SL improving)
+  • Already on scale phase — do not add heat until realized turns positive over multi-day window
+  • Next step: max_pending_buys before buy_limit_offset_pct↓
+```
+
+### SKYNET quick prompts at check-in
+
+| When | Prompt |
+|------|--------|
+| Daily | **Trust phase review** (even on scale — asks about bleed) |
+| 48h | Paste sidebar numbers: ratio, realized 24h, TP/SL counts, last decision reason |
+| If bleeding | **Anti-bleed** / Scenario S knobs |
+
+### Telegram / logs (optional)
+
+- Hourly Telegram: alive + portfolio snapshot.
+- Tax truth: `logs/trades_YYYY-MM.csv` on VPS — sum `profit_xrp_equiv` on SELL rows should match **Realized 24h** on HUD.
+
+**Next full compare target:** ~**2026-06-26** (48h from baseline).
+
+---
+
 ### Scenario T — Scale phase (modest accumulation)
 
 **When:** Clean nights, deferred SL arming, XRP ratio climbing toward target, TP:SL improving. You earned trust — want **one notch** more deploy.
@@ -1682,7 +1760,7 @@ alpha_risk_per_trade_pct        = 2–3%
 
 **When:** You accept churn; book healthy; TA supportive; bleed under control; scaling toward a large XRP bag.
 
-**HUD:** Operator phase → **Aggressive** → Save. Agent **guardrails** still cap risk — Full SKYNET cannot exceed bounds.
+**HUD:** Operator phase → **Aggressive** → Save. **Agent Smith** guardrails still cap risk — Full SKYNET cannot exceed bounds.
 
 ```text
 alpha_operator_phase            = aggressive
@@ -1755,9 +1833,11 @@ When you understand how each knob *feels*, then turn up the aggression.
 
 ---
 
-## Tuning SKYNET (Grok advisor, Agent, Full mode)
+## Tuning SKYNET (Grok Ask, Agent Smith, Full mode)
 
 SKYNET is the **advisor layer** — it does not place trades. Set **operator phase** on the SKYNET tab so Grok matches soak vs scale goals.
+
+**HUD names:** Phase 1 manual prompt = **Send to Grok**; Phase 2 bounded automation = **Agent Smith** (checkbox **Enable Agent Smith Mode**); Phase 3 = **Full SKYNET**.
 
 ### Operator phase (trust / scale / aggressive)
 
@@ -1771,7 +1851,7 @@ SKYNET is the **advisor layer** — it does not place trades. Set **operator pha
 
 Phase does **not** change knobs until you Apply.
 
-### Runtime context (each Ask / Agent cycle)
+### Runtime context (each Ask / Agent Smith cycle)
 
 - **`alpha_operator_phase`** and playbook **S–U**
 - **`pending_buy_stale`** — target entry, per pending bid `would_cancel` / `reason`, `over_cap_count`
@@ -1798,12 +1878,12 @@ If **Apply** stays disabled, name settings explicitly (percent values help) or c
 | Mode | Behavior |
 |------|----------|
 | **SKYNET tab — Ask** | You prompt; Grok suggests changes; you **Apply** manually |
-| **Agent mode** | Grok runs every 3–5 cycles; **Apply safe** for guardrailed suggestions |
-| **Full SKYNET** | Auto-applies guardrailed changes (confirm with `ENABLE_FULL_SKYNET`) |
+| **Agent Smith** (Phase 2) | Grok runs every 3–5 cycles; **Apply safe** for guardrailed suggestions |
+| **Full SKYNET** (Phase 3) | Auto-applies guardrailed changes (confirm with `ENABLE_FULL_SKYNET`; requires Agent Smith mode) |
 
-Grok uses operator phase + scenario playbook + `pending_buy_stale`. Agent proposals do **not** overwrite the Ask response box.
+Grok uses operator phase + scenario playbook + `pending_buy_stale`. **Agent Smith** proposals do **not** overwrite the Ask response box.
 
-**Purple knob labels (Live / TA tabs):** When Agent mode proposes safe changes (or SKYNET Ask returns applicable changes), matching knob labels turn **purple ◆** with the suggested value in the tooltip. Legend appears under Risk & entry. Highlights clear after Apply or when values already match effective config.
+**Purple knob labels (Live / TA tabs):** When **Agent Smith** proposes safe changes (or SKYNET Ask returns applicable changes), matching knob labels turn **purple ◆** with the suggested value in the tooltip. Legend appears under Risk & entry. Highlights clear after Apply or when values already match effective config.
 
 ---
 

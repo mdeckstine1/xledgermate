@@ -9,6 +9,8 @@ This guide is for the **new Alpha bot**, not the legacy `ws-engine` market maker
 
 > **Want the trader’s voice?** **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — beginner-friendly knob guide, real scenarios, edge-mismatch fixes.
 
+> **Hands-off soak?** **[48-hour watch checklist](ALPHA_TRADERS_MANUAL.md#48-hour-watch-checklist-hands-off-soak)** in the traders manual — baseline snapshot (2026-06-24) and compare table for ~2026-06-26.
+
 ---
 
 ## What Alpha does
@@ -182,9 +184,9 @@ Re-entry cooldown reasons in logs and Decision: `post_tp_cooldown`, `post_sl_coo
 
 ---
 
-## SKYNET (Grok advisor)
+## SKYNET (Grok Ask + Agent Smith)
 
-The HUD **SKYNET** tab provides Grok-powered knob suggestions (Ask), bounded Agent mode, and optional Full autonomy. **Operator phase** (`trust` | `scale` | `aggressive`) biases every SKYNET cycle — set it before asking for strategy advice.
+The HUD **SKYNET** tab provides Grok-powered knob suggestions (**Ask**), bounded **Agent Smith** (Phase 2), and optional **Full SKYNET** autonomy (Phase 3). **Operator phase** (`trust` | `scale` | `aggressive`) biases every SKYNET cycle — set it before asking for strategy advice.
 
 | Phase | Purpose |
 |-------|---------|
@@ -192,7 +194,7 @@ The HUD **SKYNET** tab provides Grok-powered knob suggestions (Ask), bounded Age
 | **scale** | Modest accumulation after clean nights |
 | **aggressive** | Bag-growth push within guardrails |
 
-Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-advisor-agent-full-mode)** and scenarios **S–U** in the traders manual. Requires `XLG_GROK_KEY` or `XAI_API_KEY` in `.env`.
+Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-ask-agent-smith-full-mode)** and scenarios **S–U** in the traders manual. Requires `XLG_GROK_KEY` or `XAI_API_KEY` in `.env`.
 
 ---
 
@@ -222,7 +224,7 @@ Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-advisor
 ## Further reading
 
 - **[`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md)** — **start here for live trading & orders**
-- **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — scenarios A–V, **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-advisor-agent-full-mode)**, **[Funding changes](ALPHA_TRADERS_MANUAL.md#funding-changes-scaling-toward-11k-xrp)**, **[Deploy RLUSD → XRP](ALPHA_TRADERS_MANUAL.md#deploy-rlusd-to-xrp-get-xrp-heavy)**
+- **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — scenarios A–V, **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-ask-agent-smith-full-mode)**, **[Funding changes](ALPHA_TRADERS_MANUAL.md#funding-changes-scaling-toward-11k-xrp)**, **[Deploy RLUSD → XRP](ALPHA_TRADERS_MANUAL.md#deploy-rlusd-to-xrp-get-xrp-heavy)**
 - [`PROJECT_INSTRUCTIONS.md`](../PROJECT_INSTRUCTIONS.md)
 - [`ALPHA_MAINNET_CUTOVER.md`](ALPHA_MAINNET_CUTOVER.md)
 - [`ALPHA_FINAL_REPORT.md`](ALPHA_FINAL_REPORT.md)
