@@ -101,7 +101,11 @@ def infer_scenario_hints(
     if "balanced dev" in reason:
         hints.append("M")
     if "max_pending_buys" in reason:
-        hints.append("C")
+        over = int((stale_snapshot or {}).get("over_cap_count") or 0)
+        if over > 0:
+            hints.append("C")
+        elif dev is not None and float(dev) < -0.05:
+            hints.append("I")
     if "insufficient_ask_depth" in reason:
         hints.append("R")
     if "kill_switch" in reason or "pause_bids" in reason or "preflight" in reason:
@@ -130,23 +134,81 @@ def infer_scenario_hints(
     return out[:6]
 
 
+def classify_prompt_intent(prompt: str) -> Dict[str, Any]:
+    """Lightweight intent tags so Grok addresses operator goals, not only auto scenario hints."""
+    p = (prompt or "").strip().lower()
+    tags: List[str] = []
+    if re.search(
+        r"\b(bullish|strong\s+buy|buy\s+now|accumulat|deploy\s+rlusd|go\s+long|buy\s+side|load\s+up)\b",
+        p,
+    ):
+        tags.append("bullish_buy")
+    if re.search(r"\b(consolidat\w*|base\s+building|range\s+bound|sideways)\b", p):
+        tags.append("consolidation")
+    if re.search(r"\b(bearish|defensive|reduce\s+risk|stop\s+buying|pause\s+buy)\b", p):
+        tags.append("defensive")
+    if re.search(r"\b(full\s+summary|summarize|overview|state\s+of\s+the\s+bot)\b", p):
+        tags.append("summary_request")
+    if re.search(r"\b(ladder|clutter|stale|cancel.*bid|pending\s+buy)\b", p):
+        tags.append("ladder_management")
+    settings_cues = bool(
+        re.search(
+            r"\b(set|configure|apply|change|want|need|make|use|preset|stickier|bigger|smaller|risk\s*\d|offset|drift|pending|cooldown|ta_|reentry)\b",
+            p,
+            re.I,
+        )
+    )
+    if settings_cues:
+        tags.append("settings_request")
+    return {"tags": tags, "has_settings_request": settings_cues}
+
+
 def build_skynet_user_message(*, user_prompt: str, context: str) -> str:
-    """Wrap operator prompt with intent instructions for settings requests."""
+    """Put operator prompt first; scenarios are reference only."""
     prompt = (user_prompt or "").strip()
-    settings_cues = re.search(
-        r"\b(set|configure|apply|change|want|need|make|use|preset|stickier|bigger|smaller|risk\s*\d|offset|drift|pending|cooldown|ta_|reentry)\b",
-        prompt,
-        re.I,
-    )
-    intent_block = (
-        "Operator intent: The operator may describe desired settings in natural language. "
-        "Translate goals into concrete suggested_changes (allowlist keys only). "
-        "Use scenario presets from the playbook when they fit. "
-        "If they ask for configuration or preset behavior, suggested_changes must list "
-        "specific keys and numeric values unless unsafe — do not only explain in prose."
-        if settings_cues
-        else "Operator intent: Answer the question; include suggested_changes when knob adjustments would help."
-    )
-    return (
-        f"Context:\n{context}\n\n---\n\n{intent_block}\n\nOperator prompt:\n{prompt}"
-    )
+    intent = classify_prompt_intent(prompt)
+    tags = intent.get("tags") or []
+
+    lines = [
+        "=== OPERATOR PROMPT (PRIMARY — your reasoning and summary must address this first) ===",
+        prompt or "(empty)",
+        "",
+        "=== RESPONSE RULES ===",
+        "1. Answer the operator prompt directly. Do NOT substitute an unrelated scenario preset.",
+        "2. Automated `likely_scenarios` and the playbook below are REFERENCE ONLY — use when they align with operator intent.",
+        "3. If operator describes market structure or strategy (e.g. consolidation + bullish → buy), translate that into analysis and knobs.",
+    ]
+
+    if "bullish_buy" in tags or ("consolidation" in tags and "defensive" not in tags):
+        lines.extend(
+            [
+                "4. BULLISH / BUY intent detected: RLUSD-heavy + TA bullish → favor XRP accumulation knobs "
+                "(e.g. alpha_buy_limit_offset_pct↓, alpha_weakness_deviation↓, alpha_ta_min_buy_score↓ if blocking, "
+                "alpha_max_pending_buys≥1 to allow entries).",
+                "   Do NOT tighten alpha_stale_pending_buy_max_drift_pct or cut max_pending unless operator asked to clear ladder clutter.",
+            ]
+        )
+    elif "ladder_management" in tags:
+        lines.append(
+            "4. LADDER intent: address stale pending / max_pending using playbook scenarios G or C as appropriate."
+        )
+    elif "defensive" in tags:
+        lines.append(
+            "4. DEFENSIVE intent: prioritize capital protection — risk↓, cooldowns↑, patience on re-entry."
+        )
+    elif "summary_request" in tags:
+        lines.append(
+            "4. SUMMARY intent: structured state overview first; suggested_changes only if clearly warranted."
+        )
+
+    if intent.get("has_settings_request"):
+        lines.append(
+            "5. Operator requested specific settings — output concrete suggested_changes (allowlist keys), not prose only."
+        )
+    else:
+        lines.append(
+            "5. Include suggested_changes when knob adjustments serve operator goals; empty array is OK if HOLD is correct."
+        )
+
+    lines.extend(["", "=== RUNTIME CONTEXT (secondary) ===", context])
+    return "\n".join(lines)

@@ -522,7 +522,7 @@
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Evaluate the re-entry gate and cooldown situation. Should we wait or adjust re-entry settings?">Re-entry / cooldown</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Perform a risk and safety check: drawdown, kill switch, preflight, inventory imbalance, and anything dangerous in current settings.">Risk check</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Analyze pending buy ladder and stale cancel policy. Use pending_buy_stale in context: which bids should cancel, why are unfilled bids sitting, and what knob changes (max_drift, max_pending_buys, buy_limit_offset) do you recommend?">Stale bid ladder</button>
-              <button type="button" class="secondary skynet-quick-btn" data-prompt="Give a full structured summary of current bot state: portfolio, decision, TA, brackets, and top priority for the operator.">Full summary</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Give a full structured summary of current bot state: portfolio, decision, TA, brackets, open offers, and top priority. Address my market view in the prompt above if I added one — do not default to ladder-clutter advice unless that is the actual problem.">Full summary</button>
             </div>
             <div class="skynet-actions">
               <button type="button" id="btnSkynetSend">Send to Grok</button>
@@ -1825,9 +1825,7 @@
         ? skynetAgentSafeCount + ' safe change(s) ready — purple knobs on Live/TA tabs'
         : 'No safe changes in latest agent run';
       updateAgentKnobHighlights(safe);
-      if (proposal.display && skynetTabActive) {
-        setSkynetResponse(proposal.display);
-      }
+      // Do not overwrite Ask response textarea — agent proposal lives in skynetAgentProposal only.
     }
 
     function fillEmergencyForm(er) {

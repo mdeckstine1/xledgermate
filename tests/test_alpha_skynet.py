@@ -105,8 +105,40 @@ def test_build_skynet_user_message_settings_intent():
         user_prompt="Set risk to 4% and stickier bids",
         context="=== snapshot ===",
     )
-    assert "suggested_changes must list" in msg
+    assert "OPERATOR PROMPT (PRIMARY" in msg
+    assert "suggested_changes" in msg
     assert "Set risk to 4%" in msg
+    assert msg.index("Set risk to 4%") < msg.index("=== snapshot ===")
+
+
+def test_build_skynet_user_message_bullish_buy_intent():
+    from alpha.hud.skynet_scenarios import build_skynet_user_message, classify_prompt_intent
+
+    prompt = (
+        "looks like we are in a long consolidation phase after a drop, "
+        "lets consider moving to a strong buy now we are in bullish signals"
+    )
+    tags = classify_prompt_intent(prompt)["tags"]
+    assert "bullish_buy" in tags
+    assert "consolidation" in tags
+
+    msg = build_skynet_user_message(user_prompt=prompt, context="=== snapshot ===")
+    assert "BULLISH / BUY intent detected" in msg
+    assert "Do NOT tighten alpha_stale_pending_buy_max_drift_pct" in msg
+    assert prompt in msg
+    assert msg.index(prompt) < msg.index("=== snapshot ===")
+
+
+def test_infer_scenario_hints_max_pending_rlusd_heavy():
+    from alpha.hud.skynet_scenarios import infer_scenario_hints
+
+    hints = infer_scenario_hints(
+        decision_reason="max_pending_buys=3",
+        inventory={"deviation": -0.27, "label": "heavy_rlusd"},
+        stale_snapshot={"over_cap_count": 0},
+    )
+    assert "C" not in hints
+    assert "I" in hints
 
 
 def test_infer_scenario_hints_post_sl():

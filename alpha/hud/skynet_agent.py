@@ -78,6 +78,7 @@ Hard rules:
 - Explain each suggested knob change with reference to current effective values in context.
 - If no safe improvement is warranted, return an empty suggested_changes array and explain why in reasoning.
 - Small incremental adjustments only — no reckless risk increases.
+- max_pending_buys HOLD with RLUSD-heavy inventory + bullish TA → favor deployment (scenario I/F), NOT default scenario C drift tightening unless ladder clutter (over_cap or operator asked).
 - Pending buys are passive limit bids (fill when ask hits bid, not when mid crosses). Use `pending_buy_stale` in context: ladder clutter → tighten drift + max_pending; entry churn (mid_passed_entry) → widen drift (Scenario G), max_pending=1.
 - When the operator describes desired settings in natural language, output concrete suggested_changes — use scenario playbook presets in context.
 """
@@ -123,7 +124,7 @@ Max {max_changes} change(s) per response.
 
 Emergency context: if drawdown is elevated or session P&L is negative, bias toward defense (lower risk, widen cooldowns, reduce TA aggression) — never the opposite without strong justification.
 
-Pending buy ladder: context includes `pending_buy_stale`, scenario playbook (A–R), and `likely_scenarios`. Entry churn → widen stale drift above offset+spread (G). Ladder clutter → tighten drift, cap max_pending (C). Natural-language setting requests → concrete suggested_changes.
+Pending buy ladder: context includes `pending_buy_stale`, scenario playbook (A–R), and `likely_scenarios` (reference only). Entry churn → widen stale drift above offset+spread (G). Ladder clutter (over_cap) → tighten drift, cap max_pending (C). RLUSD-heavy + bullish TA → deployment knobs (I/F), not automatic C.
 """
 
 _FULL_MODE_USER_PROMPT = """Full SKYNET autonomy review (Phase 3). Analyze the complete runtime context.

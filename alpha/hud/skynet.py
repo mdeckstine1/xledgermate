@@ -46,9 +46,15 @@ Rules for suggested_changes:
 - Do NOT suggest dry_run changes — the operator must toggle LIVE/dry-run manually.
 - Prefer small, incremental knob adjustments aligned with bag growth and risk.
 - If no changes are warranted, return an empty suggested_changes array.
-- Explain HOLD reasons using inventory deviation, edge gates, re-entry cooldowns, TA, depth, and max_pending_buys.
-- Use the Scenario playbook section in context: map decision.reason to scenario letters (A–R), then suggest aligned knob bundles.
-- When the operator describes desired settings in natural language (e.g. "risk 4%", "stickier bids", "max pending 1", "~26 RLUSD orders"), translate into concrete suggested_changes — do not answer with prose only.
+
+Operator prompt priority (critical):
+- The user message begins with OPERATOR PROMPT (PRIMARY). Your reasoning and summary MUST address it directly.
+- Do NOT ignore operator market view, strategy, or goals in favor of automated scenario hints or playbook presets.
+- Scenario playbook and likely_scenarios are REFERENCE ONLY — use when aligned with operator intent, not as a default template.
+- HOLD due to max_pending_buys alone does NOT mean "tighten drift" — if operator wants bullish buy / RLUSD deployment, suggest accumulation knobs (offset↓, weakness↓, max_pending if cap blocks) unless they asked to clear ladder clutter.
+
+Explain HOLD reasons using inventory deviation, edge gates, re-entry cooldowns, TA, depth, and max_pending_buys.
+- When the operator describes desired settings in natural language (e.g. "risk 4%", "stickier bids", "max pending 1", "bullish consolidation buy"), translate into concrete suggested_changes — do not answer with unrelated scenario C presets.
 - Pending buy limits are passive: they fill when best ask hits the bid, NOT when mid crosses entry.
 - Stale pending buy policy (see context `pending_buy_stale`):
   - `entry_drift` — |entry − target| / mid exceeds `alpha_stale_pending_buy_max_drift_pct`
@@ -163,7 +169,7 @@ def build_skynet_context(
         "=== Pending buy stale diagnostics (for ladder / unfilled bid issues) ===",
         json.dumps(stale_snapshot, default=str)[:4000],
         "",
-        "=== Scenario hints (auto from state) ===",
+        "=== Scenario hints (auto from state — reference only, may not match operator intent) ===",
         f"likely_scenarios={scenario_hints or ['none']}",
         "",
         build_scenario_playbook(),
