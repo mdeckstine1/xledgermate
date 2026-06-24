@@ -185,6 +185,7 @@ class OrderManager:
             if record.state == BracketLifecycleState.PENDING_BUY:
                 await self._advance_pending_buy(record, open_map)
             elif record.state == BracketLifecycleState.BRACKET_ACTIVE:
+                await self._maybe_arm_deferred_sl(record, open_map, current_price=current_price)
                 await self._reconcile_leg_sequences(record, open_map)
                 await self._advance_active_bracket(record, open_map, current_price=current_price)
 
@@ -797,20 +798,24 @@ class OrderManager:
         sl_price = leg.price_rlusd_per_xrp
         arm_at = self._deferred_sl_arm_price(sl_price)
         price_tol = self._price_match_tol()
+        best_bid = await self._market_best_bid()
         triggered = False
         if current_price > 0 and current_price <= arm_at + price_tol:
             triggered = True
-        elif not await self._sl_placement_would_cross(sl_price):
+        elif best_bid is not None and best_bid > 0 and best_bid <= arm_at + price_tol:
+            triggered = True
+        elif best_bid is not None and best_bid > 0 and not await self._sl_placement_would_cross(sl_price):
             triggered = True
 
         if not triggered:
             return
 
         logger.info(
-            "deferred_sl_arm | id=%s | sl=%.6f | mid=%.6f | arm_at=%.6f",
+            "deferred_sl_arm | id=%s | sl=%.6f | mid=%.6f | bid=%.6f | arm_at=%.6f",
             record.bracket_id,
             sl_price,
             current_price,
+            best_bid or 0.0,
             arm_at,
         )
         await self._place_sl_leg(
@@ -1275,7 +1280,6 @@ class OrderManager:
         *,
         current_price: float = 0.0,
     ) -> None:
-        await self._maybe_arm_deferred_sl(record, open_map, current_price=current_price)
         for role, leg in (
             (BracketLegRole.TAKE_PROFIT, record.tp_leg),
             (BracketLegRole.STOP_LOSS, record.sl_leg),
@@ -1421,11 +1425,7 @@ class OrderManager:
                 )
                 continue
 
-            if (
-                role == BracketLegRole.STOP_LOSS
-                and self._config.alpha_deferred_sl_enabled
-                and await self._should_defer_sl_placement(leg.price_rlusd_per_xrp)
-            ):
+            if role == BracketLegRole.STOP_LOSS and self._config.alpha_deferred_sl_enabled:
                 continue
 
             if not self._guard.require_live(f"repair_{role.value}"):

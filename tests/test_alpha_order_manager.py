@@ -690,7 +690,7 @@ def test_sl_trail_immediate_fill_detected(bracket_state):
 def test_repair_attaches_missing_sl_sequence(bracket_state):
     async def _run() -> None:
         ledger = _BracketFakeLedger()
-        cfg = _bracket_config()
+        cfg = _bracket_config(alpha_deferred_sl_enabled=False)
         mgr = OrderManager(
             ledger,
             DryRunGuard(dry_run=False, network="mainnet"),
@@ -823,6 +823,69 @@ def test_deferred_sl_arms_when_mid_reaches_stop(bracket_state):
 
         bid_state["value"] = 1.95
         mgr.set_structure(MarketStructureSnapshot(mid=1.96, sample_count=1, mean_mid=1.96, recent_high=1.96, recent_low=1.96, trend="neutral", breakout_up=False, breakout_down=False, summary="test"))
+        await mgr.sync_brackets()
+
+        assert record.sl_leg.sequence is not None
+        assert len(ledger.placed_sells) == 2
+
+    asyncio.run(_run())
+
+
+def test_deferred_sl_arms_when_bid_reaches_stop(bracket_state):
+    async def _run() -> None:
+        from alpha.decision.structure import MarketStructureSnapshot
+
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config(alpha_deferred_sl_enabled=True, alpha_stale_pending_buy_enabled=False)
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+
+        bid_state = {"value": 2.05}
+
+        async def _dynamic_bid() -> float:
+            return bid_state["value"]
+
+        mgr._market_best_bid = _dynamic_bid  # type: ignore[method-assign]
+        mgr.set_structure(
+            MarketStructureSnapshot(
+                mid=2.05,
+                sample_count=1,
+                mean_mid=2.05,
+                recent_high=2.05,
+                recent_low=2.05,
+                trend="neutral",
+                breakout_up=False,
+                breakout_down=False,
+                summary="test",
+            )
+        )
+
+        mgr.register_pending_buy(buy_sequence=813, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
+        ledger.add_buy(813, 10.0)
+        ledger.remove_offer(813)
+        await mgr.sync_brackets()
+
+        record = mgr.store.get_by_buy_sequence(813)
+        assert record and record.sl_leg and record.sl_leg.sequence is None
+
+        bid_state["value"] = 1.96
+        mgr.set_structure(
+            MarketStructureSnapshot(
+                mid=2.05,
+                sample_count=1,
+                mean_mid=2.05,
+                recent_high=2.05,
+                recent_low=2.05,
+                trend="neutral",
+                breakout_up=False,
+                breakout_down=False,
+                summary="test",
+            )
+        )
         await mgr.sync_brackets()
 
         assert record.sl_leg.sequence is not None
