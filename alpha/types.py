@@ -112,6 +112,7 @@ class LedgerOfferResult:
     action: str
     tx_hash: Optional[str] = None
     sequence: Optional[int] = None
+    offer_resting: Optional[bool] = None
 
 
 @dataclass(frozen=True)

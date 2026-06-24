@@ -258,6 +258,46 @@ class XRPLConnector:
                 return seq
         return None
 
+    @staticmethod
+    def classify_offer_create(response) -> tuple[Optional[int], Optional[bool]]:
+        """
+        Classify OfferCreate outcome.
+
+        Returns (sequence, resting):
+        - resting True: new offer on book (sequence may still be None if parse failed)
+        - resting False: tesSUCCESS with no Created Offer (fully consumed at placement)
+        - resting None: ambiguous — caller must not assume immediate fill
+        """
+        seq = XRPLConnector.extract_created_offer_sequence(response)
+        if seq is not None:
+            return seq, True
+
+        result = response.result if hasattr(response, "result") else {}
+        meta = result.get("meta", {})
+        if not isinstance(meta, dict):
+            return None, None
+
+        nodes = meta.get("AffectedNodes") or meta.get("affected_nodes") or []
+        created_offer = False
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            created = node.get("CreatedNode") or node.get("created_node")
+            if not isinstance(created, dict):
+                continue
+            entry_type = created.get("LedgerEntryType") or created.get("ledger_entry_type")
+            if entry_type == "Offer":
+                created_offer = True
+                break
+
+        if created_offer:
+            return None, True
+
+        tx_result = meta.get("TransactionResult")
+        if tx_result == "tesSUCCESS":
+            return None, False
+        return None, None
+
     def _rlusd_limit_amount(self, value: str) -> IssuedCurrencyAmount:
         return IssuedCurrencyAmount(
             currency=self._issued_rlusd_currency_code(),
@@ -520,7 +560,7 @@ class XRPLConnector:
             )
         return cancelled
 
-    async def place_quote(self, intent: QuoteIntent) -> tuple[str, Optional[int]]:
+    async def place_quote(self, intent: QuoteIntent) -> tuple[str, Optional[int], Optional[bool]]:
         wallet = self.load_wallet()
         dec = getattr(intent, "price_decimals", 6) or 6
         rlusd_amount = intent.size_xrp * intent.price
@@ -549,17 +589,18 @@ class XRPLConnector:
         )
         response = await self._sign_and_submit(tx, wallet)
         tx_hash = self._validate_tx_response(response)
-        offer_seq = self.extract_created_offer_sequence(response)
+        offer_seq, offer_resting = self.classify_offer_create(response)
         logger.info(
-            "Placed %s L%s offer | size=%.4f XRP price=%s seq=%s hash=%s",
+            "Placed %s L%s offer | size=%.4f XRP price=%s seq=%s resting=%s hash=%s",
             intent.side,
             intent.level,
             intent.size_xrp,
             format_rlusd_price(intent.price, dec),
             offer_seq if offer_seq is not None else "n/a",
+            offer_resting,
             tx_hash,
         )
-        return tx_hash, offer_seq
+        return tx_hash, offer_seq, offer_resting
 
     def _parse_offer_legs(self, gets, pays) -> tuple[Optional[str], float, float]:
         if isinstance(gets, str) and isinstance(pays, dict):

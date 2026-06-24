@@ -197,7 +197,7 @@ class XrplLedgerAdapter(LedgerInterface):
             level=1,
             price_decimals=dec,
         )
-        tx_hash, offer_seq = await self._connector.place_quote(intent)
+        tx_hash, offer_seq, offer_resting = await self._connector.place_quote(intent)
         logger.info("ledger_place_buy | %s | hash=%s | seq=%s", action, tx_hash, offer_seq)
         return LedgerOfferResult(
             submitted=True,
@@ -205,6 +205,7 @@ class XrplLedgerAdapter(LedgerInterface):
             action=action,
             tx_hash=tx_hash,
             sequence=offer_seq,
+            offer_resting=offer_resting,
         )
 
     async def place_limit_sell_xrp(
@@ -227,7 +228,7 @@ class XrplLedgerAdapter(LedgerInterface):
             level=1,
             price_decimals=dec,
         )
-        tx_hash, offer_seq = await self._connector.place_quote(intent)
+        tx_hash, offer_seq, offer_resting = await self._connector.place_quote(intent)
         logger.info("ledger_place_sell | %s | hash=%s | seq=%s", action, tx_hash, offer_seq)
         return LedgerOfferResult(
             submitted=True,
@@ -235,6 +236,7 @@ class XrplLedgerAdapter(LedgerInterface):
             action=action,
             tx_hash=tx_hash,
             sequence=offer_seq,
+            offer_resting=offer_resting,
         )
 
     async def cancel_offer(self, sequence: int) -> LedgerOfferResult:

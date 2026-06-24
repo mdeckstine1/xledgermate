@@ -341,11 +341,28 @@ class OrderManager:
         leg = record.tp_leg if role == BracketLegRole.TAKE_PROFIT else record.sl_leg
         if leg is None:
             return False
+        price_tol = self._price_match_tol()
         if (
-            abs(new_price - leg.price_rlusd_per_xrp) < _PRICE_EPS
+            abs(new_price - leg.price_rlusd_per_xrp) <= price_tol
             and leg.sequence is not None
         ):
             return False
+
+        if role == BracketLegRole.STOP_LOSS:
+            best_bid = await self._market_best_bid()
+            if (
+                best_bid is not None
+                and best_bid > 0
+                and new_price < best_bid - price_tol
+            ):
+                logger.info(
+                    "trailing_sl_deferred | id=%s | new_sl=%.6f | best_bid=%.6f | reason=%s",
+                    record.bracket_id,
+                    new_price,
+                    best_bid,
+                    reason,
+                )
+                return False
 
         size_xrp = leg.remaining_xrp if leg.remaining_xrp > _SIZE_EPS else leg.size_xrp
         leg_name = role.value
@@ -735,6 +752,15 @@ class OrderManager:
     def _price_match_tol(self) -> float:
         dec = price_decimals(self._config)
         return max(price_eps(dec), 1e-5)
+
+    async def _market_best_bid(self) -> Optional[float]:
+        try:
+            book = await self._ledger.get_order_book(limit=20)
+            bid = getattr(book, "best_bid", None)
+            return float(bid) if bid is not None and float(bid) > 0 else None
+        except Exception as exc:
+            logger.debug("market_best_bid_unavailable | %s", exc)
+            return None
 
     def _offer_price_match(self, a: float, b: float) -> bool:
         return abs(float(a) - float(b)) <= self._price_match_tol()
@@ -1236,7 +1262,13 @@ class OrderManager:
                 await self._on_leg_fill(record, role, filled, open_map)
                 continue
 
-            matched = _match_offer_for_leg(leg, open_map, self._store, record)
+            matched = _match_offer_for_leg(
+                leg,
+                open_map,
+                self._store,
+                record,
+                price_tol=self._price_match_tol(),
+            )
             if matched is not None:
                 leg.sequence = matched
                 self._store.register_leg_sequence(matched, record.bracket_id)
@@ -1305,7 +1337,9 @@ class OrderManager:
             if attempt < 2:
                 await asyncio.sleep(0.6)
 
-        return None, True
+        if place_result.offer_resting is False:
+            return None, True
+        return None, False
 
     async def _open_sequences(self) -> Set[int]:
         offers = await self._ledger.get_open_offers()
@@ -1411,6 +1445,8 @@ def _match_offer_for_leg(
     open_map: Dict[int, dict[str, Any]],
     store: BracketStateStore,
     record: BracketRecord,
+    *,
+    price_tol: float = 1e-5,
 ) -> Optional[int]:
     """Find an open offer matching a leg missing its sequence."""
     size = leg.remaining_xrp if leg.remaining_xrp > _SIZE_EPS else leg.size_xrp
@@ -1427,7 +1463,7 @@ def _match_offer_for_leg(
             continue
         if offer.get("side") != "ask":
             continue
-        if abs(float(offer.get("price", 0.0)) - leg.price_rlusd_per_xrp) > 1e-5:
+        if abs(float(offer.get("price", 0.0)) - leg.price_rlusd_per_xrp) > price_tol:
             continue
         if abs(float(offer.get("size_xrp", 0.0)) - size) > 0.05:
             continue

@@ -616,7 +616,7 @@ class _ImmediateFillSellLedger(_BracketFakeLedger):
         price_rlusd_per_xrp: float,
     ) -> LedgerOfferResult:
         self.placed_sells.append((size_xrp, price_rlusd_per_xrp))
-        return LedgerOfferResult(submitted=True, dry_run=False, action="sell")
+        return LedgerOfferResult(submitted=True, dry_run=False, action="sell", offer_resting=False)
 
 
 def test_sl_trail_immediate_fill_detected(bracket_state):
