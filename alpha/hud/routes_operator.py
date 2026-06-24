@@ -55,8 +55,8 @@ def register_operator_routes(app: Any) -> None:
         return JSONResponse(
             {
                 "ok": True,
-                "config_effective": effective_config_snapshot(effective),
-                "config_base": effective_config_snapshot(base),
+                "config_effective": effective_config_snapshot(effective, overrides),
+                "config_base": effective_config_snapshot(base, {}),
                 "operator_overrides": overrides,
                 "slider_defaults": OPERATOR_SLIDER_DEFAULTS,
             }
@@ -75,7 +75,7 @@ def register_operator_routes(app: Any) -> None:
             {
                 "ok": True,
                 "operator_overrides": merged,
-                "config_effective": effective_config_snapshot(effective),
+                "config_effective": effective_config_snapshot(effective, merged),
             }
         )
 

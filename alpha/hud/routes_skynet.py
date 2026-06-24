@@ -58,7 +58,7 @@ def register_skynet_routes(app: Any) -> None:
         base = BotConfig.load()
         overrides = _runtime().load_overrides()
         effective = apply_overrides(base, overrides)
-        snap = effective_config_snapshot(effective)
+        snap = effective_config_snapshot(effective, overrides)
         context = build_skynet_context(hud_state, operator_config=snap)
         return hud_state, effective, snap
 
@@ -121,7 +121,7 @@ def register_skynet_routes(app: Any) -> None:
                 "applied": sanitized,
                 "applied_details": accepted,
                 "operator_overrides": merged,
-                "config_effective": effective_config_snapshot(effective),
+                "config_effective": effective_config_snapshot(effective, merged),
                 "message": f"Applied {len(sanitized)} operator override(s). Takes effect next cycle.",
             }
         )
@@ -172,6 +172,7 @@ def register_skynet_routes(app: Any) -> None:
                 api_key=api_key,
                 model=status["model"],
                 max_tokens=status.get("max_tokens", 4096),
+                operator_phase=snap.get("alpha_operator_phase"),
             )
         except Exception as exc:
             logger.warning("skynet_ask_failed | %s", exc)

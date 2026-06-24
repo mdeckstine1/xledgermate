@@ -9,6 +9,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from alpha.hud.operator_phase import (
+    DEFAULT_OPERATOR_PHASE,
+    OPERATOR_PHASE_KEY,
+    normalize_operator_phase,
+    phase_snapshot_fields,
+)
 from config.settings import BotConfig, patch_config_file
 from alpha.precision import MAX_ALPHA_RLUSD_PRICE_DECIMALS, MIN_ALPHA_RLUSD_PRICE_DECIMALS
 
@@ -30,8 +36,12 @@ _TA_VIRTUAL_KEYS = frozenset(
     }
 )
 
+# SKYNET-only virtual key (persisted in overrides, not BotConfig).
+_VIRTUAL_SKYNET_KEYS = frozenset({OPERATOR_PHASE_KEY})
+
 # Keys the HUD may override at runtime (Aggressive Bag Growth — TA-Driven).
 OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
+    OPERATOR_PHASE_KEY,
     "dry_run",
     "trading_enabled",
     "inventory_target_xrp_ratio",
@@ -144,7 +154,7 @@ def apply_overrides(config: BotConfig, overrides: Optional[Dict[str, Any]] = Non
     allowed = {f.name for f in fields(BotConfig)}
     kwargs: Dict[str, Any] = {}
     for key, value in overrides.items():
-        if key in _TA_VIRTUAL_KEYS:
+        if key in _TA_VIRTUAL_KEYS or key in _VIRTUAL_SKYNET_KEYS:
             continue
         if key in allowed:
             kwargs[key] = value
@@ -154,11 +164,16 @@ def apply_overrides(config: BotConfig, overrides: Optional[Dict[str, Any]] = Non
     return result
 
 
-def effective_config_snapshot(config: BotConfig) -> Dict[str, Any]:
+def effective_config_snapshot(
+    config: BotConfig,
+    overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Safe tunable snapshot for HUD display (no secrets)."""
     ta = config.alpha_technical_analysis
     snap: Dict[str, Any] = {}
     for key in OPERATOR_TUNABLE_KEYS:
+        if key == OPERATOR_PHASE_KEY:
+            continue
         if key == "alpha_ta_enabled":
             snap[key] = ta.enabled
         elif key == "alpha_ta_min_buy_score":
@@ -176,6 +191,7 @@ def effective_config_snapshot(config: BotConfig) -> Dict[str, Any]:
         else:
             snap[key] = getattr(config, key)
     snap["inventory_target_xrp_pct"] = round(config.inventory_target_xrp_ratio * 100.0, 1)
+    snap.update(phase_snapshot_fields(overrides))
     return snap
 
 
@@ -203,6 +219,12 @@ def validate_override_updates(
 
     trial = apply_overrides(base or BotConfig(), sanitized)
     errors.extend(_validate_merged_config(trial, sanitized.keys()))
+    if OPERATOR_PHASE_KEY in sanitized and sanitized[OPERATOR_PHASE_KEY] not in (
+        "trust",
+        "scale",
+        "aggressive",
+    ):
+        errors.append(f"{OPERATOR_PHASE_KEY} must be trust, scale, or aggressive")
     if errors:
         return {}, errors
     return sanitized, []
@@ -239,6 +261,13 @@ def _coerce_override(key: str, value: Any) -> Any:
     }
     if key in _INT_KEYS:
         return int(value)
+    if key == OPERATOR_PHASE_KEY:
+        phase = str(value).strip().lower()
+        aliases = {"patient": "trust", "prove": "trust", "soak": "trust", "balanced": "scale", "growth": "aggressive", "eager": "aggressive"}
+        phase = aliases.get(phase, phase)
+        if phase not in ("trust", "scale", "aggressive"):
+            raise ValueError("must be trust, scale, or aggressive")
+        return phase
     return float(value)
 
 

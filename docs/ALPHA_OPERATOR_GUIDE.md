@@ -182,6 +182,20 @@ Re-entry cooldown reasons in logs and Decision: `post_tp_cooldown`, `post_sl_coo
 
 ---
 
+## SKYNET (Grok advisor)
+
+The HUD **SKYNET** tab provides Grok-powered knob suggestions (Ask), bounded Agent mode, and optional Full autonomy. **Operator phase** (`trust` | `scale` | `aggressive`) biases every SKYNET cycle — set it before asking for strategy advice.
+
+| Phase | Purpose |
+|-------|---------|
+| **trust** | Patient soak; anti-bleed; default |
+| **scale** | Modest accumulation after clean nights |
+| **aggressive** | Bag-growth push within guardrails |
+
+Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-advisor-agent-full-mode)** and scenarios **S–U** in the traders manual. Requires `XLG_GROK_KEY` or `XAI_API_KEY` in `.env`.
+
+---
+
 ## VPS (Cursor workflow)
 
 1. Push `alpha` branch
@@ -208,6 +222,7 @@ Re-entry cooldown reasons in logs and Decision: `post_tp_cooldown`, `post_sl_coo
 ## Further reading
 
 - **[`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md)** — **start here for live trading & orders**
+- **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — scenarios A–U, **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-advisor-agent-full-mode)**, operator phase
 - [`PROJECT_INSTRUCTIONS.md`](../PROJECT_INSTRUCTIONS.md)
 - [`ALPHA_MAINNET_CUTOVER.md`](ALPHA_MAINNET_CUTOVER.md)
 - [`ALPHA_FINAL_REPORT.md`](ALPHA_FINAL_REPORT.md)

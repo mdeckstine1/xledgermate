@@ -448,6 +448,22 @@
       </section>
       <section id="skynet" class="panel">
         <p class="skynet-status" id="skynetStatus">Loading SKYNET status…</p>
+        <div class="card" style="margin-bottom:12px;border-color:#2a4a3d">
+          <h2 style="margin:0 0 8px;font-size:1rem;color:#86efac">Operator phase</h2>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Strategy bias for SKYNET (Ask + Agent). Does not change trading knobs until you Apply suggestions. Default <strong>trust</strong> = patient accumulation, anti-bleed.</p>
+          <div class="ctrl-row" style="align-items:flex-end;flex-wrap:wrap;gap:10px">
+            <div>
+              <label class="label" for="skynetOperatorPhase">Phase</label>
+              <select id="skynetOperatorPhase" style="min-width:220px;background:#0b1220;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:.85rem">
+                <option value="trust">Trust — patient, prove overnight</option>
+                <option value="scale">Scale — modest accumulation</option>
+                <option value="aggressive">Aggressive — bag-growth push</option>
+              </select>
+            </div>
+            <button type="button" id="btnSaveOperatorPhase" class="secondary">Save phase</button>
+            <span id="skynetPhaseHint" class="muted" style="font-size:.75rem"></span>
+          </div>
+        </div>
         <div class="card skynet-agent-card">
           <h2 style="margin:0 0 8px;font-size:1rem;color:var(--accent)">Grok Agent — Phase 2</h2>
           <p class="muted" style="margin:0 0 10px;font-size:.78rem">Bounded agent suggests knob changes within guardrails every 3–5 engine cycles (or on significant events). Phase 2: review and apply manually.</p>
@@ -522,6 +538,8 @@
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Evaluate the re-entry gate and cooldown situation. Should we wait or adjust re-entry settings?">Re-entry / cooldown</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Perform a risk and safety check: drawdown, kill switch, preflight, inventory imbalance, and anything dangerous in current settings.">Risk check</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Analyze pending buy ladder and stale cancel policy. Use pending_buy_stale in context: which bids should cancel, why are unfilled bids sitting, and what knob changes (max_drift, max_pending_buys, buy_limit_offset) do you recommend?">Stale bid ladder</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Trust phase: RLUSD-heavy, bullish consolidation. Recommend only patient accumulation knobs — max_pending if cap blocks, keep offset at or above effective, weakness 0.05. Do not tighten drift. Explain HOLD vs session MTM vs realized bracket P&amp;L.">Trust phase review</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Scale phase check: I earned trust — suggest modest accumulation (max_pending 2, offset 0.15–0.20) one knob at a time. Compare to effective config.">Scale phase knobs</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Give a full structured summary of current bot state: portfolio, decision, TA, brackets, open offers, and top priority. Address my market view in the prompt above if I added one — do not default to ladder-clutter advice unless that is the actual problem.">Full summary</button>
             </div>
             <div class="skynet-actions">
@@ -717,6 +735,15 @@
       $('dryRunLabel').style.color = live ? 'var(--bad)' : 'var(--warn)';
       $('btnToggleDryRun').textContent = live ? 'Switch to dry-run…' : 'Enable LIVE trading…';
       $('btnToggleDryRun').className = live ? 'secondary' : 'danger';
+      if ($('skynetOperatorPhase')) {
+        const phase = c.alpha_operator_phase || 'trust';
+        $('skynetOperatorPhase').value = phase;
+        const hint = $('skynetPhaseHint');
+        if (hint) {
+          const label = c.alpha_operator_phase_label || phase;
+          hint.textContent = 'SKYNET bias: ' + label;
+        }
+      }
     }
 
     async function loadOperatorConfig() {
@@ -2157,6 +2184,18 @@
       updateAskKnobHighlights([]);
       $('btnSkynetApply').disabled = true;
       $('skynetApplyHint').textContent = '';
+    };
+
+    $('btnSaveOperatorPhase').onclick = async () => {
+      const phase = $('skynetOperatorPhase').value || 'trust';
+      const d = await patchJson('/operator/config', { overrides: { alpha_operator_phase: phase } });
+      if (d?.ok) {
+        toast('Operator phase → ' + phase);
+        operatorConfig = d;
+        fillControlsFromConfig(operatorConfig);
+      } else {
+        toast(d?.errors?.join('; ') || d?.message || 'Save failed', true);
+      }
     };
 
     async function poll() {

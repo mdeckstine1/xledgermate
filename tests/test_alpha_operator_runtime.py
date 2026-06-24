@@ -79,6 +79,14 @@ def test_validate_override_accepts_good_patch():
     assert sanitized["bracket_trailing_enabled"] is True
 
 
+def test_validate_override_accepts_operator_phase():
+    sanitized, errors = validate_override_updates({"alpha_operator_phase": "trust"})
+    assert not errors
+    assert sanitized["alpha_operator_phase"] == "trust"
+    _, errors = validate_override_updates({"alpha_operator_phase": "invalid"})
+    assert errors
+
+
 def test_runtime_store_overrides_and_commands(tmp_path):
     store = OperatorRuntimeStore(
         overrides_path=tmp_path / "alpha_overrides.json",

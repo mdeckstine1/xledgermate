@@ -90,12 +90,14 @@ def test_build_skynet_context_includes_decision():
             "decision": {"action": "hold", "reason": "max_pending_buys=5"},
             "recent_activity": [],
         },
-        operator_config={"alpha_max_pending_buys": 5},
+        operator_config={"alpha_max_pending_buys": 5, "alpha_operator_phase": "trust"},
     )
     assert "max_pending_buys=5" in ctx
     assert "heavy_rlusd" in ctx
     assert "Scenario playbook" in ctx
     assert "likely_scenarios=" in ctx
+    assert "phase=trust" in ctx
+    assert "Operator phase scenarios (S–U)" in ctx
 
 
 def test_build_skynet_user_message_settings_intent():
@@ -146,3 +148,41 @@ def test_infer_scenario_hints_post_sl():
 
     hints = infer_scenario_hints(decision_reason="post_sl_cooldown cycles=1/8")
     assert "K" in hints
+
+
+def test_operator_phase_normalize_and_snapshot():
+    from alpha.hud.operator_phase import (
+        DEFAULT_OPERATOR_PHASE,
+        build_operator_phase_context_block,
+        normalize_operator_phase,
+        phase_snapshot_fields,
+    )
+    from alpha.operator.runtime import effective_config_snapshot, validate_override_updates
+
+    assert normalize_operator_phase("TRUST") == "trust"
+    assert normalize_operator_phase("eager") == "aggressive"
+    assert normalize_operator_phase("bogus") == DEFAULT_OPERATOR_PHASE
+    assert phase_snapshot_fields({})["alpha_operator_phase"] == "trust"
+    assert phase_snapshot_fields({"alpha_operator_phase": "scale"})["alpha_operator_phase_label"] == "Scale"
+    block = build_operator_phase_context_block("trust")
+    assert "phase=trust" in block
+    assert "session_pnl_xrp" in block or "MTM" in block or "realized" in block.lower()
+
+    sanitized, errors = validate_override_updates({"alpha_operator_phase": "scale"})
+    assert not errors
+    assert sanitized["alpha_operator_phase"] == "scale"
+
+    snap = effective_config_snapshot(BotConfig(), {"alpha_operator_phase": "aggressive"})
+    assert snap["alpha_operator_phase"] == "aggressive"
+
+
+def test_build_skynet_user_message_includes_operator_phase():
+    from alpha.hud.skynet_scenarios import build_skynet_user_message
+
+    msg = build_skynet_user_message(
+        user_prompt="summarize",
+        context="=== snapshot ===",
+        operator_phase="trust",
+    )
+    assert "OPERATOR PHASE active: trust" in msg
+    assert "lowering alpha_buy_limit_offset_pct below" in msg

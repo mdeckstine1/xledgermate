@@ -354,7 +354,7 @@ def build_hud_state(
     )
     overrides = operator_overrides or {}
     effective = config_effective or BotConfig()
-    tunables = effective_config_snapshot(effective)
+    tunables = effective_config_snapshot(effective, overrides)
     history_path = runtime_state_path.parent / PRICE_HISTORY_PATH.name
     ta_source = effective.alpha_technical_analysis.candle_price_source
     chart_source = effective.alpha_chart_price_source or "mid"

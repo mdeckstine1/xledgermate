@@ -5,6 +5,12 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from alpha.hud.operator_phase import (
+    OPERATOR_PHASE_KEY,
+    build_operator_phase_playbook,
+    phase_user_message_rules,
+)
+
 
 # Friendly HUD names → operator override keys (Grok may use either).
 KNOB_ALIASES: Dict[str, str] = {
@@ -67,6 +73,8 @@ Preset — sticky + ~26 RLUSD @ ~580 XRP portfolio:
   alpha_risk_per_trade_pct=4.0, alpha_buy_limit_offset_pct=0.12, alpha_min_edge_threshold_pct=0.08,
   alpha_stale_pending_buy_max_drift_pct=0.35, alpha_max_pending_buys=1,
   alpha_stale_pending_buy_max_age_seconds=0, alpha_cycle_interval_seconds=20
+
+""" + build_operator_phase_playbook() + """
 
 Natural language → keys: "stickier"→drift↑; "bigger orders"/"26 RLUSD"→risk_per_trade_pct;
 "one bid"→max_pending_buys=1; "faster cycles"→cycle_interval_seconds↓; "eager fills"→offset↓.
@@ -163,7 +171,12 @@ def classify_prompt_intent(prompt: str) -> Dict[str, Any]:
     return {"tags": tags, "has_settings_request": settings_cues}
 
 
-def build_skynet_user_message(*, user_prompt: str, context: str) -> str:
+def build_skynet_user_message(
+    *,
+    user_prompt: str,
+    context: str,
+    operator_phase: Optional[str] = None,
+) -> str:
     """Put operator prompt first; scenarios are reference only."""
     prompt = (user_prompt or "").strip()
     intent = classify_prompt_intent(prompt)
@@ -209,6 +222,14 @@ def build_skynet_user_message(*, user_prompt: str, context: str) -> str:
         lines.append(
             "5. Include suggested_changes when knob adjustments serve operator goals; empty array is OK if HOLD is correct."
         )
+
+    phase = operator_phase
+    if phase is None and OPERATOR_PHASE_KEY + "=" in context:
+        for line in context.splitlines():
+            if line.startswith("phase="):
+                phase = line.split("=", 1)[1].strip().split()[0]
+                break
+    lines.extend(phase_user_message_rules(phase or "trust"))
 
     lines.extend(["", "=== RUNTIME CONTEXT (secondary) ===", context])
     return "\n".join(lines)

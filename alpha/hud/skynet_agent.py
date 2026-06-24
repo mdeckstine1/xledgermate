@@ -78,7 +78,9 @@ Hard rules:
 - Explain each suggested knob change with reference to current effective values in context.
 - If no safe improvement is warranted, return an empty suggested_changes array and explain why in reasoning.
 - Small incremental adjustments only — no reckless risk increases.
-- max_pending_buys HOLD with RLUSD-heavy inventory + bullish TA → favor deployment (scenario I/F), NOT default scenario C drift tightening unless ladder clutter (over_cap or operator asked).
+- max_pending_buys HOLD with RLUSD-heavy inventory + bullish TA → favor deployment per operator phase (trust: max_pending↑ first; scale/aggressive: I/F knobs), NOT default scenario C drift tightening unless ladder clutter (over_cap or operator asked).
+- Respect alpha_operator_phase in context. Trust phase: never lower buy_limit_offset_pct below effective without operator explicit ask.
+- session_pnl_xrp is MTM — not realized bracket profit.
 - Pending buys are passive limit bids (fill when ask hits bid, not when mid crosses). Use `pending_buy_stale` in context: ladder clutter → tighten drift + max_pending; entry churn (mid_passed_entry) → widen drift (Scenario G), max_pending=1.
 - When the operator describes desired settings in natural language, output concrete suggested_changes — use scenario playbook presets in context.
 """
@@ -122,9 +124,9 @@ Guardrails (min/max — stay inside):
 
 Max {max_changes} change(s) per response.
 
-Emergency context: if drawdown is elevated or session P&L is negative, bias toward defense (lower risk, widen cooldowns, reduce TA aggression) — never the opposite without strong justification.
+Emergency context: if drawdown is elevated or session P&L is negative, bias toward defense (lower risk, widen cooldowns, reduce TA aggression) — never the opposite without strong justification. In trust phase, treat negative realized_bracket_pnl (tax CSV) and SL streak as stronger signals than positive session MTM.
 
-Pending buy ladder: context includes `pending_buy_stale`, scenario playbook (A–R), and `likely_scenarios` (reference only). Entry churn → widen stale drift above offset+spread (G). Ladder clutter (over_cap) → tighten drift, cap max_pending (C). RLUSD-heavy + bullish TA → deployment knobs (I/F), not automatic C.
+Pending buy ladder: context includes `pending_buy_stale`, scenario playbook (A–R, S–U), operator phase, and `likely_scenarios` (reference only). Entry churn → widen stale drift above offset+spread (G). Ladder clutter (over_cap) → tighten drift, cap max_pending (C). RLUSD-heavy + bullish TA → deployment knobs per phase (S/T/U), not automatic C.
 """
 
 _FULL_MODE_USER_PROMPT = """Full SKYNET autonomy review (Phase 3). Analyze the complete runtime context.
@@ -716,7 +718,7 @@ def run_skynet_agent(
         runtime = OperatorRuntimeStore()
         overrides = runtime.load_overrides()
         effective = apply_overrides(base, overrides)
-        effective_snap = effective_config_snapshot(effective)
+        effective_snap = effective_config_snapshot(effective, overrides)
         trading_enabled = bool(
             effective_snap.get("trading_enabled", getattr(effective, "trading_enabled", True))
         )
@@ -739,7 +741,7 @@ def run_skynet_agent(
             )
             overrides = runtime.load_overrides()
             effective = apply_overrides(base, overrides)
-            effective_snap = effective_config_snapshot(effective)
+            effective_snap = effective_config_snapshot(effective, overrides)
 
         triggered, event_reasons = detect_significant_events(
             hud_state, agent.get("last_event_snapshot")
@@ -760,6 +762,7 @@ def run_skynet_agent(
         user_prompt = user_tpl.format(context=context)
         model = (getattr(cfg, "alpha_skynet_grok_model", None) or "grok-3").strip() or "grok-3"
         max_tokens = int(getattr(cfg, "alpha_skynet_grok_max_tokens", 4096) or 4096)
+        operator_phase = effective_snap.get("alpha_operator_phase")
         raw, parsed = call_grok_advisor(
             user_prompt="",
             context=context,
@@ -768,6 +771,7 @@ def run_skynet_agent(
             system_prompt=system,
             user_message=user_prompt,
             max_tokens=max_tokens,
+            operator_phase=operator_phase,
         )
 
         safe, rejected, errors = filter_guardrailed_suggestions(

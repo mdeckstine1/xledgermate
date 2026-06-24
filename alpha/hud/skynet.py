@@ -10,6 +10,12 @@ import requests
 
 from alpha.operator.runtime import OPERATOR_TUNABLE_KEYS, validate_override_updates
 from alpha.orders.stale_pending import build_pending_buy_stale_snapshot
+from alpha.hud.operator_phase import (
+    OPERATOR_PHASE_KEY,
+    build_operator_phase_context_block,
+    normalize_operator_phase,
+)
+from alpha.reporting.realized_pnl import build_realized_pnl_snapshot, format_realized_pnl_context_block
 from alpha.hud.skynet_scenarios import (
     build_scenario_playbook,
     build_skynet_user_message,
@@ -51,7 +57,10 @@ Operator prompt priority (critical):
 - The user message begins with OPERATOR PROMPT (PRIMARY). Your reasoning and summary MUST address it directly.
 - Do NOT ignore operator market view, strategy, or goals in favor of automated scenario hints or playbook presets.
 - Scenario playbook and likely_scenarios are REFERENCE ONLY — use when aligned with operator intent, not as a default template.
-- HOLD due to max_pending_buys alone does NOT mean "tighten drift" — if operator wants bullish buy / RLUSD deployment, suggest accumulation knobs (offset↓, weakness↓, max_pending if cap blocks) unless they asked to clear ladder clutter.
+- HOLD due to max_pending_buys alone does NOT mean "tighten drift" — if operator wants bullish buy / RLUSD deployment, suggest accumulation knobs per operator phase (trust: max_pending↑ before offset↓; scale/aggressive: offset↓ may apply).
+- Respect `alpha_operator_phase` in context (trust | scale | aggressive). Trust phase: do NOT lower alpha_buy_limit_offset_pct below effective without explicit operator ask or sharp dip.
+- session_pnl_xrp is mark-to-market portfolio drift — NOT realized trading profit. Use bracket TP/SL outcomes when judging bleed.
+- Context block `realized_bracket_pnl` (tax CSV) is authoritative for trading edge in trust phase — prefer over session_pnl_xrp_mtm.
 
 Explain HOLD reasons using inventory deviation, edge gates, re-entry cooldowns, TA, depth, and max_pending_buys.
 - When the operator describes desired settings in natural language (e.g. "risk 4%", "stickier bids", "max pending 1", "bullish consolidation buy"), translate into concrete suggested_changes — do not answer with unrelated scenario C presets.
@@ -117,8 +126,23 @@ def build_skynet_context(
         reentry=reentry if isinstance(reentry, dict) else {},
         stale_snapshot=stale_snapshot if isinstance(stale_snapshot, dict) else {},
     )
+    operator_phase = normalize_operator_phase(cfg.get(OPERATOR_PHASE_KEY))
+    session_pnl = risk.get("session_pnl_xrp")
+    try:
+        session_pnl_f = float(session_pnl) if session_pnl is not None else None
+    except (TypeError, ValueError):
+        session_pnl_f = None
+    realized_pnl = build_realized_pnl_snapshot(
+        logs_dir="logs",
+        hours=24.0,
+        session_pnl_xrp=session_pnl_f,
+    )
 
     lines = [
+        build_operator_phase_context_block(operator_phase),
+        "",
+        format_realized_pnl_context_block(realized_pnl),
+        "",
         "=== Alpha runtime snapshot ===",
         f"network={hud_state.get('network')} dry_run={hud_state.get('dry_run')} trading_enabled={hud_state.get('trading_enabled')}",
         f"paused={hud_state.get('operator_paused')} posture={hud_state.get('posture')}",
@@ -133,7 +157,7 @@ def build_skynet_context(
         f"action={decision.get('action')} reason={decision.get('reason')} edge_pct={decision.get('edge_pct')}",
         "",
         "=== Risk ===",
-        f"kill={risk.get('kill_switch_active')} drawdown_pct={risk.get('drawdown_pct')} session_pnl_xrp={risk.get('session_pnl_xrp')}",
+        f"kill={risk.get('kill_switch_active')} drawdown_pct={risk.get('drawdown_pct')} session_pnl_xrp={risk.get('session_pnl_xrp')} (MTM only — see realized_bracket_pnl above)",
         f"trading_allowed={risk.get('trading_allowed')} preflight={risk.get('preflight_summary')}",
         f"alerts={risk.get('alerts')}",
         "",
@@ -293,12 +317,17 @@ def call_grok_advisor(
     system_prompt: Optional[str] = None,
     user_message: Optional[str] = None,
     max_tokens: int = 4096,
+    operator_phase: Optional[str] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     allowed = ", ".join(OPERATOR_TUNABLE_KEYS)
     system = system_prompt or _SYSTEM_PROMPT.format(allowed_keys=allowed)
     user_body = user_message
     if user_body is None:
-        user_body = build_skynet_user_message(user_prompt=user_prompt, context=context)
+        user_body = build_skynet_user_message(
+            user_prompt=user_prompt,
+            context=context,
+            operator_phase=operator_phase,
+        )
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user_body},

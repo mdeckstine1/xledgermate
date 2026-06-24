@@ -33,13 +33,13 @@ For install, VPS, dry-run cutover, and the **Config** tab (credentials + withdra
 1. Engine cycle runs (every N seconds)
 2. Decision: HOLD | PLACE_BID | PLACE_ASK
 3. If PLACE_BID → limit buy below mid → "pending buy" bracket
-4. Buy fills → bot places TP + SL limit sells → "active bracket"
+4. Buy fills → bot places TP on book; SL on book **or deferred** (SL↯) until price nears stop → "active bracket"
 5. TP fills → profit (RLUSD back) → re-entry gate may block new buys
 6. SL fills → loss capped → longer re-entry wait + stronger TA required
 ```
 
 **Pending buy** = RLUSD committed, waiting for fill.  
-**Active bracket** = you already own the XRP; TP/SL are exit orders.  
+**Active bracket** = you already own the XRP; TP is on the book; SL is on the book or **deferred off-ledger** (see **SL↯**).  
 Cancelling a pending buy pulls the bid. Cancelling an active bracket cancels TP/SL only — **you keep the XRP**.
 
 ---
@@ -283,6 +283,50 @@ Watch **Activity** or engine logs for `stale_pending_buy_cancelled` after a cycl
 
 ---
 
+### `deferred_sl_enabled` / `deferred_sl_arm_buffer_pct` ⚠️ (XRPL stop-loss)
+
+**Where:** Live → **Risk & entry** (not Structure & trailing).
+
+After a buy fills, the bot places **take-profit** above market (safe — rests on the book) and a **stop-loss** below entry. On XRPL, a **limit sell below the current best bid crosses the book and fills immediately** — it is not a resting stop. Without deferral, brackets can “stop out” within seconds at ~breakeven even though price never dipped to your stop target.
+
+| Knob | Default | What it does |
+|------|---------|--------------|
+| **`deferred_sl_enabled`** | **On** | Keep SL **off the ledger** while best bid is above the stop price. Monitor mid each cycle; place SL only when price approaches the stop. |
+| **`deferred_sl_arm_buffer_pct`** | **0%** | How early to place SL on-ledger. **0** = arm when mid **≤ stop target** (or bid has dropped enough to rest safely). **> 0** = arm when mid is still slightly **above** stop, within this % buffer. |
+
+**While deferred:** Brackets tab shows **`SL↯`** in State — stop is tracked in software, not as an open ledger offer. **TP** is still on the book.
+
+**Engine logs:**
+
+```text
+deferred_sl_hold  | sl=1.091000 | reason=best_bid_above_stop   ← after buy fill
+deferred_sl_arm   | sl=1.091000 | mid=1.091200 | arm_at=1.091000  ← SL placed on book
+bracket_place_sl  | reason=deferred_sl_arm | immediate=False
+```
+
+**`deferred_sl_arm_buffer_pct` — what different values do**
+
+Stop target = `entry × (1 − initial_stop_loss_pct)`. Example: entry **1.108**, SL **1.5%** → stop **1.091**, mid **1.111** after fill.
+
+| Buffer | Arm when mid ≤ | Effect |
+|--------|----------------|--------|
+| **0%** (default) | **1.091** exactly | SL hits the ledger only when price has actually reached the stop zone. Most faithful to your stop distance. |
+| **0.10%** | **~1.092** | Places SL one tick early — slightly faster exit if price is falling through the stop; tiny extra gap vs buffer 0. |
+| **0.25%** | **~1.094** | Arms while price is still **~1.5% above** the raw stop — more protection in fast drops (SL on book before the wick), but you give up a bit more room on normal noise. |
+| **0.50%+** | **~1.096+** | Aggressive early arm — bracket behaves closer to a tight trailing stop; use only if you accept exiting sooner on pullbacks. |
+
+Formula: `arm_at = stop_price × (1 + buffer_pct / 100)`.
+
+**Also arms** when best bid has already dropped to the stop (safe to rest on book) even if mid has not crossed yet.
+
+**Turn off deferral:** Uncheck **`deferred_sl_enabled`** → legacy behavior (SL placed immediately after fill). Only do this if you understand instant XRPL exits when SL < bid.
+
+**Coupling:** **`initial_stop_loss_pct`** (Structure & trailing) sets **how far** the stop is; deferred SL sets **when** it goes on-ledger. Widen **`initial_stop_loss_pct`** for a wider stop target; adjust **`deferred_sl_arm_buffer_pct`** for how eagerly the bot posts that stop before price gets there.
+
+**Related:** Trailing SL updates (after **BE**) use the same “don’t cross the bid” rule — see [Structure & trailing](#structure--trailing-panel).
+
+---
+
 ### `cycle_interval_seconds`
 
 How often the engine wakes up (5–60s).
@@ -344,13 +388,15 @@ How many recent mid samples define “structure” (trend / swing levels).
 
 ### `initial_stop_loss_pct`
 
-Stop distance below entry.
+Stop distance below entry — sets the **target** stop price (`entry × (1 − pct)`).
 
 | Range | Vibe |
 |-------|------|
-| **0.8–1.0%** | Tight. Small losses; stopped out often. |
+| **0.8–1.0%** | Tight. Small losses if the stop actually triggers at that price. |
 | **1.5%** | Reasonable. |
 | **3%+** | Wide. Survives noise; bigger loss if wrong. |
+
+**XRPL note:** A stop **below** the current bid is a marketable sell if placed on-ledger immediately. With **`deferred_sl_enabled`** on (Risk & entry), the bot holds SL off-book until price nears this target — so **`initial_stop_loss_pct`** defines distance, not instant exit. See [deferred SL](#deferred_sl_enabled--deferred_sl_arm_buffer_pct--xrpl-stop-loss).
 
 ### `take_profit_pct` / `take_profit_rr`
 
@@ -423,7 +469,8 @@ Off = can reload immediately (more aggressive, more knife-catching risk).
 | State | Meaning |
 |-------|---------|
 | **pending buy** | Limit bid resting; RLUSD committed |
-| **active · bracket** | Filled; TP/SL on book |
+| **active · bracket** | Filled; TP on book; SL on book **or** deferred (**SL↯**) |
+| **active · bracket · SL↯** | Filled; TP on book; SL held off-ledger until price nears stop |
 | **active · bracket · BE** | Filled; SL trailing armed (breakeven passed) |
 | **active · bracket · BE · BO** | Filled; SL and TP trailing both armed |
 | **BE** (in State) | Shorthand for **Breakeven passed** — see [BE and BO](#brackets-tab-be-and-bo-trail-column) |
@@ -584,6 +631,8 @@ You are RLUSD-heavy. TA is fine. Bot still HOLD.
 | Cancels very slow | One XRPL cancel per engine cycle | Normal — wait or lower pending count / use Cancel all |
 | Cancelled but orders still show | Active brackets ≠ pending | Check state column; active = exits on filled bags |
 | What does **BE** / **BO** mean? | Trailing flags on active brackets | **BE** = breakeven passed, SL can trail · **BO** = breakout confirmed, TP can trail · needs `bracket_trailing_enabled` |
+| What does **SL↯** mean? | Deferred stop (Risk & entry) | SL target set but **not on ledger yet** — avoids instant XRPL exit; arms when mid reaches stop (+ buffer) |
+| Bracket vanishes right after fill | Instant SL cross (legacy) or fast stop | Enable **`deferred_sl_enabled`**; check logs for `deferred_sl_hold` / `sl_filled` |
 | No rows in tax CSV | Dry-run or no fills yet | Switch to LIVE; CSV updates on bracket buy/TP/SL fills and Config → Send |
 | `ta_warming_up` | New session / thin history | [Scenario Q](#scenario-q--ta_warming_up--insufficient-history) |
 | Max buy = 0 | Thin book | [Scenario R](#scenario-r--insufficient_ask_depth) |
@@ -617,6 +666,8 @@ mid (live book)
 | **`weakness_deviation`** ↓ | **`risk_per_trade_pct`** — don’t crank both at once | More buy attempts + bigger size = fast RLUSD deploy |
 | **`ta_min_buy_score`** ↑ | **`ta_weight`** = 1.0 | High gate + low weight = confusing partial blocks |
 | **`cycle_interval_seconds`** ↓ | RPC load / cancel latency | Faster cycles = faster stale cancel + new bids, more ledger traffic |
+| **`initial_stop_loss_pct`** ↑ / ↓ | **`deferred_sl_enabled`** (keep on for XRPL) | Wider stop = lower stop price; deferral prevents instant cross on placement |
+| **`deferred_sl_arm_buffer_pct`** ↑ | Faster SL on-ledger on pullbacks | Higher buffer = arm before raw stop; 0% = arm at stop only |
 | **`reentry_*` cooldowns** ↓ | **`ta_min_buy_score`** on re-entry | Shorter wait + weak TA = reload into chop |
 
 ### Rules of thumb
@@ -649,6 +700,8 @@ Pulled from `logs/alpha_runtime_state.json`, `logs/alpha_overrides.json`, and en
 | `risk_per_trade_pct` | **3.0%** | 0.5% |
 | `buy_limit_offset_pct` | **0.12%** | 0.15% |
 | `stale_pending_buy_max_drift_pct` | **0.20%** | 0.50% |
+| `deferred_sl_enabled` | **true** | true |
+| `deferred_sl_arm_buffer_pct` | **0.0%** | 0.0% |
 | `max_pending_buys` | **5** | 1 |
 | `cycle_interval_seconds` | **20s** | 60s |
 | `min_edge_threshold_pct` | **0.08%** | 0.08% |
@@ -729,6 +782,9 @@ Use these as **recipes**, not gospel. Apply on **Live → Risk & entry**, watch 
 | **P** | [Kill / drawdown / pause](#scenario-p--kill-switch-drawdown-or-pause) | Hard stops, no trading |
 | **Q** | [TA warming up](#scenario-q--ta_warming_up--insufficient-history) | New session, thin history |
 | **R** | [Thin book](#scenario-r--insufficient_ask_depth) | Depth gate blocks size |
+| **S** | [Trust phase (SKYNET)](#scenario-s--trust-phase-skynet-bias) | Prove overnight, anti-bleed |
+| **T** | [Scale phase (SKYNET)](#scenario-t--scale-phase-modest-accumulation) | After trust earned |
+| **U** | [Aggressive phase (SKYNET)](#scenario-u--aggressive-phase-bag-push) | Bag-growth push |
 
 ---
 
@@ -1104,6 +1160,72 @@ ta_enabled = off       ← last resort while learning
 
 ---
 
+### Scenario S — Trust phase (SKYNET bias)
+
+**When:** New deploy, post-fix soak, SL streak, or underwater open brackets. You want the bot to **prove** behavior overnight without bleeding on instant SL churn.
+
+**HUD:** SKYNET tab → **Operator phase** → **Trust** → **Save phase**.
+
+**What SKYNET should recommend (not always what it did before phase existed):**
+
+```text
+alpha_operator_phase            = trust   ← SKYNET tab (not a trading knob)
+alpha_buy_limit_offset_pct      = 0.20+   ← patient; do not chase
+alpha_weakness_deviation        = 0.05
+alpha_max_pending_buys          = 1–2     ← raise cap before lowering offset
+alpha_risk_per_trade_pct        = ~2%
+alpha_deferred_sl_enabled       = on
+alpha_stale_pending_buy_max_drift_pct = 0.35  ← sticky if offset ~0.20
+```
+
+**SKYNET rules in trust phase:**
+
+- RLUSD-heavy + bullish TA + HOLD `max_pending_buys` → **`max_pending_buys↑`**, not scenario C drift tighten.
+- Do **not** lower **`buy_limit_offset_pct`** below effective unless you explicitly ask or mid dumps 2%+.
+- Judge success by **realized bracket exits** (`profit_xrp_equiv` in tax CSV), **not** **Session P&L** (MTM).
+
+**Quick prompt:** SKYNET tab → **Trust phase review**.
+
+---
+
+### Scenario T — Scale phase (modest accumulation)
+
+**When:** Clean nights, deferred SL arming, XRP ratio climbing toward target, TP:SL improving. You earned trust — want **one notch** more deploy.
+
+**HUD:** Operator phase → **Scale** → Save.
+
+```text
+alpha_operator_phase            = scale
+alpha_buy_limit_offset_pct      = 0.15–0.20
+alpha_weakness_deviation        = 0.04
+alpha_max_pending_buys          = 2–3
+alpha_risk_per_trade_pct        = 2–3%
+```
+
+**Rule:** Change **one knob at a time**. Prefer **`max_pending_buys`** before **`buy_limit_offset_pct↓`**.
+
+**Quick prompt:** **Scale phase knobs**.
+
+---
+
+### Scenario U — Aggressive phase (bag push)
+
+**When:** You accept churn; book healthy; TA supportive; bleed under control; scaling toward a large XRP bag.
+
+**HUD:** Operator phase → **Aggressive** → Save. Agent **guardrails** still cap risk — Full SKYNET cannot exceed bounds.
+
+```text
+alpha_operator_phase            = aggressive
+alpha_buy_limit_offset_pct      = 0.08–0.12
+alpha_stale_pending_buy_max_drift_pct = 0.35   ← sticky
+alpha_max_pending_buys          = 2–3
+alpha_risk_per_trade_pct        = toward guardrail max (e.g. 4%)
+```
+
+**Stop rule:** If SL streak returns or realized P&L turns negative → drop back to **trust** phase knobs, not more heat.
+
+---
+
 ### Quick reference — your “closer to live price” checklist
 
 When you say *“price is leaving my bid behind”*:
@@ -1163,24 +1285,41 @@ When you understand how each knob *feels*, then turn up the aggression.
 
 ---
 
-## SKYNET (Grok advisor, Agent, Full mode)
+## Tuning SKYNET (Grok advisor, Agent, Full mode)
 
-SKYNET sends Grok a **runtime context** each ask/agent cycle. Besides inventory, decision, TA, and brackets, it includes:
+SKYNET is the **advisor layer** — it does not place trades. Set **operator phase** on the SKYNET tab so Grok matches soak vs scale goals.
 
+### Operator phase (trust / scale / aggressive)
+
+**SKYNET tab → Operator phase → Save phase.** Persisted as `alpha_operator_phase`. See [Scenario S](#scenario-s--trust-phase-skynet-bias), [T](#scenario-t--scale-phase-modest-accumulation), [U](#scenario-u--aggressive-phase-bag-push).
+
+| Phase | Use when | SKYNET bias |
+|-------|----------|-------------|
+| **Trust** (default) | Soak, SL streak | `max_pending↑` before `offset↓` |
+| **Scale** | Clean nights | offset 0.15–0.20, max_pending 2–3 |
+| **Aggressive** | Bag push | offset 0.08–0.12; revert if SL streak |
+
+Phase does **not** change knobs until you Apply.
+
+### Runtime context (each Ask / Agent cycle)
+
+- **`alpha_operator_phase`** and playbook **S–U**
 - **`pending_buy_stale`** — target entry, per pending bid `would_cancel` / `reason`, `over_cap_count`
-- **`likely_scenarios`** — auto hints (A–R) from decision reason + inventory
-- **Scenario playbook (A–R)** — condensed presets matching this manual (stick vs chase stale drift, size formula, re-entry)
+- **`likely_scenarios`** — auto hints (A–R) from decision reason + inventory (reference only)
+- **Scenario playbook (A–R, S–U)** — condensed presets matching this manual
 - **Operator knobs (effective)** — current HUD overrides
+
+**Session P&L** is MTM — use **`realized_bracket_pnl`** in SKYNET context (`realized_profit_xrp_equiv`, `tp_exits` / `sl_exits` from tax CSV) for bleed in trust phase.
 
 **Natural language → Apply**
 
-On the SKYNET tab, type what you want in plain English, click **Send**, then **Apply suggested changes**:
+On the SKYNET tab, set **operator phase**, type your goal in plain English, click **Send**, then **Apply suggested changes**:
 
 ```text
-sticky bids, risk 4%, max pending 1, offset 0.12, drift 0.35, ~26 RLUSD orders
+Trust phase: max pending 2 only — keep offset 0.20, weakness 0.05. Do not tighten drift.
 ```
 
-Grok maps your goals to allowlisted keys (`alpha_risk_per_trade_pct`, `alpha_stale_pending_buy_max_drift_pct`, etc.). Quick buttons **Preset: sticky + 4% risk** and **My settings → Apply** pre-fill example prompts.
+Grok maps your goals to allowlisted keys. Quick buttons **Trust phase review**, **Scale phase knobs**, **Preset: sticky + 4% risk**, **My settings → Apply**.
 
 If **Apply** stays disabled, name settings explicitly (percent values help) or check the hint for guardrail errors.
 
@@ -1192,7 +1331,7 @@ If **Apply** stays disabled, name settings explicitly (percent values help) or c
 | **Agent mode** | Grok runs every 3–5 cycles; **Apply safe** for guardrailed suggestions |
 | **Full SKYNET** | Auto-applies guardrailed changes (confirm with `ENABLE_FULL_SKYNET`) |
 
-Grok uses the scenario playbook + `pending_buy_stale` for ladder and sizing issues. Quick prompts: **Stale bid ladder**, **Preset: sticky + 4% risk**.
+Grok uses operator phase + scenario playbook + `pending_buy_stale`. Agent proposals do **not** overwrite the Ask response box.
 
 **Purple knob labels (Live / TA tabs):** When Agent mode proposes safe changes (or SKYNET Ask returns applicable changes), matching knob labels turn **purple ◆** with the suggested value in the tooltip. Legend appears under Risk & entry. Highlights clear after Apply or when values already match effective config.
 
