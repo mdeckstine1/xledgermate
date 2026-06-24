@@ -1,5 +1,9 @@
 """Tests for WS pure production engine helpers."""
 
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 from connectors.xrpl_connector import OpenOffer
 from engine.order_sync import plan_order_sync
 from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
@@ -26,10 +30,110 @@ def test_execution_summary_pull_when_blocked() -> None:
     from config.settings import BotConfig
 
     eng = WsPureTradingEngine(BotConfig.load())
+    eng.config.dry_run = False
     msg = eng._execution_summary(
         eng.config, 0, cancelled=2, would_sync=0, would_quote=False
     )
     assert "pulled 2" in msg
+
+
+def test_drawdown_kill_cancels_and_persists_same_cycle(monkeypatch) -> None:
+    from config.settings import BotConfig
+
+    class FakeConnector:
+        async def get_xrp_balance(self) -> float:
+            return 90.0
+
+        async def get_rlusd_balance(self) -> float:
+            return 0.0
+
+        async def get_rlusd_trust_line(self):
+            return SimpleNamespace(exists=True, limit=1_000.0, no_ripple=False)
+
+    class FakeKillSwitch:
+        active = False
+        reason = ""
+
+        def is_active(self) -> bool:
+            return self.active
+
+        def activate(self, reason: str) -> None:
+            self.active = True
+            self.reason = reason
+
+    config = BotConfig()
+    config.dry_run = False
+    config.trading_enabled = True
+    config.bot_secret_key = "test-secret"
+    config.telegram_enabled = False
+    config.ws_drawdown_kill_enabled = True
+    config.max_daily_drawdown_percent = 5.0
+    monkeypatch.setattr(BotConfig, "load", classmethod(lambda cls, filepath=None: config))
+
+    eng = WsPureTradingEngine(config)
+    eng.connector = FakeConnector()
+    eng.kill_switch = FakeKillSwitch()
+    eng._ws_feed = object()
+    eng._adapter = object()
+    eng._ensure_ws_stack = AsyncMock()
+    eng._refresh_book_state = AsyncMock(
+        return_value=(SimpleNamespace(age_seconds=lambda: 0.1), 1.00, 1.10, 1.05)
+    )
+    eng._cancel_if_live = AsyncMock()
+    eng._persist_cycle = AsyncMock()
+    eng.drawdown_monitor.daily_start_value = 100.0
+    eng.drawdown_monitor.current_value = 100.0
+
+    asyncio.run(eng._run_cycle())
+
+    reason = "Daily portfolio drawdown 10.00%"
+    assert eng.kill_switch.active is True
+    assert eng.kill_switch.reason == reason
+    eng._cancel_if_live.assert_awaited_once_with(eng.connector, config, reason)
+    eng._persist_cycle.assert_awaited_once()
+    persist_args = eng._persist_cycle.await_args.args
+    persist_kwargs = eng._persist_cycle.await_args.kwargs
+    assert persist_args[:8] == (config, 1.05, 1.00, 1.10, 90.0, 0.0, 90.0, [])
+    assert persist_args[8] == 0
+    assert persist_kwargs == {"execution": reason, "engine_dec": None}
+
+
+def test_sync_offers_keeps_age_tracking_when_cancel_fails() -> None:
+    from config.settings import BotConfig
+    from datetime import datetime, timedelta, timezone
+
+    class CancelFailsConnector:
+        def __init__(self) -> None:
+            self.offers = [OpenOffer(sequence=44, side="ask", price=1.20, size_xrp=10.0)]
+
+        async def get_open_offers(self):
+            return self.offers
+
+        async def cancel_offer(self, sequence: int) -> None:
+            raise RuntimeError("submit timeout")
+
+        async def place_quote(self, intent) -> None:
+            raise AssertionError("no placement expected")
+
+    config = BotConfig()
+    config.dry_run = False
+    config.bot_secret_key = "test-secret"
+    eng = WsPureTradingEngine(config)
+    eng.connector = CancelFailsConnector()
+    placed_at = datetime(2026, 6, 20, 12, 0, 0, tzinfo=timezone.utc)
+    eng._offer_age.record_place("ask", placed_utc=placed_at, sequence=44)
+
+    placed, cancelled = asyncio.run(
+        eng._sync_offers([], mid=1.10, best_bid=1.00, best_ask=1.10)
+    )
+
+    assert (placed, cancelled) == (0, 0)
+    age = eng._offer_age.age_seconds_at(
+        "ask",
+        sequence=44,
+        detected_utc=placed_at + timedelta(seconds=90),
+    )
+    assert age == 90.0
 
 
 def test_pure_intents_active_l1_only() -> None:

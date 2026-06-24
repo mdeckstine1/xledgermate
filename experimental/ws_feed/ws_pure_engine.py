@@ -426,6 +426,12 @@ class WsPureTradingEngine:
             self.kill_switch.activate(reason)
             if config.telegram_enabled and flags.telegram_kill_alerts:
                 self.alerts.send_kill_switch_alert(drawdown_pct, reason)
+            await self._cancel_if_live(connector, config, reason)
+            await self._persist_cycle(
+                config, mid, bb, ba, balance_xrp, balance_rlusd, portfolio, [], 0,
+                execution=reason,
+                engine_dec=None,
+            )
             return
 
         preflight = evaluate_preflight(
@@ -674,9 +680,9 @@ class WsPureTradingEngine:
             )
         cancelled = 0
         for seq in cancel_sequences:
-            self._offer_age.forget_sequence(seq)
             try:
                 await connector.cancel_offer(seq)
+                self._offer_age.forget_sequence(seq)
                 cancelled += 1
             except Exception as exc:
                 self.decision_log.add("execution", f"Cancel seq {seq} failed: {exc}")
