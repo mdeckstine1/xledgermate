@@ -688,7 +688,7 @@ def test_sl_trail_immediate_fill_detected(bracket_state):
 
 
 def test_sl_trail_resting_be_when_bid_above_entry(bracket_state):
-    """Breakeven trail must place on ledger when bid is still above entry (production bug)."""
+    """Breakeven trail stays virtual (SL↯) while bid above stop; arms on reversal."""
     from alpha.decision.structure import MarketStructureSnapshot
 
     async def _run() -> None:
@@ -707,8 +707,9 @@ def test_sl_trail_resting_be_when_bid_above_entry(bracket_state):
         )
 
         async def _bid_above_entry() -> float:
-            return 2.006
+            return bid_state["value"]
 
+        bid_state = {"value": 2.006}
         mgr._market_best_bid = _bid_above_entry  # type: ignore[method-assign]
 
         bid = mgr.register_pending_buy(buy_sequence=812, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
@@ -741,9 +742,30 @@ def test_sl_trail_resting_be_when_bid_above_entry(bracket_state):
         assert record is not None
         assert record.breakeven_passed is True
         assert record.sl_leg is not None
+        assert record.sl_leg.sequence is None
+        assert record.sl_leg.price_rlusd_per_xrp == pytest.approx(2.0)
+
+        bid_state["value"] = 1.99
+        mgr.set_structure(
+            MarketStructureSnapshot(
+                mid=1.99,
+                sample_count=1,
+                mean_mid=1.99,
+                recent_high=2.01,
+                recent_low=1.99,
+                trend="neutral",
+                breakout_up=False,
+                breakout_down=False,
+                summary="test",
+                swing_high=2.01,
+            )
+        )
+        await mgr.sync_brackets()
+        record = mgr.store.get(bid)
+        assert record is not None
+        assert record.sl_leg is not None
         assert record.sl_leg.sequence is not None
         assert record.sl_leg.price_rlusd_per_xrp == pytest.approx(2.0)
-        assert any(abs(p - 2.0) < 1e-9 for _, p in ledger.placed_sells)
 
     asyncio.run(_run())
 
@@ -794,18 +816,24 @@ def test_sl_trail_executes_on_reversal_after_be_resting(bracket_state):
         )
         await mgr.sync_brackets()
         record = mgr.store.get(bid)
+        assert record and record.sl_leg and record.sl_leg.sequence is None
+        assert record.sl_leg.price_rlusd_per_xrp == pytest.approx(2.0)
+
+        bid_state["value"] = 1.99
+        await mgr.sync_brackets()
+        record = mgr.store.get(bid)
         assert record and record.sl_leg and record.sl_leg.sequence is not None
         sl_seq = record.sl_leg.sequence
 
-        bid_state["value"] = 1.99
         ledger.remove_offer(sl_seq)
+        bid_state["value"] = 1.98
         mgr.set_structure(
             MarketStructureSnapshot(
-                mid=1.99,
+                mid=1.98,
                 sample_count=1,
-                mean_mid=1.99,
+                mean_mid=1.98,
                 recent_high=2.0,
-                recent_low=1.99,
+                recent_low=1.98,
                 trend="neutral",
                 breakout_up=False,
                 breakout_down=False,

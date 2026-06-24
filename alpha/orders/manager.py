@@ -174,24 +174,13 @@ class OrderManager:
             offers = await self._ledger.get_open_offers()
         open_map = _open_offer_map(offers)
 
-        from alpha.decision.structure import MarketStructureSnapshot
+        from alpha.decision.structure import MarketStructureSnapshot, CandleData, build_confirmation_candle
 
         structure = self._structure if isinstance(self._structure, MarketStructureSnapshot) else None
         current_price = structure.mid if structure and structure.mid > 0 else 0.0
         if current_price > 0:
             await self._cancel_stale_pending_buys(current_price)
 
-        for record in list(self._store.iter_open()):
-            if record.state == BracketLifecycleState.PENDING_BUY:
-                await self._advance_pending_buy(record, open_map)
-            elif record.state == BracketLifecycleState.BRACKET_ACTIVE:
-                await self._maybe_arm_deferred_sl(record, open_map, current_price=current_price)
-                await self._reconcile_leg_sequences(record, open_map)
-                await self._advance_active_bracket(record, open_map, current_price=current_price)
-
-        from alpha.decision.structure import CandleData, build_confirmation_candle
-
-        current_price = structure.mid if structure and structure.mid > 0 else 0.0
         candle_data: Optional[CandleData] = None
         if structure and structure.confirmation_candle is not None:
             candle_data = structure.confirmation_candle
@@ -206,6 +195,14 @@ class OrderManager:
 
         if current_price > 0:
             await self.update_trailing_orders(current_price, candle_data, structure=structure)
+
+        for record in list(self._store.iter_open()):
+            if record.state == BracketLifecycleState.PENDING_BUY:
+                await self._advance_pending_buy(record, open_map)
+            elif record.state == BracketLifecycleState.BRACKET_ACTIVE:
+                await self._maybe_arm_deferred_sl(record, open_map, current_price=current_price)
+                await self._reconcile_leg_sequences(record, open_map)
+                await self._advance_active_bracket(record, open_map, current_price=current_price)
 
         state = OrderManagerState(
             open_offers=offers,
@@ -351,14 +348,39 @@ class OrderManager:
 
         if role == BracketLegRole.STOP_LOSS:
             best_bid = await self._market_best_bid()
-            # Trailing SL updates must reach the ledger (rest or immediate fill) so a run
-            # reversal can execute — do not apply the initial-placement anti-cross deferral.
-            if (
-                reason != "sl_trail"
-                and best_bid is not None
+            would_cross = (
+                best_bid is not None
                 and best_bid > 0
                 and new_price < best_bid - price_tol
-            ):
+            )
+            if reason == "sl_trail" and would_cross:
+                # Bid above trailed stop — update target (SL↯) and rest on book only when
+                # bid drops; placing now would cross and exit the run immediately.
+                if (
+                    abs(new_price - leg.price_rlusd_per_xrp) <= price_tol
+                    and leg.sequence is None
+                ):
+                    return False
+                old_price = leg.price_rlusd_per_xrp
+                old_seq = leg.sequence
+                if not self._guard.require_live(f"trail_{role.value}_{reason}"):
+                    leg.price_rlusd_per_xrp = new_price
+                    return True
+                if leg.sequence is not None:
+                    await self._ledger.cancel_offer(leg.sequence)
+                    self._store.unregister_leg_sequence(leg.sequence)
+                    leg.sequence = None
+                leg.price_rlusd_per_xrp = new_price
+                logger.info(
+                    "trailing_sl_rest_pending | id=%s | new_sl=%.6f | best_bid=%.6f | "
+                    "cancelled_seq=%s",
+                    record.bracket_id,
+                    new_price,
+                    best_bid,
+                    old_seq,
+                )
+                return True
+            if reason != "sl_trail" and would_cross:
                 logger.info(
                     "trailing_sl_deferred | id=%s | new_sl=%.6f | best_bid=%.6f | reason=%s",
                     record.bracket_id,

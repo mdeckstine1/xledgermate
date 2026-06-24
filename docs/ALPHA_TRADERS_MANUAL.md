@@ -375,7 +375,7 @@ Use **off** during initial soak when you are proving **entry + stop** behavior (
 
 **Does not help underwater bags** — entries above current mid stay on fixed SL until price recovers past entry.
 
-**Works with deferred SL:** initial SL stays **SL↯** until arm; once price passes **BE**, trailing **places** the ratcheted stop on-ledger (resting or immediate fill) so a reversal **executes** — trailing updates are not blocked by the bid-above-stop deferral used for first placement below market.
+**Works with deferred SL:** initial SL stays **SL↯** until arm. After **BE**, trailing updates the stop target in software (`trailing_sl_rest_pending` in logs when bid is still above the trailed price — avoids instant cross-out). When bid drops to the trailed level, **`deferred_sl_arm`** places a **resting** sell so a reversal **executes** on the run.
 
 **Rising market / post-consolidation preset (Structure & trailing → Apply):**
 
