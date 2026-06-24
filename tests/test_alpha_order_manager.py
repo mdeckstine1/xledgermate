@@ -687,6 +687,140 @@ def test_sl_trail_immediate_fill_detected(bracket_state):
     asyncio.run(_run())
 
 
+def test_sl_trail_resting_be_when_bid_above_entry(bracket_state):
+    """Breakeven trail must place on ledger when bid is still above entry (production bug)."""
+    from alpha.decision.structure import MarketStructureSnapshot
+
+    async def _run() -> None:
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config(
+            bracket_trailing_enabled=True,
+            trailing_step_pct=1.5,
+            alpha_deferred_sl_enabled=True,
+            alpha_stale_pending_buy_enabled=False,
+        )
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+
+        async def _bid_above_entry() -> float:
+            return 2.006
+
+        mgr._market_best_bid = _bid_above_entry  # type: ignore[method-assign]
+
+        bid = mgr.register_pending_buy(buy_sequence=812, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
+        ledger.add_buy(812, 10.0)
+        ledger.remove_offer(812)
+        await mgr.sync_brackets()
+
+        record = mgr.store.get(bid)
+        assert record and record.sl_leg and record.tp_leg
+        assert record.sl_leg.sequence is None
+        assert record.sl_leg.price_rlusd_per_xrp == pytest.approx(1.96)
+
+        mgr.set_structure(
+            MarketStructureSnapshot(
+                mid=2.01,
+                sample_count=1,
+                mean_mid=2.01,
+                recent_high=2.01,
+                recent_low=2.0,
+                trend="neutral",
+                breakout_up=False,
+                breakout_down=False,
+                summary="test",
+                swing_high=2.01,
+            )
+        )
+        await mgr.sync_brackets()
+
+        record = mgr.store.get(bid)
+        assert record is not None
+        assert record.breakeven_passed is True
+        assert record.sl_leg is not None
+        assert record.sl_leg.sequence is not None
+        assert record.sl_leg.price_rlusd_per_xrp == pytest.approx(2.0)
+        assert any(abs(p - 2.0) < 1e-9 for _, p in ledger.placed_sells)
+
+    asyncio.run(_run())
+
+
+def test_sl_trail_executes_on_reversal_after_be_resting(bracket_state):
+    """Resting trailed BE stop must fill when the run reverses (offer leaves the book)."""
+    from alpha.decision.structure import MarketStructureSnapshot
+
+    async def _run() -> None:
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config(
+            bracket_trailing_enabled=True,
+            trailing_step_pct=1.5,
+            alpha_deferred_sl_enabled=True,
+            alpha_stale_pending_buy_enabled=False,
+        )
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+
+        async def _bid() -> float:
+            return bid_state["value"]
+
+        bid_state = {"value": 2.006}
+        mgr._market_best_bid = _bid  # type: ignore[method-assign]
+
+        bid = mgr.register_pending_buy(buy_sequence=813, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
+        ledger.add_buy(813, 10.0)
+        ledger.remove_offer(813)
+        await mgr.sync_brackets()
+
+        mgr.set_structure(
+            MarketStructureSnapshot(
+                mid=2.01,
+                sample_count=1,
+                mean_mid=2.01,
+                recent_high=2.01,
+                recent_low=2.0,
+                trend="neutral",
+                breakout_up=False,
+                breakout_down=False,
+                summary="test",
+                swing_high=2.01,
+            )
+        )
+        await mgr.sync_brackets()
+        record = mgr.store.get(bid)
+        assert record and record.sl_leg and record.sl_leg.sequence is not None
+        sl_seq = record.sl_leg.sequence
+
+        bid_state["value"] = 1.99
+        ledger.remove_offer(sl_seq)
+        mgr.set_structure(
+            MarketStructureSnapshot(
+                mid=1.99,
+                sample_count=1,
+                mean_mid=1.99,
+                recent_high=2.0,
+                recent_low=1.99,
+                trend="neutral",
+                breakout_up=False,
+                breakout_down=False,
+                summary="test",
+                swing_high=2.0,
+            )
+        )
+        await mgr.sync_brackets()
+        record = mgr.store.get(bid)
+        assert record is not None
+        assert record.state == BracketLifecycleState.SL_FILLED
+
+    asyncio.run(_run())
+
+
 def test_repair_attaches_missing_sl_sequence(bracket_state):
     async def _run() -> None:
         ledger = _BracketFakeLedger()

@@ -323,7 +323,7 @@ Formula: `arm_at = stop_price × (1 + buffer_pct / 100)`.
 
 **Coupling:** **`initial_stop_loss_pct`** (Structure & trailing) sets **how far** the stop is; deferred SL sets **when** it goes on-ledger. Widen **`initial_stop_loss_pct`** for a wider stop target; adjust **`deferred_sl_arm_buffer_pct`** for how eagerly the bot posts that stop before price gets there.
 
-**Related:** Trailing SL updates (after **BE**) use the same “don’t cross the bid” rule — see [Structure & trailing](#structure--trailing-panel).
+**Related:** Trailing SL **updates** (`sl_trail`) always attempt a ledger place; only the **first** deferred SL below market uses the bid-above-stop hold.
 
 ---
 
@@ -375,7 +375,7 @@ Use **off** during initial soak when you are proving **entry + stop** behavior (
 
 **Does not help underwater bags** — entries above current mid stay on fixed SL until price recovers past entry.
 
-**Works with deferred SL:** trailing may compute a higher stop before it is safe on-ledger; engine logs `trailing_sl_deferred` until bid approaches the new stop (same family of fix as **SL↯**).
+**Works with deferred SL:** initial SL stays **SL↯** until arm; once price passes **BE**, trailing **places** the ratcheted stop on-ledger (resting or immediate fill) so a reversal **executes** — trailing updates are not blocked by the bid-above-stop deferral used for first placement below market.
 
 **Rising market / post-consolidation preset (Structure & trailing → Apply):**
 

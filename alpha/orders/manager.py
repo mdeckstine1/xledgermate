@@ -351,8 +351,11 @@ class OrderManager:
 
         if role == BracketLegRole.STOP_LOSS:
             best_bid = await self._market_best_bid()
+            # Trailing SL updates must reach the ledger (rest or immediate fill) so a run
+            # reversal can execute — do not apply the initial-placement anti-cross deferral.
             if (
-                best_bid is not None
+                reason != "sl_trail"
+                and best_bid is not None
                 and best_bid > 0
                 and new_price < best_bid - price_tol
             ):
