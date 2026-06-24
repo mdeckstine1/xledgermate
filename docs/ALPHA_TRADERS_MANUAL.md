@@ -788,7 +788,7 @@ alpha_cycle_interval_seconds   = 20
 
 **Expected size @ ~8,000 book:** **Max buy** ≈ **200 XRP** (~**216 RLUSD**) at 2.5%.
 
-Keep **bracket_trailing_enabled** off until TP:SL ratio justifies it.
+**Structure & trailing:** [enable trailing](#when-to-enable-trailing-after-deferred-sl-is-trusted) once deferred SL is trusted.
 
 ---
 
