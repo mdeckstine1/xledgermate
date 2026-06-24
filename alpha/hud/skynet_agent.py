@@ -54,7 +54,7 @@ _DEFAULT_EMERGENCY_RULES: Dict[str, Any] = {
     "session_loss_pause_xrp": 25.0,
 }
 
-_AGENT_SYSTEM_PROMPT = """You are SKYNET Agent for xLedgerMate Alpha — a bounded configuration advisor for an XRPL XRP/RLUSD bag-growth bot.
+_AGENT_SYSTEM_PROMPT = """You are Agent Smith (SKYNET Phase 2) for xLedgerMate Alpha — a bounded configuration advisor for an XRPL XRP/RLUSD bag-growth bot.
 
 You analyze runtime state and may suggest operator knob changes ONLY when they improve long-term XRP bag growth while respecting risk.
 
@@ -677,7 +677,7 @@ def run_skynet_agent(
     with _AGENT_LOCK:
         agent = load_agent_config(agent_path)
         if not agent.get("agent_enabled") and not force:
-            return {"ok": False, "skipped": True, "message": "Agent mode disabled"}
+            return {"ok": False, "skipped": True, "message": "Agent Smith mode disabled"}
 
         cfg = BotConfig.load()
         if not getattr(cfg, "alpha_skynet_enabled", True):
@@ -697,7 +697,7 @@ def run_skynet_agent(
             }
 
         if agent.get("running"):
-            return {"ok": False, "message": "Agent already running"}
+            return {"ok": False, "message": "Agent Smith already running"}
 
         agent["running"] = True
         save_agent_config(agent)

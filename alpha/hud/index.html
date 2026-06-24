@@ -304,7 +304,7 @@
         <div class="controls-pair">
         <div class="controls-section card">
           <h2>Risk &amp; entry</h2>
-          <p id="agentKnobLegend" class="agent-knob-legend" style="display:none"><span class="knob-swatch">◆</span> Purple = SKYNET proposes this knob (agent safe changes or Ask → Apply)</p>
+          <p id="agentKnobLegend" class="agent-knob-legend" style="display:none"><span class="knob-swatch">◆</span> Purple = SKYNET proposes this knob (Agent Smith safe changes or Ask → Apply)</p>
           <div class="ctrl-row"><label data-knob="inventory_target_xrp_ratio" title="Target XRP share of portfolio. Buys deploy RLUSD when below target; sells trim when above.">target_xrp_pct</label><input type="range" id="slTargetXrp" min="0" max="100" step="1"><input type="number" id="numTargetXrp" min="0" max="100" step="1"><span id="valTargetXrp" class="muted">%</span></div>
           <div class="ctrl-row"><label data-knob="alpha_weakness_deviation" title="How far below target XRP ratio before weakness triggers RLUSD deployment buys.">weakness_deviation</label><input type="range" id="slWeakness" min="0.005" max="0.15" step="0.005"><input type="number" id="numWeakness" step="0.005"><span id="valWeakness" class="muted"></span></div>
           <div class="ctrl-row"><label data-knob="alpha_risk_per_trade_pct" title="Percent of risk capital allocated per buy bracket.">risk_per_trade_pct</label><input type="range" id="slRisk" min="0.1" max="5" step="0.1"><input type="number" id="numRisk" step="0.1"><span id="valRisk" class="muted"></span></div>
@@ -464,7 +464,7 @@
         <p class="skynet-status" id="skynetStatus">Loading SKYNET status…</p>
         <div class="card" style="margin-bottom:12px;border-color:#2a4a3d">
           <h2 style="margin:0 0 8px;font-size:1rem;color:#86efac">Operator phase</h2>
-          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Strategy bias for SKYNET (Ask + Agent). Does not change trading knobs until you Apply suggestions. Default <strong>trust</strong> = patient accumulation, anti-bleed.</p>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Strategy bias for SKYNET (Ask + Agent Smith). Does not change trading knobs until you Apply suggestions. Default <strong>trust</strong> = patient accumulation, anti-bleed.</p>
           <div class="ctrl-row" style="align-items:flex-end;flex-wrap:wrap;gap:10px">
             <div>
               <label class="label" for="skynetOperatorPhase">Phase</label>
@@ -479,14 +479,14 @@
           </div>
         </div>
         <div class="card skynet-agent-card">
-          <h2 style="margin:0 0 8px;font-size:1rem;color:var(--accent)">Grok Agent — Phase 2</h2>
-          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Bounded agent suggests knob changes within guardrails every 3–5 engine cycles (or on significant events). Phase 2: review and apply manually.</p>
+          <h2 style="margin:0 0 8px;font-size:1rem;color:var(--accent)">Agent Smith — Phase 2</h2>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Agent Smith suggests knob changes within guardrails every 3–5 engine cycles (or on significant events). Phase 2: review and apply manually.</p>
           <div class="ctrl-row">
-            <label><input type="checkbox" id="skynetAgentEnabled"> Enable Grok Agent Mode</label>
+            <label><input type="checkbox" id="skynetAgentEnabled"> Enable Agent Smith Mode</label>
             <button type="button" id="btnSkynetSaveAgent" class="secondary">Save guardrails</button>
-            <button type="button" id="btnSkynetAgentTrigger" class="secondary">Run agent now</button>
+            <button type="button" id="btnSkynetAgentTrigger" class="secondary">Run Agent Smith now</button>
           </div>
-          <div class="skynet-agent-meta" id="skynetAgentMeta">Agent idle</div>
+          <div class="skynet-agent-meta" id="skynetAgentMeta">Agent Smith idle</div>
           <details open>
             <summary class="label" style="cursor:pointer;margin:8px 0">Guardrail bounds</summary>
             <div class="skynet-guardrails">
@@ -517,7 +517,7 @@
         </div>
         <div class="card skynet-full-card">
           <h2 style="margin:0 0 8px;font-size:1rem;color:#c4b5fd">Full SKYNET — Phase 3 <span id="skynetFullBadge" class="skynet-full-badge" style="display:none">AUTONOMOUS</span></h2>
-          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Supervised autonomy: Grok auto-applies guardrailed knob changes. Requires agent mode + confirmation. Does not place trades — config only. Kill switch / pause always override.</p>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Supervised autonomy: Grok auto-applies guardrailed knob changes. Requires Agent Smith mode + confirmation. Does not place trades — config only. Kill switch / pause always override.</p>
           <div class="ctrl-row">
             <label><input type="checkbox" id="skynetFullEnabled"> Enable Full SKYNET Mode</label>
             <button type="button" id="btnSkynetPauseFull" class="warn secondary">Pause Full Mode</button>
@@ -1835,7 +1835,7 @@
         el.classList.add('knob-agent-suggest');
         const base = _knobTitleBase(el);
         const val = c.value != null ? String(c.value) : '?';
-        const src = skynetAgentKnobChanges.some(x => x.key === c.key) ? 'Agent' : 'SKYNET';
+        const src = skynetAgentKnobChanges.some(x => x.key === c.key) ? 'Agent Smith' : 'SKYNET';
         const extra = c.reason ? ` — ${c.reason}` : '';
         el.setAttribute('title', `${base} · ${src} suggests → ${val}${extra}`.trim());
       });
@@ -1910,7 +1910,7 @@
       $('btnSkynetApplySafe').disabled = skynetAgentSafeCount === 0;
       $('skynetAgentApplyHint').textContent = skynetAgentSafeCount
         ? skynetAgentSafeCount + ' safe change(s) ready — purple knobs on Live/TA tabs'
-        : 'No safe changes in latest agent run';
+        : 'No safe changes in latest Agent Smith run';
       updateAgentKnobHighlights(safe);
       // Do not overwrite Ask response textarea — agent proposal lives in skynetAgentProposal only.
     }
@@ -1964,7 +1964,7 @@
         parts.push('FULL MODE ACTIVE — auto-apply on');
         if (badge) badge.style.display = 'inline';
       } else {
-        parts.push('Full mode off — manual apply (Phase 2)');
+        parts.push('Full mode off — manual apply (Agent Smith / Phase 2)');
         if (badge) badge.style.display = 'none';
       }
       if (d.event_triggered && d.event_reasons && d.event_reasons.length) {
@@ -1977,7 +1977,7 @@
       const el = $('skynetAgentMeta');
       if (!el || !d) return;
       const parts = [];
-      parts.push(d.agent_enabled ? 'Agent ON' : 'Agent OFF');
+      parts.push(d.agent_enabled ? 'Agent Smith ON' : 'Agent Smith OFF');
       if (d.full_mode_enabled) parts.push('FULL');
       if (d.engine_cycle != null) parts.push('engine cycle ' + d.engine_cycle);
       if (d.next_run_engine_cycle) parts.push('next run ≥ cycle ' + d.next_run_engine_cycle);
@@ -2028,7 +2028,7 @@
           $('btnSkynetSend').disabled = true;
           return;
         }
-        el.textContent = `Grok ready · model ${d.model}${d.key_hint ? ' · key ' + d.key_hint : ''} · Phase 1 manual + Phase 2 agent + Phase 3 full mode`;
+        el.textContent = `Grok ready · model ${d.model}${d.key_hint ? ' · key ' + d.key_hint : ''} · Phase 1 manual + Phase 2 Agent Smith + Phase 3 full mode`;
         $('btnSkynetSend').disabled = false;
         if (d.guardrails) fillGuardrailsForm(d.guardrails);
         if (d.emergency_rules) fillEmergencyForm(d.emergency_rules);
@@ -2070,7 +2070,7 @@
         revertOnFail: () => { $('skynetAgentEnabled').checked = !want; },
       });
       if (d?.ok) {
-        toast(want ? 'Grok Agent Mode enabled' : 'Grok Agent Mode disabled');
+        toast(want ? 'Agent Smith Mode enabled' : 'Agent Smith Mode disabled');
         if (!want && $('skynetFullEnabled')) $('skynetFullEnabled').checked = false;
       }
     };
@@ -2089,7 +2089,7 @@
       }
       const d = await patchJson('/operator/skynet/agent', body);
       if (d?.ok) {
-        toast(d.message || 'Agent settings saved');
+        toast(d.message || 'Agent Smith settings saved');
         renderAgentMeta(d);
         renderFullModeMeta(d);
         renderAgentProposal(d.latest_proposal);
@@ -2148,29 +2148,29 @@
 
     $('btnSkynetAgentTrigger').onclick = async () => {
       $('btnSkynetAgentTrigger').disabled = true;
-      setSkynetResponse('Agent running…');
+      setSkynetResponse('Agent Smith running…');
       const d = await postJson('/operator/skynet/agent/trigger', {});
       $('btnSkynetAgentTrigger').disabled = false;
       if (!d?.ok) {
-        setSkynetResponse(d?.message || 'Agent run failed');
+        setSkynetResponse(d?.message || 'Agent Smith run failed');
         return;
       }
       if (d.skipped) {
-        toast('Agent skipped');
+        toast('Agent Smith skipped');
         return;
       }
       if (d.proposal) {
         renderAgentProposal(d.proposal);
         setSkynetResponse(d.proposal.display || '');
-        if (d.proposal.auto_applied) toast('Agent ran — auto-applied ' + (d.proposal.applied_changes || []).length + ' change(s)');
-        else toast('Agent proposal ready');
+        if (d.proposal.auto_applied) toast('Agent Smith ran — auto-applied ' + (d.proposal.applied_changes || []).length + ' change(s)');
+        else toast('Agent Smith proposal ready');
       }
       loadSkynetAgent();
     };
 
     $('btnSkynetApplySafe').onclick = async () => {
-      if (!skynetAgentSafeCount) { toast('No safe agent changes', true); return; }
-      if (!confirm('Apply all safe changes from the latest agent proposal?\n\nTakes effect on next engine cycle.')) return;
+      if (!skynetAgentSafeCount) { toast('No safe Agent Smith changes', true); return; }
+      if (!confirm('Apply all safe changes from the latest Agent Smith proposal?\n\nTakes effect on next engine cycle.')) return;
       const d = await postJson('/operator/skynet/agent/apply-safe', {});
       if (d?.ok) {
         toast(d.message || 'Safe changes applied');

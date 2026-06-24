@@ -75,7 +75,7 @@ def register_skynet_routes(app: Any) -> None:
         merged, errors = merge_agent_patch(body if isinstance(body, dict) else {})
         if errors:
             return JSONResponse({"ok": False, "errors": errors}, status_code=400)
-        return JSONResponse({"ok": True, **agent_status_payload(), "message": "Agent settings saved"})
+        return JSONResponse({"ok": True, **agent_status_payload(), "message": "Agent Smith settings saved"})
 
     @app.post("/operator/skynet/agent/trigger")
     async def post_skynet_agent_trigger() -> JSONResponse:
