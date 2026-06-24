@@ -222,7 +222,7 @@ Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-advisor
 ## Further reading
 
 - **[`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md)** — **start here for live trading & orders**
-- **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — scenarios A–U, **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-advisor-agent-full-mode)**, operator phase
+- **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — scenarios A–U, **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-advisor-agent-full-mode)**, **[Funding changes](ALPHA_TRADERS_MANUAL.md#funding-changes-scaling-toward-11k-xrp)** (~11k tranche knobs)
 - [`PROJECT_INSTRUCTIONS.md`](../PROJECT_INSTRUCTIONS.md)
 - [`ALPHA_MAINNET_CUTOVER.md`](ALPHA_MAINNET_CUTOVER.md)
 - [`ALPHA_FINAL_REPORT.md`](ALPHA_FINAL_REPORT.md)

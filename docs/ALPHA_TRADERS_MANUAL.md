@@ -553,6 +553,310 @@ timestamp_utc,event_type,taxable,network,side,xrp_amount,rlusd_amount,price_rlus
 
 ---
 
+## Funding changes (scaling toward ~11k XRP)
+
+Use this when you **add XRP or RLUSD** to the bot wallet on mainnet. The bot does not auto-detect narrative capital — you sync **`risk_capital_xrp`** and HUD knobs after each deposit.
+
+**Rule:** Grow the book in **tranches**. Judge each tranche on **realized** bracket P&amp;L (`profit_xrp_equiv` in tax CSV), not **Session P&amp;L** (MTM). SKYNET **operator phase** should match the tranche ([Scenario S](#scenario-s--trust-phase-skynet-bias) · [T](#scenario-t--scale-phase-modest-accumulation) · [U](#scenario-u--aggressive-phase-bag-push)).
+
+### Before you send anything
+
+| Step | Action |
+|------|--------|
+| 1 | Bot account has **RLUSD trust line** (`python main.py --mode setup-trust` if new wallet). |
+| 2 | **`dry_run: false`** only when you intend live tax rows. |
+| 3 | Note **portfolio XRP-equiv** on HUD Live tab (or `python -m alpha status`). |
+| 4 | Edit **`config/config.yaml`** on the VPS — set **`risk_capital_xrp`** ≈ **post-deposit portfolio XRP-equiv** (see table below). |
+| 5 | HUD → **Config → Send** is for **outbound** only; **inbound** = normal XRPL payment **to** `bot_account_address`. |
+| 6 | After deposit confirms, **Config → Reload** (or restart engine) so sizing sees new balances. |
+
+**Why `risk_capital_xrp` matters**
+
+```text
+risk_cap  = portfolio_xrp_equiv × (risk_per_trade_pct / 100)   ← usual binding cap
+leg_cap   = risk_capital_xrp × max_leg_size_pct_of_capital     ← config.yaml (default 12%)
+size      = min(desired, risk_cap, leg_cap, depth, inventory)
+```
+
+If wallet is **~11k XRP-equiv** but `risk_capital_xrp` is still **~250**, you get a HUD alert (*wallet exceeds risk capital*) and **`leg_cap`** can clip size incorrectly. **Always bump `risk_capital_xrp` when you fund.**
+
+| Post-deposit book (XRP-equiv) | Set `risk_capital_xrp` |
+|-------------------------------|-------------------------|
+| ~600 (current soak) | `600` |
+| ~2,000 | `2000` |
+| ~4,000 | `4000` |
+| ~8,000 | `8000` |
+| ~11,000 (full bag) | `11000` |
+
+`max_leg_size_pct_of_capital` default **0.12** → leg cap at 11k ≈ **1,320 XRP** per leg (rarely binding at 2–3% risk).
+
+### What you send: XRP vs RLUSD
+
+| You send | Bot posture after deposit | Tranche knobs bias |
+|----------|---------------------------|-------------------|
+| **RLUSD** | Stays or becomes **RLUSD-heavy** → **limit bids** deploy on weakness | Trust/Scale: patient bids, `max_pending` before offset↓ |
+| **XRP** | **XRP-heavy** vs 75% target → fewer buys until deviation; **strength sells** possible later | Wider `weakness_deviation` or wait for RLUSD from TPs; don’t crank buys until ratio drops |
+| **Mix** | Match tranche preset to **dominant** side after transfer | Re-check **Inventory** label on HUD |
+
+Inbound deposits appear in balances next cycle; they are **not** a separate HUD “deposit” button.
+
+### Tranche map (recommended)
+
+| Tranche | Target book | Operator phase | When to advance |
+|---------|-------------|----------------|-----------------|
+| **0** | ~500–800 (soak) | **trust** | Already running — deferred SL on, bleed under control |
+| **1** | ~1,500–2,500 | **trust** | +1–2k sent; 48–72h stable; no kill/preflight issues |
+| **2** | ~3,500–5,000 | **trust** → **scale** | Realized P&amp;L ≥ 0 over 7d **or** TP:SL improving; ratio climbing |
+| **3** | ~7,000–9,000 | **scale** | Clean week at tranche 2 knobs; depth still healthy |
+| **4** | ~11,000 | **scale** → **aggressive** (optional) | Operator OK with churn; SL streak contained |
+
+**Do not** enable **Full SKYNET** or **Aggressive** phase on tranche 1 day one.
+
+---
+
+### Tranche 0 — current soak (~600 XRP-equiv)
+
+*Baseline if you are already live on the VPS.*
+
+**`config/config.yaml`**
+
+```yaml
+risk_capital_xrp: 600
+```
+
+**SKYNET tab:** `alpha_operator_phase` = **trust** → Save.
+
+**Live → Risk & entry → Apply**
+
+```text
+inventory_target_xrp_ratio     = 0.75    # 75% XRP target
+alpha_risk_per_trade_pct       = 2.0
+alpha_buy_limit_offset_pct     = 0.20
+alpha_min_edge_threshold_pct   = 0.08
+alpha_weakness_deviation       = 0.05
+alpha_max_pending_buys         = 1       # or 2 if cap blocks deploy only
+alpha_stale_pending_buy_enabled = on
+alpha_stale_pending_buy_max_drift_pct = 0.35
+alpha_deferred_sl_enabled      = on
+alpha_deferred_sl_arm_buffer_pct = 0.0
+alpha_cycle_interval_seconds   = 20
+initial_stop_loss_pct          = 0.02    # 2% — Structure tab
+```
+
+**Expected size @ ~600 book, mid ~1.08:** **Max buy** ≈ **12 XRP** (~**13 RLUSD**) at 2% risk.
+
+**Graduate to tranche 1 when:** engine stable 48h+, deferred SL arming in logs, you are comfortable with bracket flow.
+
+---
+
+### Tranche 1 — first scale-in (+1–2k → ~2k book)
+
+*After first meaningful deposit.*
+
+**`config/config.yaml`**
+
+```yaml
+risk_capital_xrp: 2000
+```
+
+**SKYNET:** **trust** → Save. Quick prompt: **Trust phase review**.
+
+**Live → Risk & entry → Apply**
+
+```text
+inventory_target_xrp_ratio     = 0.75
+alpha_risk_per_trade_pct       = 2.0       # do NOT jump to 4% yet
+alpha_buy_limit_offset_pct     = 0.20
+alpha_min_edge_threshold_pct   = 0.08
+alpha_weakness_deviation       = 0.05
+alpha_max_pending_buys         = 2         # allow 2 bids if RLUSD-heavy + bullish
+alpha_stale_pending_buy_max_drift_pct = 0.35
+alpha_deferred_sl_enabled      = on
+alpha_cycle_interval_seconds   = 20
+```
+
+**Structure & trailing → Apply** (unchanged from trust soak)
+
+```text
+initial_stop_loss_pct          = 0.02
+take_profit_pct                = 0.03      # or take_profit_rr = 2.0
+bracket_trailing_enabled       = off       # until exits are trustworthy
+```
+
+**Expected size @ ~2,000 book:** **Max buy** ≈ **40 XRP** (~**43 RLUSD**) at 2%.
+
+**Wait 48–72h.** Check tax CSV: `sum profit_xrp_equiv` on SELLs and `tp_exits` vs `sl_exits` (SKYNET context shows **Realized bracket P&amp;L**).
+
+**Graduate to tranche 2 when:** realized bleed not worsening; at least some TPs or flat realized week; no new instant-SL pattern.
+
+---
+
+### Tranche 2 — mid bag (~4k book)
+
+*Second deposit band — optional move to **Scale** phase after trust metrics OK.*
+
+**`config/config.yaml`**
+
+```yaml
+risk_capital_xrp: 4000
+```
+
+**SKYNET:** **scale** → Save (only after tranche 1 metrics OK). Quick prompt: **Scale phase knobs**.
+
+**Live → Risk & entry → Apply** — change **one knob at a time** if nervous; full bundle:
+
+```text
+inventory_target_xrp_ratio     = 0.75
+alpha_risk_per_trade_pct       = 2.0       # optional 2.5 after clean week
+alpha_buy_limit_offset_pct     = 0.18
+alpha_min_edge_threshold_pct   = 0.08
+alpha_weakness_deviation       = 0.04
+alpha_max_pending_buys         = 2
+alpha_stale_pending_buy_max_drift_pct = 0.35
+alpha_deferred_sl_enabled      = on
+alpha_cycle_interval_seconds   = 20
+```
+
+**Re-entry → Apply** (slightly patient reload at larger size)
+
+```text
+alpha_reentry_enabled          = on
+alpha_reentry_sl_cooldown_cycles = 10
+alpha_reentry_sl_stabilization_pct = 0.12
+alpha_reentry_sl_min_ta_score  = 2.5
+```
+
+**Expected size @ ~4,000 book:** **Max buy** ≈ **80 XRP** (~**86 RLUSD**) at 2%; ≈ **100 XRP** at 2.5%.
+
+**Graduate to tranche 3 when:** 7+ days at this band, realized P&amp;L flat/positive, XRP ratio trending toward target.
+
+---
+
+### Tranche 3 — large bag (~8k book)
+
+**`config/config.yaml`**
+
+```yaml
+risk_capital_xrp: 8000
+```
+
+**SKYNET:** **scale** → Save.
+
+**Live → Risk & entry → Apply**
+
+```text
+inventory_target_xrp_ratio     = 0.75
+alpha_risk_per_trade_pct       = 2.5
+alpha_buy_limit_offset_pct     = 0.15
+alpha_min_edge_threshold_pct   = 0.08
+alpha_weakness_deviation       = 0.04
+alpha_max_pending_buys         = 2
+alpha_stale_pending_buy_max_drift_pct = 0.35
+alpha_deferred_sl_enabled      = on
+alpha_cycle_interval_seconds   = 20
+```
+
+**Expected size @ ~8,000 book:** **Max buy** ≈ **200 XRP** (~**216 RLUSD**) at 2.5%.
+
+Keep **bracket_trailing_enabled** off until TP:SL ratio justifies it.
+
+---
+
+### Tranche 4 — full ~11k bag
+
+*Only after tranche 3 proof window. This is the narrative capital target — not day-one settings.*
+
+**`config/config.yaml`**
+
+```yaml
+risk_capital_xrp: 11000
+```
+
+**SKYNET:** **scale** first; **aggressive** only if you accept churn and realized P&amp;L is healthy ([Scenario U](#scenario-u--aggressive-phase-bag-push)).
+
+**Live → Risk & entry → Apply** (scale-safe full bag)
+
+```text
+inventory_target_xrp_ratio     = 0.75
+alpha_risk_per_trade_pct       = 2.5       # max 3.0 after 2+ clean weeks — not 4% on day one
+alpha_buy_limit_offset_pct     = 0.15
+alpha_min_edge_threshold_pct   = 0.08
+alpha_weakness_deviation       = 0.04
+alpha_max_pending_buys         = 2
+alpha_stale_pending_buy_max_drift_pct = 0.35
+alpha_deferred_sl_enabled      = on
+alpha_cycle_interval_seconds   = 20
+```
+
+**Optional aggressive bundle** (operator explicitly OK — SKYNET phase **aggressive**)
+
+```text
+alpha_risk_per_trade_pct       = 3.0
+alpha_buy_limit_offset_pct     = 0.12
+alpha_weakness_deviation       = 0.03
+alpha_max_pending_buys         = 3
+```
+
+**Expected size @ ~11,000 book:**
+
+| `risk_per_trade_pct` | ≈ Max buy (XRP) | ≈ RLUSD @ 1.08 |
+|----------------------|-----------------|----------------|
+| **2.0%** | ~220 | ~238 |
+| **2.5%** | ~275 | ~297 |
+| **3.0%** | ~330 | ~356 |
+
+Confirm on **Market Conditions → Max buy** after Apply + one engine cycle.
+
+---
+
+### If you fund mostly XRP (11k XRP, little RLUSD)
+
+The bot targets **75% XRP** — you start **above** target → **`sell_blocked`** / few buys until ratio falls.
+
+| Goal | Action |
+|------|--------|
+| Let bot rebalance over time | Keep tranche knobs; wait for TPs + optional **strength sells** |
+| Deploy RLUSD from profits | Normal bracket flow — no extra knob crank |
+| Force faster RLUSD deploy | **Not recommended** at tranche 1 — lowers `inventory_target_xrp_ratio` only if you change strategy |
+
+**Strength-sell knobs** (only when XRP-heavy on purpose) — config or SKYNET; not Live sliders today:
+
+```text
+alpha_strength_deviation       = 0.04
+alpha_sell_limit_offset_pct    = 0.12
+alpha_ta_min_sell_score        = 1.0
+```
+
+Prefer **RLUSD tranche deposits** if you want the bot buying immediately without fighting inventory.
+
+---
+
+### If you fund mostly RLUSD
+
+Matches current **heavy_rlusd** soak — bot buys on weakness. Use tranche **trust** presets; **`max_pending_buys = 2`** before lowering offset.
+
+---
+
+### Post-funding checklist (every tranche)
+
+1. **`risk_capital_xrp`** updated in `config.yaml` → **Config → Reload** on HUD.  
+2. **Live → Market Conditions** — **Max buy** matches table above.  
+3. **SKYNET → operator phase** saved for tranche.  
+4. **Brackets** — no mass instant `sl_filled` at entry; deferred SL shows **SL↯** until armed.  
+5. **Reports / tax CSV** — new rows after fills; track **`profit_xrp_equiv`** on SELLs.  
+6. **Session P&amp;L** may jump on mid move — ignore for bleed; use realized block in SKYNET Ask.  
+7. **Pause** or **kill** if something looks wrong — you can always send the next tranche later.
+
+### What not to do on funding day
+
+- **Do not** set `risk_per_trade_pct` to **4–5%** on first 11k deposit.  
+- **Do not** lower `buy_limit_offset_pct` below **0.15** on tranche 1–2.  
+- **Do not** enable **Full SKYNET** auto-apply.  
+- **Do not** skip **`risk_capital_xrp`** sync — sizes will lie.  
+- **Do not** judge success by Session P&amp;L alone after a large XRP deposit (MTM step change).
+
+---
+
 ## Real-talk scenarios
 
 ### Bull market — ride it
