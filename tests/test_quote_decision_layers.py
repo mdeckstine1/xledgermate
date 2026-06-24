@@ -67,6 +67,25 @@ def test_solo_no_edge_patient_off() -> None:
     assert qd.would_quote is False
 
 
+def test_solo_xrp_heavy_does_not_reopen_ask_when_bid_edge_fades() -> None:
+    """Regression: solo acquire must not flip to ask trim when buy edge fades."""
+    qd = run_quote_decision_pipeline(
+        _solo_inputs(
+            l1_bid=1.09985,
+            l1_ask=1.1025,
+            xrp_ratio=0.71,
+            label="xrp_heavy",
+        )
+    )
+    assert qd.intent == QuoteIntent.PATIENT_SOLO
+    assert qd.bid.allowed is False
+    assert qd.ask.allowed is False
+    assert qd.ask.implied_edge_bps is not None
+    assert qd.ask.implied_edge_bps > qd.trace.ask_edge.min_edge_bps
+    assert qd.ask.block_reason == "intent=patient_solo no_ask"
+    assert qd.would_quote is False
+
+
 def test_bleed_pauses_buy_only_not_ask() -> None:
     """Principle 4: bleed on buy does not force ask-on."""
     fills = tuple(
