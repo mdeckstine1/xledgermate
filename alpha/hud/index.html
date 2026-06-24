@@ -301,6 +301,8 @@
           <div class="ctrl-row"><label data-knob="alpha_max_pending_sells" title="Max simultaneous open sell offers.">max_pending_sells</label><input type="number" id="numMaxSells" min="1" max="5" step="1"></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_stale_pending_buy_enabled" title="Each cycle, cancel resting buy bids that drift too far from the current buy_limit_offset target."><input type="checkbox" id="stalePendingEnabled" checked> stale_pending_buy_enabled</label></div>
           <div class="ctrl-row"><label data-knob="alpha_stale_pending_buy_max_drift_pct" title="Cancel pending buys when entry price differs from current target by more than this % of mid.">stale_pending_buy_max_drift_pct</label><input type="range" id="slStaleDrift" min="0.05" max="2" step="0.05"><input type="number" id="numStaleDrift" step="0.05"><span id="valStaleDrift" class="muted">%</span></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_deferred_sl_enabled" title="Hold stop-loss off the ledger until price nears the stop. Prevents XRPL limit sells below the bid from instant-exiting new brackets."><input type="checkbox" id="deferredSlEnabled" checked> deferred_sl_enabled</label></div>
+          <div class="ctrl-row"><label data-knob="alpha_deferred_sl_arm_buffer_pct" title="Arm the SL on-ledger when mid is within this % above the stop target (0 = at or below stop only).">deferred_sl_arm_buffer_pct</label><input type="range" id="slDeferredArm" min="0" max="2" step="0.05"><input type="number" id="numDeferredArm" step="0.05"><span id="valDeferredArm" class="muted">%</span></div>
           <div class="ctrl-row"><label data-knob="alpha_cycle_interval_seconds" title="Seconds between full engine cycles (5–60). Shorter = more responsive, more RPC load.">cycle_interval_seconds</label><input type="range" id="slCycle" min="5" max="60" step="1"><input type="number" id="numCycle" min="5" max="60" step="1"><span id="valCycle" class="muted">s</span></div>
           <button id="btnApplyRisk">Apply risk &amp; entry</button>
         </div>
@@ -642,6 +644,7 @@
     const syncSellOffset = linkSlider('slSellOffset', 'numSellOffset', 'valSellOffset');
     const syncCycle = linkSlider('slCycle', 'numCycle', 'valCycle');
     const syncStaleDrift = linkSlider('slStaleDrift', 'numStaleDrift', 'valStaleDrift');
+    const syncDeferredArm = linkSlider('slDeferredArm', 'numDeferredArm', 'valDeferredArm');
     const syncTargetXrp = linkSlider('slTargetXrp', 'numTargetXrp', 'valTargetXrp');
     const syncWeakness = linkSlider('slWeakness', 'numWeakness', 'valWeakness');
     const syncTrail = linkSlider('slTrail', 'numTrail');
@@ -678,6 +681,8 @@
       $('numMaxSells').value = c.alpha_max_pending_sells ?? 1;
       $('stalePendingEnabled').checked = c.alpha_stale_pending_buy_enabled !== false;
       syncStaleDrift(c.alpha_stale_pending_buy_max_drift_pct ?? 0.15);
+      $('deferredSlEnabled').checked = c.alpha_deferred_sl_enabled !== false;
+      syncDeferredArm(c.alpha_deferred_sl_arm_buffer_pct ?? 0);
       syncCycle(c.alpha_cycle_interval_seconds ?? 15);
       $('trailingEnabled').checked = !!c.bracket_trailing_enabled;
       $('tradingEnabled').checked = c.trading_enabled !== false;
@@ -747,6 +752,8 @@
         alpha_max_pending_sells: parseInt($('numMaxSells').value, 10),
         alpha_stale_pending_buy_enabled: $('stalePendingEnabled').checked,
         alpha_stale_pending_buy_max_drift_pct: parseFloat($('numStaleDrift').value),
+        alpha_deferred_sl_enabled: $('deferredSlEnabled').checked,
+        alpha_deferred_sl_arm_buffer_pct: parseFloat($('numDeferredArm').value),
         alpha_cycle_interval_seconds: parseInt($('numCycle').value, 10),
       }});
       if (d?.ok) { toast('Risk & entry updated'); operatorConfig = d; poll(); }
@@ -862,6 +869,7 @@
       if (r.state === 'pending_buy') return 'pending buy';
       if (r.state === 'bracket_active') {
         const tags = [];
+        if (r.sl_deferred) tags.push('<span title="Stop-loss held off-ledger until price nears stop">SL↯</span>');
         if (r.breakeven_passed) tags.push('<span title="Breakeven passed — SL trailing armed">BE</span>');
         if (r.breakout_confirmed) tags.push('<span title="Breakout confirmed — TP trailing armed">BO</span>');
         const suffix = tags.length ? ' · ' + tags.join(' ') : '';

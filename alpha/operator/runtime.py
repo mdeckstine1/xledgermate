@@ -46,6 +46,8 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_stale_pending_buy_enabled",
     "alpha_stale_pending_buy_max_drift_pct",
     "alpha_stale_pending_buy_max_age_seconds",
+    "alpha_deferred_sl_enabled",
+    "alpha_deferred_sl_arm_buffer_pct",
     "alpha_cycle_interval_seconds",
     "alpha_rlusd_price_decimals",
     "alpha_ta_weight",
@@ -86,6 +88,7 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "alpha_max_pending_sells": {"min": 1, "max": 5, "step": 1},
     "alpha_stale_pending_buy_max_drift_pct": {"min": 0.05, "max": 5.0, "step": 0.05},
     "alpha_stale_pending_buy_max_age_seconds": {"min": 0, "max": 86400, "step": 60},
+    "alpha_deferred_sl_arm_buffer_pct": {"min": 0.0, "max": 2.0, "step": 0.05},
     "alpha_cycle_interval_seconds": {"min": 5, "max": 60, "step": 1},
     "alpha_rlusd_price_decimals": {"min": 0, "max": 6, "step": 1},
     "alpha_ta_weight": {"min": 0.0, "max": 1.0, "step": 0.05},
@@ -217,6 +220,7 @@ def _coerce_override(key: str, value: Any) -> Any:
         "alpha_ta_engulfing_enabled",
         "alpha_reentry_enabled",
         "alpha_stale_pending_buy_enabled",
+        "alpha_deferred_sl_enabled",
     }
     if key in _BOOL_KEYS:
         if isinstance(value, bool):
@@ -277,6 +281,9 @@ def _validate_merged_config(config: BotConfig, changed_keys: Any) -> List[str]:
         and config.alpha_stale_pending_buy_max_age_seconds < 0
     ):
         errors.append("alpha_stale_pending_buy_max_age_seconds must be non-negative")
+
+    if "alpha_deferred_sl_arm_buffer_pct" in keys and config.alpha_deferred_sl_arm_buffer_pct < 0:
+        errors.append("alpha_deferred_sl_arm_buffer_pct must be non-negative")
 
     if "alpha_cycle_interval_seconds" in keys:
         if config.alpha_cycle_interval_seconds < 5 or config.alpha_cycle_interval_seconds > 60:

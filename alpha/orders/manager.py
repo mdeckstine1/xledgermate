@@ -186,7 +186,7 @@ class OrderManager:
                 await self._advance_pending_buy(record, open_map)
             elif record.state == BracketLifecycleState.BRACKET_ACTIVE:
                 await self._reconcile_leg_sequences(record, open_map)
-                await self._advance_active_bracket(record, open_map)
+                await self._advance_active_bracket(record, open_map, current_price=current_price)
 
         from alpha.decision.structure import CandleData, build_confirmation_candle
 
@@ -762,6 +762,127 @@ class OrderManager:
             logger.debug("market_best_bid_unavailable | %s", exc)
             return None
 
+    async def _sl_placement_would_cross(self, sl_price: float) -> bool:
+        """True when a limit sell at ``sl_price`` would cross the current best bid."""
+        best_bid = await self._market_best_bid()
+        if best_bid is None or best_bid <= 0:
+            return False
+        return best_bid > sl_price + self._price_match_tol()
+
+    async def _should_defer_sl_placement(self, sl_price: float) -> bool:
+        if not self._config.alpha_deferred_sl_enabled:
+            return False
+        return await self._sl_placement_would_cross(sl_price)
+
+    def _deferred_sl_arm_price(self, sl_price: float) -> float:
+        buffer_pct = max(0.0, self._config.alpha_deferred_sl_arm_buffer_pct)
+        if buffer_pct <= 0:
+            return sl_price
+        return sl_price * (1.0 + buffer_pct / 100.0)
+
+    async def _maybe_arm_deferred_sl(
+        self,
+        record: BracketRecord,
+        open_map: Dict[int, dict[str, Any]],
+        *,
+        current_price: float,
+    ) -> None:
+        """Place a virtual stop-loss on the ledger once price reaches the arm level."""
+        if not self._config.alpha_deferred_sl_enabled:
+            return
+        leg = record.sl_leg
+        if leg is None or leg.sequence is not None:
+            return
+
+        sl_price = leg.price_rlusd_per_xrp
+        arm_at = self._deferred_sl_arm_price(sl_price)
+        price_tol = self._price_match_tol()
+        triggered = False
+        if current_price > 0 and current_price <= arm_at + price_tol:
+            triggered = True
+        elif not await self._sl_placement_would_cross(sl_price):
+            triggered = True
+
+        if not triggered:
+            return
+
+        logger.info(
+            "deferred_sl_arm | id=%s | sl=%.6f | mid=%.6f | arm_at=%.6f",
+            record.bracket_id,
+            sl_price,
+            current_price,
+            arm_at,
+        )
+        await self._place_sl_leg(
+            record,
+            leg.size_xrp,
+            sl_price,
+            reason="deferred_sl_arm",
+            open_map=open_map,
+        )
+
+    async def _place_sl_leg(
+        self,
+        record: BracketRecord,
+        size_xrp: float,
+        sl_price: float,
+        *,
+        reason: str,
+        open_map: Optional[Dict[int, dict[str, Any]]] = None,
+    ) -> None:
+        before_seqs = await self._open_sequences()
+        sl_result = await self._ledger.place_limit_sell_xrp(
+            size_xrp=size_xrp,
+            price_rlusd_per_xrp=sl_price,
+        )
+        sl_seq, sl_immediate = await self._resolve_leg_sequence(
+            before_seqs,
+            side="ask",
+            price=sl_price,
+            size_xrp=size_xrp,
+            place_result=sl_result,
+        )
+
+        if record.sl_leg is None:
+            record.sl_leg = BracketLeg(
+                role=BracketLegRole.STOP_LOSS,
+                sequence=sl_seq,
+                price_rlusd_per_xrp=sl_price,
+                size_xrp=size_xrp,
+                remaining_xrp=size_xrp,
+            )
+        else:
+            record.sl_leg.sequence = sl_seq
+            record.sl_leg.price_rlusd_per_xrp = sl_price
+            record.sl_leg.size_xrp = size_xrp
+            record.sl_leg.remaining_xrp = size_xrp
+
+        if sl_seq:
+            self._store.register_leg_sequence(sl_seq, record.bracket_id)
+
+        record.touch()
+        self._store.touch_persist()
+
+        logger.info(
+            "bracket_place_sl | id=%s | reason=%s | size=%.4f | sl=%.6f | seq=%s | immediate=%s",
+            record.bracket_id,
+            reason,
+            size_xrp,
+            sl_price,
+            sl_seq,
+            sl_immediate,
+        )
+
+        if sl_immediate:
+            if open_map is None:
+                open_map = _open_offer_map(await self._ledger.get_open_offers())
+            await self._on_leg_fill(
+                record,
+                BracketLegRole.STOP_LOSS,
+                size_xrp,
+                open_map,
+            )
+
     def _offer_price_match(self, a: float, b: float) -> bool:
         return abs(float(a) - float(b)) <= self._price_match_tol()
 
@@ -1088,18 +1209,6 @@ class OrderManager:
         if tp_seq:
             before_seqs.add(tp_seq)
 
-        sl_result = await self._ledger.place_limit_sell_xrp(
-            size_xrp=size_xrp,
-            price_rlusd_per_xrp=prices.stop_loss_price,
-        )
-        sl_seq, sl_immediate = await self._resolve_leg_sequence(
-            before_seqs,
-            side="ask",
-            price=prices.stop_loss_price,
-            size_xrp=size_xrp,
-            place_result=sl_result,
-        )
-
         record.tp_leg = BracketLeg(
             role=BracketLegRole.TAKE_PROFIT,
             sequence=tp_seq,
@@ -1107,37 +1216,66 @@ class OrderManager:
             size_xrp=size_xrp,
             remaining_xrp=size_xrp,
         )
-        record.sl_leg = BracketLeg(
-            role=BracketLegRole.STOP_LOSS,
-            sequence=sl_seq,
-            price_rlusd_per_xrp=prices.stop_loss_price,
-            size_xrp=size_xrp,
-            remaining_xrp=size_xrp,
-        )
         if tp_seq:
             self._store.register_leg_sequence(tp_seq, record.bracket_id)
-        if sl_seq:
-            self._store.register_leg_sequence(sl_seq, record.bracket_id)
+
+        defer_sl = await self._should_defer_sl_placement(prices.stop_loss_price)
+        if defer_sl:
+            record.sl_leg = BracketLeg(
+                role=BracketLegRole.STOP_LOSS,
+                sequence=None,
+                price_rlusd_per_xrp=prices.stop_loss_price,
+                size_xrp=size_xrp,
+                remaining_xrp=size_xrp,
+            )
+            logger.info(
+                "deferred_sl_hold | id=%s | sl=%.6f | reason=best_bid_above_stop",
+                record.bracket_id,
+                prices.stop_loss_price,
+            )
+        else:
+            sl_result = await self._ledger.place_limit_sell_xrp(
+                size_xrp=size_xrp,
+                price_rlusd_per_xrp=prices.stop_loss_price,
+            )
+            sl_seq, sl_immediate = await self._resolve_leg_sequence(
+                before_seqs,
+                side="ask",
+                price=prices.stop_loss_price,
+                size_xrp=size_xrp,
+                place_result=sl_result,
+            )
+            record.sl_leg = BracketLeg(
+                role=BracketLegRole.STOP_LOSS,
+                sequence=sl_seq,
+                price_rlusd_per_xrp=prices.stop_loss_price,
+                size_xrp=size_xrp,
+                remaining_xrp=size_xrp,
+            )
+            if sl_seq:
+                self._store.register_leg_sequence(sl_seq, record.bracket_id)
+            if sl_immediate and record.sl_leg is not None:
+                open_map = _open_offer_map(await self._ledger.get_open_offers())
+                await self._on_leg_fill(
+                    record,
+                    BracketLegRole.STOP_LOSS,
+                    size_xrp,
+                    open_map,
+                )
 
         record.bracketed_xrp = size_xrp
         record.state = BracketLifecycleState.BRACKET_ACTIVE
         record.touch()
         self._store.touch_persist()
 
-        if sl_immediate and record.sl_leg is not None:
-            open_map = _open_offer_map(await self._ledger.get_open_offers())
-            await self._on_leg_fill(
-                record,
-                BracketLegRole.STOP_LOSS,
-                size_xrp,
-                open_map,
-            )
-
     async def _advance_active_bracket(
         self,
         record: BracketRecord,
         open_map: Dict[int, dict[str, Any]],
+        *,
+        current_price: float = 0.0,
     ) -> None:
+        await self._maybe_arm_deferred_sl(record, open_map, current_price=current_price)
         for role, leg in (
             (BracketLegRole.TAKE_PROFIT, record.tp_leg),
             (BracketLegRole.STOP_LOSS, record.sl_leg),
@@ -1281,6 +1419,13 @@ class OrderManager:
                     matched,
                     leg.price_rlusd_per_xrp,
                 )
+                continue
+
+            if (
+                role == BracketLegRole.STOP_LOSS
+                and self._config.alpha_deferred_sl_enabled
+                and await self._should_defer_sl_placement(leg.price_rlusd_per_xrp)
+            ):
                 continue
 
             if not self._guard.require_live(f"repair_{role.value}"):

@@ -609,6 +609,10 @@ def test_excess_pending_buys_pruned_to_cap(bracket_state):
 class _ImmediateFillSellLedger(_BracketFakeLedger):
     """Simulates XRPL immediate fill when a sell is marketable (at/through touch)."""
 
+    def __init__(self) -> None:
+        super().__init__()
+        self.immediate_next = False
+
     async def place_limit_sell_xrp(
         self,
         *,
@@ -616,7 +620,13 @@ class _ImmediateFillSellLedger(_BracketFakeLedger):
         price_rlusd_per_xrp: float,
     ) -> LedgerOfferResult:
         self.placed_sells.append((size_xrp, price_rlusd_per_xrp))
-        return LedgerOfferResult(submitted=True, dry_run=False, action="sell", offer_resting=False)
+        if self.immediate_next:
+            self.immediate_next = False
+            return LedgerOfferResult(submitted=True, dry_run=False, action="sell", offer_resting=False)
+        return await super().place_limit_sell_xrp(
+            size_xrp=size_xrp,
+            price_rlusd_per_xrp=price_rlusd_per_xrp,
+        )
 
 
 def test_sl_trail_immediate_fill_detected(bracket_state):
@@ -624,27 +634,37 @@ def test_sl_trail_immediate_fill_detected(bracket_state):
 
     async def _run() -> None:
         ledger = _ImmediateFillSellLedger()
-        cfg = _bracket_config(bracket_trailing_enabled=True, trailing_step_pct=1.5)
+        cfg = _bracket_config(
+            bracket_trailing_enabled=True,
+            trailing_step_pct=1.5,
+            alpha_deferred_sl_enabled=True,
+            alpha_stale_pending_buy_enabled=False,
+        )
         mgr = OrderManager(
             ledger,
             DryRunGuard(dry_run=False, network="mainnet"),
             cfg,
             state_dir=bracket_state,
         )
+
+        async def _dynamic_bid() -> float:
+            return bid_state["value"]
+
+        bid_state = {"value": 2.05}
+        mgr._market_best_bid = _dynamic_bid  # type: ignore[method-assign]
+
         bid = mgr.register_pending_buy(buy_sequence=800, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
+        ledger.add_buy(800, 10.0)
         ledger.remove_offer(800)
         await mgr.sync_brackets()
         record = mgr.store.get(bid)
         assert record and record.sl_leg and record.tp_leg
+        assert record.sl_leg.sequence is None
+        assert record.tp_leg.sequence is not None
         record.breakeven_passed = True
         record.sl_leg.price_rlusd_per_xrp = 1.96
-        record.sl_leg.sequence = 1001
-        ledger._offers[1001] = {
-            "sequence": 1001,
-            "side": "ask",
-            "price": 1.96,
-            "size_xrp": 10.0,
-        }
+        bid_state["value"] = 2.0
+        ledger.immediate_next = True
         mgr.set_structure(
             MarketStructureSnapshot(
                 mid=2.01,
@@ -707,7 +727,7 @@ def test_repair_attaches_missing_sl_sequence(bracket_state):
 def test_repair_replaces_missing_sl_at_same_price(bracket_state):
     async def _run() -> None:
         ledger = _BracketFakeLedger()
-        cfg = _bracket_config()
+        cfg = _bracket_config(alpha_deferred_sl_enabled=False)
         mgr = OrderManager(
             ledger,
             DryRunGuard(dry_run=False, network="mainnet"),
@@ -732,5 +752,109 @@ def test_repair_replaces_missing_sl_at_same_price(bracket_state):
         assert record.sl_leg is not None
         assert record.sl_leg.sequence is not None
         assert len(ledger.placed_sells) == placed_before + 1
+
+    asyncio.run(_run())
+
+
+def test_deferred_sl_holds_off_ledger_when_bid_above_stop(bracket_state):
+    async def _run() -> None:
+        from alpha.decision.structure import MarketStructureSnapshot
+
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config(alpha_deferred_sl_enabled=True, alpha_stale_pending_buy_enabled=False)
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+        mgr.set_structure(MarketStructureSnapshot(mid=2.05, sample_count=1, mean_mid=2.05, recent_high=2.05, recent_low=2.05, trend="neutral", breakout_up=False, breakout_down=False, summary="test"))
+
+        async def _bid_above_stop() -> float:
+            return 2.05
+
+        mgr._market_best_bid = _bid_above_stop  # type: ignore[method-assign]
+
+        mgr.register_pending_buy(buy_sequence=810, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
+        ledger.add_buy(810, 10.0)
+        ledger.remove_offer(810)
+        await mgr.sync_brackets()
+
+        record = mgr.store.get_by_buy_sequence(810)
+        assert record is not None
+        assert record.state == BracketLifecycleState.BRACKET_ACTIVE
+        assert record.tp_leg is not None and record.tp_leg.sequence is not None
+        assert record.sl_leg is not None
+        assert record.sl_leg.sequence is None
+        assert record.sl_leg.price_rlusd_per_xrp == pytest.approx(1.96)
+        assert len(ledger.placed_sells) == 1
+
+    asyncio.run(_run())
+
+
+def test_deferred_sl_arms_when_mid_reaches_stop(bracket_state):
+    async def _run() -> None:
+        from alpha.decision.structure import MarketStructureSnapshot
+
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config(alpha_deferred_sl_enabled=True, alpha_stale_pending_buy_enabled=False)
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+
+        bid_state = {"value": 2.05}
+
+        async def _dynamic_bid() -> float:
+            return bid_state["value"]
+
+        mgr._market_best_bid = _dynamic_bid  # type: ignore[method-assign]
+        mgr.set_structure(MarketStructureSnapshot(mid=2.05, sample_count=1, mean_mid=2.05, recent_high=2.05, recent_low=2.05, trend="neutral", breakout_up=False, breakout_down=False, summary="test"))
+
+        mgr.register_pending_buy(buy_sequence=811, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
+        ledger.add_buy(811, 10.0)
+        ledger.remove_offer(811)
+        await mgr.sync_brackets()
+
+        record = mgr.store.get_by_buy_sequence(811)
+        assert record and record.sl_leg and record.sl_leg.sequence is None
+
+        bid_state["value"] = 1.95
+        mgr.set_structure(MarketStructureSnapshot(mid=1.96, sample_count=1, mean_mid=1.96, recent_high=1.96, recent_low=1.96, trend="neutral", breakout_up=False, breakout_down=False, summary="test"))
+        await mgr.sync_brackets()
+
+        assert record.sl_leg.sequence is not None
+        assert len(ledger.placed_sells) == 2
+
+    asyncio.run(_run())
+
+
+def test_immediate_sl_when_deferred_disabled(bracket_state):
+    async def _run() -> None:
+        ledger = _BracketFakeLedger()
+        cfg = _bracket_config(alpha_deferred_sl_enabled=False)
+        mgr = OrderManager(
+            ledger,
+            DryRunGuard(dry_run=False, network="mainnet"),
+            cfg,
+            state_dir=bracket_state,
+        )
+
+        async def _bid_above_stop() -> float:
+            return 2.05
+
+        mgr._market_best_bid = _bid_above_stop  # type: ignore[method-assign]
+
+        mgr.register_pending_buy(buy_sequence=812, size_xrp=10.0, entry_price_rlusd_per_xrp=2.0)
+        ledger.add_buy(812, 10.0)
+        ledger.remove_offer(812)
+        await mgr.sync_brackets()
+
+        record = mgr.store.get_by_buy_sequence(812)
+        assert record is not None
+        assert record.sl_leg is not None and record.sl_leg.sequence is not None
+        assert len(ledger.placed_sells) == 2
 
     asyncio.run(_run())
