@@ -78,9 +78,9 @@
     .controls-pair .controls-section.card { margin-bottom:0; }
     .ctrl-row label[title] { cursor:help; border-bottom:1px dotted var(--muted); }
     .strategy-banner { font-size:.78rem; color:var(--muted); margin-top:2px; }
-    .live-charts-row { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; align-items:stretch; }
-    .live-charts-row .chart-card { flex:1 1 calc(50% - 5px); width:auto; max-width:none; min-width:300px; margin-bottom:0; }
-    .market-conditions-card { flex:1 1 calc(50% - 5px); min-width:280px; margin-bottom:0; }
+    .live-charts-row { display:flex; flex-direction:column; gap:10px; margin-bottom:16px; align-items:stretch; width:100%; }
+    .live-charts-row .chart-card { flex:1 1 100%; width:100%; max-width:100%; min-width:0; margin-bottom:0; }
+    .live-charts-row .market-conditions-card { flex:1 1 100%; width:100%; max-width:100%; min-width:0; margin-bottom:0; }
     .mc-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; font-size:.82rem; }
     .mc-price-dec-ctrl { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
     .mc-price-dec-ctrl select { flex:1; min-width:52px; max-width:72px; font-size:.82rem; padding:2px 4px; }
@@ -95,14 +95,14 @@
     .mc-overall.mc-grade-green { background:#14532d; }
     .mc-overall.mc-grade-yellow { background:#713f12; }
     .mc-overall.mc-grade-red { background:#7f1d1d; }
-    .chart-card { margin-bottom:16px; width:50%; max-width:50%; min-width:300px; }
+    .chart-card { margin-bottom:16px; width:100%; max-width:100%; min-width:0; }
     .chart-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:-4px 0 8px; }
     .chart-tf-label { font-size:.72rem; color:var(--muted); }
     .chart-tf-btns { display:flex; flex-wrap:wrap; gap:4px; }
     .chart-tf-btns button { font-size:.72rem; padding:3px 8px; border-radius:4px; border:1px solid var(--border); background:#0f172a; color:var(--muted); cursor:pointer; }
     .chart-tf-btns button.active { border-color:var(--accent); color:var(--text); background:#1e293b; }
-    .chart-wrap { display:grid; grid-template-columns:1fr 220px; gap:12px; align-items:stretch; }
-    .chart-canvas-wrap { background:#0b1220; border:1px solid var(--border); border-radius:6px; padding:8px; min-height:266px; }
+    .chart-wrap { display:grid; grid-template-columns:1fr minmax(160px, 220px); gap:12px; align-items:stretch; }
+    .chart-canvas-wrap { background:#0b1220; border:1px solid var(--border); border-radius:6px; padding:8px; min-height:266px; width:100%; box-sizing:border-box; }
     #priceChart { display:block; width:100%; height:250px; }
     .indicator-list { font-size:.78rem; max-height:236px; overflow:auto; }
     .indicator-list .ind-row { display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px solid #1f2937; }
@@ -1313,7 +1313,7 @@
       const liveBid = live?.best_bid != null ? Number(live.best_bid) : null;
       const liveAsk = live?.best_ask != null ? Number(live.best_ask) : null;
       const wrap = canvas.parentElement;
-      const w = Math.max(320, Math.floor(wrap?.clientWidth || 800) - 16);
+      const w = Math.max(320, Math.floor(wrap?.clientWidth || 800));
       const h = 250;
       const marginLeft = 58;
       const marginRight = 10;
@@ -1358,15 +1358,9 @@
       const y = (price) => plotTop + (1 - (price - lo) / (hi - lo)) * plotH;
       const n = candles.length;
       const gapPx = 1;
-      let bodyW = 4;
-      let totalW = n * bodyW + (n - 1) * gapPx;
-      if (totalW > plotW) {
-        bodyW = Math.max(1, (plotW - (n - 1) * gapPx) / n);
-        totalW = n * bodyW + (n - 1) * gapPx;
-      }
+      const bodyW = Math.max(1, (plotW - (n - 1) * gapPx) / n);
       const pitch = bodyW + gapPx;
-      // Right-align: newest candle at the right edge (live trading chart convention)
-      const startX = plotRight - totalW;
+      const startX = plotLeft;
       const candleCenter = (i) => startX + i * pitch + bodyW / 2;
 
       // Price axis (left) + horizontal grid
