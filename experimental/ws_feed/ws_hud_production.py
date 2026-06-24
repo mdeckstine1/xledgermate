@@ -80,6 +80,11 @@ POLL_INTERVAL_S = 1.0
 METRICS_INTERVAL_S = 30.0
 
 
+def _is_public_bind_host(bind_host: str) -> bool:
+    """Return True when the HUD would listen beyond loopback."""
+    return (bind_host or "").strip() not in ("", "127.0.0.1", "localhost", "::1")
+
+
 
 
 
@@ -503,11 +508,17 @@ async def run_production_hud(*, host: str | None = None, port: int = 8765) -> No
         return
     bind_host = (host or (config.hud_bind_host or "127.0.0.1")).strip() or "127.0.0.1"
 
-    bot_address = (config.bot_account_address or "").strip() or "r... (set bot_account_address)"
-
     from experimental.ws_feed.hud_auth import resolve_hud_auth
 
     hud_auth = resolve_hud_auth(config, bind_host=bind_host)
+    if _is_public_bind_host(bind_host) and hud_auth is None:
+        raise RuntimeError(
+            "Refusing to start public HUD without authentication. "
+            "Set hud_auth_username and hud_auth_password (or XLG_HUD_USERNAME/XLG_HUD_PASSWORD), "
+            "or bind hud_bind_host to 127.0.0.1."
+        )
+
+    bot_address = (config.bot_account_address or "").strip() or "r... (set bot_account_address)"
 
     server = run_hud(host=bind_host, port=port, background=True, auth=hud_auth)
 

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
+
+import pytest
 
 from experimental.ws_feed.hud_auth import (
     HudAuthSettings,
@@ -64,3 +67,25 @@ def test_resolve_hud_auth_localhost_explicit():
         hud_auth_rp_id="",
     )
     assert resolve_hud_auth(cfg, bind_host="127.0.0.1") is not None
+
+
+def test_run_production_hud_rejects_public_bind_without_auth(monkeypatch):
+    from experimental.ws_feed import ws_hud_production
+
+    cfg = SimpleNamespace(
+        hud_auth_username="",
+        hud_auth_password="",
+        hud_auth_enabled=False,
+        hud_auth_rp_id="",
+        hud_bind_host="0.0.0.0",
+        ws_hud_enabled=True,
+    )
+    monkeypatch.setattr(ws_hud_production.BotConfig, "load", lambda: cfg)
+
+    def _fail_run_hud(*args, **kwargs):
+        raise AssertionError("run_hud must not bind a public unauthenticated HUD")
+
+    monkeypatch.setattr(ws_hud_production, "run_hud", _fail_run_hud)
+
+    with pytest.raises(RuntimeError, match="Refusing to start public HUD without authentication"):
+        asyncio.run(ws_hud_production.run_production_hud(host="0.0.0.0"))
