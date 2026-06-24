@@ -11,7 +11,13 @@ from typing import Any, Dict, Iterable, List, Optional
 from alpha.decision.reentry import ReentrySnapshot
 from alpha.decision.structure import MarketStructureSnapshot, build_candle_from_mids, load_mid_history
 from alpha.decision.price_history import PRICE_HISTORY_PATH, load_price_series, effective_sample_seconds
-from alpha.decision.ta_config import resolve_ta_candle_bucket_samples
+from alpha.decision.ta_config import (
+    CHART_CANDLE_INTERVAL_OPTIONS_SECONDS,
+    CHART_DEFAULT_INTERVAL_SECONDS,
+    CHART_MAX_CANDLES,
+    chart_bucket_samples,
+    resolve_ta_candle_bucket_samples,
+)
 from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalysisSnapshot
 from alpha.ledger.market_conditions import build_market_conditions, refresh_dca_vs_mid
 from alpha.operator.activity import ActivityLog
@@ -112,7 +118,7 @@ def _chart_candles_from_mids(
     mids: List[float],
     *,
     bucket: int,
-    max_candles: int = 48,
+    max_candles: int = CHART_MAX_CANDLES,
     sample_seconds: int = 60,
     end_utc: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
@@ -160,15 +166,22 @@ def _chart_payload(
         config.alpha_cycle_interval_seconds,
         config.alpha_price_sample_interval_seconds,
     )
-    bucket = resolve_ta_candle_bucket_samples(
+    chart_interval = CHART_DEFAULT_INTERVAL_SECONDS
+    bucket = chart_bucket_samples(
+        chart_interval,
+        cycle_seconds=config.alpha_cycle_interval_seconds,
+        sample_interval_seconds=config.alpha_price_sample_interval_seconds,
+    )
+    ta_bucket = resolve_ta_candle_bucket_samples(
         config.alpha_technical_analysis,
         cycle_seconds=config.alpha_cycle_interval_seconds,
         sample_interval_seconds=config.alpha_price_sample_interval_seconds,
     )
-    candle_interval_seconds = bucket * sample_seconds
+    ta_candle_interval_seconds = ta_bucket * sample_seconds
     candles = _chart_candles_from_mids(
         mids,
         bucket=bucket,
+        max_candles=CHART_MAX_CANDLES,
         sample_seconds=sample_seconds,
         end_utc=end_utc,
     )
@@ -188,7 +201,7 @@ def _chart_payload(
         {
             "key": "ta_candle_interval",
             "label": "TA candle",
-            "value": f"{candle_interval_seconds}s (~{candle_interval_seconds // 60}m)" if candle_interval_seconds >= 60 else f"{candle_interval_seconds}s",
+            "value": f"{ta_candle_interval_seconds}s (~{ta_candle_interval_seconds // 60}m)" if ta_candle_interval_seconds >= 60 else f"{ta_candle_interval_seconds}s",
             "kind": "meta",
         },
         {
@@ -298,10 +311,14 @@ def _chart_payload(
             )
     return {
         "candles": candles,
+        "mids": [round(float(m), 6) for m in mids if float(m) > 0],
         "indicators": indicators,
         "bucket_samples": bucket,
         "sample_seconds": sample_seconds,
         "candle_seconds": bucket * sample_seconds,
+        "max_candles": CHART_MAX_CANDLES,
+        "chart_interval_options": list(CHART_CANDLE_INTERVAL_OPTIONS_SECONDS),
+        "default_chart_interval_seconds": CHART_DEFAULT_INTERVAL_SECONDS,
         "mid_samples": len(mids),
     }
 

@@ -12,6 +12,10 @@ TA_CANDLE_INTERVAL_MAX_SECONDS = 9000  # 2.5h
 TA_CANDLE_INTERVAL_DEFAULT_SECONDS = 300
 TA_CANDLE_INTERVAL_STEP_SECONDS = 300
 
+CHART_CANDLE_INTERVAL_OPTIONS_SECONDS = (300, 1800, 3600, 7200)  # 5m, 30m, 1h, 2h
+CHART_MAX_CANDLES = 96
+CHART_DEFAULT_INTERVAL_SECONDS = 300
+
 
 def _merge_dataclass(cls: type, base: Any, data: Dict[str, Any]) -> Any:
     if not isinstance(data, dict):
@@ -196,6 +200,17 @@ def merge_ta_config(
     data: Dict[str, Any],
 ) -> AlphaTechnicalAnalysisConfig:
     return _merge_dataclass(AlphaTechnicalAnalysisConfig, base, data)
+
+
+def chart_bucket_samples(
+    candle_interval_seconds: int,
+    *,
+    cycle_seconds: int,
+    sample_interval_seconds: int,
+) -> int:
+    """Book ticks per Live-tab OHLC bar."""
+    sample_seconds = effective_sample_seconds(cycle_seconds, sample_interval_seconds)
+    return max(1, int(round(int(candle_interval_seconds) / sample_seconds)))
 
 
 def effective_ta_candle_interval_seconds(

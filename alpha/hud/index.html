@@ -96,6 +96,11 @@
     .mc-overall.mc-grade-yellow { background:#713f12; }
     .mc-overall.mc-grade-red { background:#7f1d1d; }
     .chart-card { margin-bottom:16px; width:50%; max-width:50%; min-width:300px; }
+    .chart-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:-4px 0 8px; }
+    .chart-tf-label { font-size:.72rem; color:var(--muted); }
+    .chart-tf-btns { display:flex; flex-wrap:wrap; gap:4px; }
+    .chart-tf-btns button { font-size:.72rem; padding:3px 8px; border-radius:4px; border:1px solid var(--border); background:#0f172a; color:var(--muted); cursor:pointer; }
+    .chart-tf-btns button.active { border-color:var(--accent); color:var(--text); background:#1e293b; }
     .chart-wrap { display:grid; grid-template-columns:1fr 220px; gap:12px; align-items:stretch; }
     .chart-canvas-wrap { background:#0b1220; border:1px solid var(--border); border-radius:6px; padding:8px; min-height:266px; }
     #priceChart { display:block; width:100%; height:250px; }
@@ -256,6 +261,15 @@
         <div class="live-charts-row">
         <div class="card chart-card">
           <h3>Mid price · RLUSD/XRP</h3>
+          <div class="chart-toolbar">
+            <span class="chart-tf-label">Bars</span>
+            <div class="chart-tf-btns" id="chartTfBtns">
+              <button type="button" data-sec="300">5m</button>
+              <button type="button" data-sec="1800">30m</button>
+              <button type="button" data-sec="3600">1h</button>
+              <button type="button" data-sec="7200">2h</button>
+            </div>
+          </div>
           <div id="chartMeta" class="muted" style="font-size:.72rem;margin:-4px 0 8px">—</div>
           <div class="chart-wrap">
             <div class="chart-canvas-wrap"><canvas id="priceChart" width="800" height="220"></canvas></div>
@@ -1181,6 +1195,84 @@
     }
 
     let lastChartState = null;
+    const CHART_INTERVAL_STORAGE_KEY = 'alpha_hud_chart_interval_sec';
+    const CHART_MAX_CANDLES = 96;
+    let chartIntervalSec = 300;
+
+    function formatChartIntervalLabel(sec) {
+      const s = parseInt(sec, 10);
+      if (s < 3600) return (s / 60) + 'm';
+      return (s / 3600) + 'h';
+    }
+
+    function loadChartIntervalSec(chart) {
+      const options = chart?.chart_interval_options || [300, 1800, 3600, 7200];
+      const fallback = chart?.default_chart_interval_seconds || 300;
+      let stored = fallback;
+      try {
+        const raw = localStorage.getItem(CHART_INTERVAL_STORAGE_KEY);
+        if (raw) stored = parseInt(raw, 10);
+      } catch (e) { /* ignore */ }
+      if (!options.includes(stored)) stored = fallback;
+      chartIntervalSec = stored;
+      document.querySelectorAll('#chartTfBtns button').forEach(btn => {
+        const sec = parseInt(btn.getAttribute('data-sec'), 10);
+        btn.classList.toggle('active', sec === chartIntervalSec);
+      });
+    }
+
+    function setChartIntervalSec(sec) {
+      chartIntervalSec = parseInt(sec, 10);
+      try { localStorage.setItem(CHART_INTERVAL_STORAGE_KEY, String(chartIntervalSec)); } catch (e) { /* ignore */ }
+      document.querySelectorAll('#chartTfBtns button').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.getAttribute('data-sec'), 10) === chartIntervalSec);
+      });
+      if (lastChartState) renderChart(lastChartState);
+    }
+
+    document.querySelectorAll('#chartTfBtns button').forEach(btn => {
+      btn.onclick = () => setChartIntervalSec(btn.getAttribute('data-sec'));
+    });
+
+    function buildChartCandlesFromMids(mids, chart) {
+      const sampleSec = Math.max(1, parseInt(chart?.sample_seconds, 10) || 15);
+      const bucket = Math.max(1, Math.round(chartIntervalSec / sampleSec));
+      const maxCandles = chart?.max_candles || CHART_MAX_CANDLES;
+      const clean = (mids || []).map(Number).filter(m => m > 0);
+      const chunks = [];
+      for (let i = 0; i < clean.length; i += bucket) {
+        const chunk = clean.slice(i, i + bucket);
+        if (chunk.length >= 2) chunks.push(chunk);
+      }
+      const window = chunks.slice(-maxCandles);
+      const endMs = Date.now();
+      return window.map((chunk, i) => {
+        const n = window.length;
+        const offsetSec = (n - 1 - i) * bucket * sampleSec;
+        return {
+          o: chunk[0],
+          h: Math.max(...chunk),
+          l: Math.min(...chunk),
+          c: chunk[chunk.length - 1],
+          t: new Date(endMs - offsetSec * 1000).toISOString(),
+        };
+      });
+    }
+
+    function chartViewForRender(chart) {
+      const mids = chart?.mids;
+      if (Array.isArray(mids) && mids.length >= 4) {
+        const sampleSec = Math.max(1, parseInt(chart?.sample_seconds, 10) || 15);
+        const bucket = Math.max(1, Math.round(chartIntervalSec / sampleSec));
+        return {
+          ...chart,
+          candles: buildChartCandlesFromMids(mids, chart),
+          bucket_samples: bucket,
+          candle_seconds: chartIntervalSec,
+        };
+      }
+      return chart;
+    }
 
     function formatIndicatorValue(ind) {
       if (ind.kind === 'line' && typeof ind.value === 'number') return fmtPrice(ind.value);
@@ -1265,11 +1357,11 @@
       const plotH = plotBottom - plotTop;
       const y = (price) => plotTop + (1 - (price - lo) / (hi - lo)) * plotH;
       const n = candles.length;
-      const gapPx = 2;
-      let bodyW = 5;
+      const gapPx = 1;
+      let bodyW = 4;
       let totalW = n * bodyW + (n - 1) * gapPx;
       if (totalW > plotW) {
-        bodyW = Math.max(2, (plotW - (n - 1) * gapPx) / n);
+        bodyW = Math.max(1, (plotW - (n - 1) * gapPx) / n);
         totalW = n * bodyW + (n - 1) * gapPx;
       }
       const pitch = bodyW + gapPx;
@@ -1485,16 +1577,19 @@
       const sample = s.config_effective?.alpha_price_sample_interval_seconds;
       const parts = [];
       parts.push('Quote ' + q.label + (q.stale ? ' (stale)' : ''));
-      if (candleSec) parts.push('candles ~' + candleSec + 's each');
+      if (candleSec) parts.push(formatChartIntervalLabel(candleSec) + ' bars');
+      if (chart?.candles?.length) parts.push(chart.candles.length + ' shown');
+      if (bucket && sample) parts.push(bucket + '×' + sample + 's ticks');
       if (cycle) parts.push('engine ' + cycle + 's');
-      if (sample != null && Number(sample) > 0) parts.push('book sample ' + sample + 's');
       el.textContent = parts.join(' · ');
       el.style.color = q.stale ? 'var(--warn)' : 'var(--muted)';
     }
 
     function renderChart(s) {
       lastChartState = s;
-      const chart = s.chart || {};
+      const raw = s.chart || {};
+      loadChartIntervalSec(raw);
+      const chart = chartViewForRender(raw);
       renderIndicatorList(chart);
       renderChartMeta(s, chart);
       drawCandleChart($('priceChart'), chart, {

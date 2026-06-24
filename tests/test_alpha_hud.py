@@ -64,6 +64,9 @@ def test_build_hud_state_minimal():
     assert state["mid"] == 2.0
     assert "chart" in state
     assert "candles" in state["chart"]
+    assert "mids" in state["chart"]
+    assert "chart_interval_options" in state["chart"]
+    assert state["chart"]["max_candles"] == 96
     assert "indicators" in state["chart"]
     assert "realized_pnl_24h" in state
     assert state["realized_pnl_24h"]["window_hours"] == 24.0
