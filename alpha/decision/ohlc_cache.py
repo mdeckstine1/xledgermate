@@ -119,6 +119,26 @@ def _row_to_candle(row: sqlite3.Row) -> CandleData:
     )
 
 
+def _close_elapsed_bars(
+    conn: sqlite3.Connection,
+    *,
+    interval_sec: int,
+    tick_ts: int,
+) -> None:
+    """Mark any bar whose period ended at or before ``tick_ts`` as complete."""
+    interval = max(1, int(interval_sec))
+    conn.execute(
+        """
+        UPDATE ohlc_bars
+        SET is_complete=1
+        WHERE interval_sec=?
+          AND is_complete=0
+          AND bar_open_ts + ? <= ?
+        """,
+        (interval, interval, int(tick_ts)),
+    )
+
+
 def _upsert_tick_bar(
     conn: sqlite3.Connection,
     *,
@@ -137,6 +157,16 @@ def _upsert_tick_bar(
     ).fetchone()
 
     if row is None:
+        prev_open = int(bar_open) - int(interval_sec)
+        if prev_open >= 0:
+            conn.execute(
+                """
+                UPDATE ohlc_bars
+                SET is_complete=1
+                WHERE interval_sec=? AND bar_open_ts=? AND is_complete=0
+                """,
+                (interval_sec, prev_open),
+            )
         conn.execute(
             """
             INSERT INTO ohlc_bars(
@@ -160,16 +190,6 @@ def _upsert_tick_bar(
         """,
         (high, low, price, interval_sec, bar_open),
     )
-
-    next_open = bar_open + interval_sec
-    if tick_ts >= next_open:
-        conn.execute(
-            """
-            UPDATE ohlc_bars SET is_complete=1
-            WHERE interval_sec=? AND bar_open_ts=?
-            """,
-            (interval_sec, bar_open),
-        )
 
 
 def _trim_interval(conn: sqlite3.Connection, interval_sec: int) -> None:
@@ -206,6 +226,7 @@ def record_sample(
         _init_schema(conn)
         for interval_sec in active:
             bar_open = _bar_open_ts(ts, interval_sec)
+            _close_elapsed_bars(conn, interval_sec=interval_sec, tick_ts=ts)
             _upsert_tick_bar(conn, interval_sec=interval_sec, bar_open=bar_open, price=price, tick_ts=ts)
             _trim_interval(conn, interval_sec)
         _set_meta(conn, "last_tick_ts", str(ts))
@@ -340,6 +361,27 @@ def rebuild_all_from_ticks(
     return out
 
 
+def repair_incomplete_bars(
+    logs_dir: Path,
+    *,
+    tick_ts: Optional[int] = None,
+    intervals: Optional[Sequence[int]] = None,
+) -> int:
+    """Close bars whose period has ended (fixes stuck closed_bars after live-only updates)."""
+    ts = int(tick_ts if tick_ts is not None else _utc_ts())
+    active = tuple(intervals) if intervals is not None else _active_intervals()
+    path = _db_path(logs_dir)
+    closed = 0
+    with _connect(path) as conn:
+        _init_schema(conn)
+        for interval_sec in active:
+            before = _closed_bar_count(conn, interval_sec)
+            _close_elapsed_bars(conn, interval_sec=interval_sec, tick_ts=ts)
+            closed += _closed_bar_count(conn, interval_sec) - before
+        conn.commit()
+    return closed
+
+
 def ensure_ohlc_cache(
     logs_dir: Path,
     *,
@@ -382,6 +424,10 @@ def ensure_ohlc_cache(
                 logs_dir=logs_dir,
             )
     configure_ohlc_extra_intervals(intervals=[int(ta_interval_seconds)])
+    repair_incomplete_bars(
+        logs_dir,
+        intervals=_active_intervals(),
+    )
 
 
 def cache_status(

@@ -26,6 +26,20 @@ def _seed_ticks(path: Path, n: int = 200, base: float = 1.10) -> None:
         append_book_prices(BookPrices(bid=p - 0.001, ask=p, mid=p - 0.0005), path=path)
 
 
+def test_record_sample_closes_bars_over_time(tmp_path: Path):
+    """Live ticks must increment closed_bars when a candle period ends."""
+    from datetime import datetime, timedelta, timezone
+
+    logs = tmp_path
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for i in range(80):
+        ts = base + timedelta(seconds=i * 60)
+        record_sample(1.10 + i * 0.001, logs_dir=logs, tick_ts=ts)
+    status = cache_status(logs, ta_interval_seconds=300)
+    assert status["closed_bars"] >= 10
+    assert status["total_bars"] >= status["closed_bars"]
+
+
 def test_record_sample_builds_candles(tmp_path: Path):
     logs = tmp_path
     for i in range(40):
