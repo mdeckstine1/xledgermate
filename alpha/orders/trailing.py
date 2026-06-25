@@ -91,7 +91,22 @@ def evaluate_trailing_sl(
 
     # Initial breakeven lock — SL never below entry once trailing is armed.
     if current_sl < entry - eps:
-        record.last_sl_trail_anchor_mid = max(record.last_sl_trail_anchor_mid, mid, entry)
+        peak = _update_peak(record, mid)
+        anchor_entry = max(record.last_sl_trail_anchor_mid, entry)
+        record.last_sl_trail_anchor_mid = anchor_entry
+        step_pct = max(0.0, config.trailing_step_pct)
+        if step_pct > 0 and _step_threshold_reached(peak, anchor_entry, step_pct):
+            candidate = round_rlusd_price(peak * (1.0 - step_pct / 100.0), dec, direction="down")
+            new_sl = max(entry, candidate)
+            record.last_sl_trail_anchor_mid = peak
+            logger.info(
+                "trailing_sl_activated | id=%s | entry=%.6f | peak=%.6f | new_sl=%.6f | stepped=1",
+                record.bracket_id,
+                entry,
+                peak,
+                new_sl,
+            )
+            return new_sl
         logger.info(
             "trailing_sl_activated | id=%s | entry=%.6f | price=%.6f | new_sl=%.6f",
             record.bracket_id,
@@ -107,6 +122,10 @@ def evaluate_trailing_sl(
 
     peak = _update_peak(record, mid)
     anchor = record.last_sl_trail_anchor_mid
+    # Repair: BE gap set anchor to peak while SL stayed at entry — ratchet from entry.
+    if anchor > entry + eps and current_sl <= entry + eps:
+        anchor = entry
+        record.last_sl_trail_anchor_mid = entry
     if anchor <= 0:
         record.last_sl_trail_anchor_mid = peak
         return None
@@ -300,7 +319,7 @@ def evaluate_trailing(
 
     if is_breakeven_passed_for_record(record, mid) and not record.breakeven_passed:
         record.breakeven_passed = True
-        record.last_sl_trail_anchor_mid = max(mid, record.entry_price_rlusd_per_xrp)
+        record.last_sl_trail_anchor_mid = record.entry_price_rlusd_per_xrp
         logger.info(
             "bracket_breakeven_passed | id=%s | entry=%.6f | mid=%.6f",
             record.bracket_id,

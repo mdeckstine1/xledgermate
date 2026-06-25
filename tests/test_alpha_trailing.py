@@ -141,6 +141,41 @@ def test_evaluate_trailing_sl_ratchets_after_step():
     assert new_sl == round_rlusd_price(2.03 * 0.99, dec, direction="down")
 
 
+def test_evaluate_trailing_sl_steps_on_first_be_when_price_gaps_above_entry():
+    """Price jumps past entry + step in one cycle — SL should trail, not stick at entry."""
+    cfg = _trailing_config(trailing_step_pct=1.5)
+    entry = 1.29
+    record = _active_record(entry=entry, sl=1.264, tp=1.35)
+    record.breakeven_passed = True
+    record.last_sl_trail_anchor_mid = entry
+    record.peak_mid_rlusd_per_xrp = entry
+
+    mid = 1.32
+    new_sl = evaluate_trailing_sl(record, mid, cfg)
+    dec = price_decimals(cfg)
+    expected = round_rlusd_price(mid * (1.0 - 1.5 / 100.0), dec, direction="down")
+    assert new_sl is not None
+    assert new_sl > entry
+    assert new_sl == expected
+
+
+def test_evaluate_trailing_sl_repairs_stale_anchor_when_sl_stuck_at_entry():
+    """Legacy BE gap set anchor to peak while SL remained at entry."""
+    cfg = _trailing_config(trailing_step_pct=1.5)
+    entry = 1.29
+    record = _active_record(entry=entry, sl=entry, tp=1.35)
+    record.breakeven_passed = True
+    record.last_sl_trail_anchor_mid = 1.32
+    record.peak_mid_rlusd_per_xrp = 1.32
+
+    new_sl = evaluate_trailing_sl(record, 1.32, cfg)
+    dec = price_decimals(cfg)
+    assert new_sl is not None
+    assert new_sl > entry
+    assert new_sl == round_rlusd_price(1.32 * (1.0 - 1.5 / 100.0), dec, direction="down")
+    assert record.last_sl_trail_anchor_mid == 1.32
+
+
 def test_evaluate_trailing_tp_only_after_breakout():
     cfg = _trailing_config(trailing_step_pct=1.0)
     record = _active_record(tp=2.08)
