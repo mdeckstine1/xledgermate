@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import html
 import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -96,6 +97,51 @@ if app is not None:
         from alpha.hud.state_export import sanitize_for_json
 
         return JSONResponse(sanitize_for_json(_load_state()))
+
+    @app.get("/reports/catalog")
+    async def reports_catalog() -> JSONResponse:
+        from alpha.hud.reports_support import list_reports
+
+        return JSONResponse({"reports": list_reports()})
+
+    @app.get("/report/{report_id}", response_class=HTMLResponse)
+    async def report_view_html(report_id: str) -> HTMLResponse:
+        from alpha.hud.reports_support import (
+            generate_report_text,
+            get_report_spec,
+            wrap_report_html,
+        )
+
+        spec = get_report_spec(report_id)
+        if spec is None:
+            return HTMLResponse(
+                f"<h1>Unknown report: {html.escape(report_id)}</h1>"
+                f"<p><a href='/'>Back to HUD</a></p>",
+                status_code=404,
+            )
+        body = generate_report_text(report_id, logs_dir=_RUNTIME.parent)
+        page = wrap_report_html(
+            report_id=report_id,
+            title=spec.title,
+            subtitle=spec.subtitle,
+            body_text=body,
+            spec=spec,
+        )
+        resp = HTMLResponse(page)
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return resp
+
+    @app.get("/report/{report_id}.txt")
+    async def report_view_text(report_id: str) -> Response:
+        from fastapi.responses import PlainTextResponse
+
+        from alpha.hud.reports_support import generate_report_text, get_report_spec
+
+        if get_report_spec(report_id) is None:
+            return PlainTextResponse(f"Unknown report: {report_id}\n", status_code=404)
+        return PlainTextResponse(
+            generate_report_text(report_id, logs_dir=_RUNTIME.parent),
+        )
 
     @app.post("/controls/{action}")
     async def controls_legacy(action: str) -> JSONResponse:

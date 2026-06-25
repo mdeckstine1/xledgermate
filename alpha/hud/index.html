@@ -121,6 +121,12 @@
     .ta-signals td.bias-bearish { color:var(--bad); }
     .ta-signals tr.fired td:first-child { font-weight:600; }
     .ta-disabled-msg { padding:16px; text-align:center; color:var(--muted); }
+    .reports-catalog { display:flex; flex-direction:column; gap:10px; }
+    .reports-catalog .report-cat { margin-bottom:4px; }
+    .reports-catalog .report-row { border-top:1px solid var(--border); padding:10px 0; }
+    .reports-catalog .report-row:first-of-type { border-top:none; }
+    .report-open-btn { background:var(--accent); color:#fff; border:none; border-radius:4px; padding:6px 12px; font-size:.75rem; cursor:pointer; white-space:nowrap; }
+    .report-open-btn:hover { filter:brightness(1.1); }
     .ta-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px; margin-bottom:12px; }
     .ta-toggle { display:flex; align-items:center; gap:8px; font-size:.9rem; cursor:pointer; }
     .ctrl-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px; }
@@ -418,7 +424,17 @@
         <div class="card"><table><thead><tr><th></th><th>Seq</th><th>Side</th><th>Price</th><th>Size XRP</th><th>RLUSD</th></tr></thead><tbody id="offerTable"></tbody></table></div>
       </section>
       <section id="reports" class="panel">
-        <div class="card"><h3>Report</h3><pre id="report" class="muted" style="white-space:pre-wrap;margin:0;font-size:.78rem"></pre></div>
+        <div class="card">
+          <h3 style="margin-top:0">Reports</h3>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem;line-height:1.5">
+            Read-only reports from <code>logs/</code> on this host. All reports open in a <strong>new tab</strong> — use Refresh on the report page for latest data. No engine restart required.
+          </p>
+          <div style="margin-bottom:10px">
+            <button type="button" class="report-open-btn" id="btnOpenCycleReport">Open latest cycle report ↗</button>
+          </div>
+          <div id="reports-catalog-status" class="muted" style="font-size:.75rem;margin-bottom:8px">Loading report catalog…</div>
+          <div id="reports-catalog" class="reports-catalog"></div>
+        </div>
         <div class="card"><h3>Tax &amp; transfer logs</h3>
           <p class="muted" style="margin:0;font-size:.78rem;line-height:1.5">
             Taxable fills append to <code id="taxCsvPath">logs/trades_YYYY-MM.csv</code> (BUY/SELL/TRANSFER rows, <code>taxable=Y</code>).<br>
@@ -619,6 +635,7 @@
       if (el.dataset.tab === 'ta' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'config') loadAccountConfig();
       if (el.dataset.tab === 'skynet') loadSkynetStatus();
+      if (el.dataset.tab === 'reports') loadReportsCatalog();
     }));
 
     function toast(msg, isErr) {
@@ -673,6 +690,7 @@
     async function post(path) { return postJson(path); }
 
     $('btnStart').onclick = async () => { const d = await post('/engine/start'); if (d?.ok) toast('Engine start requested'); poll(); };
+    $('btnOpenCycleReport')?.addEventListener('click', () => openReportInNewTab('alpha_cycle'));
     $('btnPause').onclick = async () => { await post('/controls/pause'); poll(); };
     $('btnResume').onclick = async () => { await post('/controls/resume'); poll(); };
     $('btnRestart').onclick = async () => { await post('/engine/restart'); poll(); };
@@ -1619,6 +1637,84 @@
       if (wrap) chartObs.observe(wrap);
     }
 
+    function openReportInNewTab(reportId) {
+      const url = '/report/' + encodeURIComponent(reportId) + '?t=' + Date.now();
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    async function loadReportsCatalog() {
+      const statusEl = $('reports-catalog-status');
+      const container = $('reports-catalog');
+      if (!container) return;
+      if (statusEl) statusEl.textContent = 'Loading report catalog…';
+      try {
+        const r = await fetch('/reports/catalog');
+        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+        const data = await r.json();
+        renderReportsCatalog(data.reports || []);
+        if (statusEl) {
+          statusEl.textContent = (data.reports || []).length + ' reports · click Open in new tab ↗';
+        }
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'Could not load reports catalog.';
+        container.innerHTML = '<div class="muted" style="color:var(--bad)">Failed to fetch /reports/catalog</div>';
+      }
+    }
+
+    function renderReportsCatalog(reports) {
+      const container = $('reports-catalog');
+      if (!container) return;
+      if (!reports.length) {
+        container.innerHTML = '<div class="muted">No reports configured.</div>';
+        return;
+      }
+      const byCategory = {};
+      reports.forEach(r => {
+        const cat = r.category || 'Other';
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push(r);
+      });
+      const order = ['Operator', 'P&L', 'Technical analysis', 'Orders', 'Other'];
+      const renderCategory = (cat, rows) => {
+        let block = '<div class="report-cat"><div class="muted" style="font-size:.7rem;text-transform:uppercase;margin-bottom:4px">' + cat + '</div>';
+        rows.forEach(r => {
+          const soak = r.soak_safe
+            ? '<span style="background:#14532d;color:#86efac;font-size:.65rem;padding:2px 6px;border-radius:3px;margin-right:6px">Read-only</span>'
+            : '<span style="background:#7f1d1d;color:#fca5a5;font-size:.65rem;padding:2px 6px;border-radius:3px;margin-right:6px">Engine change</span>';
+          block += '<div class="report-row"><div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between">'
+            + '<div><strong>' + (r.title || r.id) + '</strong>'
+            + '<span class="muted" style="font-size:.7rem;margin-left:8px">ID: <code>' + r.id + '</code></span>'
+            + '<div class="muted" style="font-size:.75rem;margin-top:2px">' + (r.subtitle || '') + '</div></div>'
+            + '<button type="button" class="report-open-btn" data-report-id="' + r.id + '">Open in new tab ↗</button>'
+            + '</div><div style="margin-top:6px">' + soak + '</div>'
+            + '<div class="muted" style="font-size:.78rem;margin-top:6px;line-height:1.4">' + (r.description || '') + '</div>'
+            + '<div class="muted" style="font-size:.68rem;margin-top:4px">' + (r.phase_ref ? r.phase_ref + ' · ' : '') + 'CLI: <code>' + (r.cli_command || '') + '</code></div>'
+            + '</div>';
+        });
+        block += '</div>';
+        return block;
+      };
+      let html = '';
+      const rendered = new Set();
+      order.forEach(cat => {
+        const rows = byCategory[cat];
+        if (!rows || !rows.length) return;
+        rendered.add(cat);
+        html += renderCategory(cat, rows);
+      });
+      Object.keys(byCategory).sort().forEach(cat => {
+        if (rendered.has(cat)) return;
+        html += renderCategory(cat, byCategory[cat]);
+      });
+      container.innerHTML = html;
+      container.querySelectorAll('.report-open-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-report-id');
+          if (id) openReportInNewTab(id);
+        });
+      });
+    }
+
     function renderTa(s) {
       const ta = s.technical_analysis || {};
       const overrideOn = !!operatorConfig?.config_effective?.alpha_ta_enabled;
@@ -1778,7 +1874,6 @@
       $('brDetail').textContent = (bs.active_sl_trailing||0) + ' SL trail · ' + (bs.active_breakout_trailing||0) + ' breakout trail';
       $('preflight').textContent = s.risk?.preflight_summary || '—';
       $('exec').textContent = s.execution ? (s.execution.message || JSON.stringify(s.execution)) : '—';
-      $('report').textContent = s.report_text || '';
       if (s.tax_log?.path) $('taxCsvPath').textContent = s.tax_log.path;
       if (s.tax_log?.transfers_path) $('transfersCsvPath').textContent = s.tax_log.transfers_path;
       renderChart(s);
