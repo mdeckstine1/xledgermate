@@ -104,8 +104,18 @@ if app is not None:
 
         return JSONResponse({"reports": list_reports()})
 
+    @app.get("/reports/tax/periods")
+    async def tax_periods() -> JSONResponse:
+        from alpha.reporting.tax_ledger import tax_periods_payload
+
+        return JSONResponse(tax_periods_payload(_RUNTIME.parent))
+
     @app.get("/report/{report_id}", response_class=HTMLResponse)
-    async def report_view_html(report_id: str) -> HTMLResponse:
+    async def report_view_html(
+        report_id: str,
+        month: str = "",
+        year: str = "",
+    ) -> HTMLResponse:
         from alpha.hud.reports_support import (
             generate_report_text,
             get_report_spec,
@@ -119,11 +129,22 @@ if app is not None:
                 f"<p><a href='/'>Back to HUD</a></p>",
                 status_code=404,
             )
-        body = generate_report_text(report_id, logs_dir=_RUNTIME.parent)
+        year_val = int(year) if year.strip().isdigit() else None
+        body = generate_report_text(
+            report_id,
+            logs_dir=_RUNTIME.parent,
+            month=month.strip() or None,
+            year=year_val,
+        )
+        subtitle = spec.subtitle
+        if report_id == "alpha_trades_month" and month.strip():
+            subtitle = f"Month {month.strip()}"
+        if report_id == "alpha_tax_year" and year_val is not None:
+            subtitle = f"Tax year {year_val}"
         page = wrap_report_html(
             report_id=report_id,
             title=spec.title,
-            subtitle=spec.subtitle,
+            subtitle=subtitle,
             body_text=body,
             spec=spec,
         )
@@ -131,16 +152,54 @@ if app is not None:
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         return resp
 
+    @app.get("/report/alpha_tax_year.csv")
+    async def tax_year_csv_download(year: str = "") -> Response:
+        from fastapi.responses import PlainTextResponse
+
+        from alpha.reporting.tax_ledger import annual_csv_text
+        from datetime import datetime, timezone
+
+        y = int(year) if year.strip().isdigit() else datetime.now(tz=timezone.utc).year
+        content = annual_csv_text(_RUNTIME.parent, y)
+        resp = PlainTextResponse(content, media_type="text/csv")
+        resp.headers["Content-Disposition"] = f'attachment; filename="trades_{y}_annual.csv"'
+        return resp
+
+    @app.get("/report/alpha_trades_month.csv")
+    async def tax_month_csv_download(month: str = "") -> Response:
+        from fastapi.responses import PlainTextResponse
+
+        from alpha.reporting.tax_ledger import trades_path_for_month
+        from datetime import datetime, timezone
+
+        key = month.strip() or datetime.now(tz=timezone.utc).strftime("%Y-%m")
+        path = trades_path_for_month(_RUNTIME.parent, key)
+        if not path.is_file():
+            return PlainTextResponse(f"Not found: logs/{path.name}\n", status_code=404)
+        resp = PlainTextResponse(path.read_text(encoding="utf-8"), media_type="text/csv")
+        resp.headers["Content-Disposition"] = f'attachment; filename="{path.name}"'
+        return resp
+
     @app.get("/report/{report_id}.txt")
-    async def report_view_text(report_id: str) -> Response:
+    async def report_view_text(
+        report_id: str,
+        month: str = "",
+        year: str = "",
+    ) -> Response:
         from fastapi.responses import PlainTextResponse
 
         from alpha.hud.reports_support import generate_report_text, get_report_spec
 
         if get_report_spec(report_id) is None:
             return PlainTextResponse(f"Unknown report: {report_id}\n", status_code=404)
+        year_val = int(year) if year.strip().isdigit() else None
         return PlainTextResponse(
-            generate_report_text(report_id, logs_dir=_RUNTIME.parent),
+            generate_report_text(
+                report_id,
+                logs_dir=_RUNTIME.parent,
+                month=month.strip() or None,
+                year=year_val,
+            ),
         )
 
     @app.post("/controls/{action}")

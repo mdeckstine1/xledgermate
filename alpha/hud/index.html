@@ -437,13 +437,25 @@
         </div>
         <div class="card"><h3>Tax &amp; transfer logs</h3>
           <p class="muted" style="margin:0;font-size:.78rem;line-height:1.5">
-            Taxable fills append to <code id="taxCsvPath">logs/trades_YYYY-MM.csv</code> (BUY/SELL/TRANSFER, <code>taxable=Y</code>).
-            Outbound HUD sends also log to <code id="transfersCsvPath">logs/transfers.csv</code>.
+            Each month is stored as <code>logs/trades_YYYY-MM.csv</code>. Year-end rollups export to
+            <code>logs/tax/trades_YYYY_annual.csv</code>. Transfers: <code id="transfersCsvPath">logs/transfers.csv</code>.
           </p>
+          <div class="ctrl-row" style="margin-top:10px;align-items:center">
+            <label style="min-width:52px">Month</label>
+            <select id="taxMonthSelect" style="flex:1;max-width:200px;background:#0f172a;border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px"></select>
+            <button type="button" class="report-open-btn" id="btnOpenTaxMonth" data-report-id="alpha_trades_month">Month report ↗</button>
+            <button type="button" class="report-open-btn" id="btnDownloadTaxMonth" style="background:#334155">Month CSV ↗</button>
+          </div>
+          <div class="ctrl-row" style="margin-top:8px;align-items:center">
+            <label style="min-width:52px">Year</label>
+            <select id="taxYearSelect" style="flex:1;max-width:120px;background:#0f172a;border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px"></select>
+            <button type="button" class="report-open-btn" id="btnOpenTaxYear" data-report-id="alpha_tax_year">Yearly tax report ↗</button>
+            <button type="button" class="report-open-btn" id="btnDownloadTaxYear" style="background:#334155">Yearly CSV ↗</button>
+          </div>
+          <div id="taxPeriodSummary" class="muted" style="margin-top:10px;font-size:.72rem;line-height:1.5"></div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
-            <button type="button" class="report-open-btn" data-report-id="alpha_trades_csv">Monthly trades / tax log ↗</button>
             <button type="button" class="report-open-btn" data-report-id="alpha_transfers">Transfers log ↗</button>
-            <button type="button" class="report-open-btn" data-report-id="alpha_trades_archive">All trades months ↗</button>
+            <button type="button" class="report-open-btn" data-report-id="alpha_trades_archive">All months index ↗</button>
           </div>
         </div>
       </section>
@@ -640,7 +652,7 @@
       if (el.dataset.tab === 'ta' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'config') loadAccountConfig();
       if (el.dataset.tab === 'skynet') loadSkynetStatus();
-      if (el.dataset.tab === 'reports') loadReportsCatalog();
+      if (el.dataset.tab === 'reports') { loadReportsCatalog(); loadTaxPeriods(); }
     }));
 
     function toast(msg, isErr) {
@@ -698,11 +710,29 @@
     $('btnOpenCycleReport')?.addEventListener('click', () => openReportInNewTab('alpha_cycle'));
     $('reports')?.addEventListener('click', (e) => {
       const btn = e.target.closest?.('.report-open-btn[data-report-id]');
+      if (!btn || btn.id === 'btnDownloadTaxMonth' || btn.id === 'btnDownloadTaxYear') return;
       if (btn) {
         e.preventDefault();
         const id = btn.getAttribute('data-report-id');
-        if (id) openReportInNewTab(id);
+        if (!id) return;
+        if (id === 'alpha_trades_month') {
+          openReportInNewTab(id, { month: $('taxMonthSelect')?.value || '' });
+        } else if (id === 'alpha_tax_year') {
+          openReportInNewTab(id, { year: $('taxYearSelect')?.value || '' });
+        } else {
+          openReportInNewTab(id);
+        }
       }
+    });
+    $('btnDownloadTaxMonth')?.addEventListener('click', () => openTaxCsvInNewTab('month'));
+    $('btnDownloadTaxYear')?.addEventListener('click', () => openTaxCsvInNewTab('year'));
+    $('taxMonthSelect')?.addEventListener('change', () => {
+      if (hudState?.tax_log) renderTaxPeriods(hudState.tax_log);
+      else loadTaxPeriods();
+    });
+    $('taxYearSelect')?.addEventListener('change', () => {
+      if (hudState?.tax_log) renderTaxPeriods(hudState.tax_log);
+      else loadTaxPeriods();
     });
     $('btnPause').onclick = async () => { await post('/controls/pause'); poll(); };
     $('btnResume').onclick = async () => { await post('/controls/resume'); poll(); };
@@ -1650,9 +1680,67 @@
       if (wrap) chartObs.observe(wrap);
     }
 
-    function openReportInNewTab(reportId) {
-      const url = '/report/' + encodeURIComponent(reportId) + '?t=' + Date.now();
+    function openReportInNewTab(reportId, params = {}) {
+      const qs = new URLSearchParams({ ...params, t: String(Date.now()) });
+      const url = '/report/' + encodeURIComponent(reportId) + '?' + qs.toString();
       window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    function openTaxCsvInNewTab(kind) {
+      const month = $('taxMonthSelect')?.value;
+      const year = $('taxYearSelect')?.value;
+      const path = kind === 'year'
+        ? '/report/alpha_tax_year.csv?year=' + encodeURIComponent(year || '') + '&t=' + Date.now()
+        : '/report/alpha_trades_month.csv?month=' + encodeURIComponent(month || '') + '&t=' + Date.now();
+      window.open(path, '_blank', 'noopener,noreferrer');
+    }
+
+    function renderTaxPeriods(data) {
+      const months = data?.months || [];
+      const years = data?.years || [];
+      const monthSel = $('taxMonthSelect');
+      const yearSel = $('taxYearSelect');
+      if (monthSel && document.activeElement !== monthSel) {
+        monthSel.innerHTML = months.length
+          ? months.map(m => `<option value="${m}">${m}</option>`).join('')
+          : `<option value="${data?.current_month || ''}">${data?.current_month || '—'} (empty)</option>`;
+        if (data?.current_month && months.includes(data.current_month)) {
+          monthSel.value = data.current_month;
+        }
+      }
+      if (yearSel && document.activeElement !== yearSel) {
+        yearSel.innerHTML = years.length
+          ? years.map(y => `<option value="${y}">${y}</option>`).join('')
+          : `<option value="${data?.current_year || ''}">${data?.current_year || '—'}</option>`;
+        if (data?.current_year && years.includes(data.current_year)) {
+          yearSel.value = String(data.current_year);
+        }
+      }
+      const sumEl = $('taxPeriodSummary');
+      if (!sumEl || !data) return;
+      const ms = (data.month_summaries || []).find(x => x.month === monthSel?.value);
+      const ys = (data.year_summaries || []).find(x => String(x.year) === String(yearSel?.value));
+      let txt = '';
+      if (ms) {
+        txt += `Month ${ms.month}: ${ms.buys} buys, ${ms.sells} sells, `
+          + `realized ${fmt(ms.realized_profit_xrp_equiv, 4)} XRP equiv`;
+      }
+      if (ys) {
+        txt += (txt ? ' · ' : '') + `Year ${ys.year}: ${ys.sells} sells, `
+          + `realized ${fmt(ys.realized_profit_xrp_equiv, 4)} XRP · ${ys.annual_csv_path}`;
+      }
+      sumEl.textContent = txt || 'Select month/year — LIVE mode fills append automatically.';
+      if (data.transfers_path) $('transfersCsvPath').textContent = data.transfers_path;
+    }
+
+    async function loadTaxPeriods() {
+      try {
+        const r = await fetch('/reports/tax/periods');
+        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+        if (!r.ok) return;
+        const data = await r.json();
+        renderTaxPeriods(data);
+      } catch (e) { /* optional */ }
     }
 
     async function loadReportsCatalog() {
@@ -1881,8 +1969,8 @@
       $('brDetail').textContent = (bs.active_sl_trailing||0) + ' SL trail · ' + (bs.active_breakout_trailing||0) + ' breakout trail';
       $('preflight').textContent = s.risk?.preflight_summary || '—';
       $('exec').textContent = s.execution ? (s.execution.message || JSON.stringify(s.execution)) : '—';
-      if (s.tax_log?.path) $('taxCsvPath').textContent = s.tax_log.path;
       if (s.tax_log?.transfers_path) $('transfersCsvPath').textContent = s.tax_log.transfers_path;
+      if (s.tax_log) renderTaxPeriods(s.tax_log);
       renderChart(s);
       renderMarketConditions(s);
       renderTa(s);

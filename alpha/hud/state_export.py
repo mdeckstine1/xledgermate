@@ -455,6 +455,10 @@ def build_hud_state(
         max_recent_exits=5,
     )
 
+    from alpha.reporting.tax_ledger import tax_periods_payload
+
+    tax_log = tax_periods_payload(runtime_state_path.parent)
+
     return {
         "hud_kind": "alpha",
         "alpha_version": snap.alpha_version,
@@ -535,10 +539,7 @@ def build_hud_state(
         "recent_activity": activity[-40:],
         "recent_events": list(recent_events),
         "report_text": report_text,
-        "tax_log": {
-            "path": f"logs/trades_{datetime.now(tz=timezone.utc).strftime('%Y-%m')}.csv",
-            "transfers_path": "logs/transfers.csv",
-        },
+        "tax_log": tax_log,
         "last_note": f"{decision.action.value}: {decision.reason}",
         "engine_cycle": int(engine_cycle),
         "book_updated_utc": _iso(snap.generated_utc) if book else None,

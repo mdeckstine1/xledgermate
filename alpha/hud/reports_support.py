@@ -260,40 +260,23 @@ def _summarize_trades_rows(rows: List[Dict[str, str]]) -> List[str]:
 
 
 def _gen_alpha_trades_csv(logs: Path) -> str:
-    path = _current_trades_path(logs)
-    rel = path.relative_to(logs) if path.is_relative_to(logs) else path
-    rows = _read_csv_rows(path)
-    lines = [
-        "=== Monthly tax / trades log ===",
-        f"path: logs/{rel}",
-        f"generated: {datetime.now(tz=timezone.utc).isoformat()}",
-        "",
-        "Summary:",
-        *(_summarize_trades_rows(rows) if rows else ["(file missing or empty)"]),
-        "",
-        "Columns: timestamp_utc, event_type, taxable, network, side, xrp_amount,",
-        "rlusd_amount, price_rlusd_per_xrp, profit_xrp_equiv, tx_hash, cycle, notes",
-        "",
-    ]
-    if not path.is_file():
-        lines.append(f"File not found: {path}")
-        return "\n".join(lines)
-    tail = rows[-250:]
-    if len(rows) > len(tail):
-        lines.append(f"Showing last {len(tail)} of {len(rows)} rows:")
-        lines.append("")
-    cols = [
-        "timestamp_utc",
-        "event_type",
-        "taxable",
-        "side",
-        "xrp_amount",
-        "price_rlusd_per_xrp",
-        "profit_xrp_equiv",
-        "notes",
-    ]
-    lines.extend(_format_csv_table(tail, columns=cols))
-    return "\n".join(lines)
+    from alpha.reporting.tax_ledger import format_monthly_report
+    from datetime import datetime, timezone
+
+    month = datetime.now(tz=timezone.utc).strftime("%Y-%m")
+    return format_monthly_report(logs, month)
+
+
+def _gen_alpha_trades_month(logs: Path, *, month: str) -> str:
+    from alpha.reporting.tax_ledger import format_monthly_report
+
+    return format_monthly_report(logs, month)
+
+
+def _gen_alpha_tax_year(logs: Path, *, year: int) -> str:
+    from alpha.reporting.tax_ledger import format_yearly_report
+
+    return format_yearly_report(logs, year)
 
 
 def _gen_alpha_transfers(logs: Path) -> str:
@@ -437,12 +420,34 @@ REPORT_SPECS: List[ReportSpec] = [
     ReportSpec(
         id="alpha_trades_csv",
         title="Monthly trades / tax log",
-        subtitle="logs/trades_YYYY-MM.csv",
+        subtitle="Current month (logs/trades_YYYY-MM.csv)",
         category="Tax & transfers",
-        description="BUY/SELL bracket fills and taxable TRANSFER rows for the current month.",
+        description="BUY/SELL bracket fills and taxable TRANSFER rows for the current calendar month.",
         soak_safe=True,
         engine_restart=False,
         cli_command="(HUD report · logs/trades_YYYY-MM.csv)",
+        phase_ref="Tax CSV",
+    ),
+    ReportSpec(
+        id="alpha_trades_month",
+        title="Monthly trades / tax log (select month)",
+        subtitle="?month=YYYY-MM on report URL",
+        category="Tax & transfers",
+        description="Full monthly tax CSV view — use Reports tab month dropdown or ?month=YYYY-MM.",
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="(HUD report · ?month=YYYY-MM)",
+        phase_ref="Tax CSV",
+    ),
+    ReportSpec(
+        id="alpha_tax_year",
+        title="Annual tax rollup",
+        subtitle="Year totals + logs/tax/trades_YYYY_annual.csv",
+        category="Tax & transfers",
+        description="Merges all monthly files for a calendar year; writes yearly CSV for export.",
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="(HUD report · ?year=YYYY)",
         phase_ref="Tax CSV",
     ),
     ReportSpec(
@@ -499,12 +504,24 @@ def generate_report_text(
     report_id: str,
     *,
     logs_dir: Optional[Path] = None,
+    month: Optional[str] = None,
+    year: Optional[int] = None,
 ) -> str:
     logs = _logs_dir(logs_dir)
-    gen = _GENERATORS.get(report_id)
-    if gen is None:
-        raise KeyError(f"Unknown report id: {report_id}")
     try:
+        if report_id == "alpha_trades_month":
+            from datetime import datetime, timezone
+
+            key = month or datetime.now(tz=timezone.utc).strftime("%Y-%m")
+            return _gen_alpha_trades_month(logs, month=key)
+        if report_id == "alpha_tax_year":
+            from datetime import datetime, timezone
+
+            y = int(year if year is not None else datetime.now(tz=timezone.utc).year)
+            return _gen_alpha_tax_year(logs, year=y)
+        gen = _GENERATORS.get(report_id)
+        if gen is None:
+            raise KeyError(f"Unknown report id: {report_id}")
         return gen(logs)
     except Exception as exc:
         return (

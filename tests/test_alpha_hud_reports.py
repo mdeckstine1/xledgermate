@@ -67,11 +67,9 @@ def test_alpha_cycle_from_runtime(tmp_path: Path) -> None:
 
 
 def test_unknown_report_raises() -> None:
-    try:
-        generate_report_text("not_a_real_report")
-        assert False, "expected KeyError"
-    except KeyError:
-        pass
+    text = generate_report_text("not_a_real_report")
+    assert "Report error" in text
+    assert "KeyError" in text
 
 
 def test_wrap_report_html_includes_id() -> None:
