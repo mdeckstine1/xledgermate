@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -27,6 +28,23 @@ except ImportError:
     _HAS_PANDAS_TA = False
 
 _PRICE_EPS = 1e-9
+
+
+def _finite_float(value: object) -> Optional[float]:
+    """Return finite floats only — NaN/inf break strict JSON (HUD / Python 3.14+)."""
+    if value is None:
+        return None
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if math.isfinite(out) else None
+
+
+def _series_last(series: pd.Series) -> Optional[float]:
+    if series is None or series.empty:
+        return None
+    return _finite_float(series.iloc[-1])
 
 
 @dataclass(frozen=True)
@@ -65,23 +83,25 @@ class TechnicalAnalysisSnapshot:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "enabled": self.enabled,
-            "mid": self.mid,
-            "buy_score": self.buy_score,
-            "sell_score": self.sell_score,
-            "breakout_score": self.breakout_score,
+            "mid": _finite_float(self.mid) or 0.0,
+            "buy_score": _finite_float(self.buy_score) or 0.0,
+            "sell_score": _finite_float(self.sell_score) or 0.0,
+            "breakout_score": _finite_float(self.breakout_score) or 0.0,
             "bias": self.bias,
             "entry_buy_allowed": self.entry_buy_allowed,
             "entry_sell_allowed": self.entry_sell_allowed,
             "breakout_confirmed": self.breakout_confirmed,
             "summary": self.summary,
-            "rsi": self.rsi,
-            "stoch_k": self.stoch_k,
-            "stoch_d": self.stoch_d,
-            "bb_upper": self.bb_upper,
-            "bb_middle": self.bb_middle,
-            "bb_lower": self.bb_lower,
-            "bb_bandwidth_pct": self.bb_bandwidth_pct,
-            "fib_levels": dict(self.fib_levels),
+            "rsi": _finite_float(self.rsi),
+            "stoch_k": _finite_float(self.stoch_k),
+            "stoch_d": _finite_float(self.stoch_d),
+            "bb_upper": _finite_float(self.bb_upper),
+            "bb_middle": _finite_float(self.bb_middle),
+            "bb_lower": _finite_float(self.bb_lower),
+            "bb_bandwidth_pct": _finite_float(self.bb_bandwidth_pct),
+            "fib_levels": {
+                k: v for k, v in self.fib_levels.items() if _finite_float(v) is not None
+            },
             "elliott_bias": self.elliott_bias,
             "signals": [
                 {
@@ -89,7 +109,7 @@ class TechnicalAnalysisSnapshot:
                     "enabled": s.enabled,
                     "fired": s.fired,
                     "bias": s.bias,
-                    "score": s.score,
+                    "score": _finite_float(s.score) or 0.0,
                     "detail": s.detail,
                 }
                 for s in self.signals
@@ -430,7 +450,7 @@ class TechnicalAnalysis:
         rc = self._cfg.rsi
         if rc.enabled:
             rsi_series = _rsi_series(close, rc.period)
-            rsi_val = float(rsi_series.iloc[-1]) if not rsi_series.empty else None
+            rsi_val = _series_last(rsi_series)
             fired = False
             bias = "neutral"
             score = 0.0
@@ -459,8 +479,8 @@ class TechnicalAnalysis:
                 d_period=sc.d_period,
                 smooth_k=sc.smooth_k,
             )
-            stoch_k_val = float(k_s.iloc[-1]) if not k_s.empty else None
-            stoch_d_val = float(d_s.iloc[-1]) if not d_s.empty else None
+            stoch_k_val = _series_last(k_s)
+            stoch_d_val = _series_last(d_s)
             fired = False
             bias = "neutral"
             score = 0.0
@@ -480,10 +500,14 @@ class TechnicalAnalysis:
         bc = self._cfg.bollinger
         if bc.enabled:
             bb_l_s, bb_m_s, bb_u_s = _bollinger(close, period=bc.period, std_dev=bc.std_dev)
-            bb_l = float(bb_l_s.iloc[-1])
-            bb_m = float(bb_m_s.iloc[-1])
-            bb_u = float(bb_u_s.iloc[-1])
-            bb_bw = ((bb_u - bb_l) / bb_m * 100.0) if bb_m > 0 else None
+            bb_l = _series_last(bb_l_s)
+            bb_m = _series_last(bb_m_s)
+            bb_u = _series_last(bb_u_s)
+            bb_bw = (
+                _finite_float((bb_u - bb_l) / bb_m * 100.0)
+                if bb_u is not None and bb_l is not None and bb_m and bb_m > 0
+                else None
+            )
             fired = False
             bias = "neutral"
             score = 0.0
@@ -699,11 +723,11 @@ class TechnicalAnalysis:
         logger.info("technical_analysis | %s", summary)
 
         return TechnicalAnalysisSnapshot(
-            mid=price,
+            mid=_finite_float(price) or 0.0,
             enabled=True,
-            buy_score=round(buy_score, 3),
-            sell_score=round(sell_score, 3),
-            breakout_score=round(breakout_score, 3),
+            buy_score=_finite_float(round(buy_score, 3)) or 0.0,
+            sell_score=_finite_float(round(sell_score, 3)) or 0.0,
+            breakout_score=_finite_float(round(breakout_score, 3)) or 0.0,
             bias=bias,
             entry_buy_allowed=entry_buy_allowed,
             entry_sell_allowed=entry_sell_allowed,

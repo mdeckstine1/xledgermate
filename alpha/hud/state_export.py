@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -32,6 +33,17 @@ from config.settings import BotConfig
 logger = logging.getLogger(__name__)
 
 DEFAULT_PATH = Path("logs/alpha_runtime_state.json")
+
+
+def sanitize_for_json(value: Any) -> Any:
+    """Strip NaN/inf so HUD JSON responses work on strict encoders (Python 3.14+)."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(k): sanitize_for_json(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [sanitize_for_json(v) for v in value]
+    return value
 
 
 def _iso(dt: datetime) -> str:
@@ -517,7 +529,8 @@ def build_hud_state(
 def write_alpha_runtime_state(path: Path, state: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(state, indent=2, default=str), encoding="utf-8")
+    clean = sanitize_for_json(state)
+    tmp.write_text(json.dumps(clean, indent=2, default=str, allow_nan=False), encoding="utf-8")
     tmp.replace(path)
 
 

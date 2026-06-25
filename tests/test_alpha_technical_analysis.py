@@ -191,3 +191,24 @@ def test_ta_insufficient_ticks_on_cold_start():
     snap = TechnicalAnalysis(cfg).analyze(_rising_mids(100), mid=1.1)
     assert "ta_insufficient_ticks" in snap.summary
     assert snap.buy_score == 0.0
+
+
+def test_ta_to_dict_json_safe_with_few_bars():
+    """Few wide bars can yield NaN indicators — HUD state must still serialize."""
+    import json
+
+    cfg = BotConfig()
+    cfg.alpha_cycle_interval_seconds = 35
+    cfg.alpha_price_sample_interval_seconds = 15
+    ta_cfg = replace(
+        cfg.alpha_technical_analysis,
+        min_candles=20,
+        candle_interval_seconds=1800,
+    )
+    cfg = replace(cfg, alpha_technical_analysis=ta_cfg)
+    mids = _rising_mids(1500)
+    snap = TechnicalAnalysis(cfg).analyze(mids, mid=1.189)
+    payload = snap.to_dict()
+    encoded = json.dumps(payload, allow_nan=False)
+    assert "NaN" not in encoded
+    assert payload.get("rsi") is None or isinstance(payload["rsi"], (int, float))

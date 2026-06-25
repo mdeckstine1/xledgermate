@@ -93,7 +93,9 @@ if app is not None:
 
     @app.get("/state")
     async def get_state() -> JSONResponse:
-        return JSONResponse(_load_state())
+        from alpha.hud.state_export import sanitize_for_json
+
+        return JSONResponse(sanitize_for_json(_load_state()))
 
     @app.post("/controls/{action}")
     async def controls_legacy(action: str) -> JSONResponse:
