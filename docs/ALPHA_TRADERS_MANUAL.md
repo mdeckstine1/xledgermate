@@ -546,6 +546,8 @@ The HUD **Reports** tab shows the current month’s `trades_*.csv` path. Copy th
 | `rlusd_amount` | RLUSD notional (`xrp × price` on trades) |
 | `price_rlusd_per_xrp` | Fill or payment price |
 | `profit_xrp_equiv` | Estimated P&amp;L on **sells** (TP/SL exit vs bracket entry), in XRP terms |
+| `cost_basis_rlusd_per_xrp` | Lot cost on **BUY** rows; entry basis on **SELL** rows (bracket entry or running average for strength sells) |
+| `proceeds_usd` | **SELL** / **TRANSFER** (RLUSD): `rlusd_amount × alpha_tax_usd_per_rlusd` (default 1.0) |
 | `tx_hash` | On-chain hash when available |
 | `cycle` | Engine cycle number (if applicable) |
 | `notes` | Human context, e.g. `alpha bracket buy abc12345`, `alpha bracket take-profit …` |
@@ -560,17 +562,19 @@ The HUD **Reports** tab shows the current month’s `trades_*.csv` path. Copy th
 | Bracket buy fill | `BUY` | `Y` | Pending buy fills; you acquire XRP |
 | Take-profit fill | `SELL` | `Y` | TP leg fills; `profit_xrp_equiv` vs entry |
 | Stop-loss fill | `SELL` | `Y` | SL leg fills; `profit_xrp_equiv` vs entry |
+| Strength sell fill | `SELL` | `Y` | Inventory ask (`PLACE_ASK`) fills; basis from running average of prior BUY rows |
 | Config → Send withdrawal | `TRANSFER` | `Y` | Also mirrored in `logs/transfers.csv` |
 
-**Not logged yet:** inventory **strength sells** (non-bracket asks) and order cancels/replaces (`OFFER_REFRESH` is used elsewhere in xLedgerMate, not Alpha bracket cancels).
+**Not logged:** order cancels/replaces (`OFFER_REFRESH` is used elsewhere in xLedgerMate, not Alpha bracket cancels).
 
 ### Example rows (illustrative)
 
 ```csv
-timestamp_utc,event_type,taxable,network,side,xrp_amount,rlusd_amount,price_rlusd_per_xrp,profit_xrp_equiv,notes
-2026-06-23T14:00:00+00:00,BUY,Y,mainnet,BUY,50.000000,55.000000,1.100000,0.000000,alpha bracket buy 441b8974
-2026-06-23T16:30:00+00:00,SELL,Y,mainnet,SELL,50.000000,57.500000,1.150000,2.272727,alpha bracket take-profit 441b8974 entry=1.100000
-2026-06-23T18:00:00+00:00,TRANSFER,Y,mainnet,OUT,100.000000,0.000000,0.000000,0.000000,Payment to rDest…
+timestamp_utc,event_type,taxable,network,side,xrp_amount,rlusd_amount,price_rlusd_per_xrp,profit_xrp_equiv,cost_basis_rlusd_per_xrp,proceeds_usd,notes
+2026-06-23T14:00:00+00:00,BUY,Y,mainnet,BUY,50.000000,55.000000,1.100000,0.000000,1.100000,,alpha bracket buy 441b8974
+2026-06-23T16:30:00+00:00,SELL,Y,mainnet,SELL,50.000000,57.500000,1.150000,2.272727,1.100000,57.5000,alpha bracket take-profit 441b8974 entry=1.100000
+2026-06-23T17:00:00+00:00,SELL,Y,mainnet,SELL,25.000000,28.750000,1.150000,1.136364,1.100000,28.7500,alpha strength sell seq=12345 basis=1.100000
+2026-06-23T18:00:00+00:00,TRANSFER,Y,mainnet,OUT,100.000000,0.000000,0.000000,0.000000,,,Payment to rDest…
 ```
 
 ### Operator checklist

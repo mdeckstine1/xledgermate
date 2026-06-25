@@ -373,5 +373,7 @@ def test_executor_places_strength_sell_live(tmp_path):
         assert len(offers) == 1
         assert offers[0]["side"] == "ask"
         assert orders.count_strength_sells(offers) == 1
+        seq = int(offers[0]["sequence"])
+        assert orders._strength_sells.get(seq) is not None
 
     asyncio.run(_run())

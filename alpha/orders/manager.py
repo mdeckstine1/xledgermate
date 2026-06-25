@@ -17,6 +17,7 @@ from alpha.ledger.interface import LedgerInterface
 from alpha.orders.bracket import compute_bracket_prices, normalize_partial_fill_mode
 from alpha.orders.stale_pending import stale_pending_buy_reason as _stale_pending_buy_reason
 from alpha.orders.stale_pending import target_buy_limit_price
+from alpha.orders.strength_sells import StrengthSellRecord, StrengthSellStore
 from alpha.precision import price_decimals, price_eps
 from alpha.orders.state import BracketStateStore
 from alpha.orders.trailing import TrailingEvalResult, evaluate_trailing
@@ -40,6 +41,11 @@ _PRICE_EPS = 1e-6
 def _default_bracket_path(state_dir: Optional[Path] = None) -> Path:
     base = state_dir or Path("logs")
     return base / "alpha_brackets.json"
+
+
+def _default_strength_sell_path(state_dir: Optional[Path] = None) -> Path:
+    base = state_dir or Path("logs")
+    return base / "alpha_strength_sells.json"
 
 
 @dataclass(frozen=True)
@@ -80,6 +86,7 @@ class OrderManager:
         self._reentry = reentry_gate
         self._ta: object | None = None
         self._store = BracketStateStore(persist_path=_default_bracket_path(state_dir))
+        self._strength_sells = StrengthSellStore(_default_strength_sell_path(state_dir))
         self._partial_fill_mode = normalize_partial_fill_mode(config.partial_fill_mode)
         self._recent_events: List[str] = []
         self._last_risk: Optional[RiskSnapshot] = None
@@ -161,6 +168,25 @@ class OrderManager:
         )
         return bid
 
+    def register_strength_sell(
+        self,
+        *,
+        sequence: int,
+        size_xrp: float,
+        price_rlusd_per_xrp: float,
+    ) -> None:
+        """Track a non-bracket inventory ask until fill or cancel."""
+        seq = int(sequence)
+        if seq <= 0 or size_xrp <= 0 or price_rlusd_per_xrp <= 0:
+            return
+        self._strength_sells.register(
+            StrengthSellRecord(
+                sequence=seq,
+                size_xrp=float(size_xrp),
+                price_rlusd_per_xrp=float(price_rlusd_per_xrp),
+            )
+        )
+
     async def sync_state(self, *, risk: Optional[RiskSnapshot] = None) -> OrderManagerState:
         """Sync open offers and advance bracket lifecycle (alias for sync_brackets)."""
         return await self.sync_brackets(risk=risk)
@@ -203,6 +229,8 @@ class OrderManager:
                 await self._maybe_arm_deferred_sl(record, open_map, current_price=current_price)
                 await self._reconcile_leg_sequences(record, open_map)
                 await self._advance_active_bracket(record, open_map, current_price=current_price)
+
+        await self._reconcile_strength_sell_fills(open_map)
 
         state = OrderManagerState(
             open_offers=offers,
@@ -490,6 +518,7 @@ class OrderManager:
             seq = int(offer.get("sequence", 0))
             if seq > 0:
                 await self._ledger.cancel_offer(seq)
+                self._strength_sells.remove(seq)
 
         for record in list(self._store.all_records()):
             record.state = BracketLifecycleState.CANCELLED
@@ -692,6 +721,7 @@ class OrderManager:
             return False
 
         await self._ledger.cancel_offer(seq)
+        self._strength_sells.remove(seq)
 
         record = self._store.get_by_buy_sequence(seq)
         if record is not None and record.state == BracketLifecycleState.PENDING_BUY:
@@ -752,6 +782,7 @@ class OrderManager:
             return True
 
         await self._ledger.cancel_offer(seq)
+        strength_rec = self._strength_sells.get(seq)
         before_seqs = await self._open_sequences()
         if side == "bid":
             result = await self._ledger.place_limit_buy_xrp(
@@ -772,6 +803,13 @@ class OrderManager:
             size_xrp=size_xrp,
             submitted=result.submitted,
         )
+        if strength_rec is not None and new_seq is not None:
+            self._strength_sells.remove(seq)
+            self.register_strength_sell(
+                sequence=new_seq,
+                size_xrp=size_xrp,
+                price_rlusd_per_xrp=new_price,
+            )
         logger.info("offer_adjusted | seq=%s→%s | side=%s | price=%.6f", seq, new_seq, side, new_price)
         return True
 
@@ -1584,6 +1622,45 @@ class OrderManager:
             dry_run=self._guard.dry_run,
             mid=mid,
         )
+
+    async def _reconcile_strength_sell_fills(
+        self,
+        open_map: Dict[int, dict[str, Any]],
+    ) -> None:
+        """Detect filled inventory strength sells (vanished non-bracket asks)."""
+        if not any(True for _ in self._strength_sells.iter_tracked()):
+            return
+
+        mid: Optional[float] = None
+        from alpha.decision.structure import MarketStructureSnapshot
+
+        if isinstance(self._structure, MarketStructureSnapshot) and self._structure.mid > 0:
+            mid = self._structure.mid
+
+        from alpha.reporting.tax_events import log_strength_sell_tax_event
+
+        network = "testnet" if self._config.testnet else "mainnet"
+        for rec in list(self._strength_sells.iter_tracked()):
+            if rec.sequence in open_map:
+                continue
+            if self._store.get_by_leg_sequence(rec.sequence) is not None:
+                self._strength_sells.remove(rec.sequence)
+                continue
+            log_strength_sell_tax_event(
+                sequence=rec.sequence,
+                size_xrp=rec.size_xrp,
+                price_rlusd_per_xrp=rec.price_rlusd_per_xrp,
+                network=network,
+                dry_run=self._guard.dry_run,
+                mid=mid,
+            )
+            self._strength_sells.remove(rec.sequence)
+            logger.info(
+                "strength_sell_filled | seq=%s | size=%.4f | price=%.6f",
+                rec.sequence,
+                rec.size_xrp,
+                rec.price_rlusd_per_xrp,
+            )
 
 
 def _match_offer_in_set(

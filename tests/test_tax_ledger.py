@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from alpha.hud.reports_support import generate_report_text
 from alpha.reporting.tax_ledger import (
     annual_csv_path,
+    estimate_avg_cost_basis_rlusd,
     list_trade_months,
     list_trade_years,
     load_year_rows,
@@ -63,3 +66,15 @@ def test_month_and_year_reports(tmp_path: Path) -> None:
     year_text = generate_report_text("alpha_tax_year", logs_dir=logs, year=2026)
     assert "tax_year: 2026" in year_text
     assert "trades_2026_annual.csv" in year_text
+
+
+def test_estimate_avg_cost_basis_rlusd(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    _write_month(
+        logs,
+        "2026-06",
+        "2026-06-01T00:00:00+00:00,BUY,Y,mainnet,BUY,10,20,2,0,,1,buy,,,\n"
+        "2026-06-02T00:00:00+00:00,SELL,Y,mainnet,SELL,4,8.8,2.2,0.2,,1,tp,,,\n",
+    )
+    assert estimate_avg_cost_basis_rlusd(logs) == pytest.approx(2.0)

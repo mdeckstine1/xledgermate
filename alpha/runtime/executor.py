@@ -186,6 +186,7 @@ class EntryExecutor:
                 message=f"dry_run:{decision.reason}",
             )
 
+        before = await self._orders.open_sequences()
         sell_result = await self._ledger.place_limit_sell_xrp(size_xrp=size, price_rlusd_per_xrp=price)
         if not sell_result.submitted:
             return EntryExecutionResult(
@@ -194,10 +195,39 @@ class EntryExecutor:
                 action="place_ask",
                 message="ledger_did_not_submit",
             )
+
+        seq = sell_result.sequence
+        if seq is None:
+            seq = await self._orders.resolve_new_sequence(
+                before,
+                side="ask",
+                price=price,
+                size_xrp=size,
+            )
+
+        if seq is not None:
+            self._orders.register_strength_sell(
+                sequence=seq,
+                size_xrp=size,
+                price_rlusd_per_xrp=price,
+            )
+        elif sell_result.offer_resting is False:
+            from alpha.reporting.tax_events import log_strength_sell_tax_event
+
+            dedupe_seq = hash((size, price, sell_result.tx_hash or "")) & 0x7FFFFFFF
+            log_strength_sell_tax_event(
+                sequence=dedupe_seq or 1,
+                size_xrp=size,
+                price_rlusd_per_xrp=price,
+                network="testnet" if self._config.testnet else "mainnet",
+                dry_run=False,
+            )
+
         logger.info(
-            "entry_sell_placed | size=%.4f | price=%.6f | reason=%s",
+            "entry_sell_placed | size=%.4f | price=%.6f | seq=%s | reason=%s",
             size,
             price,
+            seq,
             decision.reason,
         )
         return EntryExecutionResult(

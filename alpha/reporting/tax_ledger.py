@@ -100,6 +100,45 @@ def read_csv_rows(path: Path) -> List[Dict[str, str]]:
         return []
 
 
+def load_all_tax_rows(logs_dir: Path) -> List[Dict[str, str]]:
+    rows: List[Dict[str, str]] = []
+    for month in sorted(list_trade_months(logs_dir)):
+        rows.extend(load_month_rows(logs_dir, month))
+    rows.sort(key=lambda r: r.get("timestamp_utc") or "")
+    return rows
+
+
+def estimate_avg_cost_basis_rlusd(logs_dir: Path) -> float:
+    """
+    Running average XRP cost (RLUSD/XRP) from taxable BUY/SELL rows.
+
+    Used for strength sells when no bracket entry price exists.
+    """
+    total_xrp = 0.0
+    total_cost = 0.0
+    for row in load_all_tax_rows(logs_dir):
+        if str(row.get("taxable") or "").upper() != "Y":
+            continue
+        side = (row.get("side") or row.get("event_type") or "").upper()
+        try:
+            xrp = float(row.get("xrp_amount") or 0)
+            rlusd = float(row.get("rlusd_amount") or 0)
+            price = float(row.get("price_rlusd_per_xrp") or 0)
+        except (TypeError, ValueError):
+            continue
+        if xrp <= 0:
+            continue
+        if side == "BUY":
+            total_xrp += xrp
+            total_cost += rlusd if rlusd > 0 else xrp * price
+        elif side == "SELL" and total_xrp > 1e-9:
+            avg = total_cost / total_xrp
+            sold = min(xrp, total_xrp)
+            total_cost -= avg * sold
+            total_xrp -= sold
+    return total_cost / total_xrp if total_xrp > 1e-9 else 0.0
+
+
 def _classify_exit(notes: str) -> str:
     n = (notes or "").lower()
     if "take-profit" in n or "take_profit" in n:
@@ -268,7 +307,9 @@ def format_monthly_report(logs_dir: Path, month: str) -> str:
         "xrp_amount",
         "rlusd_amount",
         "price_rlusd_per_xrp",
+        "cost_basis_rlusd_per_xrp",
         "profit_xrp_equiv",
+        "proceeds_usd",
         "tx_hash",
         "notes",
     ]
@@ -292,7 +333,7 @@ def format_yearly_report(logs_dir: Path, year: int) -> str:
         *[f"  {k}={v}" for k, v in summary.as_dict().items()],
         "",
         "For tax prep:",
-        "  • SELL rows: proceeds ≈ rlusd_amount; gain/loss ≈ profit_xrp_equiv (XRP terms at exit mid).",
+        "  • SELL rows: proceeds_usd ≈ rlusd_amount × alpha_tax_usd_per_rlusd; gain/loss ≈ profit_xrp_equiv.",
         "  • BUY rows: cost basis lots — match to SELL via bracket id in notes.",
         "  • TRANSFER rows: outbound disposals — review with advisor (may be non-trade).",
         "  • Export CSV: open /report/alpha_tax_year.csv?year=YYYY or download from HUD.",
@@ -314,7 +355,9 @@ def format_yearly_report(logs_dir: Path, year: int) -> str:
         "xrp_amount",
         "rlusd_amount",
         "price_rlusd_per_xrp",
+        "cost_basis_rlusd_per_xrp",
         "profit_xrp_equiv",
+        "proceeds_usd",
         "tx_hash",
         "notes",
     ]
