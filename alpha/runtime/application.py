@@ -107,18 +107,42 @@ class AlphaApplication:
         self._last_liquidity: Optional[LiquidityDepth] = None
         self._ta = TechnicalAnalysis(config)
         self._apply_price_history_config(config)
+        self._ensure_ohlc_cache()
 
     def _apply_price_history_config(self, config: BotConfig) -> None:
         from alpha.decision.price_history import configure_price_history
+        from alpha.decision.retention_policy import max_tick_samples
         from alpha.decision.ta_config import recommended_price_history_max_samples
 
-        max_samples = recommended_price_history_max_samples(
+        needed = recommended_price_history_max_samples(
             config.alpha_technical_analysis,
             cycle_seconds=config.alpha_cycle_interval_seconds,
             sample_interval_seconds=config.alpha_price_sample_interval_seconds,
             floor=config.alpha_price_history_max_samples,
         )
-        configure_price_history(max_samples=max_samples)
+        cap = max_tick_samples(
+            cycle_seconds=config.alpha_cycle_interval_seconds,
+            sample_interval_seconds=config.alpha_price_sample_interval_seconds,
+        )
+        configure_price_history(max_samples=min(cap, needed))
+
+    def _ensure_ohlc_cache(self) -> None:
+        from alpha.decision.ohlc_cache import ensure_ohlc_cache
+        from alpha.decision.ta_config import effective_ta_candle_interval_seconds
+
+        ta_cfg = self.config.alpha_technical_analysis
+        ensure_ohlc_cache(
+            self._state_dir,
+            price_source=ta_cfg.candle_price_source,
+            history_path=self._state_dir / PRICE_HISTORY_PATH.name,
+            cycle_seconds=self.config.alpha_cycle_interval_seconds,
+            sample_interval_seconds=self.config.alpha_price_sample_interval_seconds,
+            ta_interval_seconds=effective_ta_candle_interval_seconds(
+                ta_cfg,
+                cycle_seconds=self.config.alpha_cycle_interval_seconds,
+                sample_interval_seconds=self.config.alpha_price_sample_interval_seconds,
+            ),
+        )
 
     @property
     def controls(self) -> OperatorControlStore:
@@ -146,6 +170,7 @@ class AlphaApplication:
         self._executor._config = config  # noqa: SLF001
         self._ta = TechnicalAnalysis(config)
         self._apply_price_history_config(config)
+        self._ensure_ohlc_cache()
         self._reentry._config = config  # noqa: SLF001
 
     async def _sync_operator_runtime(self) -> None:
@@ -290,7 +315,20 @@ class AlphaApplication:
             ta_cfg = self.config.alpha_technical_analysis
             prices = load_price_series(ta_cfg.candle_price_source, path=history_path)
             ref = resolve_book_price(book_prices_from_snapshot(book), ta_cfg.candle_price_source)
-            ta_snapshot = self._ta.analyze(prices, mid=ref or book.mid)
+            from alpha.decision.ohlc_cache import get_candles
+            from alpha.decision.ta_config import effective_ta_candle_interval_seconds
+
+            ta_interval = effective_ta_candle_interval_seconds(
+                ta_cfg,
+                cycle_seconds=self.config.alpha_cycle_interval_seconds,
+                sample_interval_seconds=self.config.alpha_price_sample_interval_seconds,
+            )
+            ohlc = get_candles(ta_interval, logs_dir=self._state_dir)
+            ta_snapshot = self._ta.analyze(
+                prices,
+                mid=ref or book.mid,
+                candles=ohlc if len(ohlc) >= 2 else None,
+            )
             self._last_ta = ta_snapshot
             self._orders.set_ta(ta_snapshot)
 

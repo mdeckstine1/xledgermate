@@ -12,11 +12,13 @@ from typing import Any, Dict, Iterable, List, Optional
 from alpha.decision.reentry import ReentrySnapshot
 from alpha.decision.structure import MarketStructureSnapshot, build_candle_from_mids, load_mid_history
 from alpha.decision.price_history import PRICE_HISTORY_PATH, load_price_series, effective_sample_seconds
+from alpha.decision.ohlc_cache import cache_status, get_candles
 from alpha.decision.ta_config import (
     CHART_CANDLE_INTERVAL_OPTIONS_SECONDS,
     CHART_DEFAULT_INTERVAL_SECONDS,
     CHART_MAX_CANDLES,
     chart_bucket_samples,
+    effective_ta_candle_interval_seconds,
     resolve_ta_candle_bucket_samples,
 )
 from alpha.decision.technical_analysis import TechnicalAnalysis, TechnicalAnalysisSnapshot
@@ -417,7 +419,23 @@ def build_hud_state(
             resolved = resolve_book_price(book_prices_from_snapshot(book), ta_source)
             if resolved is not None:
                 ref = resolved
-        ta = TechnicalAnalysis(effective).analyze(price_history, mid=ref)
+        ta_interval = effective_ta_candle_interval_seconds(
+            effective.alpha_technical_analysis,
+            cycle_seconds=effective.alpha_cycle_interval_seconds,
+            sample_interval_seconds=effective.alpha_price_sample_interval_seconds,
+        )
+        ohlc = get_candles(ta_interval, logs_dir=runtime_state_path.parent)
+        ta = TechnicalAnalysis(effective).analyze(
+            price_history,
+            mid=ref,
+            candles=ohlc if len(ohlc) >= 2 else None,
+        )
+    ta_interval = effective_ta_candle_interval_seconds(
+        effective.alpha_technical_analysis,
+        cycle_seconds=effective.alpha_cycle_interval_seconds,
+        sample_interval_seconds=effective.alpha_price_sample_interval_seconds,
+    )
+    ohlc_cache = cache_status(runtime_state_path.parent, ta_interval_seconds=ta_interval)
     ta_block = ta.to_dict() if ta is not None else {"enabled": False}
     market_conditions = build_market_conditions(
         book=book if isinstance(book, OrderBookSnapshot) else None,
@@ -511,6 +529,7 @@ def build_hud_state(
         "structure": structure_block,
         "chart": chart,
         "technical_analysis": ta_block,
+        "ohlc_cache": ohlc_cache,
         "book": _book_payload(book if isinstance(book, OrderBookSnapshot) else None),
         "market_conditions": market_conditions,
         "recent_activity": activity[-40:],

@@ -393,7 +393,13 @@ class TechnicalAnalysis:
     def cfg(self) -> AlphaTechnicalAnalysisConfig:
         return self._cfg
 
-    def analyze(self, mids: Sequence[float], *, mid: Optional[float] = None) -> TechnicalAnalysisSnapshot:
+    def analyze(
+        self,
+        mids: Sequence[float],
+        *,
+        mid: Optional[float] = None,
+        candles: Optional[Sequence[CandleData]] = None,
+    ) -> TechnicalAnalysisSnapshot:
         price = float(mid if mid is not None else (mids[-1] if mids else 0.0))
         if not self._cfg.enabled:
             return _empty_snapshot(price, reason="ta_disabled", enabled=False)
@@ -411,14 +417,18 @@ class TechnicalAnalysis:
                 enabled=True,
             )
 
-        candles = mids_to_candles(
-            mids,
-            bucket=resolve_ta_candle_bucket_samples(
-                self._cfg,
-                cycle_seconds=self._bot_config.alpha_cycle_interval_seconds,
-                sample_interval_seconds=self._bot_config.alpha_price_sample_interval_seconds,
-            ),
-        )
+        if candles and len(candles) >= 2:
+            candle_list = list(candles)
+        else:
+            candle_list = mids_to_candles(
+                mids,
+                bucket=resolve_ta_candle_bucket_samples(
+                    self._cfg,
+                    cycle_seconds=self._bot_config.alpha_cycle_interval_seconds,
+                    sample_interval_seconds=self._bot_config.alpha_price_sample_interval_seconds,
+                ),
+            )
+        candles = candle_list
         if len(candles) < 2:
             return _empty_snapshot(
                 price,

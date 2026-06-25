@@ -158,6 +158,7 @@ def append_book_prices(
     prices: BookPrices,
     *,
     path: Path = PRICE_HISTORY_PATH,
+    record_ohlc: bool = True,
 ) -> None:
     """Append bid/ask/mid (and last when set) to rolling price history."""
     store = _load_store(path)
@@ -172,6 +173,12 @@ def append_book_prices(
     for key in store:
         store[key] = store[key][-_MAX_SAMPLES:]
     _save_store(_align_series_lengths(store), path)
+    if record_ohlc:
+        ohlc_price = resolve_book_price(prices, "ask")
+        if ohlc_price is not None:
+            from alpha.decision.ohlc_cache import record_sample
+
+            record_sample(ohlc_price, logs_dir=path.parent)
 
 
 def load_price_series(
