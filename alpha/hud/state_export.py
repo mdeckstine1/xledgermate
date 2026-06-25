@@ -504,11 +504,7 @@ def build_hud_state(
             "reason": decision.reason,
             "edge_pct": decision.edge_pct,
         },
-        "reentry": (
-            reentry.to_dict()
-            if reentry is not None and reentry.active
-            else {"active": False}
-        ),
+        "reentry": reentry.to_dict() if reentry is not None else {"active": False},
         "execution": (
             {
                 "action": execution.action,

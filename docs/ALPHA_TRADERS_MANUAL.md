@@ -25,6 +25,16 @@ The bot has **eyes** (technical analysis) and **hands** (limit orders + brackets
 
 For install, VPS, dry-run cutover, and the **Config** tab (credentials + withdraw), see [`ALPHA_OPERATOR_GUIDE.md`](ALPHA_OPERATOR_GUIDE.md) and [`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md). This manual is about **how it feels to run it**.
 
+### Recent engine capabilities (2026)
+
+| Area | What changed |
+|------|----------------|
+| **Re-entry** | Scratch/breakeven SL tier, cluster guard, recovery early release, post-clear bid spacing — all tunable in **Live → Re-entry → SL mitigations**. |
+| **TA / OHLC** | Completed bars advance correctly on live ticks; warmup no longer stuck after rebuild. |
+| **Market metrics** | Per-cycle ATR%, realized vol, spread, depth, regime in **Market Conditions** + `logs/alpha_market.db`. |
+| **Tax CSV** | Strength sells log `cost_basis_rlusd_per_xrp` and `proceeds_usd` like bracket exits. |
+| **Restart safety** | Same bracket TP/SL re-detected on restart no longer resets re-entry cooldown. |
+
 ---
 
 ## The order lifecycle (read this once)
@@ -51,7 +61,7 @@ Cancelling a pending buy pulls the bid. Cancelling an active bracket cancels TP/
 | **Ticker / sidebar** | Mode (LIVE/dry), mid, portfolio, inventory %, drawdown, session P&L |
 | **Quote age** | How fresh the L1 book patch is (sidebar). Stale >25s = waiting for next book sample |
 | **Chart** | Candle history (lags) + **live** bid/ask/mid lines (1s HUD poll). Candles right-aligned |
-| **Market Conditions** | Spread, **bid/ask depth ±1% of mid**, max buy size, best bid/ask |
+| **Market Conditions** | Spread, **bid/ask depth ±1% of mid**, max buy size, best bid/ask, **regime / ATR% / realized vol** |
 | **Decision** | Last action + **reason** — this is your best friend when confused |
 | **Brackets tab** | Open positions: pending buys vs active brackets; size, RLUSD, TP/SL, **Trail** flags |
 | **Open Offers** | Raw ledger orders (✕ cancel, ✎ reprice) |
@@ -72,6 +82,8 @@ If the bot is “doing nothing,” the **Decision reason** almost always explain
 The **chart candles lag** the live mid line on purpose — candles are built from saved samples, while the cyan **mid** / green **bid** / red **ask** lines use the latest book patch every second.
 
 **Liquidity on the ledger:** Market Conditions shows **ask depth** and **bid depth** within **±1% of mid** (XRP available to trade through that band), plus **recommended max buy** sized from that depth. This is DEX book liquidity, not “will someone sell into my bid.” Depth refreshes on each **engine cycle**, not every HUD poll.
+
+**Regime & volatility:** The same card shows **regime**, **ATR%**, and **realized vol** from the latest engine cycle. Values are also stored in `logs/alpha_market.db` for history. Use them to sanity-check whether offsets and cooldowns match current chop — advisory context, not a standalone trade signal.
 
 ### Why we place bids but nobody sells (no fill)
 
@@ -349,6 +361,8 @@ TA produces **buy** and **sell** scores from RSI, Stochastic, Bollinger, engulfi
 
 **Warm-up:** Early on you may see `ta_warming_up` — not enough price history yet. Normal. → [Scenario Q](#scenario-q--ta_warming_up--insufficient-history)
 
+**OHLC bars:** Indicators need **completed** candle bars. The forming bar updates on live ticks but counts as closed only when its time window elapses. After deploy, closed bar count should rise each few minutes (TA tab / warmup UI). Stuck at a low bar count while the bot runs for hours = investigate OHLC health.
+
 **Blocked in chop:** `ta_buy_blocked` / bearish bias with RLUSD-heavy inventory → [Scenario J](#scenario-j--ta-blocking-buys-in-chop)
 
 ---
@@ -488,6 +502,32 @@ Off = can reload immediately (more aggressive, more knife-catching risk).
 | **`sl_min_ta_score`** | **Higher** bar than TP — demand real reversal confirmation. |
 
 **Real save:** SL hits at 1.00. Bot waits. Price dumps to 0.85. You are *not* auto-buying at 0.95 because TA and stabilization said no. That is the feature working. See [Scenario K](#scenario-k--post-sl-re-entry-bot-wont-reload).
+
+### SL mitigations — scratch stops, clusters, recovery (Live → Re-entry panel)
+
+These knobs address a common live pattern: **trailing SL moves to breakeven**, a small wick stops out several brackets at ~scratch, and the bot sits out for a long `sl_cooldown_cycles` penalty even though you did not take a real loss.
+
+| Knob (HUD label) | Config key | Default | Purpose |
+|------------------|------------|---------|---------|
+| **`scratch_sl_max_loss_pct`** | `alpha_reentry_scratch_sl_max_loss_pct` | 0.15 | If exit is within this % of **entry** (breakeven/small scratch), treat as **scratch tier** — not a full stop-loss. |
+| **`scratch_sl_cooldown_cycles`** | `alpha_reentry_scratch_sl_cooldown_cycles` | 4 | Short cooldown after scratch SL (similar to TP). |
+| **`sl_cluster_window_sec`** | `alpha_reentry_sl_cluster_window_seconds` | 1800 (30 min) | Additional SLs from **different brackets** inside this window **do not reset** the cooldown timer. |
+| **`recovery_enabled`** | `alpha_reentry_recovery_enabled` | on | Allow early end to SL cooldown when price recovers. |
+| **`recovery_release_pct`** | `alpha_reentry_recovery_release_pct` | 0.05 | Mid must rise this % **above** the SL `exit_mid` before recovery applies. |
+| **`recovery_min_cycles`** | `alpha_reentry_recovery_min_cycles` | 2 | Minimum cycles after SL before recovery can fire. |
+| **`post_clear_buy_spacing_cycles`** | `alpha_reentry_post_clear_buy_spacing_cycles` | 5 | After the gate clears, wait N cycles before the next bid — avoids stacking `max_pending_buys` on one wick. |
+
+**Scratch example:** Entry 1.031, trailing SL at breakeven, exit 1.03112 → loss ≈ −0.01% → **scratch** tier → **4-cycle** cooldown instead of your full `sl_cooldown_cycles` (e.g. 71).
+
+**Cluster example:** Four brackets scratch out within minutes. Only the **first** SL starts the timer; the rest update worst `exit_mid` but **do not** reset `cycles_since_exit` to 0.
+
+**Recovery example:** SL exit at 1.031, mid recovers to 1.032+ with non-bearish TA → remaining cooldown skipped (`recovery_early_release` in logs).
+
+**Spacing example:** Gate clears → Decision may show `reentry_reload_spacing cycles=2/5` before the next `place_bid`.
+
+**Persisted state:** `logs/alpha_reentry.json` includes `sl_tier`, `cooldown_cycles_required`, `entry_price`, `buy_spacing_cycles_remaining`. HUD overrides live in `logs/alpha_overrides.json`.
+
+**Full SL** (real loss beyond scratch threshold) still uses `sl_cooldown_cycles`, `sl_stabilization_pct`, and `sl_min_ta_score` — scratch tier skips stabilization and uses the lighter TA bar (`tp_min_ta_score`).
 
 ---
 
@@ -1043,7 +1083,7 @@ You are RLUSD-heavy. TA is fine. Bot still HOLD.
 | Reason pattern | Scenario |
 |----------------|----------|
 | `edge_below_threshold` / edge < min | [D](#scenario-d--hold-forever-edge-in-the-reason) |
-| `post_sl_` / `post_tp_` / `reentry_` | [K](#scenario-k--post-sl-re-entry-bot-wont-reload) · [L](#scenario-l--post-tp-re-entry-waiting-for-dip) |
+| `post_sl_` / `post_tp_` / `reentry_` / `reentry_reload_spacing` | [K](#scenario-k--post-sl-re-entry-bot-wont-reload) · [L](#scenario-l--post-tp-re-entry-waiting-for-dip) |
 | `ta_buy_blocked` / `ta_warming_up` | [J](#scenario-j--ta-blocking-buys-in-chop) · [Q](#scenario-q--ta_warming_up--insufficient-history) |
 | `balanced dev=` | [M](#scenario-m--balanced-inventory-nothing-to-do) |
 | `max_pending_buys=` | [C](#scenario-c--ladder-clutter-many-pending-buys-none-filling) · [G](#scenario-g--entry-price-keeps-moving-cancelreplace-loop) |
@@ -1061,7 +1101,8 @@ You are RLUSD-heavy. TA is fine. Bot still HOLD.
 | Stuck on HOLD, edge in reason | Offset < min edge | [Scenario D](#scenario-d--hold-forever-edge-in-the-reason) |
 | RLUSD-heavy, only bids, no sells | Normal `sell_block` | [Scenario I](#scenario-i--rlusd-heavy-sell-blocked-buys-only) |
 | `ta_buy_blocked` / bearish | TA gate in chop | [Scenario J](#scenario-j--ta-blocking-buys-in-chop) |
-| Quiet after SL | Re-entry gate | [Scenario K](#scenario-k--post-sl-re-entry-bot-wont-reload) |
+| Quiet after SL | Re-entry gate (check `sl_tier` scratch vs full) | [Scenario K](#scenario-k--post-sl-re-entry-bot-wont-reload) |
+| Quiet after gate cleared | Buy spacing | `reentry_reload_spacing` in Decision |
 | Quiet after TP | Await dip + cooldown | [Scenario L](#scenario-l--post-tp-re-entry-waiting-for-dip) |
 | `balanced dev=…` | On target band | [Scenario M](#scenario-m--balanced-inventory-nothing-to-do) |
 | Bid resting, no fill | Passive limit | [Scenario N](#scenario-n--bid-on-book-mid-looks-good-still-no-fill) |
@@ -1459,22 +1500,31 @@ reentry_sl_min_ta_score = 2.0+     ← pairs with [Scenario K](#scenario-k--post
 **Symptoms:** Stop-loss filled; bot goes quiet for cycles/minutes; Decision shows:
 
 ```text
-post_sl_cooldown cycles=2/8
+post_sl_cooldown cycles=2/8 tier=scratch
+reentry_reload_spacing cycles=3/5
 reentry_sl_await_bounce mid=1.098 need>=1.101 (0.03% above recent_low)
 reentry_sl_await_stabilization trend=bearish breakout_down=True
 reentry_sl_ta_score=1.80<2.00
+reentry_scratch_ta_score=1.20<1.50
 reentry_sl_await_weakness dev=-0.45
 ```
 
-**What’s happening:** After an **SL exit**, **`reentry_enabled`** runs a **mandatory cooldown** first — inventory and TA **cannot bypass** cooldown. Then the gate requires **structure stabilization** (no bearish breakout), optional **bounce above recent low**, **TA score**, and **weakness** again.
+**What’s happening:** After an **SL exit**, **`reentry_enabled`** runs a **mandatory cooldown** first — inventory and TA **cannot bypass** cooldown (except **recovery early release** when enabled and price has recovered). Then the gate requires **structure stabilization** (full SL only — skipped for **scratch** tier), optional **bounce above recent low**, **TA score**, and **weakness** again.
 
-**Default-ish live overrides:** `sl_cooldown_cycles = 1` (short) — raise if reloading too fast after SL.
+**Scratch vs full:** Breakeven/small-loss exits use **`scratch_sl_cooldown_cycles`** and lighter gates. Real stops use **`sl_cooldown_cycles`** and stabilization. See [SL mitigations](#sl-mitigations--scratch-stops-clusters-recovery-live--re-entry-panel).
+
+**Default-ish live overrides:** `sl_cooldown_cycles` may be high on VPS (e.g. 71) — pair with scratch/cluster/recovery knobs rather than setting SL cooldown to 1.
 
 **Patient reload after SL:**
 
 ```text
 reentry_enabled              = on
-sl_cooldown_cycles           = 8–15
+sl_cooldown_cycles           = 8–15        ← full SL only; scratch uses scratch_sl_cooldown_cycles
+scratch_sl_max_loss_pct      = 0.10–0.20
+scratch_sl_cooldown_cycles   = 3–6
+sl_cluster_window_sec        = 1800–3600
+recovery_enabled             = on
+post_clear_buy_spacing_cycles = 4–8
 sl_stabilization_pct         = 0.03–0.05
 sl_min_ta_score              = 2.0–2.5
 weakness_deviation           = 0.05–0.08

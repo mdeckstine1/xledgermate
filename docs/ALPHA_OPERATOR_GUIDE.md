@@ -151,10 +151,17 @@ Runtime overrides are applied each engine cycle; dangerous actions are queued in
 | `alpha_reentry_sl_cooldown_minutes` | 0 | Re-entry |
 | `alpha_reentry_tp_min_ta_score` | 1.5 | Re-entry |
 | `alpha_reentry_sl_min_ta_score` | 2.5 | Re-entry |
+| `alpha_reentry_scratch_sl_max_loss_pct` | 0.15 | Re-entry → SL mitigations |
+| `alpha_reentry_scratch_sl_cooldown_cycles` | 4 | Re-entry → SL mitigations |
+| `alpha_reentry_sl_cluster_window_seconds` | 1800 | Re-entry → SL mitigations |
+| `alpha_reentry_recovery_enabled` | true | Re-entry → SL mitigations |
+| `alpha_reentry_recovery_release_pct` | 0.05 | Re-entry → SL mitigations |
+| `alpha_reentry_recovery_min_cycles` | 2 | Re-entry → SL mitigations |
+| `alpha_reentry_post_clear_buy_spacing_cycles` | 5 | Re-entry → SL mitigations |
 
 Legacy YAML keys `alpha_reentry_tp_min_cycles` / `alpha_reentry_sl_min_cycles` migrate automatically to `*_cooldown_cycles` on load.
 
-Re-entry cooldown reasons in logs and Decision: `post_tp_cooldown`, `post_sl_cooldown`.
+Re-entry cooldown reasons in logs and Decision: `post_tp_cooldown`, `post_sl_cooldown` (may include `tier=scratch`), `reentry_reload_spacing`, `recovery_early_release`.
 
 ---
 
@@ -180,6 +187,8 @@ Re-entry cooldown reasons in logs and Decision: `post_tp_cooldown`, `post_sl_coo
 | `logs/kill_switch.json` | Kill switch state |
 | `logs/alpha_controls.json` | GUI pause/resume |
 | `logs/alpha_overrides.json` | Runtime config overrides (HUD Controls tab) |
+| `logs/alpha_reentry.json` | Persisted re-entry gate (cooldown, sl_tier, spacing) |
+| `logs/alpha_market.db` | Per-cycle market metrics (ATR%, vol, regime) |
 | `logs/alpha_commands.json` | Queued operator commands (cancel-all, reload, bracket adjust) |
 
 ---

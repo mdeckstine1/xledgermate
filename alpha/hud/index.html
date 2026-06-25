@@ -365,6 +365,14 @@
           <div class="ctrl-row"><label data-knob="alpha_reentry_sl_cooldown_minutes" title="Optional time gate after SL (0 = cycles only).">sl_cooldown_minutes</label><input type="range" id="slReSlMin" min="0" max="240" step="1"><input type="number" id="numReSlMin" min="0" step="1"></div>
           <div class="ctrl-row"><label data-knob="alpha_reentry_sl_stabilization_pct" title="After SL, mid must bounce this % above recent low.">sl_stabilization_pct</label><input type="range" id="slReSlStab" min="0.01" max="2" step="0.01"><input type="number" id="numReSlStab" step="0.01"></div>
           <div class="ctrl-row"><label data-knob="alpha_reentry_sl_min_ta_score" title="Higher TA buy score bar after stop-loss — reversal confirmation.">sl_min_ta_score</label><input type="range" id="slReSlTa" min="0" max="10" step="0.1"><input type="number" id="numReSlTa" step="0.1"></div>
+          <h3 style="margin:14px 0 8px;font-size:.72rem;color:var(--muted);text-transform:uppercase">SL mitigations</h3>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_scratch_sl_max_loss_pct" title="Stop within this % of entry = scratch tier (breakeven wick). Uses scratch cooldown, not full SL penalty.">scratch_sl_max_loss_pct</label><input type="range" id="slReScratchLoss" min="0" max="1" step="0.01"><input type="number" id="numReScratchLoss" step="0.01"></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_scratch_sl_cooldown_cycles" title="Cooldown after scratch/breakeven SL (like TP — short).">scratch_sl_cooldown_cycles</label><input type="range" id="slReScratchCy" min="1" max="50" step="1"><input type="number" id="numReScratchCy" min="1" step="1"></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_sl_cluster_window_seconds" title="Extra SLs within this window (seconds) do not reset the cooldown timer. 1800 = 30 min.">sl_cluster_window_sec</label><input type="range" id="slReClusterWin" min="0" max="7200" step="60"><input type="number" id="numReClusterWin" min="0" step="60"></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_reentry_recovery_enabled" title="End SL cooldown early when mid recovers above exit + TA is not bearish."><input type="checkbox" id="reentryRecoveryEnabled"> recovery_enabled</label></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_recovery_release_pct" title="Mid must rise this % above SL exit_mid before recovery can clear remaining cooldown.">recovery_release_pct</label><input type="range" id="slReRecoveryPct" min="0" max="1" step="0.01"><input type="number" id="numReRecoveryPct" step="0.01"></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_recovery_min_cycles" title="Minimum cycles after SL before recovery early-release can apply.">recovery_min_cycles</label><input type="range" id="slReRecoveryMin" min="0" max="20" step="1"><input type="number" id="numReRecoveryMin" min="0" step="1"></div>
+          <div class="ctrl-row"><label data-knob="alpha_reentry_post_clear_buy_spacing_cycles" title="After gate clears, wait this many cycles between new bids — avoids stacking correlated brackets on one wick.">post_clear_buy_spacing_cycles</label><input type="range" id="slReSpacing" min="0" max="30" step="1"><input type="number" id="numReSpacing" min="0" step="1"></div>
           <button id="btnApplyReentry">Apply re-entry</button>
         </div>
         </div>
@@ -781,6 +789,12 @@
     const syncReSlMin = linkSlider('slReSlMin', 'numReSlMin');
     const syncReSlStab = linkSlider('slReSlStab', 'numReSlStab');
     const syncReSlTa = linkSlider('slReSlTa', 'numReSlTa');
+    const syncReScratchLoss = linkSlider('slReScratchLoss', 'numReScratchLoss');
+    const syncReScratchCy = linkSlider('slReScratchCy', 'numReScratchCy');
+    const syncReClusterWin = linkSlider('slReClusterWin', 'numReClusterWin');
+    const syncReRecoveryPct = linkSlider('slReRecoveryPct', 'numReRecoveryPct');
+    const syncReRecoveryMin = linkSlider('slReRecoveryMin', 'numReRecoveryMin');
+    const syncReSpacing = linkSlider('slReSpacing', 'numReSpacing');
     const syncTaWeight = linkSlider('slTaWeight', 'numTaWeight', 'valTaWeight');
     const syncTaBuyScore = linkSlider('slTaBuyScore', 'numTaBuyScore');
     const syncTaSellScore = linkSlider('slTaSellScore', 'numTaSellScore');
@@ -825,6 +839,13 @@
       syncReSlMin(c.alpha_reentry_sl_cooldown_minutes ?? 0);
       syncReSlStab(c.alpha_reentry_sl_stabilization_pct ?? 0.12);
       syncReSlTa(c.alpha_reentry_sl_min_ta_score ?? 2.5);
+      syncReScratchLoss(c.alpha_reentry_scratch_sl_max_loss_pct ?? 0.15);
+      syncReScratchCy(c.alpha_reentry_scratch_sl_cooldown_cycles ?? 4);
+      syncReClusterWin(c.alpha_reentry_sl_cluster_window_seconds ?? 1800);
+      if ($('reentryRecoveryEnabled')) $('reentryRecoveryEnabled').checked = c.alpha_reentry_recovery_enabled !== false;
+      syncReRecoveryPct(c.alpha_reentry_recovery_release_pct ?? 0.05);
+      syncReRecoveryMin(c.alpha_reentry_recovery_min_cycles ?? 2);
+      syncReSpacing(c.alpha_reentry_post_clear_buy_spacing_cycles ?? 5);
       if ($('taEnabled')) $('taEnabled').checked = !!c.alpha_ta_enabled;
       syncTaWeight(c.alpha_ta_weight ?? 1.0);
       syncTaBuyScore(c.alpha_ta_min_buy_score ?? 1.5);
@@ -909,6 +930,13 @@
         alpha_reentry_sl_cooldown_minutes: parseFloat($('numReSlMin').value),
         alpha_reentry_sl_stabilization_pct: parseFloat($('numReSlStab').value),
         alpha_reentry_sl_min_ta_score: parseFloat($('numReSlTa').value),
+        alpha_reentry_scratch_sl_max_loss_pct: parseFloat($('numReScratchLoss').value),
+        alpha_reentry_scratch_sl_cooldown_cycles: parseInt($('numReScratchCy').value, 10),
+        alpha_reentry_sl_cluster_window_seconds: parseInt($('numReClusterWin').value, 10),
+        alpha_reentry_recovery_enabled: $('reentryRecoveryEnabled').checked,
+        alpha_reentry_recovery_release_pct: parseFloat($('numReRecoveryPct').value),
+        alpha_reentry_recovery_min_cycles: parseInt($('numReRecoveryMin').value, 10),
+        alpha_reentry_post_clear_buy_spacing_cycles: parseInt($('numReSpacing').value, 10),
       }});
       if (d?.ok) { toast('Re-entry settings updated'); operatorConfig = d; poll(); }
     };
@@ -1967,13 +1995,18 @@
       $('decAction').textContent = (s.decision?.action || '—').toUpperCase();
       $('decReason').textContent = s.decision?.reason || '';
       const re = s.reentry;
-      $('decReentry').textContent = re?.active
-        ? (re.in_cooldown
-          ? `Re-entry COOLDOWN after ${re.exit_type}: ${re.cooldown_cycles_remaining} cycles left` +
-            (re.cooldown_minutes_required > 0 ? `, ${re.cooldown_minutes_remaining} min left` : '') +
-            ` (exit mid ${fmtPrice(re.exit_mid)})`
-          : `Re-entry gate: after ${re.exit_type} — cycle ${re.cycles_since_exit}, cooldown done (exit mid ${fmtPrice(re.exit_mid)})`)
-        : '';
+      const spacing = re?.buy_spacing_cycles_remaining;
+      if (spacing > 0) {
+        $('decReentry').textContent = `Re-entry reload spacing: ${spacing} cycle(s) before next bid`;
+      } else {
+        $('decReentry').textContent = re?.active
+          ? (re.in_cooldown
+            ? `Re-entry COOLDOWN after ${re.exit_type}${re.sl_tier ? ' (' + re.sl_tier + ')' : ''}: ${re.cooldown_cycles_remaining}/${re.cooldown_cycles_required} cycles` +
+              (re.cooldown_minutes_required > 0 ? `, ${re.cooldown_minutes_remaining} min left` : '') +
+              ` (exit mid ${fmtPrice(re.exit_mid)})`
+            : `Re-entry gate: after ${re.exit_type}${re.sl_tier ? ' (' + re.sl_tier + ')' : ''} — cycle ${re.cycles_since_exit}, cooldown done (exit mid ${fmtPrice(re.exit_mid)})`)
+          : '';
+      }
       const ta = s.technical_analysis;
       $('decTa').textContent = ta?.enabled
         ? `TA buy=${Number(ta.buy_score).toFixed(2)} sell=${Number(ta.sell_score).toFixed(2)} gate=${ta.entry_buy_allowed ? 'PASS' : 'BLOCK'}`
