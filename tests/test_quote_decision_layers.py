@@ -79,6 +79,53 @@ def test_bleed_pauses_buy_only_not_ask() -> None:
     assert qd.trace.bid_bleed_note or "cap" in qd.bid.block_reason
 
 
+def test_session_negative_buy_capture_blocks_without_recent_buys() -> None:
+    """Session-red buy capture must not reopen once buy fills leave the recent window."""
+    sell_fills = tuple(
+        {"side": "SELL", "capture_xrp": 0.01, "xrp_amount": 5.0}
+        for _ in range(12)
+    )
+    inp = _solo_inputs(
+        xrp_ratio=0.71,
+        label="xrp_heavy",
+        sell_fills=sell_fills,
+    )
+    inp.session_buy_capture_xrp = -0.03
+
+    qd = run_quote_decision_pipeline(inp)
+
+    assert qd.bid.allowed is False
+    assert qd.bid.block_reason == "session_buy_cap=-0.0300"
+
+
+def test_session_negative_sell_capture_blocks_without_recent_sells() -> None:
+    """Session-red sell capture must not reopen once sell fills leave the recent window."""
+    buy_fills = tuple(
+        {"side": "BUY", "capture_xrp": 0.01, "xrp_amount": 5.0}
+        for _ in range(12)
+    )
+    inp = CycleQuoteInputs(
+        mid=1.10,
+        best_bid=1.099,
+        best_ask=1.101,
+        l1_bid_price=1.098,
+        l1_ask_price=1.102,
+        xrp_ratio=0.55,
+        target_xrp_ratio=0.55,
+        inventory_label="balanced",
+        peer_lane_empty=False,
+        peer_lane_count=4,
+        toxic_ratio_30s=0.05,
+        session_sell_capture_xrp=-0.02,
+        recent_buys=buy_fills,
+    )
+
+    qd = run_quote_decision_pipeline(inp)
+
+    assert qd.ask.allowed is False
+    assert qd.ask.block_reason == "session_sell_cap=-0.0200"
+
+
 def test_inventory_deadlock_avoided_xrp_heavy_solo() -> None:
     """Regression: old inv pause_bids + ask brake → both off; QD allows bid at edge."""
     qd = run_quote_decision_pipeline(

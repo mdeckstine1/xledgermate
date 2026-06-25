@@ -45,10 +45,7 @@ def apply_bleed_protection(posture: PostureSnapshot) -> BleedAdjustment:
         bid_mult = BLEED_SIZE_MULT
         bid_override = False
         bid_note = buy.bleed_reason or "buy_bleed"
-    elif (
-        buy.fill_count > 0
-        and buy.session_capture_xrp < SESSION_BLEED_XRP
-    ):
+    elif buy.session_capture_xrp < SESSION_BLEED_XRP:
         bid_mult = BLEED_SIZE_MULT
         bid_override = False
         bid_note = f"session_buy_cap={buy.session_capture_xrp:.4f}"
@@ -57,10 +54,7 @@ def apply_bleed_protection(posture: PostureSnapshot) -> BleedAdjustment:
         ask_mult = BLEED_SIZE_MULT
         ask_override = False
         ask_note = sell.bleed_reason or "sell_bleed"
-    elif (
-        sell.fill_count > 0
-        and sell.session_capture_xrp < SESSION_BLEED_XRP
-    ):
+    elif sell.session_capture_xrp < SESSION_BLEED_XRP:
         ask_mult = BLEED_SIZE_MULT
         ask_override = False
         ask_note = f"session_sell_cap={sell.session_capture_xrp:.4f}"
