@@ -41,6 +41,9 @@ class ReentrySnapshot:
     cooldown_minutes_required: float = 0.0
     cooldown_minutes_remaining: float = 0.0
     in_cooldown: bool = False
+    sl_tier: str = ""
+    entry_price: float = 0.0
+    buy_spacing_cycles_remaining: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -55,6 +58,9 @@ class ReentrySnapshot:
             "cooldown_minutes_required": self.cooldown_minutes_required,
             "cooldown_minutes_remaining": round(self.cooldown_minutes_remaining, 2),
             "in_cooldown": self.in_cooldown,
+            "sl_tier": self.sl_tier,
+            "entry_price": self.entry_price,
+            "buy_spacing_cycles_remaining": self.buy_spacing_cycles_remaining,
         }
 
     @classmethod
@@ -73,7 +79,7 @@ class ReentryGate:
     """
     Blocks new PLACE_BID after bracket exits until cooldown + dip (TP) or stabilization (SL).
 
-    Cooldown runs first — inventory/TA cannot bypass post-exit wait.
+    Cooldown runs first — inventory/TA cannot bypass post-exit wait unless recovery rules apply.
     """
 
     def __init__(
@@ -88,8 +94,17 @@ class ReentryGate:
 
     @property
     def snapshot(self) -> ReentrySnapshot:
+        spacing = int(self._state.get("buy_spacing_cycles_remaining", 0))
         if not self._state.get("active"):
-            return ReentrySnapshot.inactive()
+            return ReentrySnapshot(
+                active=False,
+                exit_type=ReentryExitType.NONE,
+                exit_mid=0.0,
+                exit_utc=utc_now(),
+                bracket_id="",
+                cycles_since_exit=0,
+                buy_spacing_cycles_remaining=spacing,
+            )
         try:
             exit_type = ReentryExitType(str(self._state.get("exit_type", "none")))
             exit_utc = datetime.fromisoformat(str(self._state["exit_utc"]))
@@ -109,6 +124,9 @@ class ReentryGate:
                 cooldown_minutes_required=req_min,
                 cooldown_minutes_remaining=rem_min,
                 in_cooldown=in_cd,
+                sl_tier=str(self._state.get("sl_tier", "") or ""),
+                entry_price=float(self._state.get("entry_price", 0.0) or 0.0),
+                buy_spacing_cycles_remaining=spacing,
             )
         except (KeyError, ValueError, TypeError):
             return ReentrySnapshot.inactive()
@@ -127,6 +145,7 @@ class ReentryGate:
             and str(self._state.get("bracket_id", "")) == bracket_id
         ):
             return
+        req = max(1, self._config.alpha_reentry_tp_cooldown_cycles)
         self._state = {
             "active": True,
             "exit_type": ReentryExitType.TP.value,
@@ -134,13 +153,15 @@ class ReentryGate:
             "exit_utc": utc_now().isoformat(),
             "bracket_id": bracket_id,
             "cycles_since_exit": 0,
+            "cooldown_cycles_required": req,
+            "buy_spacing_cycles_remaining": 0,
         }
         self._persist()
         logger.info(
             "reentry_gate | tp_exit | bracket=%s | exit_mid=%.6f | cooldown_cycles=%s",
             bracket_id,
             exit_mid,
-            self._config.alpha_reentry_tp_cooldown_cycles,
+            req,
         )
 
     def record_sl_exit(
@@ -148,6 +169,7 @@ class ReentryGate:
         *,
         bracket_id: str,
         exit_mid: float,
+        entry_price: float,
     ) -> None:
         if not self._config.alpha_reentry_enabled:
             return
@@ -157,6 +179,41 @@ class ReentryGate:
             and str(self._state.get("bracket_id", "")) == bracket_id
         ):
             return
+
+        entry = max(float(entry_price), 0.0)
+        loss_pct = self._sl_loss_pct(entry, exit_mid) if entry > 0 else 100.0
+        scratch_max = max(0.0, self._config.alpha_reentry_scratch_sl_max_loss_pct)
+        is_scratch = entry > 0 and loss_pct <= scratch_max
+        tier = "scratch" if is_scratch else "full"
+        req = (
+            max(1, self._config.alpha_reentry_scratch_sl_cooldown_cycles)
+            if is_scratch
+            else max(1, self._config.alpha_reentry_sl_cooldown_cycles)
+        )
+
+        if self._in_sl_cluster():
+            cycles = int(self._state.get("cycles_since_exit", 0))
+            old_exit = float(self._state.get("exit_mid", exit_mid))
+            worst_exit = min(old_exit, exit_mid) if old_exit > 0 else exit_mid
+            old_req = int(self._state.get("cooldown_cycles_required", req))
+            new_req = min(old_req, req)
+            self._state["exit_mid"] = worst_exit
+            self._state["cooldown_cycles_required"] = new_req
+            self._state["cluster_sl_count"] = int(self._state.get("cluster_sl_count", 1)) + 1
+            if is_scratch:
+                self._state["sl_tier"] = "scratch"
+            self._persist()
+            logger.info(
+                "reentry_gate | sl_cluster_no_reset | bracket=%s | exit_mid=%.6f | "
+                "cycles=%s | tier=%s | cluster_count=%s",
+                bracket_id,
+                worst_exit,
+                cycles,
+                self._state.get("sl_tier", tier),
+                self._state.get("cluster_sl_count"),
+            )
+            return
+
         self._state = {
             "active": True,
             "exit_type": ReentryExitType.SL.value,
@@ -164,25 +221,42 @@ class ReentryGate:
             "exit_utc": utc_now().isoformat(),
             "bracket_id": bracket_id,
             "cycles_since_exit": 0,
+            "cooldown_cycles_required": req,
+            "entry_price": entry,
+            "sl_tier": tier,
+            "cluster_sl_count": 1,
+            "buy_spacing_cycles_remaining": 0,
         }
         self._persist()
         logger.info(
-            "reentry_gate | sl_exit | bracket=%s | exit_mid=%.6f | cooldown_cycles=%s",
+            "reentry_gate | sl_exit | bracket=%s | exit_mid=%.6f | entry=%.6f | "
+            "loss_pct=%.3f | tier=%s | cooldown_cycles=%s",
             bracket_id,
             exit_mid,
-            self._config.alpha_reentry_sl_cooldown_cycles,
+            entry,
+            loss_pct,
+            tier,
+            req,
         )
 
     def clear(self, *, reason: str = "buy_placed") -> None:
         if not self._state.get("active"):
             return
-        logger.info("reentry_gate | cleared | reason=%s", reason)
-        self._state = {"active": False}
+        spacing = max(0, int(self._config.alpha_reentry_post_clear_buy_spacing_cycles))
+        logger.info("reentry_gate | cleared | reason=%s | reload_spacing_cycles=%s", reason, spacing)
+        self._state = {
+            "active": False,
+            "buy_spacing_cycles_remaining": spacing,
+        }
         self._persist()
 
     def tick_cycle(self) -> None:
         """Increment cooldown counter each engine cycle while gate active."""
         if not self._state.get("active"):
+            rem = int(self._state.get("buy_spacing_cycles_remaining", 0))
+            if rem > 0:
+                self._state["buy_spacing_cycles_remaining"] = rem - 1
+                self._persist()
             return
         self._state["cycles_since_exit"] = int(self._state.get("cycles_since_exit", 0)) + 1
         self._persist()
@@ -198,6 +272,16 @@ class ReentryGate:
         """Return HOLD reason if re-entry gate blocks a new buy."""
         if not self._config.alpha_reentry_enabled:
             return None
+
+        spacing = int(self._state.get("buy_spacing_cycles_remaining", 0))
+        if spacing > 0:
+            total = max(0, int(self._config.alpha_reentry_post_clear_buy_spacing_cycles))
+            reason = (
+                f"reentry_reload_spacing cycles={total - spacing}/{total}"
+            )
+            logger.info("reentry_gate | block | %s", reason)
+            return reason
+
         snap = self.snapshot
         if not snap.active:
             return None
@@ -236,11 +320,16 @@ class ReentryGate:
             return None
 
         if snap.exit_type == ReentryExitType.SL:
+            self._try_recovery_early_release(mid=mid, ta=ta)
+            snap = self.snapshot
+
             blocked = self._cooldown_blocked(snap, prefix="post_sl")
             if blocked:
                 return blocked
 
-            if structure is not None:
+            is_scratch = str(self._state.get("sl_tier", "")) == "scratch"
+
+            if not is_scratch and structure is not None:
                 if structure.trend == "bearish" or structure.breakout_down:
                     reason = (
                         f"reentry_sl_await_stabilization trend={structure.trend} "
@@ -261,11 +350,16 @@ class ReentryGate:
                         return reason
 
             if ta_required:
+                min_score = (
+                    self._config.alpha_reentry_tp_min_ta_score
+                    if is_scratch
+                    else self._config.alpha_reentry_sl_min_ta_score
+                )
                 blocked = self._ta_reentry_blocked(
                     ta,
-                    self._config.alpha_reentry_sl_min_ta_score,
-                    prefix="reentry_sl",
-                    require_non_bearish=True,
+                    min_score,
+                    prefix="reentry_scratch" if is_scratch else "reentry_sl",
+                    require_non_bearish=not is_scratch,
                 )
                 if blocked:
                     logger.info("reentry_gate | block | %s", blocked)
@@ -280,6 +374,67 @@ class ReentryGate:
 
         return None
 
+    def _sl_loss_pct(self, entry: float, exit_mid: float) -> float:
+        """Positive = loss (sold below entry), negative = scratch above entry."""
+        return (entry - exit_mid) / entry * 100.0
+
+    def _in_sl_cluster(self) -> bool:
+        if not self._state.get("active"):
+            return False
+        if str(self._state.get("exit_type")) != ReentryExitType.SL.value:
+            return False
+        window = max(0.0, self._config.alpha_reentry_sl_cluster_window_seconds)
+        if window <= 0:
+            return False
+        try:
+            exit_utc = datetime.fromisoformat(str(self._state["exit_utc"]))
+        except (KeyError, ValueError, TypeError):
+            return False
+        elapsed = (utc_now() - exit_utc).total_seconds()
+        return elapsed <= window
+
+    def _try_recovery_early_release(
+        self,
+        *,
+        mid: float,
+        ta: Optional["TechnicalAnalysisSnapshot"],
+    ) -> bool:
+        if not self._config.alpha_reentry_recovery_enabled:
+            return False
+        if not self._state.get("active"):
+            return False
+        if str(self._state.get("exit_type")) != ReentryExitType.SL.value:
+            return False
+        cycles = int(self._state.get("cycles_since_exit", 0))
+        if cycles < max(0, int(self._config.alpha_reentry_recovery_min_cycles)):
+            return False
+        exit_mid = float(self._state.get("exit_mid", 0.0))
+        if exit_mid <= 0 or mid <= 0:
+            return False
+        release_pct = max(0.0, self._config.alpha_reentry_recovery_release_pct)
+        need = exit_mid * (1.0 + release_pct / 100.0)
+        if mid < need:
+            return False
+        if ta is not None and ta.enabled and ta.bias == "bearish":
+            return False
+        req = int(
+            self._state.get(
+                "cooldown_cycles_required",
+                self._config.alpha_reentry_sl_cooldown_cycles,
+            )
+        )
+        if cycles >= req:
+            return False
+        self._state["cycles_since_exit"] = req
+        self._persist()
+        logger.info(
+            "reentry_gate | recovery_early_release | mid=%.6f | exit=%.6f | need=%.6f",
+            mid,
+            exit_mid,
+            need,
+        )
+        return True
+
     def _cooldown_status(
         self,
         exit_type: ReentryExitType,
@@ -290,7 +445,10 @@ class ReentryGate:
             req_cycles = max(1, self._config.alpha_reentry_tp_cooldown_cycles)
             req_min = max(0.0, self._config.alpha_reentry_tp_cooldown_minutes)
         else:
-            req_cycles = max(1, self._config.alpha_reentry_sl_cooldown_cycles)
+            stored = self._state.get("cooldown_cycles_required")
+            req_cycles = max(1, int(stored)) if stored is not None else max(
+                1, self._config.alpha_reentry_sl_cooldown_cycles
+            )
             req_min = max(0.0, self._config.alpha_reentry_sl_cooldown_minutes)
 
         rem_cycles = max(0, req_cycles - cycles_since_exit)
@@ -302,9 +460,11 @@ class ReentryGate:
     def _cooldown_blocked(self, snap: ReentrySnapshot, *, prefix: str) -> Optional[str]:
         """Hard block during post-exit cooldown — TA/inventory cannot override."""
         if snap.cycles_since_exit < snap.cooldown_cycles_required:
+            tier = self._state.get("sl_tier", "")
+            tier_note = f" tier={tier}" if tier else ""
             reason = (
                 f"{prefix}_cooldown cycles={snap.cycles_since_exit}/"
-                f"{snap.cooldown_cycles_required}"
+                f"{snap.cooldown_cycles_required}{tier_note}"
             )
             logger.info("reentry_gate | block | %s", reason)
             return reason

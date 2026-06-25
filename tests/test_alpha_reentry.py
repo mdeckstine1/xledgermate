@@ -90,7 +90,7 @@ def test_sl_exit_blocks_until_stabilization(tmp_path: Path) -> None:
     cfg = replace(cfg, alpha_technical_analysis=replace(cfg.alpha_technical_analysis, enabled=True))
     gate._config = cfg
 
-    gate.record_sl_exit(bracket_id="b2", exit_mid=1.90)
+    gate.record_sl_exit(bracket_id="b2", exit_mid=1.90, entry_price=1.95)
     gate.tick_cycle()
     gate.tick_cycle()
 
@@ -200,3 +200,87 @@ def test_duplicate_tp_exit_does_not_reset_cooldown(tmp_path: Path) -> None:
     gate.record_tp_exit(bracket_id="b6", exit_mid=2.0)
     assert gate.snapshot.cycles_since_exit == 2
     assert gate.snapshot.cooldown_cycles_remaining == 2
+
+
+def test_scratch_sl_uses_short_cooldown(tmp_path: Path) -> None:
+    gate = _gate(
+        tmp_path,
+        alpha_reentry_sl_cooldown_cycles=20,
+        alpha_reentry_scratch_sl_cooldown_cycles=2,
+        alpha_reentry_scratch_sl_max_loss_pct=0.15,
+    )
+    gate.record_sl_exit(bracket_id="s1", exit_mid=1.0310, entry_price=1.0310)
+    snap = gate.snapshot
+    assert snap.sl_tier == "scratch"
+    assert snap.cooldown_cycles_required == 2
+    assert snap.cooldown_cycles_remaining == 2
+
+
+def test_sl_cluster_does_not_reset_cooldown(tmp_path: Path) -> None:
+    gate = _gate(
+        tmp_path,
+        alpha_reentry_sl_cooldown_cycles=10,
+        alpha_reentry_sl_cluster_window_seconds=3600.0,
+    )
+    gate.record_sl_exit(bracket_id="c1", exit_mid=1.030, entry_price=1.050)
+    gate.tick_cycle()
+    gate.tick_cycle()
+    assert gate.snapshot.cycles_since_exit == 2
+
+    gate.record_sl_exit(bracket_id="c2", exit_mid=1.029, entry_price=1.048)
+    assert gate.snapshot.cycles_since_exit == 2
+    assert gate.snapshot.cooldown_cycles_remaining == 8
+
+
+def test_recovery_early_release_skips_remaining_cooldown(tmp_path: Path) -> None:
+    gate = _gate(
+        tmp_path,
+        alpha_reentry_sl_cooldown_cycles=10,
+        alpha_reentry_recovery_enabled=True,
+        alpha_reentry_recovery_release_pct=0.05,
+        alpha_reentry_recovery_min_cycles=2,
+    )
+    cfg = gate._config
+    cfg = replace(cfg, alpha_technical_analysis=replace(cfg.alpha_technical_analysis, enabled=True))
+    gate._config = cfg
+
+    gate.record_sl_exit(bracket_id="r1", exit_mid=1.000, entry_price=1.020)
+    gate.tick_cycle()
+    gate.tick_cycle()
+
+    structure_ok = MarketStructureSnapshot(
+        mid=1.002,
+        sample_count=20,
+        mean_mid=1.01,
+        recent_high=1.02,
+        recent_low=0.99,
+        trend="neutral",
+        breakout_up=False,
+        breakout_down=False,
+        summary="ok",
+        swing_high=1.02,
+    )
+    blocked = gate.blocks_buy(
+        inventory=_weak_inv(),
+        mid=1.002,
+        ta=_ta_allowed(),
+        structure=structure_ok,
+    )
+    assert blocked is None or "post_sl_cooldown" not in blocked
+    assert gate.snapshot.cycles_since_exit >= 10
+
+
+def test_post_clear_buy_spacing_blocks_rapid_bids(tmp_path: Path) -> None:
+    gate = _gate(tmp_path, alpha_reentry_post_clear_buy_spacing_cycles=3)
+    gate.record_tp_exit(bracket_id="sp1", exit_mid=2.0)
+    gate.clear(reason="buy_executed")
+
+    blocked = gate.blocks_buy(inventory=_weak_inv(), mid=1.79, ta=_ta_allowed())
+    assert blocked is not None
+    assert "reentry_reload_spacing" in blocked
+
+    gate.tick_cycle()
+    gate.tick_cycle()
+    gate.tick_cycle()
+    cleared = gate.blocks_buy(inventory=_weak_inv(), mid=1.79, ta=_ta_allowed())
+    assert cleared is None

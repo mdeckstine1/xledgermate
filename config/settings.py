@@ -232,6 +232,13 @@ class BotConfig:
     alpha_reentry_sl_cooldown_minutes: float = 0.0  # Optional minutes gate (0 = cycles only)
     alpha_reentry_tp_min_ta_score: float = 1.5  # Min TA buy score to re-enter after TP
     alpha_reentry_sl_min_ta_score: float = 2.5  # Higher TA bar after stop-loss exit
+    alpha_reentry_scratch_sl_max_loss_pct: float = 0.15  # SL within this % of entry = scratch tier
+    alpha_reentry_scratch_sl_cooldown_cycles: int = 4  # Cooldown after scratch/breakeven SL
+    alpha_reentry_sl_cluster_window_seconds: float = 1800.0  # Extra SLs in window do not reset timer
+    alpha_reentry_recovery_enabled: bool = True  # End SL cooldown early when price recovers
+    alpha_reentry_recovery_release_pct: float = 0.05  # Mid this % above exit_mid triggers recovery
+    alpha_reentry_recovery_min_cycles: int = 2  # Min cycles before recovery can apply
+    alpha_reentry_post_clear_buy_spacing_cycles: int = 5  # Pause between bids after gate clears
     alpha_ta_weight: float = 1.0  # 0=TA advisory only (HUD); 1=full TA buy gate at min_buy_score
     alpha_technical_analysis: AlphaTechnicalAnalysisConfig = field(
         default_factory=AlphaTechnicalAnalysisConfig

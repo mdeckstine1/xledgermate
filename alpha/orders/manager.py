@@ -1411,7 +1411,11 @@ class OrderManager:
             if role == BracketLegRole.TAKE_PROFIT:
                 self._reentry.record_tp_exit(bracket_id=record.bracket_id, exit_mid=exit_mid)
             else:
-                self._reentry.record_sl_exit(bracket_id=record.bracket_id, exit_mid=exit_mid)
+                self._reentry.record_sl_exit(
+                    bracket_id=record.bracket_id,
+                    exit_mid=exit_mid,
+                    entry_price=record.entry_price_rlusd_per_xrp,
+                )
 
         if opposing is not None and opposing.sequence is not None:
             still_open = opposing.sequence in open_map

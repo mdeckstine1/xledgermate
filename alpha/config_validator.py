@@ -156,6 +156,21 @@ def validate_alpha_config(config: BotConfig) -> AlphaConfigValidation:
     if config.alpha_reentry_sl_cooldown_cycles < 1:
         errors.append("alpha_reentry_sl_cooldown_cycles must be at least 1")
 
+    if config.alpha_reentry_scratch_sl_cooldown_cycles < 1:
+        errors.append("alpha_reentry_scratch_sl_cooldown_cycles must be at least 1")
+
+    if config.alpha_reentry_scratch_sl_max_loss_pct < 0:
+        errors.append("alpha_reentry_scratch_sl_max_loss_pct must be non-negative")
+
+    if config.alpha_reentry_sl_cluster_window_seconds < 0:
+        errors.append("alpha_reentry_sl_cluster_window_seconds must be non-negative")
+
+    if config.alpha_reentry_recovery_min_cycles < 0:
+        errors.append("alpha_reentry_recovery_min_cycles must be non-negative")
+
+    if config.alpha_reentry_post_clear_buy_spacing_cycles < 0:
+        errors.append("alpha_reentry_post_clear_buy_spacing_cycles must be non-negative")
+
     if config.alpha_reentry_tp_cooldown_cycles < 1:
         errors.append("alpha_reentry_tp_cooldown_cycles must be at least 1")
 
