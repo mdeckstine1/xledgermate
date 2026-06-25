@@ -380,7 +380,7 @@
           <div class="ctrl-row"><label data-knob="alpha_ta_weight" title="0 = TA advisory only (HUD display); 1 = full buy gate at min buy score.">ta_weight</label><input type="range" id="slTaWeight" min="0" max="1" step="0.05"><input type="number" id="numTaWeight" step="0.05"><span id="valTaWeight" class="muted"></span></div>
           <div class="ctrl-row"><label data-knob="alpha_ta_min_buy_score" title="Minimum composite buy score to allow PLACE_BID (scaled by ta_weight).">min_buy_score</label><input type="range" id="slTaBuyScore" min="0" max="10" step="0.1"><input type="number" id="numTaBuyScore" step="0.1"></div>
           <div class="ctrl-row"><label data-knob="alpha_ta_min_sell_score" title="Minimum sell score for strength sells when TA gates asks.">min_sell_score</label><input type="range" id="slTaSellScore" min="0" max="10" step="0.1"><input type="number" id="numTaSellScore" step="0.1"></div>
-          <div class="ctrl-row"><label data-knob="alpha_ta_candle_interval_seconds" title="OHLC bar width for all TA indicators (5m–2.5h). Wider bars = slower trend view; needs warmup after change.">ta_candle_window</label><input type="range" id="slTaCandle" min="300" max="9000" step="300"><input type="number" id="numTaCandle" min="300" max="9000" step="300"><span id="valTaCandle" class="muted"></span></div>
+          <div class="ctrl-row"><label data-knob="alpha_ta_candle_interval_seconds" title="OHLC bar width for all TA indicators (5m–2.5h). Rebuckets existing tick history — does not reset warmup once ticks are collected.">ta_candle_window</label><input type="range" id="slTaCandle" min="300" max="9000" step="300"><input type="number" id="numTaCandle" min="300" max="9000" step="300"><span id="valTaCandle" class="muted"></span></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_rsi_enabled" title="RSI oversold/overbought contribution to buy/sell scores."><input type="checkbox" id="taRsiEnabled"> RSI</label></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_stoch_enabled" title="Stochastic momentum for entries and breakouts."><input type="checkbox" id="taStochEnabled"> Stochastic</label></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_bollinger_enabled" title="Bollinger band squeeze and band-touch signals."><input type="checkbox" id="taBbEnabled"> Bollinger</label></div>
@@ -1639,7 +1639,8 @@
       }
       $('taDisabled').style.display = 'none';
       $('taContent').style.display = 'block';
-      const warming = (ta.summary || '').includes('ta_insufficient_candles');
+      const warming = (ta.summary || '').includes('ta_insufficient_ticks')
+        || (ta.summary || '').includes('ta_insufficient_candles');
       if (warming) {
         $('taDisabled').style.display = 'block';
         $('taDisabled').textContent = 'Warming up — ' + (ta.summary || 'collecting candles');

@@ -21,7 +21,8 @@ _PRICE_EPS = 1e-9
 def configure_price_history(*, max_samples: int) -> None:
     """Set rolling tick history depth (called from ``AlphaApplication`` on config load)."""
     global _MAX_SAMPLES
-    _MAX_SAMPLES = max(120, int(max_samples))
+    # Never shrink — TA window changes must not truncate accumulated ticks.
+    _MAX_SAMPLES = max(_MAX_SAMPLES, max(120, int(max_samples)))
 
 
 def price_history_max_samples() -> int:

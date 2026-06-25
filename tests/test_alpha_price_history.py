@@ -82,12 +82,30 @@ def test_load_mid_history_compat(tmp_path: Path):
 
 
 def test_configure_price_history_max_samples(tmp_path: Path):
-    configure_price_history(max_samples=200)
+    import alpha.decision.price_history as ph
+
+    old_max = ph.price_history_max_samples()
+    ph._MAX_SAMPLES = 200
     try:
+        configure_price_history(max_samples=200)
         assert price_history_max_samples() == 200
         path = tmp_path / "alpha_price_history.json"
         for i in range(250):
             append_book_prices(BookPrices(bid=1.0, ask=1.0 + i * 0.0001, mid=1.05), path=path)
         assert len(load_price_series("ask", path=path)) == 200
     finally:
-        configure_price_history(max_samples=32000)
+        ph._MAX_SAMPLES = old_max
+
+
+def test_configure_price_history_never_shrinks():
+    import alpha.decision.price_history as ph
+
+    old_max = ph.price_history_max_samples()
+    ph._MAX_SAMPLES = 1000
+    try:
+        configure_price_history(max_samples=5000)
+        assert price_history_max_samples() == 5000
+        configure_price_history(max_samples=1000)
+        assert price_history_max_samples() == 5000
+    finally:
+        ph._MAX_SAMPLES = old_max

@@ -9,7 +9,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import pandas as pd
 
 from alpha.decision.structure import CandleData, build_candle_from_mids
-from alpha.decision.ta_config import AlphaTechnicalAnalysisConfig, resolve_ta_candle_bucket_samples
+from alpha.decision.ta_config import (
+    AlphaTechnicalAnalysisConfig,
+    resolve_ta_candle_bucket_samples,
+    ta_warmup_tick_threshold,
+)
 from config.settings import BotConfig
 
 logger = logging.getLogger(__name__)
@@ -374,6 +378,19 @@ class TechnicalAnalysis:
         if not self._cfg.enabled:
             return _empty_snapshot(price, reason="ta_disabled", enabled=False)
 
+        tick_count = len([float(m) for m in mids if float(m) > 0])
+        need_ticks = ta_warmup_tick_threshold(
+            self._cfg,
+            cycle_seconds=self._bot_config.alpha_cycle_interval_seconds,
+            sample_interval_seconds=self._bot_config.alpha_price_sample_interval_seconds,
+        )
+        if tick_count < need_ticks:
+            return _empty_snapshot(
+                price,
+                reason=f"ta_insufficient_ticks have={tick_count} need={need_ticks}",
+                enabled=True,
+            )
+
         candles = mids_to_candles(
             mids,
             bucket=resolve_ta_candle_bucket_samples(
@@ -382,10 +399,10 @@ class TechnicalAnalysis:
                 sample_interval_seconds=self._bot_config.alpha_price_sample_interval_seconds,
             ),
         )
-        if len(candles) < self._cfg.min_candles:
+        if len(candles) < 2:
             return _empty_snapshot(
                 price,
-                reason=f"ta_insufficient_candles have={len(candles)} need={self._cfg.min_candles}",
+                reason=f"ta_insufficient_candles have={len(candles)} need=2",
                 enabled=True,
             )
 
@@ -672,9 +689,12 @@ class TechnicalAnalysis:
             entry_buy_allowed = buy_score >= self._cfg.min_buy_score and sell_score < self._cfg.min_sell_score
             entry_sell_allowed = sell_score >= self._cfg.min_sell_score and buy_score < self._cfg.min_buy_score
 
+        bars_note = ""
+        if len(candles) < self._cfg.min_candles:
+            bars_note = f" bars={len(candles)}/{self._cfg.min_candles}"
         summary = (
             f"ta buy={buy_score:.2f} sell={sell_score:.2f} breakout={breakout_score:.2f} "
-            f"bias={bias} elliott={elliott}"
+            f"bias={bias} elliott={elliott}{bars_note}"
         )
         logger.info("technical_analysis | %s", summary)
 

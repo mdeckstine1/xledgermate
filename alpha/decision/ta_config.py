@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from typing import Any, Dict, List, Tuple
 
 from alpha.decision.price_history import effective_sample_seconds
@@ -242,6 +242,35 @@ def resolve_ta_candle_bucket_samples(
     if int(cfg.candle_interval_seconds) > 0:
         return max(1, int(round(int(cfg.candle_interval_seconds) / sample_seconds)))
     return max(1, int(cfg.candle_bucket_samples))
+
+
+def ta_warmup_tick_threshold(
+    cfg: AlphaTechnicalAnalysisConfig,
+    *,
+    cycle_seconds: int,
+    sample_interval_seconds: int,
+) -> int:
+    """
+    Raw book-sample depth that satisfies global TA warmup.
+
+    Bucket-agnostic: once met, changing TA scoring knobs or widening the candle
+    window only rebuckets the same ticks — it must not force another warmup wait.
+    """
+    current_bucket = resolve_ta_candle_bucket_samples(
+        cfg,
+        cycle_seconds=cycle_seconds,
+        sample_interval_seconds=sample_interval_seconds,
+    )
+    if int(cfg.candle_interval_seconds) > 0:
+        # Explicit TA window: warmup is tick-depth based (finest bar), not rebucket count.
+        per_bar_ticks = resolve_ta_candle_bucket_samples(
+            replace(cfg, candle_interval_seconds=TA_CANDLE_INTERVAL_MIN_SECONDS),
+            cycle_seconds=cycle_seconds,
+            sample_interval_seconds=sample_interval_seconds,
+        )
+    else:
+        per_bar_ticks = current_bucket
+    return max(2 * per_bar_ticks, int(cfg.min_candles) * per_bar_ticks)
 
 
 def recommended_price_history_max_samples(

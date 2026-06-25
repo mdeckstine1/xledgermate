@@ -10,6 +10,7 @@ from alpha.decision.ta_config import (
     AlphaTechnicalAnalysisConfig,
     merge_ta_config,
     resolve_ta_candle_bucket_samples,
+    ta_warmup_tick_threshold,
 )
 from alpha.decision.technical_analysis import TechnicalAnalysis, mids_to_candles
 from alpha.types import (
@@ -150,3 +151,43 @@ def test_resolve_ta_candle_bucket_from_interval():
 def test_resolve_ta_candle_bucket_legacy_samples():
     cfg = AlphaTechnicalAnalysisConfig(candle_interval_seconds=0, candle_bucket_samples=5)
     assert resolve_ta_candle_bucket_samples(cfg, cycle_seconds=60, sample_interval_seconds=15) == 5
+
+
+def test_ta_warmup_tick_threshold_uses_finest_bar():
+    cfg = AlphaTechnicalAnalysisConfig(min_candles=20, candle_interval_seconds=900)
+    need = ta_warmup_tick_threshold(cfg, cycle_seconds=35, sample_interval_seconds=15)
+    assert need == 400  # 20 min_candles × 20 ticks/bar @ 5m finest
+
+
+def test_ta_scoring_survives_wider_candle_rebucket():
+    """Widening TA window must not block scoring when tick history is already warm."""
+    cfg = BotConfig()
+    cfg.alpha_cycle_interval_seconds = 35
+    cfg.alpha_price_sample_interval_seconds = 15
+    ta_cfg = replace(
+        cfg.alpha_technical_analysis,
+        min_candles=20,
+        candle_interval_seconds=900,
+    )
+    cfg = replace(cfg, alpha_technical_analysis=ta_cfg)
+    mids = _rising_mids(1500)
+    ta = TechnicalAnalysis(cfg)
+    snap = ta.analyze(mids, mid=1.189)
+    assert "insufficient" not in snap.summary
+
+    wide_cfg = replace(cfg, alpha_technical_analysis=replace(ta_cfg, candle_interval_seconds=1800))
+    snap_wide = TechnicalAnalysis(wide_cfg).analyze(mids, mid=1.189)
+    assert snap_wide.enabled is True
+    assert "insufficient" not in snap_wide.summary
+    assert len(snap_wide.signals) > 0
+
+
+def test_ta_insufficient_ticks_on_cold_start():
+    cfg = BotConfig()
+    cfg.alpha_cycle_interval_seconds = 35
+    cfg.alpha_price_sample_interval_seconds = 15
+    ta_cfg = replace(cfg.alpha_technical_analysis, min_candles=20, candle_interval_seconds=900)
+    cfg = replace(cfg, alpha_technical_analysis=ta_cfg)
+    snap = TechnicalAnalysis(cfg).analyze(_rising_mids(100), mid=1.1)
+    assert "ta_insufficient_ticks" in snap.summary
+    assert snap.buy_score == 0.0
