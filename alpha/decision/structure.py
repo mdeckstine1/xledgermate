@@ -40,6 +40,7 @@ class CandleData:
     low: float
     close: float
     volume: Optional[float] = None
+    is_complete: bool = True  # False = forming bar (OHLC cache); pattern signals use closed bars only
 
     @property
     def body(self) -> float:

@@ -1882,7 +1882,7 @@
       const warmup = ohlc.indicator_warmup || {};
       const warming = (ta.summary || '').includes('ta_insufficient_ticks')
         || (ta.summary || '').includes('ta_insufficient_candles');
-      const pending = (warmup.indicators || []).filter(i => !i.ready && ['rsi', 'stochastic', 'bollinger', 'fibonacci'].includes(i.name));
+      const pending = (warmup.indicators || []).filter(i => !i.ready);
       const warmupEl = $('taWarmup');
       if (warming || pending.length) {
         $('taDisabled').style.display = 'block';

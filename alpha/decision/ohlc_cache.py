@@ -116,6 +116,7 @@ def _row_to_candle(row: sqlite3.Row) -> CandleData:
         high=float(row["high"]),
         low=float(row["low"]),
         close=float(row["close"]),
+        is_complete=bool(int(row["is_complete"])),
     )
 
 

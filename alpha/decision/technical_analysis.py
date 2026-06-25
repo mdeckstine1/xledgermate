@@ -382,6 +382,19 @@ def _liquidity_grab_sell(candles: Sequence[CandleData], lookback: int, wick_pct:
     return pierced and reclaimed and not cur.is_green
 
 
+def _pattern_candles(candles: Sequence[CandleData]) -> List[CandleData]:
+    """Closed bars only — pin/engulf/inside on a forming bar are noise."""
+    if not candles:
+        return []
+    if getattr(candles[-1], "is_complete", True):
+        return list(candles)
+    return list(candles[:-1]) if len(candles) > 1 else []
+
+
+def _closed_bar_count(candles: Sequence[CandleData]) -> int:
+    return sum(1 for c in candles if getattr(c, "is_complete", True))
+
+
 class TechnicalAnalysis:
     """Compute TA snapshot from mid-price history (synthetic OHLC candles)."""
 
@@ -440,8 +453,16 @@ class TechnicalAnalysis:
         close = df["close"]
         high = df["high"]
         low = df["low"]
-        cur = candles[-1]
-        prev = candles[-2] if len(candles) >= 2 else cur
+        pattern_bars = _pattern_candles(candles)
+        closed_count = _closed_bar_count(candles)
+        if len(pattern_bars) >= 2:
+            pat_cur = pattern_bars[-1]
+            pat_prev = pattern_bars[-2]
+        else:
+            pat_cur = candles[-1]
+            pat_prev = candles[-2] if len(candles) >= 2 else candles[-1]
+        cur = pat_cur
+        prev = pat_prev
 
         buy_score = 0.0
         sell_score = 0.0
@@ -541,48 +562,74 @@ class TechnicalAnalysis:
         # Fibonacci
         fc = self._cfg.fibonacci
         if fc.enabled:
-            window = candles[-fc.lookback :]
-            hi = max(c.high for c in window)
-            lo = min(c.low for c in window)
-            fib = _fib_levels(hi, lo, fc.levels)
-            fired = False
-            bias = "neutral"
-            score = 0.0
-            support_hit = any(_near_level(price, lvl, fc.proximity_pct) for lvl in fib.values() if lvl <= price)
-            resist_hit = any(_near_level(price, lvl, fc.proximity_pct) for lvl in fib.values() if lvl >= price)
-            detail = f"fib={','.join(f'{k}:{v:.6f}' for k, v in fib.items())}"
-            if support_hit:
-                fired, bias, score = True, "bullish", fc.buy_weight
-                buy_score += score
-            elif resist_hit:
-                fired, bias, score = True, "bearish", fc.sell_weight
-                sell_score += score
-            signals.append(TechnicalSignal("fibonacci", True, fired, bias, score, detail))
+            if closed_count < fc.lookback:
+                signals.append(
+                    TechnicalSignal(
+                        "fibonacci",
+                        True,
+                        False,
+                        "neutral",
+                        0.0,
+                        f"warming_up bars={closed_count}/{fc.lookback}",
+                    )
+                )
+            else:
+                window = candles[-fc.lookback :]
+                hi = max(c.high for c in window)
+                lo = min(c.low for c in window)
+                fib = _fib_levels(hi, lo, fc.levels)
+                fired = False
+                bias = "neutral"
+                score = 0.0
+                support_hit = any(_near_level(price, lvl, fc.proximity_pct) for lvl in fib.values() if lvl <= price)
+                resist_hit = any(_near_level(price, lvl, fc.proximity_pct) for lvl in fib.values() if lvl >= price)
+                detail = f"fib={','.join(f'{k}:{v:.6f}' for k, v in fib.items())}"
+                if support_hit:
+                    fired, bias, score = True, "bullish", fc.buy_weight
+                    buy_score += score
+                elif resist_hit:
+                    fired, bias, score = True, "bearish", fc.sell_weight
+                    sell_score += score
+                signals.append(TechnicalSignal("fibonacci", True, fired, bias, score, detail))
 
         # Elliott wave (simplified)
         ec = self._cfg.elliott_wave
         if ec.enabled:
-            elliott = _elliott_bias(candles, ec.lookback)
-            fired = elliott != "neutral"
-            bias = "bullish" if elliott == "impulse_up" else ("bearish" if elliott == "impulse_down" else "neutral")
-            score = 0.0
-            if elliott == "impulse_up":
-                score = ec.impulse_weight
-                buy_score += score
-            elif elliott == "impulse_down":
-                score = ec.impulse_weight
-                sell_score += score
-            elif elliott == "corrective":
-                score = ec.corrective_weight
-                buy_score *= max(0.5, 1.0 - ec.corrective_weight * 0.25)
-                sell_score *= max(0.5, 1.0 - ec.corrective_weight * 0.25)
-            signals.append(TechnicalSignal("elliott_wave", True, fired, bias, score, f"bias={elliott}"))
+            if closed_count < ec.lookback:
+                signals.append(
+                    TechnicalSignal(
+                        "elliott_wave",
+                        True,
+                        False,
+                        "neutral",
+                        0.0,
+                        f"warming_up bars={closed_count}/{ec.lookback}",
+                    )
+                )
+                elliott = "neutral"
+            else:
+                elliott = _elliott_bias(candles, ec.lookback)
+                fired = elliott != "neutral"
+                bias = "bullish" if elliott == "impulse_up" else ("bearish" if elliott == "impulse_down" else "neutral")
+                score = 0.0
+                if elliott == "impulse_up":
+                    score = ec.impulse_weight
+                    buy_score += score
+                elif elliott == "impulse_down":
+                    score = ec.impulse_weight
+                    sell_score += score
+                elif elliott == "corrective":
+                    score = ec.corrective_weight
+                    buy_score *= max(0.5, 1.0 - ec.corrective_weight * 0.25)
+                    sell_score *= max(0.5, 1.0 - ec.corrective_weight * 0.25)
+                signals.append(TechnicalSignal("elliott_wave", True, fired, bias, score, f"bias={elliott}"))
 
         # Candle streaks
         csc = self._cfg.candle_streak
         if csc.enabled:
-            greens = _green_streak(candles)
-            reds = _red_streak(candles)
+            streak_bars = pattern_bars if pattern_bars else candles
+            greens = _green_streak(streak_bars)
+            reds = _red_streak(streak_bars)
             fired = greens >= csc.min_green_streak or reds >= csc.min_red_streak
             bias = "neutral"
             score = 0.0
