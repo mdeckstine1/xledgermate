@@ -5,6 +5,20 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [1.0.1] — 2026-06-22 (`samurai-v1.0.1` · Trading Bot Alpha)
+
+**First pinned Alpha release on mainnet soak — live brackets, TA-driven entries, operator HUD.**
+
+- **Graded TA scoring** — RSI, stoch, BB, fib proximity, and patterns contribute partial buy/sell scores (not strict fired-only gates).
+- **OHLC cache** — SQLite closed-bar history with retention limits; HUD warmup/gap display; live bar completion fix.
+- **Re-entry mitigations** — scratch SL tier, SL cluster guard, recovery early release, post-clear buy spacing; HUD sliders.
+- **Trailing SL** — breakeven anchor fix when mid gaps above entry; deferred SL until price nears stop.
+- **HUD & reports** — tax CSV strength sells, monthly rollup, reports catalog; SKYNET operator phases; re-entry mitigation controls.
+- **Regime metrics** — per-cycle volatility, liquidity, and regime tags in SQLite.
+- **Ops scripts** — VPS audit helpers for risk snapshot, offers/brackets, bleed, trailing, and fill flow.
+
+---
+
 ## [2.3.2] — 2026-06-21 (`Ashigaru Shoshin`)
 
 **Balanced Aggressive solo intent (L2) + operator soak reports.**

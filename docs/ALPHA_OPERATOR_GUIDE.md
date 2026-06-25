@@ -1,6 +1,6 @@
 # xLedgerMate Trading Bot Alpha — Operator Guide
 
-**Version:** 1.0.0 · **Branch:** `alpha`  
+**Version:** 1.0.1 · **Branch:** `alpha` · **Release:** `samurai-v1.0.1`  
 **Strategy:** Aggressive Bag Growth (TA-Driven & HUD-Controlled — limit buys on dips → bracket TP/SL → patient re-entry)
 
 This guide is for the **new Alpha bot**, not the legacy `ws-engine` market maker.

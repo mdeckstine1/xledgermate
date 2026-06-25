@@ -130,7 +130,7 @@ Before **live** testnet (`dry_run: false`): run `setup-trust`, fund RLUSD, set n
 
 ## Trading Bot Alpha
 
-**Branch:** `alpha` · **Version:** 1.0.0 · **Strategy:** Limit buys on weakness → bracket TP/SL (not legacy MM)
+**Branch:** `alpha` · **Release:** `samurai-v1.0.1` · **Version:** 1.0.1 · **Strategy:** Limit buys on weakness → bracket TP/SL (not legacy MM)
 
 New value-accumulation bot — separate from `ws-engine`. Uses the same `config/config.yaml` and `credentials.local.yaml` hooks.
 

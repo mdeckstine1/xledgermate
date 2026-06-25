@@ -1,6 +1,6 @@
 # E2 — Branch discipline (Alpha vs legacy WS + pure A-S)
 
-**Status:** **`alpha`** = primary production (Trading Bot Alpha v1.0.0) · **`Ashigaru-Shoshin`** = archived MM rollback (v2.3.x)
+**Status:** **`alpha`** = primary production (Trading Bot Alpha v1.0.1 · pin **`samurai-v1.0.1`**) · **`Ashigaru-Shoshin`** = archived MM rollback (v2.3.x)
 
 ---
 
@@ -9,6 +9,8 @@
 | Branch | Deploy to VPS live? | Role |
 |--------|---------------------|------|
 | **`alpha`** | **Yes (primary)** | Trading Bot Alpha: value accumulation, brackets, `python -m alpha run` |
+| **`samurai-v1.0.1`** | **Yes (release pin)** | Frozen Alpha v1.0.1 — deploy this tag/branch for reproducible mainnet |
+| **`samurai-v1.0.0`** | No (legacy MM) | Pre-Alpha MM line — superseded by `samurai-v1.0.1` |
 | **`Ashigaru-Shoshin`** | Rollback only | Legacy MM: QD stack, `ws-engine`, HUD `:8765` |
 | **`Ashigaru-Kaizen-II`** | No (archived) | v2.1.40 — historical |
 | **`Ashigaru-Kaizen`** | No (archived) | v2.1.10 era — historical |

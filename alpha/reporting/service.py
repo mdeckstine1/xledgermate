@@ -6,6 +6,7 @@ import logging
 
 from alpha.orders.types import BracketLifecycleState, BracketMode
 from alpha.types import BracketStatusSummary, CycleReportContext, OperatorSnapshot
+from alpha.version import ALPHA_VERSION
 from config.settings import BotConfig
 from monitoring.telegram_alerts import TelegramAlerts
 
@@ -181,7 +182,7 @@ class ReportingService:
 
     def send_startup(self, *, dry_run: bool, network: str) -> None:
         mode = "DRY-RUN" if dry_run else "LIVE"
-        msg = f"xLedgerMate Alpha started | {mode} | {network} | v1.0.0"
+        msg = f"xLedgerMate Alpha started | {mode} | {network} | v{ALPHA_VERSION}"
         logger.info(msg)
         if self._telegram.is_configured():
             self._telegram.send_message(msg)
