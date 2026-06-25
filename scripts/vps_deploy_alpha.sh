@@ -3,12 +3,12 @@
 set -euo pipefail
 cd /root/xledgermate
 
-BRANCH="${ALPHA_BRANCH:-alpha}"
+BRANCH="${ALPHA_BRANCH:-samurai}"
 
 echo "=== git pull ${BRANCH} ==="
-git fetch origin "${BRANCH}"
-git checkout "${BRANCH}"
-git pull origin "${BRANCH}"
+git fetch origin "refs/heads/${BRANCH}:refs/heads/${BRANCH}" 2>/dev/null || git fetch origin "${BRANCH}"
+git checkout "refs/heads/${BRANCH}" 2>/dev/null || git checkout "${BRANCH}"
+git pull origin "${BRANCH}" 2>/dev/null || true
 echo "HEAD: $(git rev-parse --short HEAD)"
 
 if [ -f alpha/version.py ]; then

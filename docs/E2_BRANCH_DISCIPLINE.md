@@ -1,6 +1,27 @@
-# E2 — Branch discipline (Alpha vs legacy WS + pure A-S)
+# E2 — Branch discipline (Samurai · Alpha · legacy WS)
 
-**Status:** **`alpha`** = primary production (Trading Bot Alpha v1.0.1 · pin **`samurai-v1.0.1`**) · **`Ashigaru-Shoshin`** = archived MM rollback (v2.3.x)
+**Status:** **`samurai-v1.0.1`** = frozen VPS production pin (v1.0.1) · **`samurai`** = active Samurai feature development · **`alpha`** = solid baseline (parallel line, no Samurai feature work)
+
+---
+
+## Samurai frozen-release workflow
+
+```text
+samurai-v1.0.1   ← frozen release (deploy VPS; hotfixes only → cut samurai-v1.0.2)
+       │
+       └── samurai   ← daily work in Cursor (new features for next Samurai release)
+       
+alpha            ← separate line; stable; do not mix Samurai feature commits here
+```
+
+| Step | Action |
+|------|--------|
+| **Daily dev** | Commit on **`samurai`** |
+| **VPS production** | Deploy **`samurai-v1.0.1`** (or latest `samurai-v1.0.x` tag) — `ALPHA_BRANCH=samurai-v1.0.1 bash scripts/vps_deploy_alpha.sh` |
+| **Cut patch release** | From tested `samurai` → tag/branch `samurai-v1.0.2`, deploy, leave pin frozen |
+| **Avoid** | Feature commits directly on `samurai-v1.0.x` pins or on `alpha` when the work is Samurai-only |
+
+**Checkout tip:** branch and tag share names like `samurai-v1.0.1` — use `git checkout refs/heads/samurai-v1.0.1` for the frozen branch (not ambiguous with the tag).
 
 ---
 
@@ -8,9 +29,10 @@
 
 | Branch | Deploy to VPS live? | Role |
 |--------|---------------------|------|
-| **`alpha`** | **Yes (primary)** | Trading Bot Alpha: value accumulation, brackets, `python -m alpha run` |
-| **`samurai-v1.0.1`** | **Yes (release pin)** | Frozen Alpha v1.0.1 — deploy this tag/branch for reproducible mainnet |
-| **`samurai-v1.0.0`** | No (legacy MM) | Pre-Alpha MM line — superseded by `samurai-v1.0.1` |
+| **`samurai`** | No (dev) | **Active Samurai development** — feature work in Cursor |
+| **`samurai-v1.0.1`** | **Yes (production pin)** | Frozen v1.0.1 — reproducible mainnet deploy only |
+| **`alpha`** | Optional | Trading Bot Alpha baseline (solid); parallel line, not Samurai features |
+| **`samurai-v1.0.0`** | No (legacy MM) | Pre-Alpha MM line — superseded |
 | **`Ashigaru-Shoshin`** | Rollback only | Legacy MM: QD stack, `ws-engine`, HUD `:8765` |
 | **`Ashigaru-Kaizen-II`** | No (archived) | v2.1.40 — historical |
 | **`Ashigaru-Kaizen`** | No (archived) | v2.1.10 era — historical |
@@ -33,13 +55,23 @@
 
 ## Operator commands
 
-**VPS production (Alpha — primary):**
+**VPS production (Samurai pin — frozen release):**
 
 ```bash
 cd /root/xledgermate
-bash scripts/alpha_cutover_vps.sh    # first time
-bash scripts/vps_deploy_alpha.sh     # updates
-python -m alpha status
+ALPHA_BRANCH=samurai-v1.0.1 bash scripts/vps_deploy_alpha.sh
+```
+
+**VPS soak (Samurai dev branch — only when testing features):**
+
+```bash
+ALPHA_BRANCH=samurai bash scripts/vps_deploy_alpha.sh
+```
+
+**Legacy Alpha line (optional):**
+
+```bash
+ALPHA_BRANCH=alpha bash scripts/vps_deploy_alpha.sh
 ```
 
 **VPS rollback (legacy MM):**
