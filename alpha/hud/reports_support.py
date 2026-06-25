@@ -204,6 +204,12 @@ def _gen_alpha_reentry(logs: Path) -> str:
     return "=== Re-entry gate state ===\n\n" + json.dumps(data, indent=2)
 
 
+def _gen_alpha_market_metrics(logs: Path) -> str:
+    from alpha.decision.market_metrics import format_metrics_report
+
+    return format_metrics_report(logs, hours=24.0)
+
+
 def _current_trades_path(logs: Path) -> Path:
     month = datetime.now(tz=timezone.utc).strftime("%Y-%m")
     return logs / f"trades_{month}.csv"
@@ -418,6 +424,17 @@ REPORT_SPECS: List[ReportSpec] = [
         phase_ref="Re-entry",
     ),
     ReportSpec(
+        id="alpha_market_metrics",
+        title="Market metrics (vol & liquidity)",
+        subtitle="ATR, realized vol, spread, depth, regime",
+        category="Market",
+        description="Per-cycle SQLite metrics — 24h averages and latest regime tag.",
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="(HUD report only)",
+        phase_ref="TA",
+    ),
+    ReportSpec(
         id="alpha_trades_csv",
         title="Monthly trades / tax log",
         subtitle="Current month (logs/trades_YYYY-MM.csv)",
@@ -483,6 +500,7 @@ _GENERATORS: Dict[str, ReportGenerator] = {
     "alpha_brackets": _gen_alpha_brackets,
     "alpha_activity": _gen_alpha_activity,
     "alpha_reentry": _gen_alpha_reentry,
+    "alpha_market_metrics": _gen_alpha_market_metrics,
     "alpha_trades_csv": _gen_alpha_trades_csv,
     "alpha_transfers": _gen_alpha_transfers,
     "alpha_trades_archive": _gen_alpha_trades_archive,

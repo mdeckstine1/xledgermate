@@ -436,6 +436,9 @@ def build_hud_state(
         sample_interval_seconds=effective.alpha_price_sample_interval_seconds,
     )
     ohlc_cache = cache_status(runtime_state_path.parent, ta_interval_seconds=ta_interval)
+    from alpha.decision.market_metrics import metrics_summary
+
+    market_metrics = metrics_summary(runtime_state_path.parent, hours=24.0)
     ta_block = ta.to_dict() if ta is not None else {"enabled": False}
     market_conditions = build_market_conditions(
         book=book if isinstance(book, OrderBookSnapshot) else None,
@@ -534,6 +537,7 @@ def build_hud_state(
         "chart": chart,
         "technical_analysis": ta_block,
         "ohlc_cache": ohlc_cache,
+        "market_metrics": market_metrics,
         "book": _book_payload(book if isinstance(book, OrderBookSnapshot) else None),
         "market_conditions": market_conditions,
         "recent_activity": activity[-40:],

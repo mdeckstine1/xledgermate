@@ -31,7 +31,15 @@ from alpha.orders.manager import OrderManager, OrderManagerState
 from alpha.reporting.service import ReportingService, bracket_summary_from_store
 from alpha.risk.engine import RiskEngine
 from alpha.runtime.executor import EntryExecutionResult, EntryExecutor
-from alpha.types import BalanceSnapshot, CycleReportContext, LiquidityDepth, OperatorSnapshot, OrderBookSnapshot, utc_now
+from alpha.types import (
+    BalanceSnapshot,
+    CycleReportContext,
+    InventorySnapshot,
+    LiquidityDepth,
+    OperatorSnapshot,
+    OrderBookSnapshot,
+    utc_now,
+)
 from alpha.version import ALPHA_VERSION
 from config.settings import BotConfig
 
@@ -364,7 +372,65 @@ class AlphaApplication:
             ta=ta_snapshot,
             structure=self._last_structure,
         )
+        self._record_cycle_metrics(
+            book=book,
+            liquidity=liquidity,
+            inventory=inventory,
+            structure=structure,
+            ta_snapshot=ta_snapshot,
+        )
         return snap, validation, decision, orders
+
+    def _record_cycle_metrics(
+        self,
+        *,
+        book: Optional[OrderBookSnapshot],
+        liquidity: Optional[LiquidityDepth],
+        inventory: InventorySnapshot,
+        structure: Optional[MarketStructureSnapshot],
+        ta_snapshot: Optional[TechnicalAnalysisSnapshot],
+    ) -> None:
+        from alpha.decision.market_metrics import record_cycle_metrics
+        from alpha.decision.ta_config import effective_ta_candle_interval_seconds
+        from alpha.ledger.liquidity import depth_within_mid_band
+        from alpha.ledger.market_conditions import HUD_DEPTH_MID_BAND_PCT
+
+        ta_cfg = self.config.alpha_technical_analysis
+        ta_interval = effective_ta_candle_interval_seconds(
+            ta_cfg,
+            cycle_seconds=self.config.alpha_cycle_interval_seconds,
+            sample_interval_seconds=self.config.alpha_price_sample_interval_seconds,
+        )
+        mid_f = float(book.mid) if book and book.mid else 0.0
+        bid_1pct = ask_1pct = None
+        if book is not None and mid_f > 0:
+            bid_1pct = depth_within_mid_band(
+                book.bids, side="bid", mid=mid_f, band_pct=HUD_DEPTH_MID_BAND_PCT
+            )
+            ask_1pct = depth_within_mid_band(
+                book.asks, side="ask", mid=mid_f, band_pct=HUD_DEPTH_MID_BAND_PCT
+            )
+        try:
+            record_cycle_metrics(
+                logs_dir=self._state_dir,
+                ta_interval_seconds=ta_interval,
+                mid=book.mid if book else None,
+                spread_pct=book.spread_pct if book else None,
+                bid_depth_xrp=liquidity.bid_depth_xrp if liquidity else None,
+                ask_depth_xrp=liquidity.ask_depth_xrp if liquidity else None,
+                bid_depth_1pct_xrp=bid_1pct,
+                ask_depth_1pct_xrp=ask_1pct,
+                inventory=inventory,
+                structure=structure,
+                ta=ta_snapshot,
+                reentry=self._reentry.snapshot,
+                engine_cycle=self._engine_cycle,
+                weakness_deviation=self.config.alpha_weakness_deviation,
+                strength_deviation=self.config.alpha_strength_deviation,
+                min_order_size_xrp=self.config.min_order_size_xrp,
+            )
+        except Exception as exc:
+            logger.warning("cycle_metrics_record_failed | %s", exc)
 
     def _build_report(
         self,

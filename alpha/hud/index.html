@@ -291,6 +291,9 @@
             <div class="mc-item"><div class="mc-label">Best ask</div><div id="mcBestAsk" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Spread</div><div id="mcSpread" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Liquidity health</div><div id="mcLiquidity" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Regime</div><div id="mcRegime" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">ATR % (TA TF)</div><div id="mcAtr" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Realized vol (daily %)</div><div id="mcRealizedVol" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Ask depth (1% of mid)</div><div id="mcAskDepth" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Bid depth (1% of mid)</div><div id="mcBidDepth" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Max buy size</div><div id="mcMaxBuy" class="mc-val">—</div></div>
@@ -1630,6 +1633,22 @@
       $('mcSample').textContent = sampleSec != null
         ? (Number(sampleSec) > 0 ? sampleSec + 's' : 'cycle only')
         : '—';
+      const mm = s.market_metrics || {};
+      const latest = mm.latest || {};
+      const regimeEl = $('mcRegime');
+      if (latest.regime) {
+        regimeEl.textContent = String(latest.regime).replace(/_/g, ' ');
+        regimeEl.className = 'mc-val ' + (String(latest.regime).includes('bull') ? 'mc-grade-green'
+          : (String(latest.regime).includes('bear') || String(latest.regime).includes('cooldown') ? 'mc-grade-yellow' : ''));
+      } else {
+        regimeEl.textContent = '—';
+        regimeEl.className = 'mc-val';
+      }
+      $('mcAtr').textContent = latest.atr_pct != null ? fmt(latest.atr_pct, 3) + '%'
+        : (mm.avg_atr_pct != null ? '~' + fmt(mm.avg_atr_pct, 3) + '%' : '—');
+      $('mcRealizedVol').textContent = latest.realized_vol_daily_pct != null
+        ? fmt(latest.realized_vol_daily_pct, 3) + '%'
+        : (mm.avg_realized_vol_daily_pct != null ? '~' + fmt(mm.avg_realized_vol_daily_pct, 3) + '%' : '—');
     }
 
     function renderChartMeta(s, chart) {
