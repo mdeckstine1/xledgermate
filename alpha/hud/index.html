@@ -437,9 +437,14 @@
         </div>
         <div class="card"><h3>Tax &amp; transfer logs</h3>
           <p class="muted" style="margin:0;font-size:.78rem;line-height:1.5">
-            Taxable fills append to <code id="taxCsvPath">logs/trades_YYYY-MM.csv</code> (BUY/SELL/TRANSFER rows, <code>taxable=Y</code>).<br>
-            Outbound payments also in <code id="transfersCsvPath">logs/transfers.csv</code> and the monthly trades file.
+            Taxable fills append to <code id="taxCsvPath">logs/trades_YYYY-MM.csv</code> (BUY/SELL/TRANSFER, <code>taxable=Y</code>).
+            Outbound HUD sends also log to <code id="transfersCsvPath">logs/transfers.csv</code>.
           </p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+            <button type="button" class="report-open-btn" data-report-id="alpha_trades_csv">Monthly trades / tax log ↗</button>
+            <button type="button" class="report-open-btn" data-report-id="alpha_transfers">Transfers log ↗</button>
+            <button type="button" class="report-open-btn" data-report-id="alpha_trades_archive">All trades months ↗</button>
+          </div>
         </div>
       </section>
       <section id="activity" class="panel">
@@ -691,6 +696,14 @@
 
     $('btnStart').onclick = async () => { const d = await post('/engine/start'); if (d?.ok) toast('Engine start requested'); poll(); };
     $('btnOpenCycleReport')?.addEventListener('click', () => openReportInNewTab('alpha_cycle'));
+    $('reports')?.addEventListener('click', (e) => {
+      const btn = e.target.closest?.('.report-open-btn[data-report-id]');
+      if (btn) {
+        e.preventDefault();
+        const id = btn.getAttribute('data-report-id');
+        if (id) openReportInNewTab(id);
+      }
+    });
     $('btnPause').onclick = async () => { await post('/controls/pause'); poll(); };
     $('btnResume').onclick = async () => { await post('/controls/resume'); poll(); };
     $('btnRestart').onclick = async () => { await post('/engine/restart'); poll(); };
@@ -1674,7 +1687,7 @@
         if (!byCategory[cat]) byCategory[cat] = [];
         byCategory[cat].push(r);
       });
-      const order = ['Operator', 'P&L', 'Technical analysis', 'Orders', 'Other'];
+      const order = ['Operator', 'P&L', 'Tax & transfers', 'Technical analysis', 'Orders', 'Other'];
       const renderCategory = (cat, rows) => {
         let block = '<div class="report-cat"><div class="muted" style="font-size:.7rem;text-transform:uppercase;margin-bottom:4px">' + cat + '</div>';
         rows.forEach(r => {
@@ -1707,12 +1720,6 @@
         html += renderCategory(cat, byCategory[cat]);
       });
       container.innerHTML = html;
-      container.querySelectorAll('.report-open-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const id = btn.getAttribute('data-report-id');
-          if (id) openReportInNewTab(id);
-        });
-      });
     }
 
     function renderTa(s) {

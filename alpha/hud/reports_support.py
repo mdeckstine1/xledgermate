@@ -204,6 +204,147 @@ def _gen_alpha_reentry(logs: Path) -> str:
     return "=== Re-entry gate state ===\n\n" + json.dumps(data, indent=2)
 
 
+def _current_trades_path(logs: Path) -> Path:
+    month = datetime.now(tz=timezone.utc).strftime("%Y-%m")
+    return logs / f"trades_{month}.csv"
+
+
+def _read_csv_rows(path: Path) -> List[Dict[str, str]]:
+    import csv
+
+    if not path.is_file():
+        return []
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            return list(csv.DictReader(handle))
+    except (OSError, csv.Error):
+        return []
+
+
+def _format_csv_table(rows: List[Dict[str, str]], *, columns: List[str]) -> List[str]:
+    if not rows:
+        return ["(no rows)"]
+    widths = {col: len(col) for col in columns}
+    for row in rows:
+        for col in columns:
+            widths[col] = max(widths[col], len(str(row.get(col, ""))))
+    header = "  ".join(col.ljust(widths[col]) for col in columns)
+    sep = "  ".join("-" * widths[col] for col in columns)
+    lines = [header, sep]
+    for row in rows:
+        lines.append("  ".join(str(row.get(col, "")).ljust(widths[col]) for col in columns))
+    return lines
+
+
+def _summarize_trades_rows(rows: List[Dict[str, str]]) -> List[str]:
+    buys = sells = transfers = taxable = 0
+    profit = 0.0
+    for row in rows:
+        et = (row.get("event_type") or "").upper()
+        if et == "BUY":
+            buys += 1
+        elif et == "SELL":
+            sells += 1
+        elif et == "TRANSFER":
+            transfers += 1
+        if (row.get("taxable") or "").upper() == "Y":
+            taxable += 1
+        try:
+            profit += float(row.get("profit_xrp_equiv") or 0)
+        except (TypeError, ValueError):
+            pass
+    return [
+        f"rows={len(rows)} taxable={taxable} buys={buys} sells={sells} transfers={transfers}",
+        f"sum_profit_xrp_equiv={profit:.6f}",
+    ]
+
+
+def _gen_alpha_trades_csv(logs: Path) -> str:
+    path = _current_trades_path(logs)
+    rel = path.relative_to(logs) if path.is_relative_to(logs) else path
+    rows = _read_csv_rows(path)
+    lines = [
+        "=== Monthly tax / trades log ===",
+        f"path: logs/{rel}",
+        f"generated: {datetime.now(tz=timezone.utc).isoformat()}",
+        "",
+        "Summary:",
+        *(_summarize_trades_rows(rows) if rows else ["(file missing or empty)"]),
+        "",
+        "Columns: timestamp_utc, event_type, taxable, network, side, xrp_amount,",
+        "rlusd_amount, price_rlusd_per_xrp, profit_xrp_equiv, tx_hash, cycle, notes",
+        "",
+    ]
+    if not path.is_file():
+        lines.append(f"File not found: {path}")
+        return "\n".join(lines)
+    tail = rows[-250:]
+    if len(rows) > len(tail):
+        lines.append(f"Showing last {len(tail)} of {len(rows)} rows:")
+        lines.append("")
+    cols = [
+        "timestamp_utc",
+        "event_type",
+        "taxable",
+        "side",
+        "xrp_amount",
+        "price_rlusd_per_xrp",
+        "profit_xrp_equiv",
+        "notes",
+    ]
+    lines.extend(_format_csv_table(tail, columns=cols))
+    return "\n".join(lines)
+
+
+def _gen_alpha_transfers(logs: Path) -> str:
+    path = logs / "transfers.csv"
+    rows = _read_csv_rows(path)
+    lines = [
+        "=== Outbound transfers log ===",
+        "path: logs/transfers.csv",
+        f"generated: {datetime.now(tz=timezone.utc).isoformat()}",
+        "",
+        "HUD Config → Send payments append here. Taxable TRANSFER rows also land in",
+        f"the monthly trades file ({_current_trades_path(logs).name}).",
+        "",
+    ]
+    if not path.is_file():
+        lines.append("File not found — no withdrawals via HUD Send yet.")
+        return "\n".join(lines)
+    lines.append(f"rows={len(rows)}")
+    lines.append("")
+    cols = ["timestamp_utc", "network", "asset", "amount", "destination", "tx_hash"]
+    lines.extend(_format_csv_table(rows[-100:], columns=cols))
+    return "\n".join(lines)
+
+
+def _gen_alpha_trades_archive(logs: Path) -> str:
+    paths = sorted(logs.glob("trades_*.csv"), key=lambda p: p.name)
+    lines = [
+        "=== Trades / tax CSV archive ===",
+        f"generated: {datetime.now(tz=timezone.utc).isoformat()}",
+        "",
+    ]
+    if not paths:
+        lines.append("No logs/trades_*.csv files found.")
+        return "\n".join(lines)
+    for path in paths:
+        rows = _read_csv_rows(path)
+        summary = _summarize_trades_rows(rows) if rows else ["rows=0"]
+        lines.append(f"{path.name}: " + " | ".join(summary))
+    current = _current_trades_path(logs)
+    lines.extend(["", f"Current month detail: open report alpha_trades_csv ({current.name})", ""])
+    for path in paths[-6:]:
+        rows = _read_csv_rows(path)
+        if not rows:
+            continue
+        lines.extend([f"--- {path.name} (last 15) ---", ""])
+        cols = ["timestamp_utc", "event_type", "side", "xrp_amount", "profit_xrp_equiv", "notes"]
+        lines.extend(_format_csv_table(rows[-15:], columns=cols))
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
 REPORT_SPECS: List[ReportSpec] = [
     ReportSpec(
         id="alpha_cycle",
@@ -293,6 +434,39 @@ REPORT_SPECS: List[ReportSpec] = [
         cli_command="(HUD report only)",
         phase_ref="Re-entry",
     ),
+    ReportSpec(
+        id="alpha_trades_csv",
+        title="Monthly trades / tax log",
+        subtitle="logs/trades_YYYY-MM.csv",
+        category="Tax & transfers",
+        description="BUY/SELL bracket fills and taxable TRANSFER rows for the current month.",
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="(HUD report · logs/trades_YYYY-MM.csv)",
+        phase_ref="Tax CSV",
+    ),
+    ReportSpec(
+        id="alpha_transfers",
+        title="Transfers log",
+        subtitle="logs/transfers.csv",
+        category="Tax & transfers",
+        description="Outbound XRP/RLUSD payments from HUD Config → Send (destination + tx hash).",
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="(HUD report · logs/transfers.csv)",
+        phase_ref="Withdrawals",
+    ),
+    ReportSpec(
+        id="alpha_trades_archive",
+        title="Trades CSV archive",
+        subtitle="All logs/trades_*.csv months",
+        category="Tax & transfers",
+        description="Index every monthly trades file with row counts and recent rows per month.",
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="ls -la logs/trades_*.csv",
+        phase_ref="Tax CSV",
+    ),
 ]
 
 _GENERATORS: Dict[str, ReportGenerator] = {
@@ -304,6 +478,9 @@ _GENERATORS: Dict[str, ReportGenerator] = {
     "alpha_brackets": _gen_alpha_brackets,
     "alpha_activity": _gen_alpha_activity,
     "alpha_reentry": _gen_alpha_reentry,
+    "alpha_trades_csv": _gen_alpha_trades_csv,
+    "alpha_transfers": _gen_alpha_transfers,
+    "alpha_trades_archive": _gen_alpha_trades_archive,
 }
 
 
