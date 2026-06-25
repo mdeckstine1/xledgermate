@@ -212,3 +212,114 @@ def test_ta_to_dict_json_safe_with_few_bars():
     encoded = json.dumps(payload, allow_nan=False)
     assert "NaN" not in encoded
     assert payload.get("rsi") is None or isinstance(payload["rsi"], (int, float))
+
+
+def test_rsi_graded_score_without_threshold_fire():
+    """RSI near oversold contributes buy_score without fired=True."""
+    from alpha.decision.technical_analysis import _graded_below
+
+    buy, fired = _graded_below(35.8, center=50.0, threshold=30.0, weight=1.0)
+    assert fired is False
+    assert buy > 0.5
+    assert buy < 1.0
+
+
+def test_rsi_oversold_still_fires_full_weight():
+    from alpha.decision.technical_analysis import _graded_below
+
+    buy, fired = _graded_below(25.0, center=50.0, threshold=30.0, weight=1.0)
+    assert fired is True
+    assert buy == 1.0
+
+
+def test_technical_analysis_graded_scores_accumulate():
+    """Composite buy/sell scores reflect partial indicator credit, not only fired events."""
+    cfg = BotConfig()
+    ta_cfg = replace(
+        cfg.alpha_technical_analysis,
+        min_candles=10,
+        candle_interval_seconds=0,
+        candle_bucket_samples=3,
+        min_buy_score=0.3,
+        fibonacci=replace(cfg.alpha_technical_analysis.fibonacci, enabled=False),
+        elliott_wave=replace(cfg.alpha_technical_analysis.elliott_wave, enabled=False),
+        pin_bar=replace(cfg.alpha_technical_analysis.pin_bar, enabled=False),
+        engulfing=replace(cfg.alpha_technical_analysis.engulfing, enabled=False),
+        inside_bar=replace(cfg.alpha_technical_analysis.inside_bar, enabled=False),
+        structure_bos=replace(cfg.alpha_technical_analysis.structure_bos, enabled=False),
+        order_block=replace(cfg.alpha_technical_analysis.order_block, enabled=False),
+        fair_value_gap=replace(cfg.alpha_technical_analysis.fair_value_gap, enabled=False),
+        liquidity_grab=replace(cfg.alpha_technical_analysis.liquidity_grab, enabled=False),
+        consolidation=replace(cfg.alpha_technical_analysis.consolidation, enabled=False),
+    )
+    cfg = replace(cfg, alpha_technical_analysis=ta_cfg)
+    snap = TechnicalAnalysis(cfg).analyze(_rising_mids(90), mid=1.189)
+    rsi_sig = next(s for s in snap.signals if s.name == "rsi")
+    assert snap.buy_score > 0 or snap.sell_score > 0
+    if rsi_sig.score > 0 and not rsi_sig.fired:
+        assert snap.buy_score >= rsi_sig.score or snap.sell_score >= rsi_sig.score
+
+
+def test_decision_engine_receives_graded_ta_scores():
+    """Decision engine sees non-zero TA scores when indicators are near but not at thresholds."""
+    cfg = BotConfig()
+    cfg.alpha_technical_analysis.enabled = True
+    cfg.alpha_technical_analysis.min_buy_score = 0.5
+    cfg.alpha_technical_analysis.min_candles = 10
+    cfg.alpha_technical_analysis.candle_interval_seconds = 0
+    cfg.alpha_technical_analysis.candle_bucket_samples = 3
+    cfg.alpha_weakness_deviation = 0.05
+    cfg.alpha_ta_weight = 1.0
+    from alpha.inventory.manager import InventoryManager
+
+    engine = DecisionEngine(cfg, inventory=InventoryManager(cfg))
+    ta = TechnicalAnalysis(cfg).analyze(_rising_mids(90), mid=1.189)
+    assert ta.buy_score > 0
+    inventory = InventorySnapshot(
+        xrp_ratio=0.40,
+        target_xrp_ratio=0.55,
+        deviation=-0.15,
+        label="rlusd_heavy",
+        pause_bids=False,
+        pause_asks=False,
+        summary="weak",
+        portfolio_xrp_equiv=100.0,
+    )
+    risk = RiskSnapshot(
+        kill_switch_active=False,
+        kill_switch_reason="",
+        drawdown_pct=0.0,
+        max_drawdown_pct=10.0,
+        preflight_ready=True,
+        preflight_summary="ok",
+        trading_allowed=True,
+    )
+    book = OrderBookSnapshot(
+        bids=(BookLevel(1.18, 100.0),),
+        asks=(BookLevel(1.19, 100.0),),
+        best_bid=1.18,
+        best_ask=1.19,
+        mid=1.189,
+        spread=0.01,
+        spread_pct=0.84,
+        fetched_utc=utc_now(),
+    )
+    liquidity = LiquidityDepth(
+        max_slippage_pct=0.5,
+        ask_depth_xrp=500.0,
+        bid_depth_xrp=500.0,
+        best_bid=1.18,
+        best_ask=1.19,
+        mid=1.189,
+        spread_pct=0.84,
+    )
+    result = engine.evaluate(
+        inventory=inventory,
+        risk=risk,
+        book=book,
+        liquidity=liquidity,
+        balances=BalanceSnapshot(xrp=40, rlusd=70, mid_rlusd_per_xrp=1.189, portfolio_xrp_equiv=100),
+        ta=ta,
+    )
+    assert "ta_buy_blocked" not in result.reason
+    assert ta.entry_buy_allowed is True

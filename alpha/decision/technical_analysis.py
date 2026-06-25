@@ -382,6 +382,158 @@ def _liquidity_grab_sell(candles: Sequence[CandleData], lookback: int, wick_pct:
     return pierced and reclaimed and not cur.is_green
 
 
+def _clamp01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+def _graded_below(
+    value: float,
+    *,
+    center: float,
+    threshold: float,
+    weight: float,
+) -> Tuple[float, bool]:
+    """Bullish partial credit as value falls from center toward threshold; full weight at/below threshold."""
+    fired = value < threshold
+    if value <= threshold:
+        return weight, fired
+    if value >= center:
+        return 0.0, False
+    span = max(center - threshold, _PRICE_EPS)
+    return weight * (center - value) / span, False
+
+
+def _graded_above(
+    value: float,
+    *,
+    center: float,
+    threshold: float,
+    weight: float,
+) -> Tuple[float, bool]:
+    """Bearish partial credit as value rises from center toward threshold; full weight at/above threshold."""
+    fired = value > threshold
+    if value >= threshold:
+        return weight, fired
+    if value <= center:
+        return 0.0, False
+    span = max(threshold - center, _PRICE_EPS)
+    return weight * (value - center) / span, False
+
+
+def _stoch_graded_scores(
+    k: float,
+    d: float,
+    *,
+    oversold: float,
+    overbought: float,
+    buy_weight: float,
+    sell_weight: float,
+) -> Tuple[float, float, bool]:
+    buy, _ = _graded_below(k, center=50.0, threshold=oversold, weight=buy_weight)
+    sell, _ = _graded_above(k, center=50.0, threshold=overbought, weight=sell_weight)
+    if k < 50.0 and k <= d:
+        buy *= 0.5
+    if k > 50.0 and k >= d:
+        sell *= 0.5
+    strict_buy = k < oversold and k > d
+    strict_sell = k > overbought and k < d
+    if strict_buy:
+        buy = buy_weight
+    if strict_sell:
+        sell = sell_weight
+    return buy, sell, strict_buy or strict_sell
+
+
+def _bb_graded_scores(
+    price: float,
+    lower: float,
+    mid: float,
+    upper: float,
+    *,
+    buy_weight: float,
+    sell_weight: float,
+    breakout_weight: float,
+) -> Tuple[float, float, float, bool, str]:
+    """Continuous %B position plus breakout credit; fired only on band pierce."""
+    span = upper - lower
+    if span <= _PRICE_EPS:
+        return 0.0, 0.0, 0.0, False, "neutral"
+    pct_b = (price - lower) / span
+    if price >= upper:
+        return buy_weight * 0.5, 0.0, breakout_weight, True, "bullish"
+    if price <= lower:
+        return 0.0, sell_weight, 0.0, True, "bearish"
+    buy = sell = 0.0
+    if pct_b < 0.5:
+        buy = buy_weight * (0.5 - pct_b)
+    elif pct_b > 0.5:
+        sell = sell_weight * (pct_b - 0.5)
+    bias = "bullish" if buy > sell + 0.05 else ("bearish" if sell > buy + 0.05 else "neutral")
+    return buy, sell, 0.0, False, bias
+
+
+def _nearest_fib_distance_pct(
+    price: float,
+    levels: Dict[str, float],
+) -> Tuple[Optional[float], Optional[str]]:
+    best_dist: Optional[float] = None
+    best_side: Optional[str] = None
+    for lvl in levels.values():
+        if lvl <= 0:
+            continue
+        dist = abs(price - lvl) / lvl * 100.0
+        side = "support" if lvl <= price else "resist"
+        if best_dist is None or dist < best_dist:
+            best_dist = dist
+            best_side = side
+    return best_dist, best_side
+
+
+def _fib_graded_scores(
+    price: float,
+    fib: Dict[str, float],
+    *,
+    proximity_pct: float,
+    buy_weight: float,
+    sell_weight: float,
+) -> Tuple[float, float, bool]:
+    support_hit = any(_near_level(price, lvl, proximity_pct) for lvl in fib.values() if lvl <= price)
+    resist_hit = any(_near_level(price, lvl, proximity_pct) for lvl in fib.values() if lvl >= price)
+    fired = support_hit or resist_hit
+    if support_hit:
+        return buy_weight, 0.0, True
+    if resist_hit:
+        return 0.0, sell_weight, True
+    dist, side = _nearest_fib_distance_pct(price, fib)
+    if dist is None or proximity_pct <= 0:
+        return 0.0, 0.0, False
+    frac = _clamp01(1.0 - dist / (proximity_pct * 2.0))
+    if side == "support":
+        return buy_weight * frac * 0.6, 0.0, False
+    if side == "resist":
+        return 0.0, sell_weight * frac * 0.6, False
+    return 0.0, 0.0, False
+
+
+def _streak_graded_scores(
+    greens: int,
+    reds: int,
+    *,
+    min_green: int,
+    min_red: int,
+    buy_weight: float,
+    sell_weight: float,
+) -> Tuple[float, float, bool]:
+    fired = greens >= min_green or reds >= min_red
+    buy = buy_weight * _clamp01(greens / max(min_green, 1)) if greens > 0 else 0.0
+    sell = sell_weight * _clamp01(reds / max(min_red, 1)) if reds > 0 else 0.0
+    if greens >= min_green:
+        buy = buy_weight
+    if reds >= min_red:
+        sell = sell_weight
+    return buy, sell, fired
+
+
 def _pattern_candles(candles: Sequence[CandleData]) -> List[CandleData]:
     """Closed bars only — pin/engulf/inside on a forming bar are noise."""
     if not candles:
@@ -487,18 +639,28 @@ class TechnicalAnalysis:
             score = 0.0
             detail = f"rsi={rsi_val:.1f}" if rsi_val is not None else "rsi=n/a"
             if rsi_val is not None:
-                if rsi_val < rc.oversold:
-                    fired = True
+                buy_part, buy_fired = _graded_below(
+                    rsi_val, center=50.0, threshold=rc.oversold, weight=rc.buy_weight,
+                )
+                sell_part, sell_fired = _graded_above(
+                    rsi_val, center=50.0, threshold=rc.overbought, weight=rc.sell_weight,
+                )
+                buy_score += buy_part
+                sell_score += sell_part
+                fired = buy_fired or sell_fired
+                if buy_fired:
                     bias = "bullish"
-                    score = rc.buy_weight
-                    buy_score += score
                     detail += f" oversold<{rc.oversold}"
-                elif rsi_val > rc.overbought:
-                    fired = True
+                elif sell_fired:
                     bias = "bearish"
-                    score = rc.sell_weight
-                    sell_score += score
                     detail += f" overbought>{rc.overbought}"
+                elif buy_part > sell_part:
+                    bias = "bullish"
+                    detail += f" graded_buy={buy_part:.2f}"
+                elif sell_part > buy_part:
+                    bias = "bearish"
+                    detail += f" graded_sell={sell_part:.2f}"
+                score = buy_part if buy_part >= sell_part else sell_part
             signals.append(TechnicalSignal("rsi", True, fired, bias, score, detail))
 
         # Stochastic
@@ -518,13 +680,26 @@ class TechnicalAnalysis:
             detail = "stoch=n/a"
             if stoch_k_val is not None and stoch_d_val is not None:
                 detail = f"%K={stoch_k_val:.1f} %D={stoch_d_val:.1f}"
-                if stoch_k_val < sc.oversold and stoch_k_val > stoch_d_val:
-                    fired, bias, score = True, "bullish", sc.buy_weight
-                    buy_score += score
+                buy_part, sell_part, fired = _stoch_graded_scores(
+                    stoch_k_val,
+                    stoch_d_val,
+                    oversold=sc.oversold,
+                    overbought=sc.overbought,
+                    buy_weight=sc.buy_weight,
+                    sell_weight=sc.sell_weight,
+                )
+                buy_score += buy_part
+                sell_score += sell_part
+                if fired and buy_part >= sell_part:
+                    bias = "bullish"
                     breakout_score += sc.breakout_weight * 0.5
-                elif stoch_k_val > sc.overbought and stoch_k_val < stoch_d_val:
-                    fired, bias, score = True, "bearish", sc.sell_weight
-                    sell_score += score
+                elif fired:
+                    bias = "bearish"
+                elif buy_part > sell_part:
+                    bias = "bullish"
+                elif sell_part > buy_part:
+                    bias = "bearish"
+                score = buy_part if buy_part >= sell_part else sell_part
             signals.append(TechnicalSignal("stochastic", True, fired, bias, score, detail))
 
         # Bollinger Bands
@@ -546,17 +721,24 @@ class TechnicalAnalysis:
             if bb_bw is not None:
                 if bb_bw <= bc.squeeze_bandwidth_pct:
                     detail += " squeeze"
-                if price >= bb_u:
-                    fired, bias, score = True, "bullish", bc.breakout_weight
-                    breakout_score += score
-                    buy_score += bc.buy_weight * 0.5
-                elif price <= bb_l:
-                    fired, bias, score = True, "bearish", bc.sell_weight
-                    sell_score += score
-                elif price > bb_m:
-                    buy_score += bc.buy_weight * 0.25
-                elif price < bb_m:
-                    sell_score += bc.sell_weight * 0.25
+            if (
+                bb_l is not None
+                and bb_m is not None
+                and bb_u is not None
+            ):
+                buy_part, sell_part, brk_part, fired, bias = _bb_graded_scores(
+                    price,
+                    bb_l,
+                    bb_m,
+                    bb_u,
+                    buy_weight=bc.buy_weight,
+                    sell_weight=bc.sell_weight,
+                    breakout_weight=bc.breakout_weight,
+                )
+                buy_score += buy_part
+                sell_score += sell_part
+                breakout_score += brk_part
+                score = max(buy_part, sell_part, brk_part)
             signals.append(TechnicalSignal("bollinger", True, fired, bias, score, detail))
 
         # Fibonacci
@@ -578,18 +760,18 @@ class TechnicalAnalysis:
                 hi = max(c.high for c in window)
                 lo = min(c.low for c in window)
                 fib = _fib_levels(hi, lo, fc.levels)
-                fired = False
-                bias = "neutral"
-                score = 0.0
-                support_hit = any(_near_level(price, lvl, fc.proximity_pct) for lvl in fib.values() if lvl <= price)
-                resist_hit = any(_near_level(price, lvl, fc.proximity_pct) for lvl in fib.values() if lvl >= price)
+                buy_part, sell_part, fired = _fib_graded_scores(
+                    price,
+                    fib,
+                    proximity_pct=fc.proximity_pct,
+                    buy_weight=fc.buy_weight,
+                    sell_weight=fc.sell_weight,
+                )
+                buy_score += buy_part
+                sell_score += sell_part
+                bias = "bullish" if buy_part > sell_part else ("bearish" if sell_part > buy_part else "neutral")
+                score = buy_part if buy_part >= sell_part else sell_part
                 detail = f"fib={','.join(f'{k}:{v:.6f}' for k, v in fib.items())}"
-                if support_hit:
-                    fired, bias, score = True, "bullish", fc.buy_weight
-                    buy_score += score
-                elif resist_hit:
-                    fired, bias, score = True, "bearish", fc.sell_weight
-                    sell_score += score
                 signals.append(TechnicalSignal("fibonacci", True, fired, bias, score, detail))
 
         # Elliott wave (simplified)
@@ -630,17 +812,25 @@ class TechnicalAnalysis:
             streak_bars = pattern_bars if pattern_bars else candles
             greens = _green_streak(streak_bars)
             reds = _red_streak(streak_bars)
-            fired = greens >= csc.min_green_streak or reds >= csc.min_red_streak
+            buy_part, sell_part, fired = _streak_graded_scores(
+                greens,
+                reds,
+                min_green=csc.min_green_streak,
+                min_red=csc.min_red_streak,
+                buy_weight=csc.buy_weight,
+                sell_weight=csc.sell_weight,
+            )
+            buy_score += buy_part
+            sell_score += sell_part
+            if greens >= csc.min_green_streak:
+                breakout_score += csc.breakout_weight
             bias = "neutral"
             score = 0.0
             detail = f"green_streak={greens} red_streak={reds}"
-            if greens >= csc.min_green_streak:
-                bias, score = "bullish", csc.buy_weight
-                buy_score += score
-                breakout_score += csc.breakout_weight
-            if reds >= csc.min_red_streak:
-                bias, score = "bearish", csc.sell_weight
-                sell_score += score
+            if buy_part >= sell_part and buy_part > 0:
+                bias, score = "bullish", buy_part
+            elif sell_part > buy_part:
+                bias, score = "bearish", sell_part
             signals.append(TechnicalSignal("candle_streak", True, fired, bias, score, detail))
 
         # Consolidation penalty
