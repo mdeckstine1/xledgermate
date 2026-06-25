@@ -121,6 +121,12 @@ class ReentryGate:
     ) -> None:
         if not self._config.alpha_reentry_enabled:
             return
+        if (
+            self._state.get("active")
+            and str(self._state.get("exit_type")) == ReentryExitType.TP.value
+            and str(self._state.get("bracket_id", "")) == bracket_id
+        ):
+            return
         self._state = {
             "active": True,
             "exit_type": ReentryExitType.TP.value,
@@ -144,6 +150,12 @@ class ReentryGate:
         exit_mid: float,
     ) -> None:
         if not self._config.alpha_reentry_enabled:
+            return
+        if (
+            self._state.get("active")
+            and str(self._state.get("exit_type")) == ReentryExitType.SL.value
+            and str(self._state.get("bracket_id", "")) == bracket_id
+        ):
             return
         self._state = {
             "active": True,

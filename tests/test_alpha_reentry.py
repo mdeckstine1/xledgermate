@@ -188,3 +188,15 @@ def test_snapshot_reports_cooldown_remaining(tmp_path: Path) -> None:
     snap = gate.snapshot
     assert snap.in_cooldown is True
     assert snap.cooldown_cycles_remaining == 4
+
+
+def test_duplicate_tp_exit_does_not_reset_cooldown(tmp_path: Path) -> None:
+    gate = _gate(tmp_path, alpha_reentry_tp_cooldown_cycles=4)
+    gate.record_tp_exit(bracket_id="b6", exit_mid=2.0)
+    gate.tick_cycle()
+    gate.tick_cycle()
+    assert gate.snapshot.cycles_since_exit == 2
+
+    gate.record_tp_exit(bracket_id="b6", exit_mid=2.0)
+    assert gate.snapshot.cycles_since_exit == 2
+    assert gate.snapshot.cooldown_cycles_remaining == 2

@@ -1361,6 +1361,11 @@ class OrderManager:
         filled_xrp: float,
         open_map: Dict[int, dict[str, Any]],
     ) -> None:
+        if record.state in (
+            BracketLifecycleState.TP_FILLED,
+            BracketLifecycleState.SL_FILLED,
+        ):
+            return
         leg = record.tp_leg if role == BracketLegRole.TAKE_PROFIT else record.sl_leg
         opposing = record.sl_leg if role == BracketLegRole.TAKE_PROFIT else record.tp_leg
         if leg is None:
