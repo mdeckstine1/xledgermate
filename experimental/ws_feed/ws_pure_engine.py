@@ -237,6 +237,7 @@ class WsPureTradingEngine:
         self._reservation_crossed_after_ws_sample = False
         self._session_boot_utc = datetime.now(tz=timezone.utc).isoformat()
         self._analysis_bundle: Dict[str, Any] = {"sample_history": []}
+        self._rpc_failure_streak = 0
 
     def stop(self) -> None:
         self._running = False
@@ -361,8 +362,12 @@ class WsPureTradingEngine:
                 break
             try:
                 await self._run_cycle()
-            except Exception:
-                logger.exception("WS pure engine cycle failed")
+                self._rpc_failure_streak = 0
+            except Exception as exc:
+                self._rpc_failure_streak += 1
+                logger.exception("WS pure engine cycle failed: %s", exc)
+                if self.connector and not self.config.dry_run:
+                    await self._maybe_kill_on_rpc_failures(self.config, self.connector)
             await asyncio.sleep(sample_interval_s)
         if self._ws_task:
             self._ws_task.cancel()
@@ -881,6 +886,28 @@ class WsPureTradingEngine:
                 self.decision_log.add("execution", f"Cancelled {n} offers — {reason}")
         except Exception as exc:
             self.decision_log.add("execution", f"Cancel-all failed: {exc}")
+
+    async def _maybe_kill_on_rpc_failures(
+        self, config: BotConfig, connector: XRPLConnector
+    ) -> None:
+        limit = int(getattr(config, "rpc_failure_kill_streak", 6))
+        if limit <= 0 or self._rpc_failure_streak < limit:
+            return
+        if self.kill_switch.is_active():
+            return
+        reason = f"RPC/ledger failure streak {self._rpc_failure_streak} (limit {limit})"
+        self.kill_switch.activate(reason)
+        self.csv_logger.log_major(
+            network=config.network_name(),
+            cycle=self._cycle_count,
+            notes=f"Kill switch activated: {reason}",
+        )
+        if config.telegram_enabled and WsFeatureFlags.from_config(config).telegram_kill_alerts:
+            self.alerts.send_kill_switch_alert(
+                self.drawdown_monitor.get_drawdown_percent(),
+                reason,
+            )
+        await self._cancel_if_live(connector, config, reason)
 
     def _execution_summary(
         self,

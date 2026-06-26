@@ -1,5 +1,7 @@
 """Tests for WS pure production engine helpers."""
 
+import asyncio
+
 from connectors.xrpl_connector import OpenOffer
 from engine.order_sync import plan_order_sync
 from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
@@ -25,11 +27,55 @@ def test_plan_order_sync_empty_intents_cancels_all() -> None:
 def test_execution_summary_pull_when_blocked() -> None:
     from config.settings import BotConfig
 
-    eng = WsPureTradingEngine(BotConfig.load())
+    cfg = BotConfig.load()
+    cfg.dry_run = False
+    eng = WsPureTradingEngine(cfg)
     msg = eng._execution_summary(
         eng.config, 0, cancelled=2, would_sync=0, would_quote=False
     )
     assert "pulled 2" in msg
+
+
+def test_ws_engine_rpc_failure_streak_activates_kill_and_cancels(tmp_path) -> None:
+    from config.settings import BotConfig
+    from risk.kill_switch import KillSwitch
+
+    class FakeConnector:
+        def __init__(self) -> None:
+            self.cancelled = 0
+
+        async def cancel_all_offers(self) -> int:
+            self.cancelled += 1
+            return 2
+
+    class FailingEngine(WsPureTradingEngine):
+        def __init__(self, config: BotConfig, connector: FakeConnector) -> None:
+            super().__init__(config)
+            self.fake_connector = connector
+            self.attempts = 0
+
+        async def _run_cycle(self) -> None:
+            self.connector = self.fake_connector
+            self.attempts += 1
+            if self.attempts >= 2:
+                self.stop()
+            raise RuntimeError("ledger unavailable")
+
+    cfg = BotConfig.load()
+    cfg.dry_run = False
+    cfg.bot_secret_key = "test-secret"
+    cfg.rpc_failure_kill_streak = 2
+    cfg.telegram_enabled = False
+    connector = FakeConnector()
+    eng = FailingEngine(cfg, connector)
+    eng.kill_switch = KillSwitch(path=tmp_path / "kill_switch.json")
+
+    asyncio.run(eng.run(sample_interval_s=0))
+
+    assert eng.attempts == 2
+    assert eng.kill_switch.is_active()
+    assert "RPC/ledger failure streak 2" in eng.kill_switch.reason
+    assert connector.cancelled == 1
 
 
 def test_pure_intents_active_l1_only() -> None:
