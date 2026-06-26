@@ -487,9 +487,11 @@
           <div class="card controls-section config-form">
             <h2>Bot account &amp; network</h2>
             <div class="ctrl-row"><label>bot_account_address</label><input type="text" id="cfgBotAddr" placeholder="r…" autocomplete="off"></div>
+            <div class="ctrl-row"><label>rlusd_issuer</label><input type="text" id="cfgRlusdIssuerResolved" readonly tabindex="-1" style="opacity:.92;cursor:text" title="Resolved issuer for inbound RLUSD — use when sending from Xaman/Tangem"><button type="button" class="secondary" id="btnCopyRlusdIssuer" style="flex:0">Copy</button></div>
+            <p class="muted" style="margin:-4px 0 10px 190px;font-size:.75rem;max-width:520px">Fund the bot: send <strong>RLUSD</strong> to <code>bot_account_address</code> with this issuer (trust line required on the bot account).</p>
             <div class="ctrl-row"><label>bot_secret_key</label><input type="password" id="cfgBotSecret" placeholder="Leave blank to keep existing" autocomplete="new-password"><span id="cfgSecretHint" class="muted"></span></div>
             <div class="ctrl-row toggle"><label><input type="checkbox" id="cfgTestnet"> testnet</label></div>
-            <div class="ctrl-row"><label>rlusd_issuer override</label><input type="text" id="cfgRlusdIssuer" placeholder="blank = network default"></div>
+            <div class="ctrl-row"><label>rlusd_issuer override</label><input type="text" id="cfgRlusdIssuer" placeholder="blank = network default (mainnet below)"></div>
             <div class="ctrl-row"><label>private_node_url</label><input type="text" id="cfgPrivateRpc" placeholder="optional custom RPC"></div>
             <div class="ctrl-row"><label>xrp_reserve</label><input type="number" id="cfgXrpReserve" step="0.1" min="0"></div>
             <div class="ctrl-row"><label>RPC (read-only)</label><span id="cfgRpcUrl" class="muted">—</span></div>
@@ -2147,6 +2149,7 @@
         if (!d.ok) return;
         const c = d.account_config || {};
         $('cfgBotAddr').value = c.bot_account_address || '';
+        $('cfgRlusdIssuerResolved').value = c.rlusd_issuer || '';
         $('cfgBotSecret').value = '';
         $('cfgSecretHint').textContent = c.has_bot_secret ? ('set (' + (c.bot_secret_masked || '••••') + ')') : 'not set';
         $('cfgTestnet').checked = !!c.testnet;
@@ -2171,6 +2174,18 @@
         toast('Config load failed: ' + e, true);
       }
     }
+
+    $('btnCopyRlusdIssuer').onclick = async () => {
+      const issuer = ($('cfgRlusdIssuerResolved').value || '').trim();
+      if (!issuer) { toast('No RLUSD issuer configured', true); return; }
+      try {
+        await navigator.clipboard.writeText(issuer);
+        toast('RLUSD issuer copied');
+      } catch (e) {
+        $('cfgRlusdIssuerResolved').select();
+        toast('Copy failed — select and copy manually', true);
+      }
+    };
 
     $('btnSaveAccountConfig').onclick = async () => {
       const updates = {

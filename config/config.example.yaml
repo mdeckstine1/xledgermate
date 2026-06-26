@@ -5,14 +5,15 @@ risk_capital_xrp: 11254.0
 risk_capital_rlusd: 0.0
 risk_capital_unit: xrp
 bot_account_address: ""
+# Inbound RLUSD funding: send RLUSD to bot_account_address; trust line must use this issuer:
+rlusd_issuer: ""
+rlusd_issuer_mainnet: rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De
+rlusd_issuer_testnet: rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV
 bot_secret_key: ""
 
 trading_pair: XRP-RLUSD
 active_profile: safe
 rlusd_currency: RLUSD
-rlusd_issuer: ""
-rlusd_issuer_testnet: rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV
-rlusd_issuer_mainnet: rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De
 
 order_levels: 3
 order_sizes:

@@ -108,6 +108,12 @@ def apply_account_config_updates(updates: Dict[str, Any]) -> Tuple[Dict[str, Any
             setattr(cfg, key, val)
         elif key in _SECRET_FIELDS:
             setattr(cfg, key, str(raw).strip())
+        elif key == "rlusd_issuer":
+            issuer = str(raw or "").strip()
+            if issuer and not issuer.startswith("r"):
+                errors.append("rlusd_issuer must start with r")
+                continue
+            setattr(cfg, key, issuer)
         else:
             setattr(cfg, key, str(raw).strip() if raw is not None else "")
 
