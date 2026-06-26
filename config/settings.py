@@ -229,6 +229,7 @@ class BotConfig:
     alpha_defensive_realized_loss_xrp: float = 3.0  # Realized bleed threshold (XRP-equiv)
     alpha_defensive_min_exits: int = 4  # Min TP+SL exits before loss/SL rules fire
     alpha_defensive_auto_release_hours: float = 6.0  # Min hold before auto-release on recovery
+    alpha_defensive_manual_release_hours: float = 6.0  # After operator Release, skip auto re-trip
     # Post-exit re-entry (Aggressive Bag Growth — wait for dip after TP, stabilization after SL)
     alpha_reentry_enabled: bool = True
     alpha_reentry_tp_dip_pct: float = 0.08  # Re-buy after TP only when mid dips this % below TP exit

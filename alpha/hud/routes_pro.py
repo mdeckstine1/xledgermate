@@ -50,12 +50,14 @@ def register_pro_routes(app: Any) -> None:
 
     @app.post("/operator/pro/circuit/release")
     async def post_pro_circuit_release() -> JSONResponse:
-        result = _circuit().release_manual()
-        return JSONResponse({"ok": True, **result})
+        cfg = BotConfig.load()
+        result = _circuit().release_manual(cfg)
+        ok = result.get("event") == "released"
+        return JSONResponse({"ok": ok, **result})
 
     @app.post("/operator/pro/circuit/evaluate")
     async def post_pro_circuit_evaluate() -> JSONResponse:
         """Force one defensive circuit evaluation (same logic as engine cycle)."""
         cfg = BotConfig.load()
-        result = _circuit().tick(cfg, logs_dir=_STATE_DIR)
+        result = _circuit().tick(cfg, logs_dir=_STATE_DIR, force_evaluate=True)
         return JSONResponse({"ok": True, **result})

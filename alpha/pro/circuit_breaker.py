@@ -80,6 +80,19 @@ def _should_trigger(report: Dict[str, Any], config: BotConfig) -> Tuple[bool, st
     return False, ""
 
 
+def _manual_suppress_active(state: Dict[str, Any]) -> bool:
+    until_raw = state.get("manual_suppress_until_utc")
+    if not until_raw:
+        return False
+    try:
+        until = datetime.fromisoformat(str(until_raw).replace("Z", "+00:00"))
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        return _utc_now() < until
+    except ValueError:
+        return False
+
+
 def _should_release(report: Dict[str, Any], state: Dict[str, Any], config: BotConfig) -> Tuple[bool, str]:
     if not state.get("active"):
         return False, ""
@@ -117,12 +130,16 @@ def defensive_status_snapshot(
         logs_dir=logs_dir,
         hours=float(cfg.alpha_defensive_window_hours),
     )
+    suppress_until = state.get("manual_suppress_until_utc")
     return {
         "enabled": bool(cfg.alpha_defensive_circuit_enabled),
         "active": bool(state.get("active")),
         "triggered_utc": state.get("triggered_utc"),
         "reason": state.get("reason"),
         "release_utc": state.get("release_utc"),
+        "release_reason": state.get("release_reason"),
+        "manual_suppress_until_utc": suppress_until,
+        "manual_suppress_active": _manual_suppress_active(state),
         "applied_overrides": state.get("applied_overrides") or {},
         "saved_overrides": state.get("saved_overrides") or {},
         "replay": report,
@@ -132,6 +149,7 @@ def defensive_status_snapshot(
             "realized_loss_xrp": cfg.alpha_defensive_realized_loss_xrp,
             "min_exits": cfg.alpha_defensive_min_exits,
             "auto_release_hours": cfg.alpha_defensive_auto_release_hours,
+            "manual_release_hours": cfg.alpha_defensive_manual_release_hours,
         },
     }
 
@@ -153,6 +171,7 @@ class DefensiveCircuit:
         config: BotConfig,
         *,
         logs_dir: str | Path = "logs",
+        force_evaluate: bool = False,
     ) -> Dict[str, Any]:
         """Run trigger/release logic. Returns event dict (may be empty)."""
         if not config.alpha_defensive_circuit_enabled or config.dry_run:
@@ -173,17 +192,29 @@ class DefensiveCircuit:
                 return self._release(state, release_reason)
             return {"event": "hold", "active": True, "reason": state.get("reason")}
 
+        if not force_evaluate and _manual_suppress_active(state):
+            return {
+                "event": "suppressed",
+                "active": False,
+                "manual_suppress_until_utc": state.get("manual_suppress_until_utc"),
+            }
+
         trigger, reason = _should_trigger(report, config)
         if not trigger:
             return {"event": "ok", "active": False}
 
         return self._activate(state, effective, reason, report)
 
-    def release_manual(self) -> Dict[str, Any]:
+    def release_manual(self, config: Optional[BotConfig] = None) -> Dict[str, Any]:
+        cfg = config or BotConfig.load()
         state = _load_state(self._state_path)
         if not state.get("active"):
-            return {"event": "noop", "message": "circuit not active"}
-        return self._release(state, "operator_manual")
+            return {"event": "noop", "ok": False, "message": "circuit not active"}
+        suppress_h = max(1.0, float(cfg.alpha_defensive_manual_release_hours))
+        state["manual_suppress_until_utc"] = (_utc_now() + timedelta(hours=suppress_h)).isoformat()
+        result = self._release(state, "operator_manual")
+        result["manual_suppress_until_utc"] = state["manual_suppress_until_utc"]
+        return result
 
     def _activate(
         self,
@@ -224,6 +255,7 @@ class DefensiveCircuit:
         state["active"] = False
         state["release_utc"] = _utc_now().isoformat()
         state["release_reason"] = release_reason
+        state.pop("applied_overrides", None)
         _save_state(state, self._state_path)
         logger.info("defensive_circuit_released | reason=%s", release_reason)
         return {"event": "released", "reason": release_reason}

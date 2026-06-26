@@ -2210,22 +2210,29 @@
           ).join('<br>')
         : '';
       const active = !!pro.active;
+      const suppressed = !!pro.manual_suppress_active;
       $('proCircuitBadge').innerHTML = active
         ? '<span class="pro-circuit-active">● DEFENSIVE ACTIVE</span>'
-        : (pro.enabled ? '<span style="color:var(--good)">● Armed (not tripped)</span>' : '<span>○ Circuit disabled in config</span>');
+        : (suppressed
+          ? '<span style="color:#fcd34d">● Released — auto-trip paused</span>'
+          : (pro.enabled ? '<span style="color:var(--good)">● Armed (not tripped)</span>' : '<span>○ Circuit disabled in config</span>'));
       $('btnProReleaseCircuit').disabled = !active;
       const applied = pro.applied_overrides || {};
       const detail = [];
       if (pro.triggered_utc) detail.push('Triggered: ' + pro.triggered_utc.slice(0, 19) + 'Z');
       if (pro.reason) detail.push('Reason: ' + pro.reason);
+      if (pro.release_utc && !active) detail.push('Released: ' + pro.release_utc.slice(0, 19) + 'Z' + (pro.release_reason ? ' (' + pro.release_reason + ')' : ''));
+      if (pro.manual_suppress_until_utc && suppressed) {
+        detail.push('Auto re-trip suppressed until: ' + pro.manual_suppress_until_utc.slice(0, 19) + 'Z');
+      }
       if (Object.keys(applied).length) detail.push('Applied: ' + JSON.stringify(applied));
       $('proCircuitDetail').innerHTML = detail.join('<br>') || 'No trip in this session.';
       const th = pro.thresholds || {};
       $('proCircuitThresholds').textContent = th.sl_exit_threshold != null
-        ? `Thresholds: ≥${th.sl_exit_threshold} SL in ${th.window_hours}h · loss ≥${th.realized_loss_xrp} XRP · min ${th.min_exits} exits · auto-release after ${th.auto_release_hours}h`
+        ? `Thresholds: ≥${th.sl_exit_threshold} SL in ${th.window_hours}h · loss ≥${th.realized_loss_xrp} XRP · min ${th.min_exits} exits · auto-release after ${th.auto_release_hours}h · manual release pause ${th.manual_release_hours || 6}h`
         : '';
       $('proStatus').textContent = pro.enabled
-        ? `PRO · replay ${replay.window_hours || '?'}h · circuit ${active ? 'DEFENSIVE' : 'armed'}`
+        ? `PRO · replay ${replay.window_hours || '?'}h · circuit ${active ? 'DEFENSIVE' : (suppressed ? 'released (paused)' : 'armed')}`
         : 'PRO · defensive circuit disabled (alpha_defensive_circuit_enabled: false)';
       const tre = pro.treasury || {};
       $('proTreasuryMsg').textContent = tre.message || 'Treasury integration not built yet.';
@@ -2253,7 +2260,16 @@
       const ok = await confirmModal('Release defensive circuit', 'Restores saved overrides before the trip. Type RELEASE to confirm.', 'RELEASE');
       if (!ok) return;
       const d = await postJson('/operator/pro/circuit/release');
-      if (d?.ok) { toast('Defensive circuit released'); poll(); loadOperatorConfig(); }
+      if (d?.event === 'released') {
+        toast('Defensive released — auto re-trip paused for ' + (d.manual_suppress_until_utc ? d.manual_suppress_until_utc.slice(0, 16) + 'Z' : 'several hours'));
+        poll();
+        loadOperatorConfig();
+      } else if (d?.event === 'noop') {
+        toast('Circuit was not active (already released)');
+        poll();
+      } else {
+        toast('Release failed: ' + (d?.message || d?.event || 'unknown'));
+      }
     });
     $('btnProEvaluateCircuit')?.addEventListener('click', async () => {
       const d = await postJson('/operator/pro/circuit/evaluate');

@@ -77,13 +77,28 @@ def test_defensive_circuit_manual_release(tmp_path):
     store = OperatorRuntimeStore(overrides_path=overrides, commands_path=commands)
     store.save_overrides({"alpha_max_pending_buys": 4})
 
-    cfg = BotConfig(alpha_defensive_circuit_enabled=True, dry_run=False)
+    cfg = BotConfig(
+        alpha_defensive_circuit_enabled=True,
+        alpha_defensive_manual_release_hours=6.0,
+        dry_run=False,
+    )
     cb = DefensiveCircuit(store=store, state_path=circuit_path)
     cb.tick(cfg, logs_dir=tmp_path)
-    release = cb.release_manual()
+    release = cb.release_manual(cfg)
     assert release["event"] == "released"
     assert store.load_overrides().get("alpha_max_pending_buys") == 4
+    state = json.loads(circuit_path.read_text(encoding="utf-8"))
+    assert state["active"] is False
+    assert state.get("manual_suppress_until_utc")
+
+    # Next engine cycle must not immediately re-trip while suppress window is active.
+    again = cb.tick(cfg, logs_dir=tmp_path)
+    assert again["event"] == "suppressed"
     assert json.loads(circuit_path.read_text(encoding="utf-8"))["active"] is False
+
+    # Explicit evaluate may still trip when metrics are still bad.
+    forced = cb.tick(cfg, logs_dir=tmp_path, force_evaluate=True)
+    assert forced["event"] == "activated"
 
 
 def test_defensive_status_snapshot(tmp_path):

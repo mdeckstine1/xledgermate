@@ -96,6 +96,7 @@ alpha_defensive_sl_exit_threshold: 8
 alpha_defensive_realized_loss_xrp: 3.0
 alpha_defensive_min_exits: 4
 alpha_defensive_auto_release_hours: 6.0
+alpha_defensive_manual_release_hours: 6.0
 
 # Bracket legs after buy fill (application-level OCO — not XRPL native)
 initial_stop_loss_pct: 0.015
