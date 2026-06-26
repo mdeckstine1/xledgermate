@@ -64,6 +64,18 @@ def test_participation_waives_when_drift_and_bearish_ta():
     assert "uptrend_waiver" in snap.reason
 
 
+def test_participation_waives_when_recovering_toward_mean():
+    cfg = BotConfig(alpha_tape_participation_enabled=True, alpha_tape_near_mean_pct=0.35)
+    snap = evaluate_tape_participation(
+        cfg,
+        mid=1.0455,
+        structure=_structure(mean_mid=1.0478, recent_low=1.044, trend="neutral"),
+        ta=_ta(bias="bearish", buy_score=2.0, sell_score=3.0),
+    )
+    assert snap.active is True
+    assert "uptrend_waiver" in snap.reason
+
+
 def test_participation_blocks_on_bearish_structure():
     cfg = BotConfig()
     snap = evaluate_tape_participation(

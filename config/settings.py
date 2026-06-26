@@ -234,6 +234,7 @@ class BotConfig:
     # Live-tape participation — waive lagging closed-bar TA bearish blocks when tape is up
     alpha_tape_participation_enabled: bool = True
     alpha_tape_uptrend_drift_pct: float = 0.25  # Mid % above structure rolling mean
+    alpha_tape_near_mean_pct: float = 0.35  # Rising mid within this % below mean = recovery
     alpha_tape_bounce_from_low_pct: float = 0.12  # Mid % above recent_low (with slope)
     alpha_tape_slope_samples: int = 8  # ~2m at 15s sampling
     alpha_tape_slope_min_lift_pct: float = 0.04  # Short-term avg lift vs prior window

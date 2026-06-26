@@ -101,6 +101,7 @@ alpha_defensive_recent_window_hours: 4.0
 # Live tape participation — re-enter when mid/structure uptrend but 5m TA still bearish
 alpha_tape_participation_enabled: true
 alpha_tape_uptrend_drift_pct: 0.25
+alpha_tape_near_mean_pct: 0.35
 alpha_tape_bounce_from_low_pct: 0.12
 alpha_tape_slope_samples: 8
 alpha_tape_slope_min_lift_pct: 0.04

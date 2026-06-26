@@ -88,6 +88,13 @@ def evaluate_tape_participation(
     mean = float(structure.mean_mid or 0.0)
     drift_ok = mean > 0 and mid >= mean * (1.0 + drift_pct / 100.0)
 
+    near_mean_pct = max(0.0, float(getattr(config, "alpha_tape_near_mean_pct", 0.35)))
+    recovering_ok = (
+        mean > 0
+        and mid >= mean * (1.0 - near_mean_pct / 100.0)
+        and mid < mean * (1.0 + drift_pct / 100.0)
+    )
+
     bounce_pct = max(0.0, float(getattr(config, "alpha_tape_bounce_from_low_pct", 0.12)))
     low = float(structure.recent_low or 0.0)
     bounce_ok = low > 0 and mid >= low * (1.0 + bounce_pct / 100.0)
@@ -105,7 +112,12 @@ def evaluate_tape_participation(
         structure.trend == "bullish"
         or structure.breakout_up
         or drift_ok
-        or (slope_ok and bounce_ok)
+        or (slope_ok and (bounce_ok or recovering_ok))
+        or (
+            recovering_ok
+            and structure.trend == "neutral"
+            and not structure.breakout_down
+        )
     )
     if not tape_up:
         return TapeParticipationSnapshot(
