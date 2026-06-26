@@ -48,10 +48,12 @@ def _load_state() -> Dict[str, Any]:
 if app is not None:
     from alpha.hud.routes_config import register_config_routes
     from alpha.hud.routes_operator import register_operator_routes
+    from alpha.hud.routes_pro import register_pro_routes
     from alpha.hud.routes_skynet import register_skynet_routes
 
     register_operator_routes(app)
     register_config_routes(app)
+    register_pro_routes(app)
     register_skynet_routes(app)
 
     import time

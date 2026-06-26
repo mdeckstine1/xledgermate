@@ -66,6 +66,8 @@ Cancelling a pending buy pulls the bid. Cancelling an active bracket cancels TP/
 | **Brackets tab** | Open positions: pending buys vs active brackets; size, RLUSD, TP/SL, **Trail** flags |
 | **Open Offers** | Raw ledger orders (✕ cancel, ✎ reprice) |
 | **Reports** | Cycle status text + path to monthly **tax CSV** (`logs/trades_YYYY-MM.csv`) |
+| **PRO** | **Alpha Replay** (realized TP/SL, verdict), **auto-defensive circuit**, treasury placeholder |
+| **SKYNET** | Grok advisor, Agent Smith, operator phase / market regime |
 | **Config** | Credentials, network, **Send / withdraw**, transfer history |
 
 If the bot is “doing nothing,” the **Decision reason** almost always explains why.
@@ -1275,6 +1277,7 @@ Use these as **recipes**, not gospel. Apply on **Live → Risk & entry**, watch 
 | **T** | [Scale phase (SKYNET)](#scenario-t--scale-phase-modest-accumulation) | After trust earned |
 | **U** | [Aggressive phase (SKYNET)](#scenario-u--aggressive-phase-bag-push) | Bag-growth push |
 | **V** | [Deploy sideline RLUSD faster](#scenario-v--deploy-sideline-rlusd-faster-xrp-heavy) | RLUSD on sidelines, want higher XRP % |
+| **W** | [SL-heavy night / defensive circuit (PRO)](#scenario-w--sl-heavy-night--defensive-circuit-pro) | Auto bear posture after bleed |
 
 ---
 
@@ -1458,6 +1461,36 @@ alpha_deferred_sl_enabled          = on
 **Scale phase (after clean realized P&amp;L week):** target **0.85**, offset **0.15**, optional risk **3.0** on larger book.
 
 **Not the fix:** lowering **`weakness_deviation`** when **`dev` already ≤ −0.15** — gate is already open.
+
+---
+
+### Scenario W — SL-heavy night / defensive circuit (PRO)
+
+**Symptoms:** Overnight **`sl_exits` ≫ `tp_exits`** in tax CSV; realized **`profit_xrp_equiv`** negative; Session P&amp;L may still look fine (MTM); scratch SLs at entry; HUD **PRO** verdict **`sl_heavy`**, **`bleeding`**, or **`churn`**.
+
+**What’s happening:** The engine runs **Alpha Replay** each cycle. When metrics cross thresholds, the **auto-defensive circuit** trips (if `alpha_defensive_circuit_enabled: true` and not dry-run): bear market regime + capped pending buys + wider buy offset + longer SL cooldown + trimmed risk — written to **`logs/alpha_overrides.json`**. State persists in **`logs/alpha_defensive_circuit.json`**.
+
+**Operator checklist:**
+
+1. Open HUD → **PRO** tab (nav: Activity · **PRO** · SKYNET · Config).
+2. Confirm replay window (default **14h** matches `alpha_defensive_window_hours`).
+3. If **DEFENSIVE ACTIVE** is expected after a bad night — let it work; do **not** fight with aggressive SKYNET Apply in parallel.
+4. When realized P&amp;L recovers (TP &gt; SL, verdict **healthy**) or after **`alpha_defensive_auto_release_hours`**, circuit may auto-release — or click **Release defensive** (type `RELEASE`).
+5. Align SKYNET **market regime** to **Bear** or **Neutral** manually if you disabled the circuit.
+
+**Manual bear bundle (if circuit off):** SKYNET regime **Bear** → Apply, or Live:
+
+```text
+alpha_operator_market_regime         = bear
+alpha_max_pending_buys               = 1
+alpha_buy_limit_offset_pct           = 0.18+
+alpha_reentry_sl_cooldown_cycles     = 20+
+alpha_risk_per_trade_pct             = ≤ 2.5
+```
+
+**Treasury:** PRO tab shows **placeholder** only — sideline Tangem tranches still manual via Config → RLUSD issuer + Xaman.
+
+**Coupling:** [Scenario K](#scenario-k--post-sl-re-entry-bot-wont-reload) (per-SL cooldown) · [Scenario S](#scenario-s--trust-phase-skynet-bias) (trust phase after bleed) · [Funding changes](#funding-changes-scaling-toward-11k-xrp) (don’t scale tranche while defensive).
 
 ---
 

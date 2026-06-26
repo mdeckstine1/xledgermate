@@ -141,6 +141,22 @@ After any bracket exit, the bot blocks **all** new buys until:
 
 HUD Decision shows `post_tp_cooldown cycles=1/4` or `post_sl_cooldown minutes=2.0/15.0`.
 
+---
+
+## HUD — PRO tab
+
+After an SL-heavy session, open **PRO** (nav: Activity · **PRO** · SKYNET · Config):
+
+| Block | Use |
+|-------|-----|
+| **Alpha Replay** | Realized TP/SL ratio and P&amp;L — ignore session MTM for bleed diagnosis |
+| **Defensive circuit** | Auto-applies bear posture when replay verdict is bad; **Release defensive** restores saved overrides |
+| **Treasury** | Placeholder — manual RLUSD funding via Config until Phase 2 |
+
+See **[Scenario W](ALPHA_TRADERS_MANUAL.md#scenario-w--sl-heavy-night--defensive-circuit-pro)** in the traders manual.
+
+---
+
 ### After take-profit (post-cooldown)
 
 - Mid dips below TP exit by `alpha_reentry_tp_dip_pct`

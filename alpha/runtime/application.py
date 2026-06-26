@@ -81,6 +81,12 @@ class AlphaApplication:
             overrides_path=self._state_dir / "alpha_overrides.json",
             commands_path=self._state_dir / "alpha_commands.json",
         )
+        from alpha.pro.circuit_breaker import DefensiveCircuit
+
+        self._defensive_circuit = DefensiveCircuit(
+            store=self._runtime,
+            state_path=self._state_dir / "alpha_defensive_circuit.json",
+        )
         self._activity = ActivityLog(path=self._state_dir / "alpha_activity.jsonl")
         self._reentry = ReentryGate(
             config,
@@ -521,6 +527,10 @@ class AlphaApplication:
         """Full cycle: sync brackets, evaluate, execute entry if signaled."""
         self._engine_cycle += 1
         await self._sync_operator_runtime()
+        cb_event = self._defensive_circuit.tick(self.config, logs_dir=self._state_dir)
+        if cb_event.get("event") in ("activated", "released"):
+            self._activity.append("defensive_circuit", **{k: v for k, v in cb_event.items() if k != "event"}, event=cb_event.get("event"))
+            await self._sync_operator_runtime()
         self._dry_run_guard.log_mode_banner()
         snap, validation, decision, orders = await self._gather_cycle_context()
 

@@ -190,6 +190,35 @@ Re-entry cooldown reasons in logs and Decision: `post_tp_cooldown`, `post_sl_coo
 | `logs/alpha_reentry.json` | Persisted re-entry gate (cooldown, sl_tier, spacing) |
 | `logs/alpha_market.db` | Per-cycle market metrics (ATR%, vol, regime) |
 | `logs/alpha_commands.json` | Queued operator commands (cancel-all, reload, bracket adjust) |
+| `logs/alpha_defensive_circuit.json` | Auto-defensive circuit state (PRO tab) |
+| `logs/alpha_treasury.json` | Treasury placeholder notes (PRO tab — not wired) |
+
+---
+
+## PRO (Replay + defensive circuit)
+
+The HUD **PRO** tab (nav: **Live → … → Activity → PRO → SKYNET → Config**) surfaces:
+
+| Block | Purpose |
+|-------|---------|
+| **Alpha Replay** | Rolling TP/SL ratio, realized P&amp;L, scratch-SL churn, verdict (`healthy` / `sl_heavy` / `bleeding` / `churn`) from `logs/trades_*.csv` + bracket store |
+| **Auto-defensive circuit** | Engine auto-trips on bad replay metrics; applies bear regime + tighter caps via `logs/alpha_overrides.json` |
+| **Treasury** | Placeholder only — sideline Tangem tranche deploy not implemented |
+
+**Defensive bundle when tripped:** `alpha_operator_market_regime=bear`, `alpha_max_pending_buys≤1`, wider `alpha_buy_limit_offset_pct`, longer `alpha_reentry_sl_cooldown_cycles`, lower `alpha_risk_per_trade_pct`. **Pause** and **kill switch** always override. Use **Release defensive** on PRO to restore pre-trip overrides.
+
+Config keys (`config.yaml`):
+
+```yaml
+alpha_defensive_circuit_enabled: true
+alpha_defensive_window_hours: 14.0
+alpha_defensive_sl_exit_threshold: 8
+alpha_defensive_realized_loss_xrp: 3.0
+alpha_defensive_min_exits: 4
+alpha_defensive_auto_release_hours: 6.0
+```
+
+Traders manual: **[Scenario W — SL-heavy night / defensive circuit](ALPHA_TRADERS_MANUAL.md#scenario-w--sl-heavy-night--defensive-circuit-pro)**.
 
 ---
 
@@ -233,7 +262,7 @@ Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-ask-age
 ## Further reading
 
 - **[`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md)** — **start here for live trading & orders**
-- **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — scenarios A–V, **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-ask-agent-smith-full-mode)**, **[Funding changes](ALPHA_TRADERS_MANUAL.md#funding-changes-scaling-toward-11k-xrp)**, **[Deploy RLUSD → XRP](ALPHA_TRADERS_MANUAL.md#deploy-rlusd-to-xrp-get-xrp-heavy)**
+- **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — scenarios A–W, **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-ask-agent-smith-full-mode)**, **[Funding changes](ALPHA_TRADERS_MANUAL.md#funding-changes-scaling-toward-11k-xrp)**, **[Deploy RLUSD → XRP](ALPHA_TRADERS_MANUAL.md#deploy-rlusd-to-xrp-get-xrp-heavy)**
 - [`PROJECT_INSTRUCTIONS.md`](../PROJECT_INSTRUCTIONS.md)
 - [`ALPHA_MAINNET_CUTOVER.md`](ALPHA_MAINNET_CUTOVER.md)
 - [`ALPHA_FINAL_REPORT.md`](ALPHA_FINAL_REPORT.md)

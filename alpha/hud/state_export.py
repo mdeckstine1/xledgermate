@@ -26,6 +26,8 @@ from alpha.ledger.market_conditions import build_market_conditions, refresh_dca_
 from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControls
 from alpha.operator.runtime import derive_posture, effective_config_snapshot
+from alpha.pro.circuit_breaker import defensive_status_snapshot
+from alpha.pro.treasury import treasury_placeholder_status
 from alpha.reporting.realized_pnl import build_realized_pnl_snapshot
 from alpha.orders.types import BracketRecord
 from alpha.runtime.executor import EntryExecutionResult
@@ -462,6 +464,12 @@ def build_hud_state(
 
     tax_log = tax_periods_payload(runtime_state_path.parent)
 
+    pro_block = defensive_status_snapshot(
+        logs_dir=runtime_state_path.parent,
+        config=config_effective or BotConfig.load(),
+    )
+    pro_block["treasury"] = treasury_placeholder_status(logs_dir=runtime_state_path.parent)
+
     return {
         "hud_kind": "alpha",
         "alpha_version": snap.alpha_version,
@@ -540,6 +548,7 @@ def build_hud_state(
         "recent_events": list(recent_events),
         "report_text": report_text,
         "tax_log": tax_log,
+        "pro": pro_block,
         "last_note": f"{decision.action.value}: {decision.reason}",
         "engine_cycle": int(engine_cycle),
         "book_updated_utc": _iso(snap.generated_utc) if book else None,

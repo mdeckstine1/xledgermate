@@ -89,6 +89,14 @@ alpha_skynet_grok_max_tokens: 4096   # SKYNET Grok response length (manual + age
 # Phase 2 agent guardrails + enable toggle persist in logs/alpha_skynet_agent.json (HUD SKYNET tab).
 # alpha_grok_api_key: ""   # optional; prefer XLG_GROK_KEY or XAI_API_KEY in .env
 
+# PRO tab — replay analytics + auto-defensive circuit (treasury = placeholder)
+alpha_defensive_circuit_enabled: true
+alpha_defensive_window_hours: 14.0
+alpha_defensive_sl_exit_threshold: 8
+alpha_defensive_realized_loss_xrp: 3.0
+alpha_defensive_min_exits: 4
+alpha_defensive_auto_release_hours: 6.0
+
 # Bracket legs after buy fill (application-level OCO — not XRPL native)
 initial_stop_loss_pct: 0.015
 take_profit_pct: 0.03

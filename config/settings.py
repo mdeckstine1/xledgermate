@@ -222,6 +222,13 @@ class BotConfig:
     alpha_skynet_grok_model: str = "grok-3"
     alpha_skynet_grok_max_tokens: int = 4096  # Grok response budget (SKYNET manual + agent)
     alpha_grok_api_key: str = ""  # Optional; prefer XLG_GROK_KEY / XAI_API_KEY in .env
+    # PRO — replay analytics + auto-defensive circuit (HUD PRO tab)
+    alpha_defensive_circuit_enabled: bool = True
+    alpha_defensive_window_hours: float = 14.0  # Rolling replay window for trigger/release
+    alpha_defensive_sl_exit_threshold: int = 8  # SL exits in window → trip
+    alpha_defensive_realized_loss_xrp: float = 3.0  # Realized bleed threshold (XRP-equiv)
+    alpha_defensive_min_exits: int = 4  # Min TP+SL exits before loss/SL rules fire
+    alpha_defensive_auto_release_hours: float = 6.0  # Min hold before auto-release on recovery
     # Post-exit re-entry (Aggressive Bag Growth — wait for dip after TP, stabilization after SL)
     alpha_reentry_enabled: bool = True
     alpha_reentry_tp_dip_pct: float = 0.08  # Re-buy after TP only when mid dips this % below TP exit

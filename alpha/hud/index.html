@@ -177,6 +177,18 @@
     .skynet-regime-btns button.regime-bull.active { border-color:#4ade80; color:#86efac; background:#0f1f18; }
     .skynet-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
     .skynet-status { font-size:.78rem; color:var(--muted); margin-bottom:8px; }
+    .pro-grid { display:grid; grid-template-columns:1.2fr 1fr; gap:12px; align-items:start; }
+    @media (max-width:900px) { .pro-grid { grid-template-columns:1fr; } }
+    .pro-status { font-size:.78rem; color:var(--muted); margin-bottom:8px; }
+    .pro-metrics { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:8px; margin:10px 0; }
+    .pro-metric { background:#0b1220; border:1px solid var(--border); border-radius:6px; padding:8px 10px; }
+    .pro-metric .label { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    .pro-metric .val { font-size:1.05rem; font-weight:600; margin-top:2px; }
+    .pro-verdict { display:inline-block; padding:2px 8px; border-radius:4px; font-size:.75rem; font-weight:600; text-transform:uppercase; }
+    .pro-verdict.healthy { background:#0f1f18; color:#86efac; border:1px solid #2a4a3d; }
+    .pro-verdict.sl_heavy, .pro-verdict.bleeding, .pro-verdict.churn { background:#1f1212; color:#fca5a5; border:1px solid #5c2a2a; }
+    .pro-circuit-active { color:#fca5a5; font-weight:600; }
+    .pro-replay-text { font-family:ui-monospace,monospace; font-size:.78rem; white-space:pre-wrap; background:#0b1220; border:1px solid var(--border); border-radius:6px; padding:10px; max-height:220px; overflow:auto; }
     .skynet-agent-card { margin-bottom:12px; }
     .skynet-guardrails { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; margin:10px 0; }
     .skynet-guardrails label { display:block; font-size:.72rem; color:var(--muted); margin-bottom:2px; }
@@ -258,8 +270,9 @@
         <div class="tab" data-tab="offers">Open offers</div>
         <div class="tab" data-tab="reports">Reports</div>
         <div class="tab" data-tab="activity">Activity</div>
-        <div class="tab" data-tab="config">Config</div>
+        <div class="tab" data-tab="pro">PRO</div>
         <div class="tab" data-tab="skynet">SKYNET</div>
+        <div class="tab" data-tab="config">Config</div>
       </div>
       <section id="live" class="panel active">
         <div class="grid live-grid">
@@ -481,6 +494,55 @@
       <section id="activity" class="panel">
         <div class="card activity" id="actFeed"></div>
       </section>
+      <section id="pro" class="panel">
+        <p class="pro-status" id="proStatus">Loading PRO…</p>
+        <div class="pro-grid">
+          <div class="card">
+            <h2 style="margin:0 0 8px;font-size:1rem;color:#93c5fd">Alpha Replay</h2>
+            <p class="muted" style="margin:0 0 10px;font-size:.78rem">Rolling bracket outcomes from tax CSV + bracket store. Use <strong>realized</strong> P&amp;L — not session MTM — to judge overnight bleed.</p>
+            <div class="ctrl-row" style="align-items:flex-end;flex-wrap:wrap;gap:8px">
+              <div>
+                <label class="label" for="selProWindow">Window</label>
+                <select id="selProWindow" style="min-width:120px;background:#0b1220;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:.85rem">
+                  <option value="14">14h</option>
+                  <option value="24">24h</option>
+                  <option value="72">72h</option>
+                  <option value="168" selected>7d</option>
+                </select>
+              </div>
+              <button type="button" id="btnProRefreshReplay" class="secondary">Refresh replay</button>
+            </div>
+            <div class="pro-metrics" id="proMetrics">
+              <div class="pro-metric"><div class="label">Verdict</div><div class="val" id="proVerdict">—</div></div>
+              <div class="pro-metric"><div class="label">TP : SL</div><div class="val" id="proTpSl">—</div></div>
+              <div class="pro-metric"><div class="label">Realized P&amp;L</div><div class="val" id="proRealized">—</div></div>
+              <div class="pro-metric"><div class="label">Scratch SLs</div><div class="val" id="proScratch">—</div></div>
+              <div class="pro-metric"><div class="label">Churn score</div><div class="val" id="proChurn">—</div></div>
+            </div>
+            <div id="proRecentExits" class="muted" style="font-size:.75rem;margin:8px 0"></div>
+            <pre class="pro-replay-text" id="proReplayText">—</pre>
+          </div>
+          <div>
+            <div class="card" style="margin-bottom:12px;border-color:#5c2a2a">
+              <h2 style="margin:0 0 8px;font-size:1rem;color:#fca5a5">Auto-defensive circuit</h2>
+              <p class="muted" style="margin:0 0 10px;font-size:.78rem">Trips on SL-heavy replay, realized bleed, or churn. Applies bear regime + tighter entry caps via operator overrides. Pause / kill switch always win.</p>
+              <div id="proCircuitBadge" class="muted" style="margin-bottom:8px">—</div>
+              <div id="proCircuitDetail" class="muted" style="font-size:.75rem;line-height:1.5;margin-bottom:10px"></div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px">
+                <button type="button" id="btnProReleaseCircuit" class="secondary" disabled>Release defensive</button>
+                <button type="button" id="btnProEvaluateCircuit" class="secondary">Evaluate now</button>
+              </div>
+              <div id="proCircuitThresholds" class="muted" style="font-size:.72rem;margin-top:10px"></div>
+            </div>
+            <div class="card" style="border-color:#334155">
+              <h2 style="margin:0 0 8px;font-size:1rem;color:#94a3b8">Treasury</h2>
+              <span class="badge dry" id="proTreasuryBadge">PLACEHOLDER</span>
+              <p class="muted" id="proTreasuryMsg" style="margin:10px 0;font-size:.78rem">—</p>
+              <ul id="proTreasuryPlan" class="muted" style="font-size:.75rem;margin:0;padding-left:18px"></ul>
+            </div>
+          </div>
+        </div>
+      </section>
       <section id="config" class="panel">
         <p class="muted" style="margin:0 0 12px">Account credentials save to <code>config/credentials.local.yaml</code> (gitignored). Never commit secrets.</p>
         <div class="config-grid">
@@ -685,6 +747,7 @@
       if (el.dataset.tab === 'live' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'ta' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'config') loadAccountConfig();
+      if (el.dataset.tab === 'pro') loadProReplay();
       if (el.dataset.tab === 'skynet') loadSkynetStatus();
       if (el.dataset.tab === 'reports') { loadReportsCatalog(); loadTaxPeriods(); }
     }));
@@ -2122,7 +2185,84 @@
           $('sendResult').dataset.balHint = balHint;
         }
       }
+      renderPro(s.pro);
     }
+
+    function renderPro(pro) {
+      if (!pro) return;
+      const replay = pro.replay || {};
+      const verdict = replay.verdict || '—';
+      const vEl = $('proVerdict');
+      if (vEl) {
+        vEl.innerHTML = `<span class="pro-verdict ${verdict}">${verdict}</span>`;
+      }
+      const ratio = replay.tp_sl_ratio;
+      $('proTpSl').textContent = `${replay.tp_exits ?? 0} : ${replay.sl_exits ?? 0}` + (ratio != null ? ` (${Number(ratio).toFixed(2)})` : '');
+      const rp = replay.realized_profit_xrp_equiv;
+      $('proRealized').textContent = rp != null ? (rp >= 0 ? '+' : '') + fmt(rp, 4) + ' XRP' : '—';
+      $('proRealized').style.color = rp < 0 ? 'var(--bad)' : (rp > 0 ? 'var(--good)' : 'var(--text)');
+      $('proScratch').textContent = replay.scratch_sl_exits ?? '—';
+      $('proChurn').textContent = replay.churn_score != null ? fmt(replay.churn_score, 3) : '—';
+      const exits = replay.recent_exits || [];
+      $('proRecentExits').innerHTML = exits.length
+        ? '<strong>Recent exits</strong><br>' + exits.slice(0, 6).map(e =>
+            `${(e.timestamp_utc||'').slice(0,16)} ${e.exit_type||'?'} ${e.profit_xrp_equiv != null ? fmt(e.profit_xrp_equiv, 4) : '—'} XRP`
+          ).join('<br>')
+        : '';
+      const active = !!pro.active;
+      $('proCircuitBadge').innerHTML = active
+        ? '<span class="pro-circuit-active">● DEFENSIVE ACTIVE</span>'
+        : (pro.enabled ? '<span style="color:var(--good)">● Armed (not tripped)</span>' : '<span>○ Circuit disabled in config</span>');
+      $('btnProReleaseCircuit').disabled = !active;
+      const applied = pro.applied_overrides || {};
+      const detail = [];
+      if (pro.triggered_utc) detail.push('Triggered: ' + pro.triggered_utc.slice(0, 19) + 'Z');
+      if (pro.reason) detail.push('Reason: ' + pro.reason);
+      if (Object.keys(applied).length) detail.push('Applied: ' + JSON.stringify(applied));
+      $('proCircuitDetail').innerHTML = detail.join('<br>') || 'No trip in this session.';
+      const th = pro.thresholds || {};
+      $('proCircuitThresholds').textContent = th.sl_exit_threshold != null
+        ? `Thresholds: ≥${th.sl_exit_threshold} SL in ${th.window_hours}h · loss ≥${th.realized_loss_xrp} XRP · min ${th.min_exits} exits · auto-release after ${th.auto_release_hours}h`
+        : '';
+      $('proStatus').textContent = pro.enabled
+        ? `PRO · replay ${replay.window_hours || '?'}h · circuit ${active ? 'DEFENSIVE' : 'armed'}`
+        : 'PRO · defensive circuit disabled (alpha_defensive_circuit_enabled: false)';
+      const tre = pro.treasury || {};
+      $('proTreasuryMsg').textContent = tre.message || 'Treasury integration not built yet.';
+      const plan = tre.planned_features || [];
+      $('proTreasuryPlan').innerHTML = plan.map(f => `<li>${f}</li>`).join('');
+    }
+
+    async function loadProReplay() {
+      const hours = $('selProWindow')?.value || '168';
+      try {
+        const r = await fetch('/operator/pro/replay?hours=' + encodeURIComponent(hours));
+        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+        const d = await r.json();
+        if (!d.ok) return;
+        $('proReplayText').textContent = d.text || '—';
+        if (d.report) renderPro({ ...(hudState.pro || {}), replay: d.report });
+      } catch (e) {
+        $('proReplayText').textContent = 'Replay load error: ' + e;
+      }
+    }
+
+    $('btnProRefreshReplay')?.addEventListener('click', () => loadProReplay());
+    $('selProWindow')?.addEventListener('change', () => loadProReplay());
+    $('btnProReleaseCircuit')?.addEventListener('click', async () => {
+      const ok = await confirmModal('Release defensive circuit', 'Restores saved overrides before the trip. Type RELEASE to confirm.', 'RELEASE');
+      if (!ok) return;
+      const d = await postJson('/operator/pro/circuit/release');
+      if (d?.ok) { toast('Defensive circuit released'); poll(); loadOperatorConfig(); }
+    });
+    $('btnProEvaluateCircuit')?.addEventListener('click', async () => {
+      const d = await postJson('/operator/pro/circuit/evaluate');
+      if (d?.ok) {
+        toast('Circuit evaluate: ' + (d.event || 'ok'));
+        poll();
+        loadOperatorConfig();
+      }
+    });
 
     function renderTransferLog(rows) {
       const el = $('transferLog');
