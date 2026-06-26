@@ -276,7 +276,7 @@
       </div>
       <section id="live" class="panel active">
         <div class="grid live-grid">
-          <div class="card"><h3>Decision</h3><div id="decAction" class="big">—</div><div id="decReason" class="muted"></div><div id="decReentry" class="muted" style="font-size:.78rem;margin-top:.35rem"></div><div id="decTa" class="muted" style="font-size:.78rem"></div></div>
+          <div class="card"><h3>Decision</h3><div id="decAction" class="big">—</div><div id="decReason" class="muted"></div><div id="decReentry" class="muted" style="font-size:.78rem;margin-top:.35rem"></div><div id="decTa" class="muted" style="font-size:.78rem"></div><div id="decTape" class="muted" style="font-size:.78rem;color:#fcd34d"></div></div>
           <div class="card"><h3>Book</h3><div id="bookMid" class="big">—</div><div id="bookSpread" class="muted"></div></div>
           <div class="card"><h3>Structure</h3><div id="structTrend" class="big">—</div><div id="structSum" class="muted"></div></div>
           <div class="card"><h3>Brackets</h3><div id="brSum" class="big">—</div><div id="brDetail" class="muted"></div></div>
@@ -2130,6 +2130,11 @@
       $('decTa').textContent = ta?.enabled
         ? `TA buy=${Number(ta.buy_score).toFixed(2)} sell=${Number(ta.sell_score).toFixed(2)} gate=${ta.entry_buy_allowed ? 'PASS' : 'BLOCK'}`
         : (ta ? 'TA off' : '');
+      const tape = s.tape_participation;
+      $('decTape').textContent = tape?.active
+        ? `Tape participation ACTIVE — lagging TA bearish waived (${tape.reason || ''})`
+        : (tape?.reason && tape.reason !== 'disabled' && tape.reason !== 'ta_bias=bullish' && tape.reason !== 'ta_bias=neutral'
+          ? `Tape: ${tape.reason}` : '');
       $('bookMid').textContent = fmtPrice(s.book?.mid ?? s.mid);
       $('bookSpread').textContent = s.book?.spread_pct != null ? 'Spread ' + fmt(s.book.spread_pct, 3) + '%' : '';
       $('structTrend').textContent = s.structure?.trend || '—';
@@ -2229,7 +2234,7 @@
       $('proCircuitDetail').innerHTML = detail.join('<br>') || 'No trip in this session.';
       const th = pro.thresholds || {};
       $('proCircuitThresholds').textContent = th.sl_exit_threshold != null
-        ? `Thresholds: ≥${th.sl_exit_threshold} SL in ${th.window_hours}h · loss ≥${th.realized_loss_xrp} XRP · min ${th.min_exits} exits · auto-release after ${th.auto_release_hours}h · manual release pause ${th.manual_release_hours || 6}h`
+        ? `Thresholds: ≥${th.sl_exit_threshold} SL in ${th.window_hours}h · loss ≥${th.realized_loss_xrp} XRP · min ${th.min_exits} exits · auto-release after ${th.auto_release_hours}h · manual release pause ${th.manual_release_hours || 2}h · recent gate ${th.recent_window_hours || 4}h`
         : '';
       $('proStatus').textContent = pro.enabled
         ? `PRO · replay ${replay.window_hours || '?'}h · circuit ${active ? 'DEFENSIVE' : (suppressed ? 'released (paused)' : 'armed')}`

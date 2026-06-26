@@ -286,6 +286,15 @@ class ReentryGate:
         if not snap.active:
             return None
 
+        from alpha.decision.tape_participation import evaluate_tape_participation
+
+        participation = evaluate_tape_participation(
+            self._config,
+            mid=mid,
+            structure=structure,
+            ta=ta,
+        )
+
         ta_cfg = self._config.alpha_technical_analysis
         ta_required = ta_cfg.enabled
 
@@ -320,7 +329,7 @@ class ReentryGate:
             return None
 
         if snap.exit_type == ReentryExitType.SL:
-            self._try_recovery_early_release(mid=mid, ta=ta)
+            self._try_recovery_early_release(mid=mid, ta=ta, structure=structure)
             snap = self.snapshot
 
             blocked = self._cooldown_blocked(snap, prefix="post_sl")
@@ -359,7 +368,7 @@ class ReentryGate:
                     ta,
                     min_score,
                     prefix="reentry_scratch" if is_scratch else "reentry_sl",
-                    require_non_bearish=not is_scratch,
+                    require_non_bearish=not is_scratch and not participation.active,
                 )
                 if blocked:
                     logger.info("reentry_gate | block | %s", blocked)
@@ -398,6 +407,7 @@ class ReentryGate:
         *,
         mid: float,
         ta: Optional["TechnicalAnalysisSnapshot"],
+        structure: Optional["MarketStructureSnapshot"] = None,
     ) -> bool:
         if not self._config.alpha_reentry_recovery_enabled:
             return False
@@ -416,7 +426,15 @@ class ReentryGate:
         if mid < need:
             return False
         if ta is not None and ta.enabled and ta.bias == "bearish":
-            return False
+            from alpha.decision.tape_participation import tape_participation_waives_bearish_buy_block
+
+            if not tape_participation_waives_bearish_buy_block(
+                self._config,
+                mid=mid,
+                structure=structure,
+                ta=ta,
+            ):
+                return False
         req = int(
             self._state.get(
                 "cooldown_cycles_required",

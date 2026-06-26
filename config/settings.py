@@ -229,7 +229,16 @@ class BotConfig:
     alpha_defensive_realized_loss_xrp: float = 3.0  # Realized bleed threshold (XRP-equiv)
     alpha_defensive_min_exits: int = 4  # Min TP+SL exits before loss/SL rules fire
     alpha_defensive_auto_release_hours: float = 6.0  # Min hold before auto-release on recovery
-    alpha_defensive_manual_release_hours: float = 6.0  # After operator Release, skip auto re-trip
+    alpha_defensive_manual_release_hours: float = 2.0  # After operator Release, skip auto re-trip
+    alpha_defensive_recent_window_hours: float = 4.0  # Short replay window for recovery / re-trip gate
+    # Live-tape participation — waive lagging closed-bar TA bearish blocks when tape is up
+    alpha_tape_participation_enabled: bool = True
+    alpha_tape_uptrend_drift_pct: float = 0.25  # Mid % above structure rolling mean
+    alpha_tape_bounce_from_low_pct: float = 0.12  # Mid % above recent_low (with slope)
+    alpha_tape_slope_samples: int = 8  # ~2m at 15s sampling
+    alpha_tape_slope_min_lift_pct: float = 0.04  # Short-term avg lift vs prior window
+    alpha_tape_participation_min_buy_factor: float = 0.9  # buy_score >= min_buy * factor
+    alpha_tape_participation_max_sell_gap: float = 3.5  # No waiver if sell >> buy
     # Post-exit re-entry (Aggressive Bag Growth — wait for dip after TP, stabilization after SL)
     alpha_reentry_enabled: bool = True
     alpha_reentry_tp_dip_pct: float = 0.08  # Re-buy after TP only when mid dips this % below TP exit

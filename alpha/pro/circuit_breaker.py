@@ -62,7 +62,35 @@ def _defensive_bundle(effective: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _should_trigger(report: Dict[str, Any], config: BotConfig) -> Tuple[bool, str]:
+def _bad_verdict(verdict: str) -> bool:
+    return str(verdict or "") in ("sl_heavy", "bleeding", "churn")
+
+
+def _recent_replay_ok(
+    logs_dir: str | Path,
+    config: BotConfig,
+) -> Tuple[bool, str]:
+    hours = max(0.0, float(getattr(config, "alpha_defensive_recent_window_hours", 0.0)))
+    if hours <= 0:
+        return False, ""
+    recent = build_replay_report(logs_dir=logs_dir, hours=hours)
+    verdict = str(recent.get("verdict") or "")
+    if _bad_verdict(verdict):
+        return False, verdict
+    tp = int(recent.get("tp_exits") or 0)
+    sl = int(recent.get("sl_exits") or 0)
+    realized = float(recent.get("realized_profit_xrp_equiv") or 0.0)
+    if tp >= sl or realized >= 0 or verdict == "healthy":
+        return True, verdict
+    return False, verdict
+
+
+def _should_trigger(
+    report: Dict[str, Any],
+    config: BotConfig,
+    *,
+    logs_dir: str | Path,
+) -> Tuple[bool, str]:
     verdict = str(report.get("verdict") or "")
     sl = int(report.get("sl_exits") or 0)
     tp = int(report.get("tp_exits") or 0)
@@ -71,13 +99,20 @@ def _should_trigger(report: Dict[str, Any], config: BotConfig) -> Tuple[bool, st
     min_exits = max(1, int(config.alpha_defensive_min_exits))
     sl_thresh = max(1, int(config.alpha_defensive_sl_exit_threshold))
 
+    trigger = False
+    reason = ""
     if verdict in ("sl_heavy", "bleeding", "churn"):
-        return True, f"replay_verdict={verdict}"
-    if sl >= sl_thresh and total >= min_exits:
-        return True, f"sl_exits={sl}>={sl_thresh}"
-    if realized <= -abs(float(config.alpha_defensive_realized_loss_xrp)) and total >= min_exits:
-        return True, f"realized_pnl={realized:.4f}"
-    return False, ""
+        trigger, reason = True, f"replay_verdict={verdict}"
+    elif sl >= sl_thresh and total >= min_exits:
+        trigger, reason = True, f"sl_exits={sl}>={sl_thresh}"
+    elif realized <= -abs(float(config.alpha_defensive_realized_loss_xrp)) and total >= min_exits:
+        trigger, reason = True, f"realized_pnl={realized:.4f}"
+    if not trigger:
+        return False, ""
+    recent_ok, recent_verdict = _recent_replay_ok(logs_dir, config)
+    if recent_ok:
+        return False, f"recent_window_ok verdict={recent_verdict}"
+    return trigger, reason
 
 
 def _manual_suppress_active(state: Dict[str, Any]) -> bool:
@@ -93,9 +128,18 @@ def _manual_suppress_active(state: Dict[str, Any]) -> bool:
         return False
 
 
-def _should_release(report: Dict[str, Any], state: Dict[str, Any], config: BotConfig) -> Tuple[bool, str]:
+def _should_release(
+    report: Dict[str, Any],
+    state: Dict[str, Any],
+    config: BotConfig,
+    *,
+    logs_dir: str | Path,
+) -> Tuple[bool, str]:
     if not state.get("active"):
         return False, ""
+    recent_ok, recent_verdict = _recent_replay_ok(logs_dir, config)
+    if recent_ok:
+        return True, f"recent_tape_recovery verdict={recent_verdict}"
     triggered_raw = state.get("triggered_utc")
     if triggered_raw:
         try:
@@ -150,6 +194,7 @@ def defensive_status_snapshot(
             "min_exits": cfg.alpha_defensive_min_exits,
             "auto_release_hours": cfg.alpha_defensive_auto_release_hours,
             "manual_release_hours": cfg.alpha_defensive_manual_release_hours,
+            "recent_window_hours": cfg.alpha_defensive_recent_window_hours,
         },
     }
 
@@ -187,7 +232,7 @@ class DefensiveCircuit:
         effective = effective_config_snapshot(effective_cfg, overrides)
 
         if state.get("active"):
-            release, release_reason = _should_release(report, state, config)
+            release, release_reason = _should_release(report, state, config, logs_dir=logs_dir)
             if release:
                 return self._release(state, release_reason)
             return {"event": "hold", "active": True, "reason": state.get("reason")}
@@ -199,7 +244,7 @@ class DefensiveCircuit:
                 "manual_suppress_until_utc": state.get("manual_suppress_until_utc"),
             }
 
-        trigger, reason = _should_trigger(report, config)
+        trigger, reason = _should_trigger(report, config, logs_dir=logs_dir)
         if not trigger:
             return {"event": "ok", "active": False}
 

@@ -442,6 +442,15 @@ def build_hud_state(
 
     market_metrics = metrics_summary(runtime_state_path.parent, hours=24.0)
     ta_block = ta.to_dict() if ta is not None else {"enabled": False}
+    from alpha.decision.tape_participation import evaluate_tape_participation
+
+    ref_mid = float(book.mid) if isinstance(book, OrderBookSnapshot) and book.mid else 0.0
+    tape_participation = evaluate_tape_participation(
+        effective,
+        mid=ref_mid,
+        structure=structure,
+        ta=ta,
+    ).to_dict()
     market_conditions = build_market_conditions(
         book=book if isinstance(book, OrderBookSnapshot) else None,
         liquidity=liquidity,
@@ -540,6 +549,7 @@ def build_hud_state(
         "structure": structure_block,
         "chart": chart,
         "technical_analysis": ta_block,
+        "tape_participation": tape_participation,
         "ohlc_cache": ohlc_cache,
         "market_metrics": market_metrics,
         "book": _book_payload(book if isinstance(book, OrderBookSnapshot) else None),

@@ -257,7 +257,13 @@ class DecisionEngine:
             return 0.0
         return cfg.min_sell_score * weight
 
-    def _ta_blocks_buy(self, ta: Optional["TechnicalAnalysisSnapshot"]) -> Optional[str]:
+    def _ta_blocks_buy(
+        self,
+        ta: Optional["TechnicalAnalysisSnapshot"],
+        *,
+        mid: Optional[float] = None,
+        structure: Optional["MarketStructureSnapshot"] = None,
+    ) -> Optional[str]:
         cfg = self._config.alpha_technical_analysis
         weight = getattr(self._config, "alpha_ta_weight", 1.0)
         if not cfg.enabled or weight <= 0:
@@ -271,6 +277,16 @@ class DecisionEngine:
                 f"weight={weight:.2f} sell={ta.sell_score:.2f} bias={ta.bias}"
             )
         if ta.bias == "bearish":
+            from alpha.decision.tape_participation import tape_participation_waives_bearish_buy_block
+
+            ref_mid = mid if mid is not None else (structure.mid if structure else 0.0)
+            if tape_participation_waives_bearish_buy_block(
+                self._config,
+                mid=ref_mid,
+                structure=structure,
+                ta=ta,
+            ):
+                return None
             return (
                 f"ta_buy_blocked bearish bias={ta.bias} "
                 f"buy={ta.buy_score:.2f} sell={ta.sell_score:.2f}"
@@ -341,7 +357,7 @@ class DecisionEngine:
             if blocked:
                 return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
 
-        blocked = self._ta_blocks_buy(ta)
+        blocked = self._ta_blocks_buy(ta, mid=mid, structure=structure)
         if blocked:
             return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
         mid = book.mid

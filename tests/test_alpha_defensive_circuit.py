@@ -101,7 +101,26 @@ def test_defensive_circuit_manual_release(tmp_path):
     assert forced["event"] == "activated"
 
 
-def test_defensive_status_snapshot(tmp_path):
+def test_defensive_circuit_recent_window_blocks_stale_trip(tmp_path, monkeypatch):
+    now = datetime.now(tz=timezone.utc)
+    _write_sl_csv(tmp_path / "trades_2026-06.csv", 10, now=now - timedelta(hours=12))
+    overrides = tmp_path / "alpha_overrides.json"
+    commands = tmp_path / "alpha_commands.json"
+    circuit_path = tmp_path / "alpha_defensive_circuit.json"
+    store = OperatorRuntimeStore(overrides_path=overrides, commands_path=commands)
+
+    cfg = BotConfig(
+        alpha_defensive_circuit_enabled=True,
+        alpha_defensive_sl_exit_threshold=8,
+        alpha_defensive_window_hours=14,
+        alpha_defensive_recent_window_hours=4,
+        dry_run=False,
+    )
+    cb = DefensiveCircuit(store=store, state_path=circuit_path)
+    result = cb.tick(cfg, logs_dir=tmp_path)
+    assert result["event"] != "activated"
+
+
     snap = defensive_status_snapshot(logs_dir=tmp_path, config=BotConfig())
     assert "replay" in snap
     assert "thresholds" in snap

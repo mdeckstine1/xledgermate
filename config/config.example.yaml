@@ -96,7 +96,16 @@ alpha_defensive_sl_exit_threshold: 8
 alpha_defensive_realized_loss_xrp: 3.0
 alpha_defensive_min_exits: 4
 alpha_defensive_auto_release_hours: 6.0
-alpha_defensive_manual_release_hours: 6.0
+alpha_defensive_manual_release_hours: 2.0
+alpha_defensive_recent_window_hours: 4.0
+# Live tape participation — re-enter when mid/structure uptrend but 5m TA still bearish
+alpha_tape_participation_enabled: true
+alpha_tape_uptrend_drift_pct: 0.25
+alpha_tape_bounce_from_low_pct: 0.12
+alpha_tape_slope_samples: 8
+alpha_tape_slope_min_lift_pct: 0.04
+alpha_tape_participation_min_buy_factor: 0.9
+alpha_tape_participation_max_sell_gap: 3.5
 
 # Bracket legs after buy fill (application-level OCO — not XRPL native)
 initial_stop_loss_pct: 0.015
