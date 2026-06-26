@@ -10,6 +10,11 @@ from alpha.hud.operator_phase import (
     build_operator_phase_playbook,
     phase_user_message_rules,
 )
+from alpha.hud.operator_market_regime import (
+    OPERATOR_MARKET_REGIME_KEY,
+    market_regime_user_message_rules,
+    normalize_market_regime,
+)
 
 
 # Friendly HUD names → operator override keys (Grok may use either).
@@ -176,6 +181,7 @@ def build_skynet_user_message(
     user_prompt: str,
     context: str,
     operator_phase: Optional[str] = None,
+    market_regime: Optional[str] = None,
 ) -> str:
     """Put operator prompt first; scenarios are reference only."""
     prompt = (user_prompt or "").strip()
@@ -230,6 +236,14 @@ def build_skynet_user_message(
                 phase = line.split("=", 1)[1].strip().split()[0]
                 break
     lines.extend(phase_user_message_rules(phase or "trust"))
+
+    regime = market_regime
+    if regime is None and OPERATOR_MARKET_REGIME_KEY + "=" in context:
+        for line in context.splitlines():
+            if line.startswith("market_regime="):
+                regime = line.split("=", 1)[1].strip().split()[0]
+                break
+    lines.extend(market_regime_user_message_rules(regime or "neutral"))
 
     lines.extend(["", "=== RUNTIME CONTEXT (secondary) ===", context])
     return "\n".join(lines)

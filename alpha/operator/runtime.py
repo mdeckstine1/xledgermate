@@ -15,6 +15,12 @@ from alpha.hud.operator_phase import (
     normalize_operator_phase,
     phase_snapshot_fields,
 )
+from alpha.hud.operator_market_regime import (
+    DEFAULT_MARKET_REGIME,
+    OPERATOR_MARKET_REGIME_KEY,
+    market_regime_snapshot_fields,
+    normalize_market_regime,
+)
 from config.settings import BotConfig, patch_config_file
 from alpha.precision import MAX_ALPHA_RLUSD_PRICE_DECIMALS, MIN_ALPHA_RLUSD_PRICE_DECIMALS
 
@@ -38,11 +44,12 @@ _TA_VIRTUAL_KEYS = frozenset(
 )
 
 # SKYNET-only virtual key (persisted in overrides, not BotConfig).
-_VIRTUAL_SKYNET_KEYS = frozenset({OPERATOR_PHASE_KEY})
+_VIRTUAL_SKYNET_KEYS = frozenset({OPERATOR_PHASE_KEY, OPERATOR_MARKET_REGIME_KEY})
 
 # Keys the HUD may override at runtime (Aggressive Bag Growth — TA-Driven).
 OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     OPERATOR_PHASE_KEY,
+    OPERATOR_MARKET_REGIME_KEY,
     "dry_run",
     "trading_enabled",
     "inventory_target_xrp_ratio",
@@ -190,7 +197,7 @@ def effective_config_snapshot(
     ta = config.alpha_technical_analysis
     snap: Dict[str, Any] = {}
     for key in OPERATOR_TUNABLE_KEYS:
-        if key == OPERATOR_PHASE_KEY:
+        if key == OPERATOR_PHASE_KEY or key == OPERATOR_MARKET_REGIME_KEY:
             continue
         if key == "alpha_ta_enabled":
             snap[key] = ta.enabled
@@ -218,6 +225,7 @@ def effective_config_snapshot(
             snap[key] = getattr(config, key)
     snap["inventory_target_xrp_pct"] = round(config.inventory_target_xrp_ratio * 100.0, 1)
     snap.update(phase_snapshot_fields(overrides))
+    snap.update(market_regime_snapshot_fields(overrides))
     return snap
 
 
@@ -251,6 +259,12 @@ def validate_override_updates(
         "aggressive",
     ):
         errors.append(f"{OPERATOR_PHASE_KEY} must be trust, scale, or aggressive")
+    if OPERATOR_MARKET_REGIME_KEY in sanitized and sanitized[OPERATOR_MARKET_REGIME_KEY] not in (
+        "bull",
+        "neutral",
+        "bear",
+    ):
+        errors.append(f"{OPERATOR_MARKET_REGIME_KEY} must be bull, neutral, or bear")
     if errors:
         return {}, errors
     return sanitized, []
@@ -298,6 +312,11 @@ def _coerce_override(key: str, value: Any) -> Any:
         if phase not in ("trust", "scale", "aggressive"):
             raise ValueError("must be trust, scale, or aggressive")
         return phase
+    if key == OPERATOR_MARKET_REGIME_KEY:
+        regime = normalize_market_regime(value)
+        if regime not in ("bull", "neutral", "bear"):
+            raise ValueError("must be bull, neutral, or bear")
+        return regime
     return float(value)
 
 

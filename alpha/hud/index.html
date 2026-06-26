@@ -169,6 +169,12 @@
     .skynet-response { flex:1 1 auto; width:100%; min-height:280px; height:min(58vh, 520px); max-height:min(58vh, 520px); background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:10px; font-size:.85rem; font-family:ui-monospace,monospace; line-height:1.45; white-space:pre-wrap; overflow-y:auto; overflow-x:hidden; resize:vertical; box-sizing:border-box; overscroll-behavior:contain; }
     .skynet-quick { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
     .skynet-quick button { font-size:.75rem; padding:6px 10px; }
+    .skynet-regime-btns { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 4px; }
+    .skynet-regime-btns button { font-size:.78rem; padding:7px 14px; border-radius:6px; }
+    .skynet-regime-btns button.active { border-color:var(--accent); color:var(--accent); background:#0f1f18; }
+    .skynet-regime-btns button.regime-bear.active { border-color:#f87171; color:#fca5a5; background:#1f1212; }
+    .skynet-regime-btns button.regime-neutral.active { border-color:#fbbf24; color:#fde68a; background:#1a1608; }
+    .skynet-regime-btns button.regime-bull.active { border-color:#4ade80; color:#86efac; background:#0f1f18; }
     .skynet-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
     .skynet-status { font-size:.78rem; color:var(--muted); margin-bottom:8px; }
     .skynet-agent-card { margin-bottom:12px; }
@@ -538,6 +544,16 @@
             <span id="skynetPhaseHint" class="muted" style="font-size:.75rem"></span>
           </div>
         </div>
+        <div class="card" style="margin-bottom:12px;border-color:#3d3520">
+          <h2 style="margin:0 0 8px;font-size:1rem;color:#fde68a">Market regime</h2>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Tape bias for SKYNET — how Grok should think about entries <em>right now</em>. Does not change knobs until you Apply. After an SL-heavy night, try <strong>Neutral</strong> or <strong>Bear</strong>.</p>
+          <div class="skynet-regime-btns" id="skynetRegimeBtns">
+            <button type="button" class="secondary regime-bull" data-regime="bull">Bull — accumulate dips</button>
+            <button type="button" class="secondary regime-neutral" data-regime="neutral">Neutral — chop / anti-churn</button>
+            <button type="button" class="secondary regime-bear" data-regime="bear">Bear — defensive</button>
+          </div>
+          <span id="skynetRegimeHint" class="muted" style="font-size:.75rem"></span>
+        </div>
         <div class="card skynet-agent-card">
           <h2 style="margin:0 0 8px;font-size:1rem;color:var(--accent)">Agent Smith — Phase 2</h2>
           <p class="muted" style="margin:0 0 10px;font-size:.78rem">Agent Smith suggests knob changes within guardrails every 3–5 engine cycles (or on significant events). Phase 2: review and apply manually.</p>
@@ -612,7 +628,10 @@
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Evaluate the re-entry gate and cooldown situation. Should we wait or adjust re-entry settings?">Re-entry / cooldown</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Perform a risk and safety check: drawdown, kill switch, preflight, inventory imbalance, and anything dangerous in current settings.">Risk check</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Analyze pending buy ladder and stale cancel policy. Use pending_buy_stale in context: which bids should cancel, why are unfilled bids sitting, and what knob changes (max_drift, max_pending_buys, buy_limit_offset) do you recommend?">Stale bid ladder</button>
-              <button type="button" class="secondary skynet-quick-btn" data-prompt="Trust phase: RLUSD-heavy, bullish consolidation. Recommend only patient accumulation knobs — max_pending if cap blocks, keep offset at or above effective, weakness 0.05. Do not tighten drift. Explain HOLD vs session MTM vs realized bracket P&amp;L.">Trust phase review</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Neutral / chop regime: we had SL churn overnight. Recommend anti-churn knobs only — max_pending 1–2, buy_offset ≥ 0.18, weakness ≥ 0.05, wider stale drift before offset↓. Use realized_bracket_pnl not session MTM. Plain English, a little personality.">Neutral — anti-churn review</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Bear / defensive regime: downtrend or SL streak. Risk down, max_pending 1, buy_offset up, sl_cooldown up, ta_min_buy up. Suggest trust phase if we're bleeding. Be blunt and conversational.">Bear — defensive review</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Bull regime: constructive dips, RLUSD-heavy, TA supportive. Patient accumulation only — max_pending before offset↓. Explain in plain English with personality.">Bull — dip buy review</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Trust phase: RLUSD-heavy, bullish consolidation. Recommend only patient accumulation knobs — max_pending if cap blocks, keep offset at or above effective, weakness 0.05. Do not tighten drift. Explain HOLD vs session MTM vs realized bracket P&amp;L in plain talk.">Trust phase review</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Scale phase check: I earned trust — suggest modest accumulation (max_pending 2, offset 0.15–0.20) one knob at a time. Compare to effective config.">Scale phase knobs</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Give a full structured summary of current bot state: portfolio, decision, TA, brackets, open offers, and top priority. Address my market view in the prompt above if I added one — do not default to ladder-clutter advice unless that is the actual problem.">Full summary</button>
             </div>
@@ -878,7 +897,34 @@
           hint.textContent = 'SKYNET bias: ' + label;
         }
       }
+      syncMarketRegimeButtons(c.alpha_operator_market_regime || 'neutral', c.alpha_operator_market_regime_label);
     }
+
+    function syncMarketRegimeButtons(regime, label) {
+      const wrap = $('skynetRegimeBtns');
+      if (!wrap) return;
+      const r = regime || 'neutral';
+      wrap.querySelectorAll('button[data-regime]').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.regime === r);
+      });
+      const hint = $('skynetRegimeHint');
+      if (hint) hint.textContent = 'Market regime: ' + (label || r);
+    }
+
+    async function saveMarketRegime(regime) {
+      const d = await patchJson('/operator/config', { overrides: { alpha_operator_market_regime: regime } });
+      if (d?.ok) {
+        toast('Market regime → ' + regime);
+        operatorConfig = d;
+        fillControlsFromConfig(operatorConfig);
+      } else {
+        toast(d?.errors?.join('; ') || d?.message || 'Save failed', true);
+      }
+    }
+
+    document.querySelectorAll('#skynetRegimeBtns button[data-regime]').forEach((btn) => {
+      btn.addEventListener('click', () => saveMarketRegime(btn.dataset.regime || 'neutral'));
+    });
 
     async function loadOperatorConfig() {
       const r = await fetch('/operator/config?_=' + Date.now());

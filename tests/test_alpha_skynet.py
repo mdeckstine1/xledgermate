@@ -186,3 +186,40 @@ def test_build_skynet_user_message_includes_operator_phase():
     )
     assert "OPERATOR PHASE active: trust" in msg
     assert "lowering alpha_buy_limit_offset_pct below" in msg
+
+
+def test_market_regime_normalize_and_snapshot():
+    from alpha.hud.operator_market_regime import (
+        DEFAULT_MARKET_REGIME,
+        build_market_regime_context_block,
+        market_regime_snapshot_fields,
+        normalize_market_regime,
+    )
+    from alpha.operator.runtime import validate_override_updates
+
+    assert normalize_market_regime("BEAR") == "bear"
+    assert normalize_market_regime("chop") == "neutral"
+    assert normalize_market_regime("bogus") == DEFAULT_MARKET_REGIME
+    assert market_regime_snapshot_fields({})["alpha_operator_market_regime"] == "neutral"
+    assert market_regime_snapshot_fields({"alpha_operator_market_regime": "bear"})[
+        "alpha_operator_market_regime_label"
+    ] == "Bear"
+    block = build_market_regime_context_block("bear")
+    assert "market_regime=bear" in block
+    sanitized, errors = validate_override_updates({"alpha_operator_market_regime": "neutral"})
+    assert not errors
+    assert sanitized["alpha_operator_market_regime"] == "neutral"
+    sanitized2, _ = validate_override_updates({"alpha_operator_market_regime": "moon"})
+    assert sanitized2["alpha_operator_market_regime"] == "neutral"
+
+
+def test_build_skynet_user_message_includes_market_regime():
+    from alpha.hud.skynet_scenarios import build_skynet_user_message
+
+    msg = build_skynet_user_message(
+        user_prompt="defensive",
+        context="=== snapshot ===",
+        market_regime="bear",
+    )
+    assert "MARKET REGIME active: bear" in msg
+    assert "Capital preservation first" in msg

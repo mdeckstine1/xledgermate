@@ -173,6 +173,7 @@ def register_skynet_routes(app: Any) -> None:
                 model=status["model"],
                 max_tokens=status.get("max_tokens", 4096),
                 operator_phase=snap.get("alpha_operator_phase"),
+                market_regime=snap.get("alpha_operator_market_regime"),
             )
         except Exception as exc:
             logger.warning("skynet_ask_failed | %s", exc)

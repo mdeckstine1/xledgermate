@@ -15,6 +15,11 @@ from alpha.hud.operator_phase import (
     build_operator_phase_context_block,
     normalize_operator_phase,
 )
+from alpha.hud.operator_market_regime import (
+    OPERATOR_MARKET_REGIME_KEY,
+    build_market_regime_context_block,
+    normalize_market_regime,
+)
 from alpha.reporting.realized_pnl import build_realized_pnl_snapshot, format_realized_pnl_context_block
 from alpha.hud.skynet_scenarios import (
     build_scenario_playbook,
@@ -28,17 +33,24 @@ logger = logging.getLogger(__name__)
 
 _GROK_ENDPOINT = "https://api.x.ai/v1/chat/completions"
 
-# Phase 1: never auto-apply mode switches without dedicated HUD confirmations.
-_BLOCKED_APPLY_KEYS = frozenset({"dry_run"})
+_SKYNET_VOICE_RULES = """
+Voice and tone (for JSON fields reasoning, summary, warnings — still valid JSON output):
+- Write like a sharp XRPL desk buddy: plain English, short paragraphs, no corporate fluff.
+- A little dry humor or light sarcasm is welcome when the tape deserves it — never cruel, never mocking the operator.
+- summary = one punchy line the operator can skim; reasoning = walk through what the bot is doing and why in human terms.
+- Translate jargon (deviation, max_pending, deferred SL) into what-it-means-for-the-bag.
+- If last night was SL-heavy, say so bluntly and recommend defense — do not sugarcoat churn.
+"""
 
 _SYSTEM_PROMPT = """You are SKYNET, an expert advisor for xLedgerMate Alpha — an XRPL XRP/RLUSD limit-order bag-growth bot.
 
-You advise the human operator only. You do NOT execute trades. Be direct and practical.
+You advise the human operator only. You do NOT execute trades.
+""" + _SKYNET_VOICE_RULES + """
 
 Respond with a single JSON object (no markdown fences) using exactly this schema:
 {{
-  "reasoning": "<2-6 sentences explaining current state and your analysis>",
-  "summary": "<one-line headline for the operator>",
+  "reasoning": "<3-8 sentences in conversational plain language — personality OK>",
+  "summary": "<one punchy headline for the operator>",
   "suggested_changes": [
     {{"key": "<operator_config_key>", "value": <json_value>, "reason": "<why>"}}
   ],
@@ -59,6 +71,7 @@ Operator prompt priority (critical):
 - Scenario playbook and likely_scenarios are REFERENCE ONLY — use when aligned with operator intent, not as a default template.
 - HOLD due to max_pending_buys alone does NOT mean "tighten drift" — if operator wants bullish buy / RLUSD deployment, suggest accumulation knobs per operator phase (trust: max_pending↑ before offset↓; scale/aggressive: offset↓ may apply).
 - Respect `alpha_operator_phase` in context (trust | scale | aggressive). Trust phase: do NOT lower alpha_buy_limit_offset_pct below effective without explicit operator ask or sharp dip.
+- Respect `alpha_operator_market_regime` (bull | neutral | bear). Bear/neutral after SL streaks → defense first, not more bids.
 - session_pnl_xrp is mark-to-market portfolio drift — NOT realized trading profit. Use bracket TP/SL outcomes when judging bleed.
 - Context block `realized_bracket_pnl` (tax CSV) is authoritative for trading edge in trust phase — prefer over session_pnl_xrp_mtm.
 
@@ -76,6 +89,9 @@ Explain HOLD reasons using inventory deviation, edge gates, re-entry cooldowns, 
 - When many pending buys sit unfilled, check `pending_buy_stale`; for ladder clutter tighten drift and max_pending; for entry churn widen drift (Scenario G).
 - Prefer operator key names from allowlist; aliases like risk_per_trade_pct map to alpha_risk_per_trade_pct.
 """
+
+# Phase 1: never auto-apply mode switches without dedicated HUD confirmations.
+_BLOCKED_APPLY_KEYS = frozenset({"dry_run"})
 
 
 def skynet_status(config: BotConfig | None = None) -> Dict[str, Any]:
@@ -127,6 +143,7 @@ def build_skynet_context(
         stale_snapshot=stale_snapshot if isinstance(stale_snapshot, dict) else {},
     )
     operator_phase = normalize_operator_phase(cfg.get(OPERATOR_PHASE_KEY))
+    market_regime = normalize_market_regime(cfg.get(OPERATOR_MARKET_REGIME_KEY))
     session_pnl = risk.get("session_pnl_xrp")
     try:
         session_pnl_f = float(session_pnl) if session_pnl is not None else None
@@ -140,6 +157,8 @@ def build_skynet_context(
 
     lines = [
         build_operator_phase_context_block(operator_phase),
+        "",
+        build_market_regime_context_block(market_regime),
         "",
         format_realized_pnl_context_block(realized_pnl),
         "",
@@ -318,6 +337,7 @@ def call_grok_advisor(
     user_message: Optional[str] = None,
     max_tokens: int = 4096,
     operator_phase: Optional[str] = None,
+    market_regime: Optional[str] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     allowed = ", ".join(OPERATOR_TUNABLE_KEYS)
     system = system_prompt or _SYSTEM_PROMPT.format(allowed_keys=allowed)
@@ -327,6 +347,7 @@ def call_grok_advisor(
             user_prompt=user_prompt,
             context=context,
             operator_phase=operator_phase,
+            market_regime=market_regime,
         )
     messages = [
         {"role": "system", "content": system},
@@ -340,7 +361,7 @@ def call_grok_advisor(
         "model": model,
         "messages": messages,
         "max_tokens": max(256, min(8192, int(max_tokens))),
-        "temperature": 0.35,
+        "temperature": 0.52,
     }
     resp = requests.post(_GROK_ENDPOINT, headers=headers, json=payload, timeout=timeout)
     if not resp.ok:
