@@ -336,6 +336,7 @@
           <p id="agentKnobLegend" class="agent-knob-legend" style="display:none"><span class="knob-swatch">◆</span> Purple = SKYNET proposes this knob (Agent Smith safe changes or Ask → Apply)</p>
           <div class="ctrl-row"><label data-knob="inventory_target_xrp_ratio" title="Target XRP share of portfolio. Buys deploy RLUSD when below target; sells trim when above.">target_xrp_pct</label><input type="range" id="slTargetXrp" min="0" max="100" step="1"><input type="number" id="numTargetXrp" min="0" max="100" step="1"><span id="valTargetXrp" class="muted">%</span></div>
           <div class="ctrl-row"><label data-knob="alpha_weakness_deviation" title="How far below target XRP ratio before weakness triggers RLUSD deployment buys.">weakness_deviation</label><input type="range" id="slWeakness" min="0.005" max="0.15" step="0.005"><input type="number" id="numWeakness" step="0.005"><span id="valWeakness" class="muted"></span></div>
+          <div class="ctrl-row"><label data-knob="alpha_strength_deviation" title="How far above target XRP ratio before strength sells trim the bag.">strength_deviation</label><input type="range" id="slStrength" min="0.01" max="0.25" step="0.01"><input type="number" id="numStrength" step="0.01"><span id="valStrength" class="muted"></span></div>
           <div class="ctrl-row"><label data-knob="alpha_risk_per_trade_pct" title="Percent of risk capital allocated per buy bracket.">risk_per_trade_pct</label><input type="range" id="slRisk" min="0.1" max="5" step="0.1"><input type="number" id="numRisk" step="0.1"><span id="valRisk" class="muted"></span></div>
           <div class="ctrl-row"><label data-knob="alpha_min_edge_threshold_pct" title="Minimum expected edge (spread capture) required before placing a bid.">min_edge_threshold_pct</label><input type="range" id="slEdge" min="0" max="1" step="0.01"><input type="number" id="numEdge" step="0.01"><span id="valEdge" class="muted"></span></div>
           <div class="ctrl-row"><label data-knob="alpha_buy_limit_offset_pct" title="Bid limit sits this % below mid — deeper = more patient fills.">buy_limit_offset_pct</label><input type="range" id="slOffset" min="0.05" max="1" step="0.01"><input type="number" id="numOffset" step="0.01"><span id="valOffset" class="muted"></span></div>
@@ -344,6 +345,7 @@
           <div class="ctrl-row"><label data-knob="alpha_max_pending_sells" title="Max simultaneous open sell offers.">max_pending_sells</label><input type="number" id="numMaxSells" min="1" max="5" step="1"></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_stale_pending_buy_enabled" title="Each cycle, cancel resting buy bids that drift too far from the current buy_limit_offset target."><input type="checkbox" id="stalePendingEnabled" checked> stale_pending_buy_enabled</label></div>
           <div class="ctrl-row"><label data-knob="alpha_stale_pending_buy_max_drift_pct" title="Cancel pending buys when entry price differs from current target by more than this % of mid.">stale_pending_buy_max_drift_pct</label><input type="range" id="slStaleDrift" min="0.05" max="2" step="0.05"><input type="number" id="numStaleDrift" step="0.05"><span id="valStaleDrift" class="muted">%</span></div>
+          <div class="ctrl-row"><label data-knob="alpha_stale_pending_buy_max_age_seconds" title="Also cancel resting bids older than this many seconds (0 = age gate off).">stale_pending_buy_max_age_sec</label><input type="range" id="slStaleAge" min="0" max="86400" step="60"><input type="number" id="numStaleAge" min="0" step="60"><span id="valStaleAge" class="muted">s</span></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_deferred_sl_enabled" title="Hold stop-loss off the ledger until price nears the stop. Prevents XRPL limit sells below the bid from instant-exiting new brackets."><input type="checkbox" id="deferredSlEnabled" checked> deferred_sl_enabled</label></div>
           <div class="ctrl-row"><label data-knob="alpha_deferred_sl_arm_buffer_pct" title="Arm the SL on-ledger when mid is within this % above the stop target (0 = at or below stop only).">deferred_sl_arm_buffer_pct</label><input type="range" id="slDeferredArm" min="0" max="2" step="0.05"><input type="number" id="numDeferredArm" step="0.05"><span id="valDeferredArm" class="muted">%</span></div>
           <div class="ctrl-row"><label data-knob="alpha_cycle_interval_seconds" title="Seconds between full engine cycles (5–60). Shorter = more responsive, more RPC load.">cycle_interval_seconds</label><input type="range" id="slCycle" min="5" max="60" step="1"><input type="number" id="numCycle" min="5" max="60" step="1"><span id="valCycle" class="muted">s</span></div>
@@ -546,7 +548,7 @@
         </div>
         <div class="card" style="margin-bottom:12px;border-color:#3d3520">
           <h2 style="margin:0 0 8px;font-size:1rem;color:#fde68a">Market regime</h2>
-          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Tape bias for SKYNET — how Grok should think about entries <em>right now</em>. Does not change knobs until you Apply. After an SL-heavy night, try <strong>Neutral</strong> or <strong>Bear</strong>.</p>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Tape bias for SKYNET — how the advisor should think about entries <em>right now</em>. Does not change knobs until you Apply. After an SL-heavy night, try <strong>Neutral</strong> or <strong>Bear</strong>.</p>
           <div class="skynet-regime-btns" id="skynetRegimeBtns">
             <button type="button" class="secondary regime-bull" data-regime="bull">Bull — accumulate dips</button>
             <button type="button" class="secondary regime-neutral" data-regime="neutral">Neutral — chop / anti-churn</button>
@@ -593,7 +595,7 @@
         </div>
         <div class="card skynet-full-card">
           <h2 style="margin:0 0 8px;font-size:1rem;color:#c4b5fd">Full SKYNET — Phase 3 <span id="skynetFullBadge" class="skynet-full-badge" style="display:none">AUTONOMOUS</span></h2>
-          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Supervised autonomy: Grok auto-applies guardrailed knob changes. Requires Agent Smith mode + confirmation. Does not place trades — config only. Kill switch / pause always override.</p>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Supervised autonomy: SKYNET auto-applies guardrailed knob changes. Requires Agent Smith mode + confirmation. Does not place trades — config only. Kill switch / pause always override.</p>
           <div class="ctrl-row">
             <label><input type="checkbox" id="skynetFullEnabled"> Enable Full SKYNET Mode</label>
             <button type="button" id="btnSkynetPauseFull" class="warn secondary">Pause Full Mode</button>
@@ -636,7 +638,7 @@
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Give a full structured summary of current bot state: portfolio, decision, TA, brackets, open offers, and top priority. Address my market view in the prompt above if I added one — do not default to ladder-clutter advice unless that is the actual problem.">Full summary</button>
             </div>
             <div class="skynet-actions">
-              <button type="button" id="btnSkynetSend">Send to Grok</button>
+              <button type="button" id="btnSkynetSend">Ask SKYNET</button>
               <button type="button" id="btnSkynetClear" class="secondary">Clear chat</button>
             </div>
           </div>
@@ -791,9 +793,11 @@
     const syncSellOffset = linkSlider('slSellOffset', 'numSellOffset', 'valSellOffset');
     const syncCycle = linkSlider('slCycle', 'numCycle', 'valCycle');
     const syncStaleDrift = linkSlider('slStaleDrift', 'numStaleDrift', 'valStaleDrift');
+    const syncStaleAge = linkSlider('slStaleAge', 'numStaleAge', 'valStaleAge');
     const syncDeferredArm = linkSlider('slDeferredArm', 'numDeferredArm', 'valDeferredArm');
     const syncTargetXrp = linkSlider('slTargetXrp', 'numTargetXrp', 'valTargetXrp');
     const syncWeakness = linkSlider('slWeakness', 'numWeakness', 'valWeakness');
+    const syncStrength = linkSlider('slStrength', 'numStrength', 'valStrength');
     const syncTrail = linkSlider('slTrail', 'numTrail');
     const syncBreakout = linkSlider('slBreakout', 'numBreakout');
     const syncLookback = linkSlider('slLookback', 'numLookback');
@@ -836,6 +840,7 @@
         : Math.round((c.inventory_target_xrp_ratio ?? 0.75) * 100);
       syncTargetXrp(targetPct);
       syncWeakness(c.alpha_weakness_deviation ?? 0.02);
+      syncStrength(c.alpha_strength_deviation ?? 0.04);
       syncRisk(c.alpha_risk_per_trade_pct ?? 0.5);
       syncEdge(c.alpha_min_edge_threshold_pct ?? 0.08);
       syncOffset(c.alpha_buy_limit_offset_pct ?? 0.15);
@@ -844,6 +849,7 @@
       $('numMaxSells').value = c.alpha_max_pending_sells ?? 1;
       $('stalePendingEnabled').checked = c.alpha_stale_pending_buy_enabled !== false;
       syncStaleDrift(c.alpha_stale_pending_buy_max_drift_pct ?? 0.15);
+      syncStaleAge(c.alpha_stale_pending_buy_max_age_seconds ?? 0);
       $('deferredSlEnabled').checked = c.alpha_deferred_sl_enabled !== false;
       syncDeferredArm(c.alpha_deferred_sl_arm_buffer_pct ?? 0);
       syncCycle(c.alpha_cycle_interval_seconds ?? 15);
@@ -951,6 +957,7 @@
       const d = await patchJson('/operator/config', { overrides: {
         inventory_target_xrp_ratio: targetPct / 100.0,
         alpha_weakness_deviation: parseFloat($('numWeakness').value),
+        alpha_strength_deviation: parseFloat($('numStrength').value),
         alpha_risk_per_trade_pct: parseFloat($('numRisk').value),
         alpha_min_edge_threshold_pct: parseFloat($('numEdge').value),
         alpha_buy_limit_offset_pct: parseFloat($('numOffset').value),
@@ -959,6 +966,7 @@
         alpha_max_pending_sells: parseInt($('numMaxSells').value, 10),
         alpha_stale_pending_buy_enabled: $('stalePendingEnabled').checked,
         alpha_stale_pending_buy_max_drift_pct: parseFloat($('numStaleDrift').value),
+        alpha_stale_pending_buy_max_age_seconds: parseInt($('numStaleAge').value, 10),
         alpha_deferred_sl_enabled: $('deferredSlEnabled').checked,
         alpha_deferred_sl_arm_buffer_pct: parseFloat($('numDeferredArm').value),
         alpha_cycle_interval_seconds: parseInt($('numCycle').value, 10),
@@ -2470,11 +2478,11 @@
           return;
         }
         if (!d.configured) {
-          el.textContent = 'Grok API key missing — set XLG_GROK_KEY or XAI_API_KEY in .env on the server.';
+          el.textContent = 'SKYNET API key missing — set XAI_API_KEY or XLG_GROK_KEY in .env on the server.';
           $('btnSkynetSend').disabled = true;
           return;
         }
-        el.textContent = `Grok ready · model ${d.model}${d.key_hint ? ' · key ' + d.key_hint : ''} · Phase 1 manual + Phase 2 Agent Smith + Phase 3 full mode`;
+        el.textContent = `SKYNET ready · model ${d.model}${d.key_hint ? ' · key ' + d.key_hint : ''} · Phase 1 manual + Phase 2 Agent Smith + Phase 3 full mode`;
         $('btnSkynetSend').disabled = false;
         if (d.guardrails) fillGuardrailsForm(d.guardrails);
         if (d.emergency_rules) fillEmergencyForm(d.emergency_rules);
@@ -2561,7 +2569,7 @@
       $('skynetFullEnabled').checked = false;
       const ok = await confirmModal(
         'Enable Full SKYNET Mode',
-        'Grok will AUTO-APPLY guardrailed knob changes every 3–5 cycles. Type ENABLE_FULL_SKYNET to confirm. Kill switch and Pause always override.',
+        'SKYNET will AUTO-APPLY guardrailed knob changes every 3–5 cycles. Type ENABLE_FULL_SKYNET to confirm. Kill switch and Pause always override.',
         'ENABLE_FULL_SKYNET'
       );
       if (!ok) return;

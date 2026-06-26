@@ -1,4 +1,4 @@
-"""Alpha SKYNET — Phase 1 Grok advisor (manual prompt + human-approved apply)."""
+"""Alpha SKYNET — Phase 1 advisor (manual prompt + human-approved apply)."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from alpha.hud.operator_market_regime import (
     build_market_regime_context_block,
     normalize_market_regime,
 )
+from alpha.hud.skynet_knobs import build_skynet_knob_catalog, normalize_suggestion_key
 from alpha.reporting.realized_pnl import build_realized_pnl_snapshot, format_realized_pnl_context_block
 from alpha.hud.skynet_scenarios import (
     build_scenario_playbook,
@@ -31,7 +32,7 @@ from utils.env_secrets import resolve_grok_key
 
 logger = logging.getLogger(__name__)
 
-_GROK_ENDPOINT = "https://api.x.ai/v1/chat/completions"
+_SKYNET_LLM_ENDPOINT = "https://api.x.ai/v1/chat/completions"
 
 _SKYNET_VOICE_RULES = """
 Voice and tone (for JSON fields reasoning, summary, warnings — still valid JSON output):
@@ -114,7 +115,7 @@ def build_skynet_context(
     *,
     operator_config: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Serialize rich operator context for Grok."""
+    """Serialize rich operator context for the SKYNET advisor."""
     inv = hud_state.get("inventory") or {}
     risk = hud_state.get("risk") or {}
     decision = hud_state.get("decision") or {}
@@ -217,6 +218,8 @@ def build_skynet_context(
         "",
         build_scenario_playbook(),
         "",
+        build_skynet_knob_catalog(),
+        "",
         "=== Open offers (sample) ===",
         json.dumps((hud_state.get("open_offers") or [])[:15], default=str)[:2000],
         "",
@@ -232,7 +235,7 @@ def build_skynet_context(
 def _extract_json_object(text: str) -> Dict[str, Any]:
     raw = (text or "").strip()
     if not raw:
-        raise ValueError("empty Grok response")
+        raise ValueError("empty SKYNET advisor response")
     if raw.startswith("```"):
         parts = raw.split("```")
         for part in parts:
@@ -245,11 +248,11 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
     start = raw.find("{")
     end = raw.rfind("}")
     if start < 0 or end <= start:
-        raise ValueError("no JSON object in Grok response")
+        raise ValueError("no JSON object in SKYNET advisor response")
     return json.loads(raw[start : end + 1])
 
 
-def parse_grok_advisor_response(text: str) -> Dict[str, Any]:
+def parse_skynet_advisor_response(text: str) -> Dict[str, Any]:
     data = _extract_json_object(text)
     changes = data.get("suggested_changes")
     if changes is None:
@@ -260,10 +263,10 @@ def parse_grok_advisor_response(text: str) -> Dict[str, Any]:
     for item in changes:
         if not isinstance(item, dict):
             continue
-        key = str(item.get("key") or "").strip()
-        if not key:
+        raw_key = str(item.get("key") or "").strip()
+        if not raw_key:
             continue
-        if key == "target_xrp_pct":
+        if raw_key in ("target_xrp_pct", "inventory_target_xrp_pct"):
             try:
                 normalized.append(
                     {
@@ -275,6 +278,7 @@ def parse_grok_advisor_response(text: str) -> Dict[str, Any]:
             except (TypeError, ValueError):
                 continue
             continue
+        key = normalize_suggestion_key(raw_key)
         normalized.append(
             {
                 "key": key,
@@ -291,6 +295,9 @@ def parse_grok_advisor_response(text: str) -> Dict[str, Any]:
     }
 
 
+parse_grok_advisor_response = parse_skynet_advisor_response
+
+
 def filter_applicable_suggestions(
     suggestions: List[Dict[str, Any]],
     *,
@@ -302,17 +309,18 @@ def filter_applicable_suggestions(
     errors: List[str] = []
 
     for item in suggestions:
-        key = str(item.get("key") or "").strip()
-        if not key:
+        raw_key = str(item.get("key") or "").strip()
+        if not raw_key:
             continue
+        key = normalize_suggestion_key(raw_key)
         if key in _BLOCKED_APPLY_KEYS:
             errors.append(f"{key}: blocked — change via dedicated HUD control")
             continue
         if key not in OPERATOR_TUNABLE_KEYS:
-            errors.append(f"{key}: not an operator tunable key")
+            errors.append(f"{raw_key}: not an operator tunable key")
             continue
         patch[key] = item.get("value")
-        accepted.append(item)
+        accepted.append({**item, "key": key})
 
     if not patch:
         return {}, [], errors
@@ -326,7 +334,7 @@ def filter_applicable_suggestions(
     return sanitized, final_accepted, errors
 
 
-def call_grok_advisor(
+def call_skynet_advisor(
     *,
     user_prompt: str,
     context: str,
@@ -363,10 +371,10 @@ def call_grok_advisor(
         "max_tokens": max(256, min(8192, int(max_tokens))),
         "temperature": 0.52,
     }
-    resp = requests.post(_GROK_ENDPOINT, headers=headers, json=payload, timeout=timeout)
+    resp = requests.post(_SKYNET_LLM_ENDPOINT, headers=headers, json=payload, timeout=timeout)
     if not resp.ok:
         detail = resp.text[:500]
-        raise RuntimeError(f"Grok API {resp.status_code}: {detail}")
+        raise RuntimeError(f"SKYNET advisor API {resp.status_code}: {detail}")
     message = resp.json().get("choices", [{}])[0].get("message", {}) or {}
     content = str(message.get("content") or "").strip()
     if not content:
@@ -376,10 +384,13 @@ def call_grok_advisor(
     if not content:
         refusal = str(message.get("refusal") or "").strip()
         if refusal:
-            raise RuntimeError(f"Grok refused: {refusal[:500]}")
-        raise RuntimeError("Grok returned empty content")
-    parsed = parse_grok_advisor_response(content)
+            raise RuntimeError(f"SKYNET advisor refused: {refusal[:500]}")
+        raise RuntimeError("SKYNET advisor returned empty content")
+    parsed = parse_skynet_advisor_response(content)
     return content, parsed
+
+
+call_grok_advisor = call_skynet_advisor
 
 
 def format_advisor_display(parsed: Dict[str, Any]) -> str:

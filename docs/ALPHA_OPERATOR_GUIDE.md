@@ -193,9 +193,9 @@ Re-entry cooldown reasons in logs and Decision: `post_tp_cooldown`, `post_sl_coo
 
 ---
 
-## SKYNET (Grok Ask + Agent Smith)
+## SKYNET (Ask + Agent Smith)
 
-The HUD **SKYNET** tab provides Grok-powered knob suggestions (**Ask**), bounded **Agent Smith** (Phase 2), and optional **Full SKYNET** autonomy (Phase 3). **Operator phase** (`trust` | `scale` | `aggressive`) biases every SKYNET cycle — set it before asking for strategy advice.
+The HUD **SKYNET** tab provides AI-powered knob suggestions (**Ask SKYNET**), bounded **Agent Smith** (Phase 2), and optional **Full SKYNET** autonomy (Phase 3). **Operator phase** (`trust` | `scale` | `aggressive`) and **market regime** (`bull` | `neutral` | `bear`) bias every SKYNET cycle — set them before asking for strategy advice.
 
 | Phase | Purpose |
 |-------|---------|
@@ -203,7 +203,7 @@ The HUD **SKYNET** tab provides Grok-powered knob suggestions (**Ask**), bounded
 | **scale** | Modest accumulation after clean nights |
 | **aggressive** | Bag-growth push within guardrails |
 
-Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-ask-agent-smith-full-mode)** and scenarios **S–U** in the traders manual. Requires `XLG_GROK_KEY` or `XAI_API_KEY` in `.env`.
+Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-ask-agent-smith-full-mode)** and scenarios **S–U** in the traders manual. Requires `XAI_API_KEY` or `XLG_GROK_KEY` in `.env` (xAI backend).
 
 ---
 

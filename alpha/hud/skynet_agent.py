@@ -1,4 +1,4 @@
-"""Alpha SKYNET Phase 2/3 — bounded Grok agent with optional supervised autonomy."""
+"""Alpha SKYNET Phase 2/3 — bounded advisor agent with optional supervised autonomy."""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from alpha.hud.skynet import (
     build_skynet_context,
-    call_grok_advisor,
+    call_skynet_advisor,
     filter_applicable_suggestions,
     format_advisor_display,
-    parse_grok_advisor_response,
+    parse_skynet_advisor_response,
 )
 from alpha.operator.runtime import OPERATOR_TUNABLE_KEYS, apply_overrides, effective_config_snapshot
 from config.settings import BotConfig
@@ -685,7 +685,7 @@ def run_skynet_agent(
             return {"ok": False, "message": "SKYNET disabled in config"}
         api_key = resolve_grok_key(getattr(cfg, "alpha_grok_api_key", "") or "")
         if not api_key:
-            return {"ok": False, "message": "Grok API key not configured"}
+            return {"ok": False, "message": "SKYNET API key not configured"}
 
         hud_state = _load_hud_state(runtime_path)
         engine_cycle = int(hud_state.get("engine_cycle") or 0)
@@ -764,7 +764,7 @@ def run_skynet_agent(
         model = (getattr(cfg, "alpha_skynet_grok_model", None) or "grok-3").strip() or "grok-3"
         max_tokens = int(getattr(cfg, "alpha_skynet_grok_max_tokens", 4096) or 4096)
         operator_phase = effective_snap.get("alpha_operator_phase")
-        raw, parsed = call_grok_advisor(
+        raw, parsed = call_skynet_advisor(
             user_prompt="",
             context=context,
             api_key=api_key,

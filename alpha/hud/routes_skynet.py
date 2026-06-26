@@ -1,4 +1,4 @@
-"""Alpha HUD SKYNET routes — Grok advisor (Phase 1 + Phase 2 agent)."""
+"""Alpha HUD SKYNET routes — advisor (Phase 1 + Phase 2 agent)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def register_skynet_routes(app: Any) -> None:
 
     from alpha.hud.skynet import (
         build_skynet_context,
-        call_grok_advisor,
+        call_skynet_advisor,
         filter_applicable_suggestions,
         format_advisor_display,
         skynet_status,
@@ -152,7 +152,7 @@ def register_skynet_routes(app: Any) -> None:
             return JSONResponse(
                 {
                     "ok": False,
-                    "message": "Grok API key not configured. Set XLG_GROK_KEY or XAI_API_KEY in .env.",
+                    "message": "SKYNET API key not configured. Set XAI_API_KEY or XLG_GROK_KEY in .env on the server.",
                 },
                 status_code=400,
             )
@@ -166,7 +166,7 @@ def register_skynet_routes(app: Any) -> None:
         context = build_skynet_context(hud_state, operator_config=snap)
 
         try:
-            raw, parsed = call_grok_advisor(
+            raw, parsed = call_skynet_advisor(
                 user_prompt=prompt,
                 context=context,
                 api_key=api_key,

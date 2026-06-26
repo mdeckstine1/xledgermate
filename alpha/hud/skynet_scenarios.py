@@ -1,4 +1,4 @@
-"""Condensed scenario playbook for SKYNET / Grok context (mirrors ALPHA_TRADERS_MANUAL scenarios)."""
+"""Condensed scenario playbook for SKYNET context (mirrors ALPHA_TRADERS_MANUAL scenarios)."""
 
 from __future__ import annotations
 
@@ -15,36 +15,11 @@ from alpha.hud.operator_market_regime import (
     market_regime_user_message_rules,
     normalize_market_regime,
 )
-
-
-# Friendly HUD names → operator override keys (Grok may use either).
-KNOB_ALIASES: Dict[str, str] = {
-    "risk_per_trade_pct": "alpha_risk_per_trade_pct",
-    "min_edge_threshold_pct": "alpha_min_edge_threshold_pct",
-    "buy_limit_offset_pct": "alpha_buy_limit_offset_pct",
-    "sell_limit_offset_pct": "alpha_sell_limit_offset_pct",
-    "weakness_deviation": "alpha_weakness_deviation",
-    "strength_deviation": "alpha_strength_deviation",
-    "max_pending_buys": "alpha_max_pending_buys",
-    "max_pending_sells": "alpha_max_pending_sells",
-    "stale_pending_buy_max_drift_pct": "alpha_stale_pending_buy_max_drift_pct",
-    "stale_pending_buy_enabled": "alpha_stale_pending_buy_enabled",
-    "stale_pending_buy_max_age_seconds": "alpha_stale_pending_buy_max_age_seconds",
-    "cycle_interval_seconds": "alpha_cycle_interval_seconds",
-    "target_xrp_pct": "inventory_target_xrp_ratio",
-    "ta_weight": "alpha_ta_weight",
-    "ta_min_buy_score": "alpha_ta_min_buy_score",
-    "ta_min_sell_score": "alpha_ta_min_sell_score",
-    "tp_cooldown_cycles": "alpha_reentry_tp_cooldown_cycles",
-    "sl_cooldown_cycles": "alpha_reentry_sl_cooldown_cycles",
-    "tp_dip_pct": "alpha_reentry_tp_dip_pct",
-    "sl_stabilization_pct": "alpha_reentry_sl_stabilization_pct",
-    "reentry_enabled": "alpha_reentry_enabled",
-}
+from alpha.hud.skynet_knobs import KNOB_ALIASES  # noqa: F401 — re-export for tests/docs
 
 
 def build_scenario_playbook() -> str:
-    """Compact operator playbook for Grok (keep under ~4k chars)."""
+    """Compact operator playbook for SKYNET (keep under ~4k chars)."""
     return """=== Scenario playbook (A–R) ===
 Map decision.reason + inventory to a scenario, then suggest knob bundles from presets below.
 
@@ -94,7 +69,7 @@ def infer_scenario_hints(
     reentry: Optional[Dict[str, Any]] = None,
     stale_snapshot: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
-    """Heuristic scenario letters for Grok (non-exhaustive)."""
+    """Heuristic scenario letters for SKYNET (non-exhaustive)."""
     reason = (decision_reason or "").lower()
     inv = inventory or {}
     hints: List[str] = []
@@ -148,7 +123,7 @@ def infer_scenario_hints(
 
 
 def classify_prompt_intent(prompt: str) -> Dict[str, Any]:
-    """Lightweight intent tags so Grok addresses operator goals, not only auto scenario hints."""
+    """Lightweight intent tags so SKYNET addresses operator goals, not only auto scenario hints."""
     p = (prompt or "").strip().lower()
     tags: List[str] = []
     if re.search(

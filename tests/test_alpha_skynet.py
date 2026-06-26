@@ -1,4 +1,4 @@
-"""Tests for Alpha SKYNET Grok advisor."""
+"""Tests for Alpha SKYNET advisor."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from alpha.hud.skynet import (
     _SYSTEM_PROMPT,
     build_skynet_context,
     filter_applicable_suggestions,
-    parse_grok_advisor_response,
+    parse_skynet_advisor_response,
 )
 from alpha.operator.runtime import OPERATOR_TUNABLE_KEYS
 from config.settings import BotConfig
@@ -24,7 +24,7 @@ def test_system_prompt_format_escapes_json_braces():
     assert "{allowed_keys}" not in rendered
 
 
-def test_parse_grok_advisor_response_json():
+def test_parse_skynet_advisor_response_json():
     raw = json.dumps(
         {
             "reasoning": "Inventory is RLUSD heavy.",
@@ -39,7 +39,7 @@ def test_parse_grok_advisor_response_json():
             "warnings": ["mainnet"],
         }
     )
-    parsed = parse_grok_advisor_response(raw)
+    parsed = parse_skynet_advisor_response(raw)
     assert parsed["summary"] == "Wait for dip"
     assert len(parsed["suggested_changes"]) == 1
     assert parsed["suggested_changes"][0]["key"] == "alpha_buy_limit_offset_pct"
@@ -55,7 +55,7 @@ def test_parse_target_xrp_pct_alias():
             ],
         }
     )
-    parsed = parse_grok_advisor_response(raw)
+    parsed = parse_skynet_advisor_response(raw)
     assert parsed["suggested_changes"][0]["key"] == "inventory_target_xrp_ratio"
     assert parsed["suggested_changes"][0]["value"] == pytest.approx(0.75)
 
@@ -81,6 +81,21 @@ def test_filter_accepts_valid_knob():
     assert len(accepted) == 1
 
 
+def test_filter_accepts_hud_alias_keys():
+    base = BotConfig()
+    sanitized, accepted, errors = filter_applicable_suggestions(
+        [
+            {"key": "risk_per_trade_pct", "value": 2.5, "reason": "size"},
+            {"key": "sl_cooldown_cycles", "value": 20, "reason": "defense"},
+        ],
+        base=base,
+    )
+    assert not errors
+    assert sanitized["alpha_risk_per_trade_pct"] == 2.5
+    assert sanitized["alpha_reentry_sl_cooldown_cycles"] == 20
+    assert accepted[0]["key"] == "alpha_risk_per_trade_pct"
+
+
 def test_build_skynet_context_includes_decision():
     ctx = build_skynet_context(
         {
@@ -97,6 +112,7 @@ def test_build_skynet_context_includes_decision():
     assert "Scenario playbook" in ctx
     assert "likely_scenarios=" in ctx
     assert "phase=trust" in ctx
+    assert "Operator knob allowlist" in ctx
     assert "Operator phase scenarios (S–U)" in ctx
 
 

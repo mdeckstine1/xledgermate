@@ -184,7 +184,7 @@ def build_realized_pnl_snapshot(
 
 
 def format_realized_pnl_context_block(snapshot: Dict[str, Any]) -> str:
-    """Human-readable block for Grok context."""
+    """Human-readable block for SKYNET advisor context."""
     lines = [
         "=== Realized bracket P&L (tax CSV, rolling window) ===",
         f"window_hours={snapshot.get('window_hours')} "
