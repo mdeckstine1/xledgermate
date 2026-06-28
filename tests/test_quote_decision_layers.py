@@ -67,6 +67,38 @@ def test_solo_no_edge_patient_off() -> None:
     assert qd.would_quote is False
 
 
+def test_solo_toxic_20pct_stands_down() -> None:
+    inp = _solo_inputs()
+    inp.toxic_ratio_30s = 0.22
+    qd = run_quote_decision_pipeline(inp)
+    assert qd.intent == QuoteIntent.PATIENT_SOLO
+    assert qd.bid.allowed is False
+    assert qd.ask.allowed is False
+    assert qd.would_quote is False
+
+
+def test_solo_rlusd_heavy_rebalance_bid_survives_reservation_block() -> None:
+    inp = _solo_inputs(xrp_ratio=0.24, label="rlusd_heavy")
+    inp.reservation_allows_bid = False
+    inp.reservation_allows_ask = True
+    qd = run_quote_decision_pipeline(inp)
+    assert qd.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
+    assert qd.bid.allowed is True
+    assert qd.ask.allowed is False
+    assert qd.would_quote is True
+
+
+def test_solo_neutral_reservation_side_ask_fallback() -> None:
+    inp = _solo_inputs(xrp_ratio=0.50, label="balanced")
+    inp.reservation_allows_bid = False
+    inp.reservation_allows_ask = True
+    qd = run_quote_decision_pipeline(inp)
+    assert qd.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
+    assert qd.bid.allowed is False
+    assert qd.ask.allowed is True
+    assert qd.would_quote is True
+
+
 def test_bleed_pauses_buy_only_not_ask() -> None:
     """Principle 4: bleed on buy does not force ask-on."""
     fills = tuple(

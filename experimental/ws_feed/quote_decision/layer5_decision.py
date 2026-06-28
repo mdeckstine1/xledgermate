@@ -14,7 +14,9 @@ from experimental.ws_feed.quote_decision.layer4_bleed import (
     merge_bleed_into_permission,
 )
 from experimental.ws_feed.quote_decision.types import (
+    BookMode,
     CycleQuoteInputs,
+    DriftBand,
     EdgeViability,
     LayerTrace,
     PostureSnapshot,
@@ -84,6 +86,44 @@ def _base_permission(
     )
 
 
+def _reservation_permissions(
+    inputs: CycleQuoteInputs,
+    posture: PostureSnapshot,
+    intent: IntentSelection,
+    bid_edge: EdgeViability,
+    ask_edge: EdgeViability,
+) -> tuple[bool, bool]:
+    bid_reservation_ok = inputs.reservation_allows_bid
+    ask_reservation_ok = inputs.reservation_allows_ask
+
+    if (
+        posture.book.mode != BookMode.SOLO
+        or intent.intent != QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
+    ):
+        return bid_reservation_ok, ask_reservation_ok
+
+    # Solo acquire is the one narrow path where inventory rebalance can keep
+    # bids live even when the A-S reservation sits below touch.
+    if bid_edge.viable and posture.inventory.band in (
+        DriftBand.MILD_RLUSD,
+        DriftBand.HEAVY_RLUSD,
+    ):
+        bid_reservation_ok = True
+
+    # Neutral solo books still follow the reservation-side skew if the bid side
+    # is mathematically blocked; otherwise Layer 2's bid-only intent would turn
+    # a valid ask-only cycle into a zero-quote cycle.
+    if (
+        posture.inventory.band == DriftBand.NEUTRAL
+        and not bid_reservation_ok
+        and inputs.reservation_allows_ask
+        and ask_edge.viable
+    ):
+        ask_reservation_ok = True
+
+    return bid_reservation_ok, ask_reservation_ok
+
+
 def build_final_quoting_decision(
     inputs: CycleQuoteInputs,
     posture: PostureSnapshot,
@@ -93,8 +133,26 @@ def build_final_quoting_decision(
     bleed: BleedAdjustment,
 ) -> QuotingDecision:
     """Merge all layers into the final quoting decision."""
+    bid_reservation_ok, ask_reservation_ok = _reservation_permissions(
+        inputs,
+        posture,
+        intent,
+        bid_edge,
+        ask_edge,
+    )
     bid_ok, bid_block = _intent_allows_side(intent, side="bid", edge=bid_edge)
     ask_ok, ask_block = _intent_allows_side(intent, side="ask", edge=ask_edge)
+
+    if (
+        posture.book.mode == BookMode.SOLO
+        and intent.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
+        and posture.inventory.band == DriftBand.NEUTRAL
+        and not bid_reservation_ok
+        and ask_reservation_ok
+        and ask_edge.viable
+    ):
+        ask_ok = True
+        ask_block = ""
 
     if not bid_ok and bid_block:
         bid_edge = EdgeViability(
@@ -116,14 +174,14 @@ def build_final_quoting_decision(
         allowed=bid_ok,
         edge=bid_edge,
         posture=posture,
-        reservation_ok=inputs.reservation_allows_bid,
+        reservation_ok=bid_reservation_ok,
     )
     ask = _base_permission(
         side="ask",
         allowed=ask_ok,
         edge=ask_edge,
         posture=posture,
-        reservation_ok=inputs.reservation_allows_ask,
+        reservation_ok=ask_reservation_ok,
     )
 
     bid = merge_bleed_into_permission(
