@@ -238,13 +238,19 @@ def _quote_posture_label(
     quote_ask: bool,
     allow_bid: bool,
     allow_ask: bool,
+    inventory_label: str = "",
 ) -> str:
     """Reservation + QD combined posture label for HUD."""
+    inv = (inventory_label or "").strip().lower()
     if quote_bid and quote_ask:
         return "inside" if (allow_bid and allow_ask) else "two_sided"
     if quote_bid:
+        if not allow_bid and "rlusd_heavy" in inv:
+            return "bid_only_rebalance"
         return "bid_only_skew" if allow_bid else "above_ask"
     if quote_ask:
+        if not allow_ask and "xrp_heavy" in inv:
+            return "ask_only_rebalance"
         return "ask_only_skew" if allow_ask else "below_bid"
     return "blocked"
 
@@ -578,6 +584,7 @@ class PureQuotePath:
             quote_ask=quote_ask,
             allow_bid=allow_bid,
             allow_ask=allow_ask,
+            inventory_label=inv_state.label,
         )
 
         l1_bid_size = (
