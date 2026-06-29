@@ -129,6 +129,10 @@ alpha_accumulation_bypass_reload_spacing: true
 alpha_accumulation_reload_spacing_cycles: 1
 alpha_accumulation_rlusd_budget_pct: 40.0
 alpha_accumulation_budget_hours: 8.0
+alpha_accumulation_early_arm_enabled: true
+alpha_accumulation_chase_tighten_step_pct: 0.02
+alpha_accumulation_chase_min_offset_pct: 0.03
+alpha_accumulation_missed_move_pct: 0.30
 
 # Bracket legs after buy fill (application-level OCO — not XRPL native)
 initial_stop_loss_pct: 0.015

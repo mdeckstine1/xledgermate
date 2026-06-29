@@ -529,6 +529,7 @@ def _event_snapshot(hud_state: Dict[str, Any]) -> Dict[str, Any]:
         "opportunity_headline": (hud_state.get("opportunity_watch") or {}).get("headline"),
         "accumulation_phase": (hud_state.get("accumulation_regime") or {}).get("phase"),
         "accumulation_armed": (hud_state.get("accumulation_regime") or {}).get("armed"),
+        "accumulation_missed": (hud_state.get("accumulation_regime") or {}).get("scorecard", {}).get("missed_opportunity"),
     }
 
 
@@ -569,6 +570,8 @@ def detect_significant_events(
         reasons.append(f"accumulation_{acc_phase}")
     if snap.get("accumulation_armed") and not last_snapshot.get("accumulation_armed"):
         reasons.append("accumulation_armed")
+    if snap.get("accumulation_missed") and not last_snapshot.get("accumulation_missed"):
+        reasons.append("accumulation_missed_move")
     return bool(reasons), reasons
 
 

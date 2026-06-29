@@ -91,6 +91,10 @@ class OrderManager:
         self._recent_events: List[str] = []
         self._last_risk: Optional[RiskSnapshot] = None
         self._accumulation_knobs: object | None = None
+        self._accumulation_session: AccumulationSessionTracker | None = None
+
+    def set_accumulation_session(self, session: AccumulationSessionTracker | None) -> None:
+        self._accumulation_session = session
 
     def set_accumulation_knobs(self, knobs: object | None) -> None:
         self._accumulation_knobs = knobs
@@ -1125,6 +1129,14 @@ class OrderManager:
                     self._target_buy_limit_price(mid),
                     reason,
                 )
+                knobs = self._accumulation_knobs
+                if (
+                    self._accumulation_session is not None
+                    and knobs is not None
+                    and getattr(knobs, "armed", False)
+                    and reason
+                ):
+                    self._accumulation_session.record_chase_cancel(reason)
         cancelled += await self._prune_excess_pending_buys(mid)
         return cancelled
 
@@ -1221,6 +1233,11 @@ class OrderManager:
             record.entry_price_rlusd_per_xrp,
         )
         await self._ensure_bracket_legs(record, size_xrp=record.filled_xrp, reason="buy_full_fill")
+        if self._accumulation_session is not None:
+            self._accumulation_session.record_fill(
+                size_xrp=record.filled_xrp,
+                price_rlusd_per_xrp=record.entry_price_rlusd_per_xrp,
+            )
         self._emit_event(
             BracketFillEvent(
                 bracket_id=record.bracket_id,

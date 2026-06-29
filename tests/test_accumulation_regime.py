@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from alpha.decision.accumulation_regime import (
     AccumulationSessionTracker,
     accumulation_knobs_from_snapshot,
@@ -161,7 +163,43 @@ def test_engine_place_bid_accumulation_when_armed():
     assert "accumulation" in result.reason
 
 
-def test_session_budget_blocks_when_exhausted(tmp_path: Path):
+def test_chase_tightens_offset_after_cancel(tmp_path: Path):
+    path = tmp_path / "fresh_acc.json"
+    session = AccumulationSessionTracker(path=path)
+    cfg = BotConfig(alpha_accumulation_buy_offset_pct=0.06, alpha_accumulation_chase_tighten_step_pct=0.02)
+    snap = evaluate_accumulation_regime(
+        cfg,
+        inventory=_inventory_balanced(),
+        mid=1.05,
+        structure=_structure_breakout(),
+        ta=None,
+        operator_market_regime="bull",
+        rlusd_balance=500.0,
+        session=session,
+    )
+    knobs0 = accumulation_knobs_from_snapshot(snap, cfg, session=session)
+    assert knobs0.buy_offset_pct == pytest.approx(0.06)
+    session.record_chase_cancel("mid_passed_entry=0.12%>0.08%")
+    knobs1 = accumulation_knobs_from_snapshot(snap, cfg, session=session)
+    assert knobs1.buy_offset_pct == pytest.approx(0.04)
+
+
+def test_scorecard_missed_opportunity_flag(tmp_path: Path):
+    path = tmp_path / "acc.json"
+    session = AccumulationSessionTracker(path=path)
+    cfg = BotConfig(alpha_accumulation_missed_move_pct=0.20)
+    from alpha.types import utc_now
+
+    session._state["window_start_utc"] = utc_now().isoformat()
+    session._state["window_mid_lo"] = 1.0
+    session._state["window_mid_hi"] = 1.004
+    session._state["minutes_tape_up_idle"] = 5.0
+    session._state["ever_executed"] = False
+    session._state["fills_count"] = 0
+    sc = session.scorecard(cfg)
+    assert sc["missed_opportunity"] is True
+    assert "MISSING" in sc["headline"]
+
     path = tmp_path / "acc.json"
     session = AccumulationSessionTracker(path=path)
     cfg = BotConfig(alpha_accumulation_rlusd_budget_pct=10.0)

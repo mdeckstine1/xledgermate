@@ -106,6 +106,7 @@ class AlphaApplication:
             state_dir=self._state_dir,
             reentry_gate=self._reentry,
         )
+        self._orders.set_accumulation_session(self._accumulation_session)
         self._decision = DecisionEngine(
             config,
             inventory=self._inventory,
@@ -360,10 +361,24 @@ class AlphaApplication:
             self._reporting.send_kill_alert(risk.kill_switch_reason or "Kill switch activated")
         self._kill_was_active = risk.kill_switch_active
 
+        orders = await self._orders.sync_brackets(risk=risk)
+
         operator_regime = str(
             self._runtime.load_overrides().get(OPERATOR_MARKET_REGIME_KEY) or "neutral"
         )
         ref_mid = float(book.mid) if book and book.mid else 0.0
+        from alpha.decision.tape_participation import evaluate_tape_participation
+
+        tape_snap = (
+            evaluate_tape_participation(
+                self.config,
+                mid=ref_mid,
+                structure=structure,
+                ta=ta_snapshot,
+            )
+            if ref_mid > 0
+            else None
+        )
         acc_snap = evaluate_accumulation_regime(
             self.config,
             inventory=inventory,
@@ -375,12 +390,14 @@ class AlphaApplication:
             rlusd_balance=balances.rlusd,
             session=self._accumulation_session,
         )
-        acc_knobs = accumulation_knobs_from_snapshot(acc_snap, self.config)
+        acc_knobs = accumulation_knobs_from_snapshot(
+            acc_snap,
+            self.config,
+            session=self._accumulation_session,
+        )
         self._last_accumulation_knobs = acc_knobs
         self._decision.set_accumulation(acc_snap, acc_knobs)
         self._orders.set_accumulation_knobs(acc_knobs)
-
-        orders = await self._orders.sync_brackets(risk=risk)
 
         self._reentry.tick_cycle()
 
@@ -407,6 +424,18 @@ class AlphaApplication:
             balances=balances,
             ta=ta_snapshot,
             structure=self._last_structure,
+        )
+        from alpha.decision.engine import DecisionAction
+
+        cycle_phase = acc_snap.phase
+        if decision.action == DecisionAction.PLACE_BID:
+            cycle_phase = "executing"
+        self._accumulation_session.record_cycle(
+            phase=cycle_phase,
+            mid=ref_mid,
+            armed=acc_snap.armed or cycle_phase == "executing",
+            tape_active=tape_snap.active if tape_snap is not None else False,
+            cycle_seconds=float(self.config.alpha_cycle_interval_seconds),
         )
         self._record_cycle_metrics(
             book=book,

@@ -306,6 +306,7 @@
           <div id="oppWatchDetail" class="muted" style="font-size:.78rem;line-height:1.45"></div>
           <div id="oppWatchSignals" class="muted" style="font-size:.72rem;margin-top:6px"></div>
           <div id="oppWatchSuggest" class="muted" style="font-size:.75rem;margin-top:8px;line-height:1.5;color:#c4b5fd"></div>
+          <div id="oppWatchScorecard" class="acc-budget" style="margin-top:8px"></div>
         </div>
         <div class="live-charts-row">
         <div class="card chart-card">
@@ -2148,6 +2149,15 @@
       }
       if ($('oppWatchSuggest')) {
         $('oppWatchSuggest').innerHTML = (ow.suggestions || []).map(x => '• ' + x).join('<br>') || '';
+      }
+      const sc = acc.scorecard || {};
+      if ($('oppWatchScorecard')) {
+        const miss = sc.missed_opportunity ? ' ⚠ missed move' : '';
+        $('oppWatchScorecard').textContent = sc.headline
+          ? (sc.headline + miss + ' · bids ' + (sc.bids_placed ?? 0) + ' · fills ' + (sc.fills_count ?? 0)
+            + ' · chase ' + (sc.chase_cancels ?? 0) + ' · mid +' + (sc.window_mid_move_pct ?? 0) + '%')
+          : '';
+        $('oppWatchScorecard').style.color = sc.missed_opportunity ? '#fca5a5' : '#a5b4fc';
       }
       $('pauseBadge').style.display = s.operator_paused ? 'inline' : 'none';
       $('killBadge').style.display = s.risk?.kill_switch_active ? 'inline' : 'none';
