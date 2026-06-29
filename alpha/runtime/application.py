@@ -98,6 +98,10 @@ class AlphaApplication:
             config,
             persist_path=self._state_dir / "alpha_reentry.json",
         )
+        self._accumulation_session = AccumulationSessionTracker(
+            path=self._state_dir / "accumulation_session.json",
+        )
+        self._last_accumulation_knobs = None
         self._orders = OrderManager(
             self._ledger,
             self._dry_run_guard,
@@ -126,10 +130,6 @@ class AlphaApplication:
         self._last_ta: Optional[TechnicalAnalysisSnapshot] = None
         self._last_book: Optional[OrderBookSnapshot] = None
         self._last_liquidity: Optional[LiquidityDepth] = None
-        self._accumulation_session = AccumulationSessionTracker(
-            path=self._state_dir / "accumulation_session.json",
-        )
-        self._last_accumulation_knobs = None
         self._ta = TechnicalAnalysis(config)
         self._apply_price_history_config(config)
         self._ensure_ohlc_cache()
