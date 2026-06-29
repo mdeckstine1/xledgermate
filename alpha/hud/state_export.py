@@ -462,6 +462,22 @@ def build_hud_state(
     ).to_dict()
     from alpha.decision.opportunity_watch import evaluate_opportunity_watch
 
+    from alpha.decision.accumulation_regime import evaluate_accumulation_regime
+    from alpha.hud.operator_market_regime import OPERATOR_MARKET_REGIME_KEY, normalize_market_regime
+
+    operator_regime = normalize_market_regime((operator_overrides or {}).get(OPERATOR_MARKET_REGIME_KEY))
+    accumulation_regime = evaluate_accumulation_regime(
+        effective,
+        inventory=snap.inventory,
+        mid=ref_mid,
+        structure=structure,
+        ta=ta,
+        operator_market_regime=operator_regime,
+        pending_buys=bracket_summary.pending_buys,
+        decision_action=decision.action.value,
+        rlusd_balance=snap.balances.rlusd,
+    ).to_dict()
+
     opportunity_watch = evaluate_opportunity_watch(
         effective,
         inventory=snap.inventory,
@@ -473,6 +489,7 @@ def build_hud_state(
         pending_buys=bracket_summary.pending_buys,
         trading_enabled=snap.trading_enabled,
         operator_paused=controls.trading_paused,
+        accumulation_regime=accumulation_regime,
     ).to_dict()
     market_conditions = build_market_conditions(
         book=book if isinstance(book, OrderBookSnapshot) else None,
@@ -510,7 +527,11 @@ def build_hud_state(
         "dry_run": snap.dry_run,
         "trading_enabled": snap.trading_enabled,
         "posture": posture,
-        "ready_state": opportunity_watch.get("state", "idle"),
+        "ready_state": (
+            accumulation_regime.get("phase")
+            if accumulation_regime.get("armed") or accumulation_regime.get("phase") == "executing"
+            else opportunity_watch.get("state", "idle")
+        ),
         "operator_overrides": overrides,
         "config_effective": tunables,
         "account_address": snap.account_address,
@@ -575,6 +596,7 @@ def build_hud_state(
         "technical_analysis": ta_block,
         "tape_participation": tape_participation,
         "momentum_entry": momentum_entry,
+        "accumulation_regime": accumulation_regime,
         "opportunity_watch": opportunity_watch,
         "ohlc_cache": ohlc_cache,
         "market_metrics": market_metrics,

@@ -239,16 +239,28 @@ class ReentryGate:
             req,
         )
 
-    def clear(self, *, reason: str = "buy_placed") -> None:
+    def clear(self, *, reason: str = "buy_placed", spacing_cycles: int | None = None) -> None:
         if not self._state.get("active"):
             return
-        spacing = max(0, int(self._config.alpha_reentry_post_clear_buy_spacing_cycles))
+        if spacing_cycles is None:
+            spacing = max(0, int(self._config.alpha_reentry_post_clear_buy_spacing_cycles))
+        else:
+            spacing = max(0, int(spacing_cycles))
         logger.info("reentry_gate | cleared | reason=%s | reload_spacing_cycles=%s", reason, spacing)
         self._state = {
             "active": False,
             "buy_spacing_cycles_remaining": spacing,
         }
         self._persist()
+
+    def set_reload_spacing(self, cycles: int) -> None:
+        """Set inter-bid spacing without clearing an active post-exit gate."""
+        spacing = max(0, int(cycles))
+        if spacing <= 0:
+            return
+        self._state["buy_spacing_cycles_remaining"] = spacing
+        self._persist()
+        logger.info("reentry_gate | reload_spacing_set | cycles=%s", spacing)
 
     def tick_cycle(self) -> None:
         """Increment cooldown counter each engine cycle while gate active."""
@@ -269,13 +281,24 @@ class ReentryGate:
         ta: Optional["TechnicalAnalysisSnapshot"] = None,
         structure: Optional["MarketStructureSnapshot"] = None,
         momentum_chase: bool = False,
+        accumulation_chase: bool = False,
     ) -> Optional[str]:
         """Return HOLD reason if re-entry gate blocks a new buy."""
         if not self._config.alpha_reentry_enabled:
             return None
 
+        chase = momentum_chase or accumulation_chase
+        if (
+            accumulation_chase
+            and getattr(self._config, "alpha_accumulation_bypass_reentry", True)
+        ):
+            return None
+
         spacing = int(self._state.get("buy_spacing_cycles_remaining", 0))
-        if spacing > 0:
+        if spacing > 0 and not (
+            accumulation_chase
+            and getattr(self._config, "alpha_accumulation_bypass_reload_spacing", True)
+        ):
             total = max(0, int(self._config.alpha_reentry_post_clear_buy_spacing_cycles))
             reason = (
                 f"reentry_reload_spacing cycles={total - spacing}/{total}"
@@ -314,12 +337,12 @@ class ReentryGate:
                 logger.info("reentry_gate | block | %s", reason)
                 return reason
 
-            if not momentum_chase and not self._inventory_weak_enough(inventory):
+            if not chase and not self._inventory_weak_enough(inventory):
                 reason = f"reentry_tp_await_weakness dev={inventory.deviation:+.3f}"
                 logger.info("reentry_gate | block | %s", reason)
                 return reason
 
-            if ta_required:
+            if ta_required and not chase:
                 blocked = self._ta_reentry_blocked(
                     ta, self._config.alpha_reentry_tp_min_ta_score, prefix="reentry_tp"
                 )
@@ -339,7 +362,7 @@ class ReentryGate:
 
             is_scratch = str(self._state.get("sl_tier", "")) == "scratch"
 
-            if not momentum_chase and not is_scratch and structure is not None:
+            if not chase and not is_scratch and structure is not None:
                 if structure.trend == "bearish" or structure.breakout_down:
                     reason = (
                         f"reentry_sl_await_stabilization trend={structure.trend} "
@@ -359,7 +382,7 @@ class ReentryGate:
                         logger.info("reentry_gate | block | %s", reason)
                         return reason
 
-            if ta_required:
+            if ta_required and not chase:
                 min_score = (
                     self._config.alpha_reentry_tp_min_ta_score
                     if is_scratch
@@ -375,7 +398,7 @@ class ReentryGate:
                     logger.info("reentry_gate | block | %s", blocked)
                     return blocked
 
-            if not momentum_chase and not self._inventory_weak_enough(inventory):
+            if not chase and not self._inventory_weak_enough(inventory):
                 reason = f"reentry_sl_await_weakness dev={inventory.deviation:+.3f}"
                 logger.info("reentry_gate | block | %s", reason)
                 return reason

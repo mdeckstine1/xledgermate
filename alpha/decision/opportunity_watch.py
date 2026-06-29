@@ -101,8 +101,67 @@ def evaluate_opportunity_watch(
     pending_buys: int = 0,
     trading_enabled: bool = True,
     operator_paused: bool = False,
+    accumulation_regime: Optional[Dict[str, Any]] = None,
 ) -> OpportunityWatchSnapshot:
     """Compute ready / watch / blocked state for HUD + SKYNET."""
+    acc = accumulation_regime or {}
+    if acc.get("phase") == "executing":
+        return OpportunityWatchSnapshot(
+            state="executing",
+            headline=acc.get("headline") or "ACCUMULATING — deployment live",
+            detail=acc.get("detail") or decision_reason,
+            signals=tuple(acc.get("signals") or ()),
+            suggestions=(
+                "Accumulation regime active — chase drift replaces stale bids on rips.",
+                "Monitor RLUSD budget and fills on Brackets tab.",
+            ),
+            skynet_nudge=acc.get("skynet_nudge") or "",
+        )
+    if acc.get("armed"):
+        blockers: List[str] = []
+        if operator_paused:
+            blockers.append("operator_paused")
+        if not trading_enabled:
+            blockers.append("trading_disabled")
+        blockers.extend(_parse_blockers(decision_reason))
+        if acc.get("blockers"):
+            blockers.extend(list(acc.get("blockers") or []))
+        if blockers:
+            return OpportunityWatchSnapshot(
+                state="blocked",
+                headline="ACCUMULATION BLOCKED — armed but engine idle",
+                detail=" | ".join(blockers[:4]),
+                signals=tuple(acc.get("signals") or ()),
+                blockers=tuple(blockers),
+                suggestions=(
+                    "Accumulation ARMED — engine should place_bid with chase knobs.",
+                    "Check Activity for executor errors or re-entry/TA blockers.",
+                ),
+                skynet_nudge=acc.get("skynet_nudge") or "",
+            )
+        return OpportunityWatchSnapshot(
+            state="armed",
+            headline=acc.get("headline") or "ACCUMULATION ARMED",
+            detail=acc.get("detail") or "",
+            signals=tuple(acc.get("signals") or ()),
+            suggestions=(
+                "Accumulation regime — RLUSD deployment is the job this cycle.",
+                "Set SKYNET regime Bull if not already; max_pending 2–3 with chase drift.",
+            ),
+            skynet_nudge=acc.get("skynet_nudge") or "",
+        )
+    if acc.get("phase") == "primed":
+        return OpportunityWatchSnapshot(
+            state="watching",
+            headline=acc.get("headline") or "ACCUMULATION PRIMED",
+            detail=acc.get("detail") or "Bull tape building",
+            signals=tuple(acc.get("signals") or ()),
+            suggestions=(
+                "PRIMED — next breakout/momentum signal arms full accumulation.",
+            ),
+            skynet_nudge=acc.get("skynet_nudge") or "",
+        )
+
     action = (decision_action or "hold").lower()
     momentum = evaluate_bull_run_entry(
         config,

@@ -108,6 +108,7 @@ class InventoryManager:
         size_xrp: float,
         balances: BalanceSnapshot,
         inventory: InventorySnapshot,
+        risk_per_trade_pct: float | None = None,
     ) -> float:
         """Shrink entry to respect portfolio % and inventory overshoot rules."""
         mid = balances.mid_rlusd_per_xrp
@@ -128,8 +129,8 @@ class InventoryManager:
             pause_asks=inventory.pause_asks,
             min_size=self._config.min_order_size_xrp,
         )
-        risk_pct = self._config.alpha_risk_per_trade_pct
-        if inventory.portfolio_xrp_equiv > 0 and risk_pct > 0:
-            risk_cap = inventory.portfolio_xrp_equiv * (risk_pct / 100.0)
+        pct = risk_per_trade_pct if risk_per_trade_pct is not None else self._config.alpha_risk_per_trade_pct
+        if inventory.portfolio_xrp_equiv > 0 and pct > 0:
+            risk_cap = inventory.portfolio_xrp_equiv * (pct / 100.0)
             capped = min(capped, risk_cap)
         return round(max(0.0, capped), 4)

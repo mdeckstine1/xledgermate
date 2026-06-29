@@ -90,6 +90,10 @@ class OrderManager:
         self._partial_fill_mode = normalize_partial_fill_mode(config.partial_fill_mode)
         self._recent_events: List[str] = []
         self._last_risk: Optional[RiskSnapshot] = None
+        self._accumulation_knobs: object | None = None
+
+    def set_accumulation_knobs(self, knobs: object | None) -> None:
+        self._accumulation_knobs = knobs
 
     def set_structure(self, structure: object | None) -> None:
         self._structure = structure
@@ -1055,10 +1059,28 @@ class OrderManager:
             return True
         return False
 
+    def _effective_buy_entry_offset_pct(self) -> float:
+        knobs = self._accumulation_knobs
+        if knobs is not None and getattr(knobs, "armed", False):
+            return float(getattr(knobs, "buy_offset_pct", 0.0))
+        return float(self._config.alpha_buy_limit_offset_pct or self._config.alpha_bid_offset_pct)
+
+    def _effective_stale_drift_pct(self) -> float:
+        knobs = self._accumulation_knobs
+        if knobs is not None and getattr(knobs, "armed", False):
+            return float(getattr(knobs, "stale_drift_pct", 0.0))
+        return float(self._config.alpha_stale_pending_buy_max_drift_pct)
+
+    def _effective_max_pending_buys(self) -> int:
+        knobs = self._accumulation_knobs
+        if knobs is not None and getattr(knobs, "armed", False):
+            return int(getattr(knobs, "max_pending_buys", 1))
+        return int(self._config.alpha_max_pending_buys)
+
     def _target_buy_limit_price(self, mid: float) -> float:
         return target_buy_limit_price(
             mid,
-            self._config.alpha_buy_limit_offset_pct,
+            self._effective_buy_entry_offset_pct(),
             bid_offset_pct=self._config.alpha_bid_offset_pct,
             price_decimals=price_decimals(self._config),
         )
@@ -1077,8 +1099,8 @@ class OrderManager:
         return _stale_pending_buy_reason(
             entry,
             mid,
-            offset_pct=self._config.alpha_buy_limit_offset_pct,
-            max_drift_pct=self._config.alpha_stale_pending_buy_max_drift_pct,
+            offset_pct=self._effective_buy_entry_offset_pct(),
+            max_drift_pct=self._effective_stale_drift_pct(),
             stale_enabled=self._config.alpha_stale_pending_buy_enabled,
             max_age_seconds=max_age,
             age_seconds=age_s,
@@ -1110,7 +1132,7 @@ class OrderManager:
         """Cancel farthest-from-target pending buys when over max_pending_buys."""
         if not self._config.alpha_stale_pending_buy_enabled:
             return 0
-        cap = self._config.alpha_max_pending_buys
+        cap = self._effective_max_pending_buys()
         pending = [
             record
             for record in self._store.iter_open()

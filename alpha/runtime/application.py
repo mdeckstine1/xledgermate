@@ -22,6 +22,11 @@ from alpha.operator.activity import ActivityLog
 from alpha.operator.controls import OperatorControlStore
 from alpha.operator.runtime import OperatorRuntimeStore, apply_overrides, derive_posture
 from alpha.decision.reentry import ReentryGate
+from alpha.decision.accumulation_regime import (
+    AccumulationSessionTracker,
+    accumulation_knobs_from_snapshot,
+    evaluate_accumulation_regime,
+)
 from alpha.decision.engine import DecisionEngine, DecisionResult
 from alpha.dry_run import DryRunGuard
 from alpha.inventory.manager import InventoryManager
@@ -41,7 +46,7 @@ from alpha.types import (
     utc_now,
 )
 from alpha.version import ALPHA_VERSION
-from config.settings import BotConfig
+from alpha.hud.operator_market_regime import OPERATOR_MARKET_REGIME_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +124,10 @@ class AlphaApplication:
         self._last_ta: Optional[TechnicalAnalysisSnapshot] = None
         self._last_book: Optional[OrderBookSnapshot] = None
         self._last_liquidity: Optional[LiquidityDepth] = None
+        self._accumulation_session = AccumulationSessionTracker(
+            path=self._state_dir / "accumulation_session.json",
+        )
+        self._last_accumulation_knobs = None
         self._ta = TechnicalAnalysis(config)
         self._apply_price_history_config(config)
         self._ensure_ohlc_cache()
@@ -350,6 +359,26 @@ class AlphaApplication:
             self._reporting.send_kill_alert(risk.kill_switch_reason or "Kill switch activated")
         self._kill_was_active = risk.kill_switch_active
 
+        operator_regime = str(
+            self._runtime.load_overrides().get(OPERATOR_MARKET_REGIME_KEY) or "neutral"
+        )
+        ref_mid = float(book.mid) if book and book.mid else 0.0
+        acc_snap = evaluate_accumulation_regime(
+            self.config,
+            inventory=inventory,
+            mid=ref_mid,
+            structure=structure,
+            ta=ta_snapshot,
+            operator_market_regime=operator_regime,
+            pending_buys=self._orders.pending_buy_count(),
+            rlusd_balance=balances.rlusd,
+            session=self._accumulation_session,
+        )
+        acc_knobs = accumulation_knobs_from_snapshot(acc_snap, self.config)
+        self._last_accumulation_knobs = acc_knobs
+        self._decision.set_accumulation(acc_snap, acc_knobs)
+        self._orders.set_accumulation_knobs(acc_knobs)
+
         orders = await self._orders.sync_brackets(risk=risk)
 
         self._reentry.tick_cycle()
@@ -543,6 +572,18 @@ class AlphaApplication:
             execution = await self._executor.execute(decision, risk=snap.risk)
             if execution.executed and execution.action == "place_bid":
                 self._reentry.clear(reason="buy_executed")
+                knobs = self._last_accumulation_knobs
+                if (
+                    knobs is not None
+                    and getattr(knobs, "armed", False)
+                    and not getattr(knobs, "bypass_reload_spacing", True)
+                ):
+                    self._reentry.set_reload_spacing(getattr(knobs, "reload_spacing_cycles", 1))
+                if decision.size_xrp and decision.price_rlusd_per_xrp:
+                    self._accumulation_session.record_bid(
+                        size_xrp=float(decision.size_xrp),
+                        price_rlusd_per_xrp=float(decision.price_rlusd_per_xrp),
+                    )
         else:
             logger.info("trading_cycle_skipped | risk_trading_not_allowed")
 

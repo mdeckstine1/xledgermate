@@ -245,6 +245,23 @@ class BotConfig:
     alpha_bull_run_max_deviation: float = 0.02  # Chase bids until this far above XRP target
     alpha_bull_run_buy_offset_pct: float = 0.10  # Tighter limit on momentum entries (0 = min(base, 0.12))
     alpha_bull_run_near_high_pct: float = 0.06  # Within this % of rolling high + rising = breakout chase
+    # Accumulation regime — unified bull/breakout RLUSD deployment (chase fills, ladder bids)
+    alpha_accumulation_regime_enabled: bool = True
+    alpha_accumulation_require_bull_regime: bool = False  # False = arm on tape/momentum in neutral too
+    alpha_accumulation_prime_on_bull_tape: bool = True  # Bull regime + tape → PRIMED before full momentum
+    alpha_accumulation_max_deviation: float = 0.04  # Deploy until this far above XRP target
+    alpha_accumulation_max_pending_buys: int = 3
+    alpha_accumulation_buy_offset_pct: float = 0.06  # Tight limit under mid when armed
+    alpha_accumulation_stale_drift_pct: float = 0.08  # Chase: cancel/replace when mid runs (≈ offset)
+    alpha_accumulation_chase_fills: bool = True  # Ensure stale drift ≥ offset for mid_passed chase
+    alpha_accumulation_min_edge_pct: float = 0.05  # Relaxed edge floor while armed
+    alpha_accumulation_risk_boost: float = 1.5  # Multiply risk_per_trade_pct when armed
+    alpha_accumulation_ta_weight_factor: float = 0.75  # Soften TA buy gate (0.75 = 25% easier)
+    alpha_accumulation_bypass_reentry: bool = True  # Skip post-TP/SL weakness waits on rips
+    alpha_accumulation_bypass_reload_spacing: bool = True  # Skip reload spacing between armed bids
+    alpha_accumulation_reload_spacing_cycles: int = 1  # Spacing after bid when bypass spacing off
+    alpha_accumulation_rlusd_budget_pct: float = 40.0  # Max % of RLUSD balance per rolling window
+    alpha_accumulation_budget_hours: float = 8.0  # Rolling RLUSD deployment window
     # Post-exit re-entry (Aggressive Bag Growth — wait for dip after TP, stabilization after SL)
     alpha_reentry_enabled: bool = True
     alpha_reentry_tp_dip_pct: float = 0.08  # Re-buy after TP only when mid dips this % below TP exit

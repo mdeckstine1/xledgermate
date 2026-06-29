@@ -27,6 +27,7 @@ from alpha.hud.skynet_scenarios import (
     build_skynet_user_message,
     infer_scenario_hints,
 )
+from alpha.decision.accumulation_regime import build_accumulation_context_block
 from config.settings import BotConfig
 from utils.env_secrets import resolve_grok_key
 
@@ -143,6 +144,7 @@ def build_skynet_context(
         reentry=reentry if isinstance(reentry, dict) else {},
         stale_snapshot=stale_snapshot if isinstance(stale_snapshot, dict) else {},
         opportunity_watch=hud_state.get("opportunity_watch") if isinstance(hud_state.get("opportunity_watch"), dict) else {},
+        accumulation_regime=hud_state.get("accumulation_regime") if isinstance(hud_state.get("accumulation_regime"), dict) else {},
     )
     operator_phase = normalize_operator_phase(cfg.get(OPERATOR_PHASE_KEY))
     market_regime = normalize_market_regime(cfg.get(OPERATOR_MARKET_REGIME_KEY))
@@ -179,6 +181,8 @@ def build_skynet_context(
         "",
         "=== Opportunity watch (operator readiness — NOT the same as posture) ===",
         json.dumps(hud_state.get("opportunity_watch") or {}, default=str)[:2000],
+        "",
+        build_accumulation_context_block(hud_state.get("accumulation_regime") or {}),
         "",
         "=== Momentum / tape (engine sub-signals) ===",
         json.dumps(

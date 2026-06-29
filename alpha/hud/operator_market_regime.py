@@ -15,9 +15,10 @@ _REGIME_META: Dict[str, Dict[str, str]] = {
         "headline": "Trend up or constructive dips — favor patient accumulation",
         "when": "Higher lows, RLUSD deploy OK, TA bullish or neutral-bullish",
         "skynet_bias": (
-            "Favor limit bids on weakness when RLUSD-heavy: max_pending↑ before offset↓, "
-            "weakness_deviation moderate (0.04–0.05). Do not chase with drift≈offset unless "
-            "operator asks. Respect re-entry after SL — no knife-catching in bull without dip proof."
+            "Accumulation regime (default on): on bull tape ARMED → deploy RLUSD with tight offset (~0.06%), "
+            "chase drift (~0.08%), max_pending 2–3, bypass re-entry weakness on rips. "
+            "Set alpha_operator_market_regime=bull when chart trends up. "
+            "Do not recommend dip-only patience while accumulation_regime is ARMED."
         ),
     },
     "neutral": {

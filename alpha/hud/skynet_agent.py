@@ -527,6 +527,8 @@ def _event_snapshot(hud_state: Dict[str, Any]) -> Dict[str, Any]:
         "trading_enabled": hud_state.get("trading_enabled"),
         "ready_state": hud_state.get("ready_state"),
         "opportunity_headline": (hud_state.get("opportunity_watch") or {}).get("headline"),
+        "accumulation_phase": (hud_state.get("accumulation_regime") or {}).get("phase"),
+        "accumulation_armed": (hud_state.get("accumulation_regime") or {}).get("armed"),
     }
 
 
@@ -561,6 +563,12 @@ def detect_significant_events(
         reasons.append(f"opportunity_{rs}")
     if rs == "blocked" and prev_rs in ("watching", "armed", None, "idle"):
         reasons.append("opportunity_blocked_on_rip")
+    acc_phase = snap.get("accumulation_phase")
+    prev_acc = last_snapshot.get("accumulation_phase")
+    if acc_phase and acc_phase != prev_acc and acc_phase in ("armed", "executing", "blocked", "primed"):
+        reasons.append(f"accumulation_{acc_phase}")
+    if snap.get("accumulation_armed") and not last_snapshot.get("accumulation_armed"):
+        reasons.append("accumulation_armed")
     return bool(reasons), reasons
 
 

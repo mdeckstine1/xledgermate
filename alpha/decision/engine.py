@@ -20,6 +20,7 @@ from alpha.precision import price_decimals, round_rlusd_price
 from config.settings import BotConfig
 
 if TYPE_CHECKING:
+    from alpha.decision.accumulation_regime import AccumulationKnobs, AccumulationRegimeSnapshot
     from alpha.decision.structure import MarketStructureSnapshot
     from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
     from alpha.inventory.manager import InventoryManager
@@ -65,6 +66,16 @@ class DecisionEngine:
         self._inventory = inventory
         self._risk = risk
         self._reentry = reentry
+        self._accumulation: Optional["AccumulationRegimeSnapshot"] = None
+        self._accumulation_knobs: Optional["AccumulationKnobs"] = None
+
+    def set_accumulation(
+        self,
+        snapshot: Optional["AccumulationRegimeSnapshot"],
+        knobs: Optional["AccumulationKnobs"],
+    ) -> None:
+        self._accumulation = snapshot
+        self._accumulation_knobs = knobs
 
     def evaluate(
         self,
@@ -119,6 +130,26 @@ class DecisionEngine:
                 ta=ta,
                 structure=structure,
                 entry_mode="weakness",
+            )
+
+        accumulation_reason = self._accumulation_entry_allowed(
+            inventory=inventory,
+            book=book,
+            ta=ta,
+            structure=structure,
+        )
+        if accumulation_reason is not None:
+            return self._build_bid(
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_buy_count=pending_buy_count,
+                balances=balances or (operator.balances if operator else None),
+                ta=ta,
+                structure=structure,
+                entry_mode="accumulation",
+                entry_reason=accumulation_reason,
             )
 
         bull_run = self._bull_run_entry_allowed(
@@ -226,6 +257,31 @@ class DecisionEngine:
         )
         return snap.reason if snap.active else None
 
+    def _accumulation_entry_allowed(
+        self,
+        *,
+        inventory: InventorySnapshot,
+        book: OrderBookSnapshot,
+        ta: Optional["TechnicalAnalysisSnapshot"],
+        structure: Optional["MarketStructureSnapshot"],
+    ) -> Optional[str]:
+        snap = self._accumulation
+        knobs = self._accumulation_knobs
+        if snap is None or knobs is None or not snap.entry_allowed or not knobs.armed:
+            return None
+        if inventory.pause_bids or inventory.buy_blocked_imbalance:
+            return None
+        if inventory.deviation > knobs.max_deviation:
+            return None
+        mid = book.mid
+        if mid is None or mid <= 0:
+            return None
+        reason = snap.reason or snap.detail or "accumulation_armed"
+        if snap.signals:
+            reason = f"accumulation {'+'.join(snap.signals[:3])} | {reason}"
+        logger.info("accumulation_regime | entry | %s", reason)
+        return reason
+
     def _buy_limit_price(
         self,
         book: OrderBookSnapshot,
@@ -239,6 +295,8 @@ class DecisionEngine:
             from alpha.decision.momentum_entry import bull_run_buy_offset_pct
 
             offset_pct = bull_run_buy_offset_pct(self._config)
+        elif entry_mode == "accumulation" and self._accumulation_knobs is not None:
+            offset_pct = self._accumulation_knobs.buy_offset_pct
         else:
             offset_pct = self._effective_buy_offset_pct()
         dec = price_decimals(self._config)
@@ -271,13 +329,15 @@ class DecisionEngine:
         side: str,
         inventory: InventorySnapshot,
         balances: Optional[BalanceSnapshot],
+        risk_per_trade_pct: float | None = None,
     ) -> float:
         min_size = self._config.min_order_size_xrp
         capital_xrp = self._config.effective_risk_capital_xrp(mid)
         leg_cap = capital_xrp * self._config.max_leg_size_pct_of_capital
         risk_cap = 0.0
-        if portfolio_xrp_equiv > 0 and self._config.alpha_risk_per_trade_pct > 0:
-            risk_cap = portfolio_xrp_equiv * (self._config.alpha_risk_per_trade_pct / 100.0)
+        pct = risk_per_trade_pct if risk_per_trade_pct is not None else self._config.alpha_risk_per_trade_pct
+        if portfolio_xrp_equiv > 0 and pct > 0:
+            risk_cap = portfolio_xrp_equiv * (pct / 100.0)
         caps = [desired, depth_cap, leg_cap]
         if risk_cap > 0:
             caps.append(risk_cap)
@@ -289,6 +349,7 @@ class DecisionEngine:
                 size_xrp=capped,
                 balances=balances,
                 inventory=inventory,
+                risk_per_trade_pct=pct if risk_per_trade_pct is not None else None,
             )
 
         if capped < min_size:
@@ -299,6 +360,9 @@ class DecisionEngine:
         """Scale buy gate by alpha_ta_weight (0=advisory only, 1=full min_buy_score)."""
         cfg = self._config.alpha_technical_analysis
         weight = max(0.0, min(1.0, getattr(self._config, "alpha_ta_weight", 1.0)))
+        knobs = self._accumulation_knobs
+        if knobs is not None and knobs.armed:
+            weight *= max(0.0, min(1.0, knobs.ta_weight_factor))
         if weight <= 0:
             return 0.0
         return cfg.min_buy_score * weight
@@ -396,10 +460,16 @@ class DecisionEngine:
         entry_mode: str = "weakness",
         entry_reason: str = "",
     ) -> DecisionResult:
-        if pending_buy_count >= self._config.alpha_max_pending_buys:
+        knobs = self._accumulation_knobs
+        max_pending = (
+            knobs.max_pending_buys
+            if entry_mode == "accumulation" and knobs is not None and knobs.armed
+            else self._config.alpha_max_pending_buys
+        )
+        if pending_buy_count >= max_pending:
             return DecisionResult(
                 action=DecisionAction.HOLD,
-                reason=f"max_pending_buys={self._config.alpha_max_pending_buys}",
+                reason=f"max_pending_buys={max_pending}",
             )
 
         mid = book.mid
@@ -410,6 +480,7 @@ class DecisionEngine:
                 ta=ta,
                 structure=structure,
                 momentum_chase=(entry_mode == "bull_run"),
+                accumulation_chase=(entry_mode == "accumulation"),
             )
             if blocked:
                 return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
@@ -424,6 +495,9 @@ class DecisionEngine:
             return DecisionResult(action=DecisionAction.HOLD, reason="invalid_buy_price")
 
         edge = self._buy_edge_pct(mid=mid, limit_price=price)
+        min_edge = self._config.alpha_min_edge_threshold_pct
+        if entry_mode == "accumulation" and knobs is not None and knobs.armed:
+            min_edge = min(min_edge, knobs.min_edge_pct)
         if self._risk is not None:
             ok, msg = self._risk.validate_entry(risk, edge_pct=edge)
             if not ok:
@@ -432,7 +506,7 @@ class DecisionEngine:
                     reason=msg,
                     edge_pct=edge,
                 )
-        elif edge < self._config.alpha_min_edge_threshold_pct:
+        elif edge < min_edge:
             return DecisionResult(
                 action=DecisionAction.HOLD,
                 reason=f"edge_below_threshold edge={edge:.3f}%",
@@ -449,6 +523,9 @@ class DecisionEngine:
 
         portfolio = inventory.portfolio_xrp_equiv or (balances.portfolio_xrp_equiv if balances else 0.0)
         desired = self._config.alpha_base_order_size_xrp * (1.0 + abs(inventory.deviation) * 2.0)
+        risk_pct = self._config.alpha_risk_per_trade_pct
+        if entry_mode == "accumulation" and knobs is not None and knobs.armed:
+            risk_pct = knobs.risk_per_trade_pct
         size = self._cap_size_xrp(
             desired=desired,
             depth_cap=depth_cap,
@@ -457,6 +534,7 @@ class DecisionEngine:
             side="bid",
             inventory=inventory,
             balances=balances,
+            risk_per_trade_pct=risk_pct,
         )
         if size <= 0:
             return DecisionResult(
