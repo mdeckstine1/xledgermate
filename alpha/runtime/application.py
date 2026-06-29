@@ -47,6 +47,7 @@ from alpha.types import (
 )
 from alpha.version import ALPHA_VERSION
 from alpha.hud.operator_market_regime import OPERATOR_MARKET_REGIME_KEY
+from config.settings import BotConfig
 
 logger = logging.getLogger(__name__)
 
