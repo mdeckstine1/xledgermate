@@ -268,6 +268,7 @@ class ReentryGate:
         mid: float,
         ta: Optional["TechnicalAnalysisSnapshot"] = None,
         structure: Optional["MarketStructureSnapshot"] = None,
+        momentum_chase: bool = False,
     ) -> Optional[str]:
         """Return HOLD reason if re-entry gate blocks a new buy."""
         if not self._config.alpha_reentry_enabled:
@@ -313,7 +314,7 @@ class ReentryGate:
                 logger.info("reentry_gate | block | %s", reason)
                 return reason
 
-            if not self._inventory_weak_enough(inventory):
+            if not momentum_chase and not self._inventory_weak_enough(inventory):
                 reason = f"reentry_tp_await_weakness dev={inventory.deviation:+.3f}"
                 logger.info("reentry_gate | block | %s", reason)
                 return reason
@@ -338,7 +339,7 @@ class ReentryGate:
 
             is_scratch = str(self._state.get("sl_tier", "")) == "scratch"
 
-            if not is_scratch and structure is not None:
+            if not momentum_chase and not is_scratch and structure is not None:
                 if structure.trend == "bearish" or structure.breakout_down:
                     reason = (
                         f"reentry_sl_await_stabilization trend={structure.trend} "
@@ -374,7 +375,7 @@ class ReentryGate:
                     logger.info("reentry_gate | block | %s", blocked)
                     return blocked
 
-            if not self._inventory_weak_enough(inventory):
+            if not momentum_chase and not self._inventory_weak_enough(inventory):
                 reason = f"reentry_sl_await_weakness dev={inventory.deviation:+.3f}"
                 logger.info("reentry_gate | block | %s", reason)
                 return reason

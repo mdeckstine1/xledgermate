@@ -409,6 +409,7 @@ class DecisionEngine:
                 mid=mid,
                 ta=ta,
                 structure=structure,
+                momentum_chase=(entry_mode == "bull_run"),
             )
             if blocked:
                 return DecisionResult(action=DecisionAction.HOLD, reason=blocked)

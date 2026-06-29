@@ -284,3 +284,28 @@ def test_post_clear_buy_spacing_blocks_rapid_bids(tmp_path: Path) -> None:
     gate.tick_cycle()
     cleared = gate.blocks_buy(inventory=_weak_inv(), mid=1.79, ta=_ta_allowed())
     assert cleared is None
+
+
+def test_momentum_chase_skips_reentry_weakness_when_balanced(tmp_path: Path) -> None:
+    gate = _gate(tmp_path, alpha_reentry_sl_cooldown_cycles=1)
+    gate.record_sl_exit(bracket_id="sl1", exit_mid=1.0, entry_price=1.02)
+    gate.tick_cycle()
+    balanced = InventorySnapshot(
+        xrp_ratio=0.795,
+        target_xrp_ratio=0.80,
+        deviation=-0.005,
+        label="balanced",
+        pause_bids=False,
+        pause_asks=False,
+        summary="test",
+    )
+    blocked = gate.blocks_buy(inventory=balanced, mid=1.05, ta=_ta_allowed())
+    assert blocked is not None
+    assert "reentry_sl_await_weakness" in blocked
+    cleared = gate.blocks_buy(
+        inventory=balanced,
+        mid=1.05,
+        ta=_ta_allowed(),
+        momentum_chase=True,
+    )
+    assert cleared is None
