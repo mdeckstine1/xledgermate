@@ -240,6 +240,11 @@ class BotConfig:
     alpha_tape_slope_min_lift_pct: float = 0.04  # Short-term avg lift vs prior window
     alpha_tape_participation_min_buy_factor: float = 0.9  # buy_score >= min_buy * factor
     alpha_tape_participation_max_sell_gap: float = 3.5  # No waiver if sell >> buy
+    # Bull-run / breakout entries when inventory is balanced (not RLUSD-heavy enough for weakness gate)
+    alpha_bull_run_enabled: bool = True
+    alpha_bull_run_max_deviation: float = 0.02  # Chase bids until this far above XRP target
+    alpha_bull_run_buy_offset_pct: float = 0.10  # Tighter limit on momentum entries (0 = min(base, 0.12))
+    alpha_bull_run_near_high_pct: float = 0.06  # Within this % of rolling high + rising = breakout chase
     # Post-exit re-entry (Aggressive Bag Growth — wait for dip after TP, stabilization after SL)
     alpha_reentry_enabled: bool = True
     alpha_reentry_tp_dip_pct: float = 0.08  # Re-buy after TP only when mid dips this % below TP exit

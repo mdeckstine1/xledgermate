@@ -107,6 +107,11 @@ alpha_tape_slope_samples: 8
 alpha_tape_slope_min_lift_pct: 0.04
 alpha_tape_participation_min_buy_factor: 0.9
 alpha_tape_participation_max_sell_gap: 3.5
+# Bull-run / breakout — bid when tape breaks out even if inventory is only mildly RLUSD-heavy
+alpha_bull_run_enabled: true
+alpha_bull_run_max_deviation: 0.02
+alpha_bull_run_buy_offset_pct: 0.10
+alpha_bull_run_near_high_pct: 0.06
 
 # Bracket legs after buy fill (application-level OCO — not XRPL native)
 initial_stop_loss_pct: 0.015

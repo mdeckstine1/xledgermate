@@ -101,6 +101,7 @@ class DecisionEngine:
                 balances=balances or (operator.balances if operator else None),
                 ta=ta,
                 structure=structure,
+                entry_mode="weakness",
             )
         elif (
             self._inventory is None
@@ -117,6 +118,27 @@ class DecisionEngine:
                 balances=balances or (operator.balances if operator else None),
                 ta=ta,
                 structure=structure,
+                entry_mode="weakness",
+            )
+
+        bull_run = self._bull_run_entry_allowed(
+            inventory=inventory,
+            book=book,
+            ta=ta,
+            structure=structure,
+        )
+        if bull_run is not None:
+            return self._build_bid(
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_buy_count=pending_buy_count,
+                balances=balances or (operator.balances if operator else None),
+                ta=ta,
+                structure=structure,
+                entry_mode="bull_run",
+                entry_reason=bull_run,
             )
 
         if inventory.buy_blocked_imbalance and inventory.deviation <= -self._config.alpha_weakness_deviation:
@@ -182,11 +204,43 @@ class DecisionEngine:
             reason=f"balanced dev={inventory.deviation:+.3f}",
         )
 
-    def _buy_limit_price(self, book: OrderBookSnapshot) -> Optional[float]:
+    def _bull_run_entry_allowed(
+        self,
+        *,
+        inventory: InventorySnapshot,
+        book: OrderBookSnapshot,
+        ta: Optional["TechnicalAnalysisSnapshot"],
+        structure: Optional["MarketStructureSnapshot"],
+    ) -> Optional[str]:
+        from alpha.decision.momentum_entry import evaluate_bull_run_entry
+
         mid = book.mid
         if mid is None or mid <= 0:
             return None
-        offset_pct = self._effective_buy_offset_pct()
+        snap = evaluate_bull_run_entry(
+            self._config,
+            inventory=inventory,
+            mid=mid,
+            structure=structure,
+            ta=ta,
+        )
+        return snap.reason if snap.active else None
+
+    def _buy_limit_price(
+        self,
+        book: OrderBookSnapshot,
+        *,
+        entry_mode: str = "weakness",
+    ) -> Optional[float]:
+        mid = book.mid
+        if mid is None or mid <= 0:
+            return None
+        if entry_mode == "bull_run":
+            from alpha.decision.momentum_entry import bull_run_buy_offset_pct
+
+            offset_pct = bull_run_buy_offset_pct(self._config)
+        else:
+            offset_pct = self._effective_buy_offset_pct()
         dec = price_decimals(self._config)
         raw = mid * (1.0 - offset_pct / 100.0)
         return round_rlusd_price(raw, dec, direction="down")
@@ -339,6 +393,8 @@ class DecisionEngine:
         balances: Optional[BalanceSnapshot],
         ta: Optional["TechnicalAnalysisSnapshot"] = None,
         structure: Optional["MarketStructureSnapshot"] = None,
+        entry_mode: str = "weakness",
+        entry_reason: str = "",
     ) -> DecisionResult:
         if pending_buy_count >= self._config.alpha_max_pending_buys:
             return DecisionResult(
@@ -362,7 +418,7 @@ class DecisionEngine:
             return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
         mid = book.mid
         assert mid is not None
-        price = self._buy_limit_price(book)
+        price = self._buy_limit_price(book, entry_mode=entry_mode)
         if price is None or price <= 0:
             return DecisionResult(action=DecisionAction.HOLD, reason="invalid_buy_price")
 
@@ -409,9 +465,11 @@ class DecisionEngine:
             )
 
         reason = (
-            f"weakness dev={inventory.deviation:+.3f} edge={edge:.3f}% "
+            f"{entry_mode} dev={inventory.deviation:+.3f} edge={edge:.3f}% "
             f"depth_cap={depth_cap:.2f} alloc_xrp={inventory.xrp_allocation_pct:.1f}%"
         )
+        if entry_reason:
+            reason = f"{entry_reason} | {reason}"
         if ta is not None and ta.enabled:
             reason += f" ta_buy={ta.buy_score:.2f}"
         logger.info(

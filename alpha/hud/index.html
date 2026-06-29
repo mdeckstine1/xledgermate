@@ -2135,6 +2135,10 @@
         ? `Tape participation ACTIVE — lagging TA bearish waived (${tape.reason || ''})`
         : (tape?.reason && tape.reason !== 'disabled' && tape.reason !== 'ta_bias=bullish' && tape.reason !== 'ta_bias=neutral'
           ? `Tape: ${tape.reason}` : '');
+      const mom = s.momentum_entry;
+      if (mom?.active) {
+        $('decTape').textContent = `Bull run / breakout ACTIVE — ${mom.reason || ''}`;
+      }
       $('bookMid').textContent = fmtPrice(s.book?.mid ?? s.mid);
       $('bookSpread').textContent = s.book?.spread_pct != null ? 'Spread ' + fmt(s.book.spread_pct, 3) + '%' : '';
       $('structTrend').textContent = s.structure?.trend || '—';

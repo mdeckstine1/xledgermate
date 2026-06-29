@@ -451,6 +451,15 @@ def build_hud_state(
         structure=structure,
         ta=ta,
     ).to_dict()
+    from alpha.decision.momentum_entry import evaluate_bull_run_entry
+
+    momentum_entry = evaluate_bull_run_entry(
+        effective,
+        inventory=snap.inventory,
+        mid=ref_mid,
+        structure=structure,
+        ta=ta,
+    ).to_dict()
     market_conditions = build_market_conditions(
         book=book if isinstance(book, OrderBookSnapshot) else None,
         liquidity=liquidity,
@@ -550,6 +559,7 @@ def build_hud_state(
         "chart": chart,
         "technical_analysis": ta_block,
         "tape_participation": tape_participation,
+        "momentum_entry": momentum_entry,
         "ohlc_cache": ohlc_cache,
         "market_metrics": market_metrics,
         "book": _book_payload(book if isinstance(book, OrderBookSnapshot) else None),
