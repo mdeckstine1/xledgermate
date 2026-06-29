@@ -142,6 +142,7 @@ def build_skynet_context(
         inventory=inv if isinstance(inv, dict) else {},
         reentry=reentry if isinstance(reentry, dict) else {},
         stale_snapshot=stale_snapshot if isinstance(stale_snapshot, dict) else {},
+        opportunity_watch=hud_state.get("opportunity_watch") if isinstance(hud_state.get("opportunity_watch"), dict) else {},
     )
     operator_phase = normalize_operator_phase(cfg.get(OPERATOR_PHASE_KEY))
     market_regime = normalize_market_regime(cfg.get(OPERATOR_MARKET_REGIME_KEY))
@@ -165,7 +166,7 @@ def build_skynet_context(
         "",
         "=== Alpha runtime snapshot ===",
         f"network={hud_state.get('network')} dry_run={hud_state.get('dry_run')} trading_enabled={hud_state.get('trading_enabled')}",
-        f"paused={hud_state.get('operator_paused')} posture={hud_state.get('posture')}",
+        f"paused={hud_state.get('operator_paused')} posture={hud_state.get('posture')} ready_state={hud_state.get('ready_state')}",
         f"mid={hud_state.get('mid')} portfolio_xrp_equiv={hud_state.get('portfolio_xrp_equiv')}",
         f"balances: XRP={hud_state.get('xrp')} RLUSD={hud_state.get('rlusd')}",
         "",
@@ -175,6 +176,18 @@ def build_skynet_context(
         "",
         "=== Decision (latest cycle) ===",
         f"action={decision.get('action')} reason={decision.get('reason')} edge_pct={decision.get('edge_pct')}",
+        "",
+        "=== Opportunity watch (operator readiness — NOT the same as posture) ===",
+        json.dumps(hud_state.get("opportunity_watch") or {}, default=str)[:2000],
+        "",
+        "=== Momentum / tape (engine sub-signals) ===",
+        json.dumps(
+            {
+                "momentum_entry": hud_state.get("momentum_entry"),
+                "tape_participation": hud_state.get("tape_participation"),
+            },
+            default=str,
+        )[:1500],
         "",
         "=== Risk ===",
         f"kill={risk.get('kill_switch_active')} drawdown_pct={risk.get('drawdown_pct')} session_pnl_xrp={risk.get('session_pnl_xrp')} (MTM only — see realized_bracket_pnl above)",

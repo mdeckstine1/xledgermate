@@ -42,7 +42,8 @@ I — RLUSD-heavy sell_block: normal; buys when dev≤−weakness; no strength s
 J — ta_buy_blocked / bearish: lower ta_min_buy or ta_weight; or wait.
 K — post_sl_* re-entry: sl_cooldown, sl_stabilization, sl_min_ta_score; patient reload.
 L — post_tp_* re-entry: tp_cooldown, tp_dip_pct, tp_min_ta_score.
-M — balanced dev=: lower weakness to buy or raise strength_deviation to sell.
+M — balanced dev=: lower weakness to buy OR rely on bull_run/momentum (see opportunity_watch). If chart rips while HOLD, read Opportunity watch card — dip-only gate may be blocking.
+U — Bull run / breakout missed: TA bullish + balanced dev — opportunity_watch should be WATCHING/ARMED; enable bull_run (default on), SKYNET regime Bull, check re-entry blockers; do NOT silently HOLD without explaining watch state.
 N — Pending bid no fill: passive limit; lower offset or wait for ask to hit bid.
 O — XRP-heavy strength sells: strength_deviation, sell_limit_offset, ta_min_sell.
 P — kill_switch / pause_bids / preflight: fix risk first, do not crank aggression.
@@ -68,6 +69,7 @@ def infer_scenario_hints(
     inventory: Optional[Dict[str, Any]] = None,
     reentry: Optional[Dict[str, Any]] = None,
     stale_snapshot: Optional[Dict[str, Any]] = None,
+    opportunity_watch: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     """Heuristic scenario letters for SKYNET (non-exhaustive)."""
     reason = (decision_reason or "").lower()
@@ -88,6 +90,14 @@ def infer_scenario_hints(
         hints.append("Q")
     if "balanced dev" in reason:
         hints.append("M")
+        ow = opportunity_watch or {}
+        if ow.get("state") in ("watching", "armed", "blocked"):
+            hints.append("U")
+    ow = opportunity_watch or {}
+    if ow.get("state") == "blocked" and ow.get("signals"):
+        hints.append("U")
+    if ow.get("state") in ("armed", "watching"):
+        hints.append("U")
     if "max_pending_buys" in reason:
         over = int((stale_snapshot or {}).get("over_cap_count") or 0)
         if over > 0:

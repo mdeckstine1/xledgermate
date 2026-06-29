@@ -460,6 +460,20 @@ def build_hud_state(
         structure=structure,
         ta=ta,
     ).to_dict()
+    from alpha.decision.opportunity_watch import evaluate_opportunity_watch
+
+    opportunity_watch = evaluate_opportunity_watch(
+        effective,
+        inventory=snap.inventory,
+        mid=ref_mid,
+        structure=structure,
+        ta=ta,
+        decision_action=decision.action.value,
+        decision_reason=decision.reason,
+        pending_buys=bracket_summary.pending_buys,
+        trading_enabled=snap.trading_enabled,
+        operator_paused=controls.trading_paused,
+    ).to_dict()
     market_conditions = build_market_conditions(
         book=book if isinstance(book, OrderBookSnapshot) else None,
         liquidity=liquidity,
@@ -496,6 +510,7 @@ def build_hud_state(
         "dry_run": snap.dry_run,
         "trading_enabled": snap.trading_enabled,
         "posture": posture,
+        "ready_state": opportunity_watch.get("state", "idle"),
         "operator_overrides": overrides,
         "config_effective": tunables,
         "account_address": snap.account_address,
@@ -560,6 +575,7 @@ def build_hud_state(
         "technical_analysis": ta_block,
         "tape_participation": tape_participation,
         "momentum_entry": momentum_entry,
+        "opportunity_watch": opportunity_watch,
         "ohlc_cache": ohlc_cache,
         "market_metrics": market_metrics,
         "book": _book_payload(book if isinstance(book, OrderBookSnapshot) else None),

@@ -114,6 +114,7 @@ Trading discipline (non-negotiable):
 - Never chase; prefer patience when TA blocks entries or inventory is already heavy XRP / light RLUSD to deploy.
 - Small incremental knob moves only. Never stack aggressive risk increases in one cycle.
 - If HOLD is correct, say so — empty suggested_changes is valid and often best.
+- ALWAYS read opportunity_watch from context when explaining HOLD during rips — tell the operator WATCHING vs ARMED vs BLOCKED and what signal is missing.
 - NEVER suggest dry_run changes. NEVER exceed guardrails below.
 - inventory_target_xrp_ratio is 0.0-1.0 (not percent). Prefer inventory_target_xrp_ratio over target_xrp_pct.
 - Explain every suggestion with reference to effective values in context.
@@ -524,6 +525,8 @@ def _event_snapshot(hud_state: Dict[str, Any]) -> Dict[str, Any]:
         "session_pnl_xrp": float(risk.get("session_pnl_xrp") or 0.0),
         "inventory_deviation": float(inv.get("deviation") or 0.0),
         "trading_enabled": hud_state.get("trading_enabled"),
+        "ready_state": hud_state.get("ready_state"),
+        "opportunity_headline": (hud_state.get("opportunity_watch") or {}).get("headline"),
     }
 
 
@@ -552,6 +555,12 @@ def detect_significant_events(
     dev_delta = abs(snap["inventory_deviation"] - float(last_snapshot.get("inventory_deviation") or 0.0))
     if dev_delta >= 0.12:
         reasons.append(f"inventory_shift:deviation_delta={dev_delta:.3f}")
+    rs = snap.get("ready_state")
+    prev_rs = last_snapshot.get("ready_state")
+    if rs and rs != prev_rs and rs in ("armed", "blocked", "watching", "executing"):
+        reasons.append(f"opportunity_{rs}")
+    if rs == "blocked" and prev_rs in ("watching", "armed", None, "idle"):
+        reasons.append("opportunity_blocked_on_rip")
     return bool(reasons), reasons
 
 
