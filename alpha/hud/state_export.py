@@ -478,6 +478,23 @@ def build_hud_state(
         rlusd_balance=snap.balances.rlusd,
     ).to_dict()
 
+    from alpha.decision.reload_regime import evaluate_reload_regime
+
+    strength_sell_pending = sum(
+        1 for o in open_offers if str(o.get("side") or "") == "ask"
+    )
+    reload_regime = evaluate_reload_regime(
+        effective,
+        inventory=snap.inventory,
+        mid=ref_mid,
+        structure=structure,
+        ta=ta,
+        operator_market_regime=operator_regime,
+        rlusd_balance=snap.balances.rlusd,
+        pending_funding_sells=strength_sell_pending,
+        decision_action=decision.action.value,
+    ).to_dict()
+
     opportunity_watch = evaluate_opportunity_watch(
         effective,
         inventory=snap.inventory,
@@ -490,6 +507,7 @@ def build_hud_state(
         trading_enabled=snap.trading_enabled,
         operator_paused=controls.trading_paused,
         accumulation_regime=accumulation_regime,
+        reload_regime=reload_regime,
     ).to_dict()
     market_conditions = build_market_conditions(
         book=book if isinstance(book, OrderBookSnapshot) else None,
@@ -597,6 +615,7 @@ def build_hud_state(
         "tape_participation": tape_participation,
         "momentum_entry": momentum_entry,
         "accumulation_regime": accumulation_regime,
+        "reload_regime": reload_regime,
         "opportunity_watch": opportunity_watch,
         "ohlc_cache": ohlc_cache,
         "market_metrics": market_metrics,

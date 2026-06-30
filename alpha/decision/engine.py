@@ -21,6 +21,7 @@ from config.settings import BotConfig
 
 if TYPE_CHECKING:
     from alpha.decision.accumulation_regime import AccumulationKnobs, AccumulationRegimeSnapshot
+    from alpha.decision.reload_regime import ReloadKnobs, ReloadRegimeSnapshot
     from alpha.decision.structure import MarketStructureSnapshot
     from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
     from alpha.inventory.manager import InventoryManager
@@ -68,6 +69,8 @@ class DecisionEngine:
         self._reentry = reentry
         self._accumulation: Optional["AccumulationRegimeSnapshot"] = None
         self._accumulation_knobs: Optional["AccumulationKnobs"] = None
+        self._reload: Optional["ReloadRegimeSnapshot"] = None
+        self._reload_knobs: Optional["ReloadKnobs"] = None
 
     def set_accumulation(
         self,
@@ -76,6 +79,14 @@ class DecisionEngine:
     ) -> None:
         self._accumulation = snapshot
         self._accumulation_knobs = knobs
+
+    def set_reload(
+        self,
+        snapshot: Optional["ReloadRegimeSnapshot"],
+        knobs: Optional["ReloadKnobs"],
+    ) -> None:
+        self._reload = snapshot
+        self._reload_knobs = knobs
 
     def evaluate(
         self,
@@ -101,6 +112,28 @@ class DecisionEngine:
 
         if book is None or book.mid is None or book.mid <= 0:
             return DecisionResult(action=DecisionAction.HOLD, reason="no_book_mid")
+
+        bal = balances or (operator.balances if operator else None)
+        reload_reason = self._reload_funding_allowed(
+            inventory=inventory,
+            book=book,
+            balances=bal,
+            pending_sell_count=pending_sell_count,
+        )
+        if reload_reason is not None:
+            return self._build_ask(
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_sell_count=pending_sell_count,
+                balances=bal,
+                ta=ta,
+                entry_mode="reload_funding",
+                entry_reason=reload_reason,
+            )
+
+        reload_blocks = self._reload_blocks_accumulation(bal, book, pending_sell_count)
 
         if self._inventory is not None and self._inventory.allows_buy(inventory):
             return self._build_bid(
@@ -132,7 +165,7 @@ class DecisionEngine:
                 entry_mode="weakness",
             )
 
-        accumulation_reason = self._accumulation_entry_allowed(
+        accumulation_reason = None if reload_blocks else self._accumulation_entry_allowed(
             inventory=inventory,
             book=book,
             ta=ta,
@@ -152,7 +185,7 @@ class DecisionEngine:
                 entry_reason=accumulation_reason,
             )
 
-        bull_run = self._bull_run_entry_allowed(
+        bull_run = None if reload_blocks else self._bull_run_entry_allowed(
             inventory=inventory,
             book=book,
             ta=ta,
@@ -170,6 +203,15 @@ class DecisionEngine:
                 structure=structure,
                 entry_mode="bull_run",
                 entry_reason=bull_run,
+            )
+
+        if reload_blocks and self._accumulation is not None and self._accumulation.armed:
+            return DecisionResult(
+                action=DecisionAction.HOLD,
+                reason=(
+                    f"reload_await_funding floor={getattr(self._reload, 'deploy_floor_xrp_equiv', 0):.0f} "
+                    f"rlusd_xrp_equiv={getattr(self._reload, 'rlusd_xrp_equiv', 0):.1f}"
+                ),
             )
 
         if inventory.buy_blocked_imbalance and inventory.deviation <= -self._config.alpha_weakness_deviation:
@@ -256,6 +298,50 @@ class DecisionEngine:
             ta=ta,
         )
         return snap.reason if snap.active else None
+
+    def _reload_blocks_accumulation(
+        self,
+        balances: Optional[BalanceSnapshot],
+        book: OrderBookSnapshot,
+        pending_sell_count: int,
+    ) -> bool:
+        snap = self._reload
+        if snap is not None and snap.blocks_accumulation:
+            return True
+        if balances is None or book.mid is None or book.mid <= 0:
+            return False
+        from alpha.decision.reload_regime import reload_blocks_accumulation_bids
+
+        return reload_blocks_accumulation_bids(
+            self._config,
+            rlusd_balance=balances.rlusd,
+            mid=book.mid,
+            pending_funding_sells=pending_sell_count,
+        )
+
+    def _reload_funding_allowed(
+        self,
+        *,
+        inventory: InventorySnapshot,
+        book: OrderBookSnapshot,
+        balances: Optional[BalanceSnapshot],
+        pending_sell_count: int,
+    ) -> Optional[str]:
+        snap = self._reload
+        knobs = self._reload_knobs
+        if snap is None or knobs is None or not snap.entry_allowed or not knobs.armed:
+            return None
+        if inventory.pause_asks:
+            return None
+        if pending_sell_count >= knobs.max_pending_sells:
+            return None
+        if balances is None or book.mid is None or book.mid <= 0:
+            return None
+        reason = snap.reason or snap.detail or "reload_armed"
+        if snap.signals:
+            reason = f"reload_funding {'+'.join(snap.signals[:3])} | {reason}"
+        logger.info("reload_regime | entry | %s", reason)
+        return reason
 
     def _accumulation_entry_allowed(
         self,
@@ -411,7 +497,12 @@ class DecisionEngine:
             )
         return None
 
-    def _ta_blocks_sell(self, ta: Optional["TechnicalAnalysisSnapshot"]) -> Optional[str]:
+    def _ta_blocks_sell(
+        self,
+        ta: Optional["TechnicalAnalysisSnapshot"],
+        *,
+        entry_mode: str = "strength",
+    ) -> Optional[str]:
         cfg = self._config.alpha_technical_analysis
         weight = getattr(self._config, "alpha_ta_weight", 1.0)
         if not cfg.enabled or weight <= 0:
@@ -425,26 +516,38 @@ class DecisionEngine:
                 f"weight={weight:.2f} buy={ta.buy_score:.2f} bias={ta.bias}"
             )
         if ta.bias == "bullish" and ta.buy_score >= effective_min:
+            if entry_mode == "reload_funding" and getattr(
+                self._config, "alpha_reload_bypass_ta_bullish_defer", True
+            ):
+                return None
             return (
                 f"ta_sell_deferred bullish bias={ta.bias} "
                 f"buy={ta.buy_score:.2f}>={effective_min:.2f} — hold XRP strength"
             )
         return None
 
+    def _sell_limit_price(
+        self,
+        book: OrderBookSnapshot,
+        *,
+        entry_mode: str = "strength",
+    ) -> Optional[float]:
+        mid = book.mid
+        if mid is None or mid <= 0:
+            return None
+        if entry_mode == "reload_funding" and self._reload_knobs is not None:
+            offset_pct = self._reload_knobs.sell_offset_pct
+        else:
+            offset_pct = self._effective_sell_offset_pct()
+        dec = price_decimals(self._config)
+        raw = mid * (1.0 + offset_pct / 100.0)
+        return round_rlusd_price(raw, dec, direction="up")
+
     def _effective_sell_offset_pct(self) -> float:
         explicit = getattr(self._config, "alpha_sell_limit_offset_pct", 0.0)
         if explicit > 0:
             return explicit
         return self._config.alpha_ask_offset_pct
-
-    def _sell_limit_price(self, book: OrderBookSnapshot) -> Optional[float]:
-        mid = book.mid
-        if mid is None or mid <= 0:
-            return None
-        offset_pct = self._effective_sell_offset_pct()
-        dec = price_decimals(self._config)
-        raw = mid * (1.0 + offset_pct / 100.0)
-        return round_rlusd_price(raw, dec, direction="up")
 
     def _build_bid(
         self,
@@ -576,22 +679,33 @@ class DecisionEngine:
         pending_sell_count: int = 0,
         balances: Optional[BalanceSnapshot],
         ta: Optional["TechnicalAnalysisSnapshot"] = None,
+        entry_mode: str = "strength",
+        entry_reason: str = "",
     ) -> DecisionResult:
-        if pending_sell_count >= self._config.alpha_max_pending_sells:
+        rknobs = self._reload_knobs
+        max_pending = (
+            rknobs.max_pending_sells
+            if entry_mode == "reload_funding" and rknobs is not None and rknobs.armed
+            else self._config.alpha_max_pending_sells
+        )
+        if pending_sell_count >= max_pending:
             return DecisionResult(
                 action=DecisionAction.HOLD,
-                reason=f"max_pending_sells={self._config.alpha_max_pending_sells}",
+                reason=f"max_pending_sells={max_pending}",
             )
-        blocked = self._ta_blocks_sell(ta)
+        blocked = self._ta_blocks_sell(ta, entry_mode=entry_mode)
         if blocked:
             return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
         mid = book.mid
         assert mid is not None
-        price = self._sell_limit_price(book)
+        price = self._sell_limit_price(book, entry_mode=entry_mode)
         if price is None or price <= 0:
             return DecisionResult(action=DecisionAction.HOLD, reason="invalid_sell_price")
 
         edge = self._sell_edge_pct(mid=mid, limit_price=price)
+        min_edge = self._config.alpha_min_edge_threshold_pct
+        if entry_mode == "reload_funding" and rknobs is not None and rknobs.armed:
+            min_edge = min(min_edge, rknobs.min_edge_pct)
         if self._risk is not None:
             ok, msg = self._risk.validate_entry(risk, edge_pct=edge)
             if not ok:
@@ -600,7 +714,7 @@ class DecisionEngine:
                     reason=msg,
                     edge_pct=edge,
                 )
-        elif edge < self._config.alpha_min_edge_threshold_pct:
+        elif edge < min_edge:
             return DecisionResult(
                 action=DecisionAction.HOLD,
                 reason=f"edge_below_threshold edge={edge:.3f}%",
@@ -616,7 +730,17 @@ class DecisionEngine:
             )
 
         portfolio = inventory.portfolio_xrp_equiv or (balances.portfolio_xrp_equiv if balances else 0.0)
-        desired = self._config.alpha_base_order_size_xrp * (1.0 + abs(inventory.deviation) * 2.0)
+        if entry_mode == "reload_funding" and balances is not None and self._reload is not None:
+            from alpha.decision.reload_regime import compute_reload_sell_size_xrp
+
+            desired = compute_reload_sell_size_xrp(
+                self._config,
+                shortfall_xrp_equiv=self._reload.shortfall_xrp_equiv,
+                balances=balances,
+                inventory=inventory,
+            )
+        else:
+            desired = self._config.alpha_base_order_size_xrp * (1.0 + abs(inventory.deviation) * 2.0)
         size = self._cap_size_xrp(
             desired=desired,
             depth_cap=depth_cap,
@@ -634,9 +758,11 @@ class DecisionEngine:
             )
 
         reason = (
-            f"strength dev={inventory.deviation:+.3f} edge={edge:.3f}% "
+            f"{entry_mode} dev={inventory.deviation:+.3f} edge={edge:.3f}% "
             f"depth_cap={depth_cap:.2f} alloc_xrp={inventory.xrp_allocation_pct:.1f}%"
         )
+        if entry_reason:
+            reason = f"{entry_reason} | {reason}"
         if ta is not None and ta.enabled:
             reason += f" ta_sell={ta.sell_score:.2f}"
         logger.info(

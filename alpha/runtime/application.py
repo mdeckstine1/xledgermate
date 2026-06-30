@@ -27,6 +27,11 @@ from alpha.decision.accumulation_regime import (
     accumulation_knobs_from_snapshot,
     evaluate_accumulation_regime,
 )
+from alpha.decision.reload_regime import (
+    ReloadSessionTracker,
+    evaluate_reload_regime,
+    reload_knobs_from_snapshot,
+)
 from alpha.decision.engine import DecisionEngine, DecisionResult
 from alpha.dry_run import DryRunGuard
 from alpha.inventory.manager import InventoryManager
@@ -101,7 +106,11 @@ class AlphaApplication:
         self._accumulation_session = AccumulationSessionTracker(
             path=self._state_dir / "accumulation_session.json",
         )
+        self._reload_session = ReloadSessionTracker(
+            path=self._state_dir / "reload_session.json",
+        )
         self._last_accumulation_knobs = None
+        self._last_reload_knobs = None
         self._orders = OrderManager(
             self._ledger,
             self._dry_run_guard,
@@ -399,6 +408,22 @@ class AlphaApplication:
         self._decision.set_accumulation(acc_snap, acc_knobs)
         self._orders.set_accumulation_knobs(acc_knobs)
 
+        pending_sells = self._orders.count_strength_sells(orders.open_offers)
+        reload_snap = evaluate_reload_regime(
+            self.config,
+            inventory=inventory,
+            mid=ref_mid,
+            structure=structure,
+            ta=ta_snapshot,
+            operator_market_regime=operator_regime,
+            rlusd_balance=balances.rlusd,
+            pending_funding_sells=pending_sells,
+            session=self._reload_session,
+        )
+        reload_knobs = reload_knobs_from_snapshot(reload_snap, self.config)
+        self._last_reload_knobs = reload_knobs
+        self._decision.set_reload(reload_snap, reload_knobs)
+
         self._reentry.tick_cycle()
 
         snap = OperatorSnapshot(
@@ -613,6 +638,14 @@ class AlphaApplication:
                     self._accumulation_session.record_bid(
                         size_xrp=float(decision.size_xrp),
                         price_rlusd_per_xrp=float(decision.price_rlusd_per_xrp),
+                    )
+            if execution.executed and execution.action == "place_ask":
+                if "reload_funding" in (decision.reason or ""):
+                    mid = float(snap.balances.mid_rlusd_per_xrp or 0.0)
+                    self._reload_session.record_sell_placed(
+                        size_xrp=float(decision.size_xrp or 0.0),
+                        mid=mid,
+                        config=self.config,
                     )
         else:
             logger.info("trading_cycle_skipped | risk_trading_not_allowed")

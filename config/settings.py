@@ -266,6 +266,21 @@ class BotConfig:
     alpha_accumulation_chase_tighten_step_pct: float = 0.02  # Tighten offset per mid_passed cancel
     alpha_accumulation_chase_min_offset_pct: float = 0.03  # Floor when chasing rips
     alpha_accumulation_missed_move_pct: float = 0.30  # Flag if mid rises this % while never executing
+    # RLUSD reload — sell XRP in post-run chop to fund accumulation deploy floor
+    alpha_reload_regime_enabled: bool = True
+    alpha_reload_min_rlusd_deploy_xrp_equiv: float = 45.0  # Min RLUSD dry powder (XRP-equiv)
+    alpha_reload_min_deviation: float = 0.0  # Only trim when at/above XRP target
+    alpha_reload_post_run_min_move_pct: float = 0.25  # Prove a run before chop reload
+    alpha_reload_near_high_pct: float = 0.15  # Mid within this % of rolling high
+    alpha_reload_require_slope_flat: bool = True  # No reload while slope+tape still ripping
+    alpha_reload_sell_offset_pct: float = 0.06  # Tight ask in chop
+    alpha_reload_min_edge_pct: float = 0.05
+    alpha_reload_max_pending_sells: int = 1
+    alpha_reload_max_sell_xrp: float = 0.0  # 0 = size to shortfall only
+    alpha_reload_max_sells_per_window: int = 1
+    alpha_reload_window_hours: float = 8.0
+    alpha_reload_bypass_ta_bullish_defer: bool = True  # Funding sell, not bag dump
+    alpha_reload_block_accumulation_until_funded: bool = True  # Policy 4: fund then bid
     # Post-exit re-entry (Aggressive Bag Growth — wait for dip after TP, stabilization after SL)
     alpha_reentry_enabled: bool = True
     alpha_reentry_tp_dip_pct: float = 0.08  # Re-buy after TP only when mid dips this % below TP exit

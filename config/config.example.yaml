@@ -133,6 +133,20 @@ alpha_accumulation_early_arm_enabled: true
 alpha_accumulation_chase_tighten_step_pct: 0.02
 alpha_accumulation_chase_min_offset_pct: 0.03
 alpha_accumulation_missed_move_pct: 0.30
+# RLUSD reload — sell XRP in post-run chop to fund accumulation (policy: fund then bid)
+alpha_reload_regime_enabled: true
+alpha_reload_min_rlusd_deploy_xrp_equiv: 45.0
+alpha_reload_min_deviation: 0.0
+alpha_reload_post_run_min_move_pct: 0.25
+alpha_reload_near_high_pct: 0.15
+alpha_reload_require_slope_flat: true
+alpha_reload_sell_offset_pct: 0.06
+alpha_reload_min_edge_pct: 0.05
+alpha_reload_max_pending_sells: 1
+alpha_reload_max_sells_per_window: 1
+alpha_reload_window_hours: 8.0
+alpha_reload_bypass_ta_bullish_defer: true
+alpha_reload_block_accumulation_until_funded: true
 
 # Bracket legs after buy fill (application-level OCO — not XRPL native)
 initial_stop_loss_pct: 0.015

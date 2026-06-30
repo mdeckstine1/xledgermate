@@ -308,6 +308,15 @@
           <div id="oppWatchSuggest" class="muted" style="font-size:.75rem;margin-top:8px;line-height:1.5;color:#c4b5fd"></div>
           <div id="oppWatchScorecard" class="acc-budget" style="margin-top:8px"></div>
         </div>
+        <div class="card opp-watch-card" id="reloadWatchCard" style="border-color:#1e3a5f;margin-bottom:12px">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:6px">
+            <h3 style="margin:0">RLUSD reload</h3>
+            <span id="reloadWatchState" class="muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em">—</span>
+          </div>
+          <div id="reloadWatchHeadline" class="opp-watch-headline">—</div>
+          <div id="reloadWatchDetail" class="muted" style="font-size:.78rem;line-height:1.45"></div>
+          <div id="reloadWatchFloor" class="acc-budget" style="margin-top:6px"></div>
+        </div>
         <div class="live-charts-row">
         <div class="card chart-card">
           <h3>Mid price · RLUSD/XRP</h3>
@@ -2120,6 +2129,7 @@
       $('postureBadge').textContent = s.posture || 'patient';
       const ow = s.opportunity_watch || {};
       const acc = s.accumulation_regime || {};
+      const rel = s.reload_regime || {};
       const rs = ow.state || s.ready_state || acc.phase || 'idle';
       const rb = $('readyBadge');
       if (rb) {
@@ -2158,6 +2168,21 @@
             + ' · chase ' + (sc.chase_cancels ?? 0) + ' · mid +' + (sc.window_mid_move_pct ?? 0) + '%')
           : '';
         $('oppWatchScorecard').style.color = sc.missed_opportunity ? '#fca5a5' : '#a5b4fc';
+      }
+      if ($('reloadWatchState')) $('reloadWatchState').textContent = rel.phase || 'off';
+      if ($('reloadWatchHeadline')) {
+        $('reloadWatchHeadline').textContent = rel.headline || 'RELOAD IDLE';
+        $('reloadWatchHeadline').className = 'opp-watch-headline opp-watch-' + (rel.phase === 'watching' ? 'watching' : rel.phase || 'idle');
+      }
+      if ($('reloadWatchDetail')) $('reloadWatchDetail').textContent = rel.detail || '';
+      if ($('reloadWatchFloor')) {
+        const sf = rel.shortfall_xrp_equiv;
+        $('reloadWatchFloor').textContent = rel.deploy_floor_xrp_equiv
+          ? ('RLUSD ' + (rel.rlusd_xrp_equiv ?? '?') + ' / floor ' + rel.deploy_floor_xrp_equiv
+            + (sf > 0 ? ' · shortfall ' + sf.toFixed(1) + ' XRP-equiv' : ' · funded')
+            + (rel.blocks_accumulation ? ' · accumulation blocked' : ''))
+          : '';
+        $('reloadWatchFloor').style.color = rel.blocks_accumulation ? '#fcd34d' : '#93c5fd';
       }
       $('pauseBadge').style.display = s.operator_paused ? 'inline' : 'none';
       $('killBadge').style.display = s.risk?.kill_switch_active ? 'inline' : 'none';

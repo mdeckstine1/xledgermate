@@ -45,6 +45,7 @@ L — post_tp_* re-entry: tp_cooldown, tp_dip_pct, tp_min_ta_score.
 M — balanced dev=: lower weakness to buy OR rely on bull_run/momentum (see opportunity_watch). If chart rips while HOLD, read Opportunity watch card — dip-only gate may be blocking.
 U — Bull run / breakout missed: TA bullish + balanced dev — accumulation_regime should be PRIMED/ARMED; enable accumulation (default on), SKYNET regime Bull, check re-entry blockers; do NOT silently HOLD without explaining watch state.
 V — Accumulation regime ARMED/EXECUTING: alpha_accumulation_buy_offset_pct ~0.06, alpha_accumulation_stale_drift_pct ~0.08 (chase), alpha_accumulation_max_pending_buys 2–3, alpha_accumulation_risk_boost 1.5, alpha_accumulation_bypass_reentry true. Do NOT tighten to dip-only or max_pending=1 unless operator asks defense.
+W — RLUSD reload (post-run CHOP): alpha_reload_min_rlusd_deploy_xrp_equiv ~45, alpha_reload_sell_offset_pct ~0.06, sell in consolidation not rip. blocks_accumulation until floor met — fund then bid. Do NOT strength-sell into active breakout; wait for reload WATCHING→ARMED.
 N — Pending bid no fill: passive limit; lower offset or wait for ask to hit bid.
 O — XRP-heavy strength sells: strength_deviation, sell_limit_offset, ta_min_sell.
 P — kill_switch / pause_bids / preflight: fix risk first, do not crank aggression.
@@ -71,7 +72,7 @@ def infer_scenario_hints(
     reentry: Optional[Dict[str, Any]] = None,
     stale_snapshot: Optional[Dict[str, Any]] = None,
     opportunity_watch: Optional[Dict[str, Any]] = None,
-    accumulation_regime: Optional[Dict[str, Any]] = None,
+    reload_regime: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     """Heuristic scenario letters for SKYNET (non-exhaustive)."""
     reason = (decision_reason or "").lower()
@@ -79,6 +80,7 @@ def infer_scenario_hints(
     hints: List[str] = []
     ow = opportunity_watch or {}
     acc = accumulation_regime or {}
+    rel = reload_regime or {}
     dev = inv.get("deviation")
     label = str(inv.get("label") or "")
 
@@ -98,8 +100,10 @@ def infer_scenario_hints(
             hints.append("U")
     if acc.get("armed") or acc.get("phase") in ("armed", "executing", "blocked"):
         hints.append("V")
-    if acc.get("phase") == "primed":
-        hints.append("U")
+    if rel.get("armed") or rel.get("phase") in ("armed", "executing", "watching"):
+        hints.append("W")
+    if rel.get("blocks_accumulation"):
+        hints.append("W")
     if ow.get("state") in ("armed", "watching"):
         hints.append("U")
     if "max_pending_buys" in reason:

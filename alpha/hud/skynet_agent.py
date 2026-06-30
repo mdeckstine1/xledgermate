@@ -530,6 +530,8 @@ def _event_snapshot(hud_state: Dict[str, Any]) -> Dict[str, Any]:
         "accumulation_phase": (hud_state.get("accumulation_regime") or {}).get("phase"),
         "accumulation_armed": (hud_state.get("accumulation_regime") or {}).get("armed"),
         "accumulation_missed": (hud_state.get("accumulation_regime") or {}).get("scorecard", {}).get("missed_opportunity"),
+        "reload_phase": (hud_state.get("reload_regime") or {}).get("phase"),
+        "reload_blocks_accumulation": (hud_state.get("reload_regime") or {}).get("blocks_accumulation"),
     }
 
 
@@ -570,8 +572,10 @@ def detect_significant_events(
         reasons.append(f"accumulation_{acc_phase}")
     if snap.get("accumulation_armed") and not last_snapshot.get("accumulation_armed"):
         reasons.append("accumulation_armed")
-    if snap.get("accumulation_missed") and not last_snapshot.get("accumulation_missed"):
-        reasons.append("accumulation_missed_move")
+    if snap.get("reload_blocks_accumulation") and not last_snapshot.get("reload_blocks_accumulation"):
+        reasons.append("reload_blocks_accumulation")
+    if snap.get("reload_phase") == "armed" and last_snapshot.get("reload_phase") != "armed":
+        reasons.append("reload_armed")
     return bool(reasons), reasons
 
 

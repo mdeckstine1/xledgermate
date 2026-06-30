@@ -102,8 +102,41 @@ def evaluate_opportunity_watch(
     trading_enabled: bool = True,
     operator_paused: bool = False,
     accumulation_regime: Optional[Dict[str, Any]] = None,
+    reload_regime: Optional[Dict[str, Any]] = None,
 ) -> OpportunityWatchSnapshot:
     """Compute ready / watch / blocked state for HUD + SKYNET."""
+    rel = reload_regime or {}
+    if rel.get("phase") == "executing":
+        return OpportunityWatchSnapshot(
+            state="executing",
+            headline=rel.get("headline") or "RELOADING — funding sell",
+            detail=rel.get("detail") or "",
+            signals=tuple(rel.get("signals") or ()),
+            suggestions=("Funding sell in chop — accumulation blocked until floor met.",),
+            skynet_nudge=rel.get("skynet_nudge") or "",
+        )
+    if rel.get("phase") == "watching":
+        return OpportunityWatchSnapshot(
+            state="watching",
+            headline=rel.get("headline") or "RELOAD WATCHING — wait for chop",
+            detail=rel.get("detail") or "",
+            signals=tuple(rel.get("signals") or ()),
+            suggestions=(
+                "RLUSD below deploy floor — bot waits for post-run consolidation to fund.",
+                "Accumulation may be blocked until reload completes (policy 4).",
+            ),
+            skynet_nudge=rel.get("skynet_nudge") or "",
+        )
+    if rel.get("armed"):
+        return OpportunityWatchSnapshot(
+            state="armed",
+            headline=rel.get("headline") or "RELOAD ARMED — fund RLUSD in chop",
+            detail=rel.get("detail") or "",
+            signals=tuple(rel.get("signals") or ()),
+            suggestions=("Post-run chop — funding sell should place_ask this cycle.",),
+            skynet_nudge=rel.get("skynet_nudge") or "",
+        )
+
     acc = accumulation_regime or {}
     if acc.get("phase") == "executing":
         return OpportunityWatchSnapshot(
