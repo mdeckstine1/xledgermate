@@ -111,11 +111,13 @@ def _get_meta(conn: sqlite3.Connection, key: str) -> Optional[str]:
 
 
 def _row_to_candle(row: sqlite3.Row) -> CandleData:
+    tick_count = int(row["tick_count"]) if "tick_count" in row.keys() else 0
     return CandleData(
         open=float(row["open"]),
         high=float(row["high"]),
         low=float(row["low"]),
         close=float(row["close"]),
+        volume=float(tick_count) if tick_count > 0 else None,
         is_complete=bool(int(row["is_complete"])),
     )
 
@@ -248,7 +250,7 @@ def get_candles(
         _init_schema(conn)
         rows = conn.execute(
             """
-            SELECT open, high, low, close, is_complete
+            SELECT open, high, low, close, tick_count, is_complete
             FROM ohlc_bars
             WHERE interval_sec=?
             ORDER BY bar_open_ts DESC

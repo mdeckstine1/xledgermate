@@ -230,4 +230,5 @@ def build_candle_from_prices(prices: Sequence[float]) -> Optional["CandleData"]:
         high=max(clean),
         low=min(clean),
         close=clean[-1],
+        volume=float(len(clean)),
     )

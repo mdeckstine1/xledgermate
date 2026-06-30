@@ -90,6 +90,14 @@ class TechnicalAnalysisSnapshot:
     divergence_indicator: str = ""
     divergence_strength: float = 0.0
     divergence_detail: str = ""
+    volume_fired: bool = False
+    volume_ratio: float = 0.0
+    volume_bias: str = "neutral"
+    volume_detail: str = ""
+    htf_bias: str = "neutral"
+    htf_interval_seconds: int = 0
+    htf_strength: float = 0.0
+    htf_detail: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -125,6 +133,14 @@ class TechnicalAnalysisSnapshot:
             "divergence_indicator": self.divergence_indicator,
             "divergence_strength": _finite_float(self.divergence_strength) or 0.0,
             "divergence_detail": self.divergence_detail,
+            "volume_fired": self.volume_fired,
+            "volume_ratio": _finite_float(self.volume_ratio) or 0.0,
+            "volume_bias": self.volume_bias,
+            "volume_detail": self.volume_detail,
+            "htf_bias": self.htf_bias,
+            "htf_interval_seconds": int(self.htf_interval_seconds),
+            "htf_strength": _finite_float(self.htf_strength) or 0.0,
+            "htf_detail": self.htf_detail,
             "signals": [
                 {
                     "name": s.name,
@@ -572,6 +588,8 @@ class TechnicalAnalysis:
         *,
         mid: Optional[float] = None,
         candles: Optional[Sequence[CandleData]] = None,
+        htf_candles: Optional[Sequence[CandleData]] = None,
+        htf_interval_seconds: int = 0,
     ) -> TechnicalAnalysisSnapshot:
         price = float(mid if mid is not None else (mids[-1] if mids else 0.0))
         if not self._cfg.enabled:
@@ -647,6 +665,14 @@ class TechnicalAnalysis:
         divergence_indicator = ""
         divergence_strength = 0.0
         divergence_detail = ""
+        volume_fired = False
+        volume_ratio = 0.0
+        volume_bias = "neutral"
+        volume_detail = ""
+        htf_bias_label = "neutral"
+        htf_interval = int(htf_interval_seconds or 0)
+        htf_strength = 0.0
+        htf_detail = ""
 
         rsi_series: Optional[pd.Series] = None
         stoch_k_series: Optional[pd.Series] = None
@@ -1048,6 +1074,71 @@ class TechnicalAnalysis:
                 )
             signals.append(TechnicalSignal("divergence", True, fired, bias, score, f"{label} {detail}"))
 
+        # Volume confirmation — tick activity on last closed bar
+        vc = self._cfg.volume_confirmation
+        if vc.enabled:
+            from alpha.decision.volume_confirmation import evaluate_volume_confirmation
+
+            vol = evaluate_volume_confirmation(candles, vc)
+            volume_fired = vol.fired
+            volume_ratio = vol.ratio
+            volume_bias = vol.bias
+            volume_detail = vol.detail
+            buy_score += max(0.0, vol.buy_contribution)
+            sell_score += max(0.0, vol.sell_contribution)
+            breakout_score += max(0.0, vol.breakout_contribution)
+            if vol.score_dampen < 1.0:
+                buy_score *= vol.score_dampen
+                sell_score *= vol.score_dampen
+                breakout_score *= vol.score_dampen
+            fired = vol.fired
+            bias = vol.bias if vol.fired else "neutral"
+            score = max(vol.buy_contribution, vol.sell_contribution, vol.breakout_contribution)
+            signals.append(
+                TechnicalSignal(
+                    "volume_confirmation",
+                    True,
+                    fired,
+                    bias,
+                    score,
+                    vol.detail,
+                )
+            )
+
+        # HTF bias — light SMA trend filter on higher-TF OHLC
+        hc = self._cfg.htf_bias
+        if hc.enabled and htf_candles is not None and len(htf_candles) >= 2:
+            from alpha.decision.htf_bias import evaluate_htf_bias, resolve_htf_interval_seconds
+            from alpha.decision.ta_config import effective_ta_candle_interval_seconds
+
+            ltf_sec = effective_ta_candle_interval_seconds(
+                self._cfg,
+                cycle_seconds=self._bot_config.alpha_cycle_interval_seconds,
+                sample_interval_seconds=self._bot_config.alpha_price_sample_interval_seconds,
+            )
+            htf_sec = htf_interval or resolve_htf_interval_seconds(hc, ltf_interval_seconds=ltf_sec)
+            htf_interval = htf_sec
+            htf = evaluate_htf_bias(htf_candles, hc, interval_seconds=htf_sec)
+            htf_bias_label = htf.bias
+            htf_strength = htf.strength
+            htf_detail = htf.detail
+            buy_score *= htf.buy_multiplier
+            sell_score *= htf.sell_multiplier
+            breakout_score *= htf.breakout_multiplier
+            fired = htf.bias != "neutral"
+            bias = htf.bias
+            score = htf.strength
+            signals.append(
+                TechnicalSignal(
+                    "htf_bias",
+                    True,
+                    fired,
+                    bias,
+                    score,
+                    htf.detail,
+                )
+            )
+
         if buy_score > sell_score + 0.25:
             bias = "bullish"
         elif sell_score > buy_score + 0.25:
@@ -1069,7 +1160,9 @@ class TechnicalAnalysis:
         summary = (
             f"ta buy={buy_score:.2f} sell={sell_score:.2f} breakout={breakout_score:.2f} "
             f"bias={bias} elliott={elliott_wave_label or elliott}"
-            f"{f' div={divergence_kind}' if divergence_fired else ''}{bars_note}"
+            f"{f' div={divergence_kind}' if divergence_fired else ''}"
+            f"{f' vol={volume_ratio:.2f}' if volume_fired else ''}"
+            f"{f' htf={htf_bias_label}' if htf_bias_label != 'neutral' else ''}{bars_note}"
         )
         logger.info("technical_analysis | %s", summary)
 
@@ -1105,4 +1198,12 @@ class TechnicalAnalysis:
             divergence_indicator=divergence_indicator,
             divergence_strength=_finite_float(round(divergence_strength, 3)) or 0.0,
             divergence_detail=divergence_detail,
+            volume_fired=volume_fired,
+            volume_ratio=_finite_float(round(volume_ratio, 3)) or 0.0,
+            volume_bias=volume_bias,
+            volume_detail=volume_detail,
+            htf_bias=htf_bias_label,
+            htf_interval_seconds=htf_interval,
+            htf_strength=_finite_float(round(htf_strength, 3)) or 0.0,
+            htf_detail=htf_detail,
         )

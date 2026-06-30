@@ -427,10 +427,19 @@ def build_hud_state(
             sample_interval_seconds=effective.alpha_price_sample_interval_seconds,
         )
         ohlc = get_candles(ta_interval, logs_dir=runtime_state_path.parent)
+        from alpha.decision.htf_bias import resolve_htf_interval_seconds
+
+        htf_sec = resolve_htf_interval_seconds(
+            effective.alpha_technical_analysis.htf_bias,
+            ltf_interval_seconds=ta_interval,
+        )
+        htf_ohlc = get_candles(htf_sec, logs_dir=runtime_state_path.parent)
         ta = TechnicalAnalysis(effective).analyze(
             price_history,
             mid=ref,
             candles=ohlc if len(ohlc) >= 2 else None,
+            htf_candles=htf_ohlc if len(htf_ohlc) >= 2 else None,
+            htf_interval_seconds=htf_sec,
         )
     ta_interval = effective_ta_candle_interval_seconds(
         effective.alpha_technical_analysis,

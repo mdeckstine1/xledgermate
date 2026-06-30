@@ -258,6 +258,13 @@ def _technical_analysis_context(ta: Dict[str, Any]) -> str:
             "divergence_indicator",
             "divergence_strength",
             "divergence_detail",
+            "volume_fired",
+            "volume_ratio",
+            "volume_bias",
+            "htf_bias",
+            "htf_interval_seconds",
+            "htf_strength",
+            "htf_detail",
         )
         if ta.get(k) is not None
     }

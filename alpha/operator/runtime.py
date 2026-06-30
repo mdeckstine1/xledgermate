@@ -40,6 +40,8 @@ _TA_VIRTUAL_KEYS = frozenset(
         "alpha_ta_bollinger_enabled",
         "alpha_ta_engulfing_enabled",
         "alpha_ta_divergence_enabled",
+        "alpha_ta_volume_enabled",
+        "alpha_ta_htf_enabled",
         "alpha_ta_candle_interval_seconds",
     }
 )
@@ -80,6 +82,8 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_ta_bollinger_enabled",
     "alpha_ta_engulfing_enabled",
     "alpha_ta_divergence_enabled",
+    "alpha_ta_volume_enabled",
+    "alpha_ta_htf_enabled",
     "alpha_ta_candle_interval_seconds",
     "alpha_reentry_enabled",
     "alpha_reentry_tp_dip_pct",
@@ -169,6 +173,16 @@ def _apply_ta_virtual_overrides(config: BotConfig, overrides: Dict[str, Any]) ->
         ta = replace(ta, engulfing=replace(ta.engulfing, enabled=bool(overrides["alpha_ta_engulfing_enabled"])))
     if "alpha_ta_divergence_enabled" in overrides:
         ta = replace(ta, divergence=replace(ta.divergence, enabled=bool(overrides["alpha_ta_divergence_enabled"])))
+    if "alpha_ta_volume_enabled" in overrides:
+        ta = replace(
+            ta,
+            volume_confirmation=replace(
+                ta.volume_confirmation,
+                enabled=bool(overrides["alpha_ta_volume_enabled"]),
+            ),
+        )
+    if "alpha_ta_htf_enabled" in overrides:
+        ta = replace(ta, htf_bias=replace(ta.htf_bias, enabled=bool(overrides["alpha_ta_htf_enabled"])))
     if "alpha_ta_candle_interval_seconds" in overrides:
         ta = replace(ta, candle_interval_seconds=int(overrides["alpha_ta_candle_interval_seconds"]))
     return replace(config, alpha_technical_analysis=ta)
@@ -223,6 +237,10 @@ def effective_config_snapshot(
             snap[key] = ta.engulfing.enabled
         elif key == "alpha_ta_divergence_enabled":
             snap[key] = ta.divergence.enabled
+        elif key == "alpha_ta_volume_enabled":
+            snap[key] = ta.volume_confirmation.enabled
+        elif key == "alpha_ta_htf_enabled":
+            snap[key] = ta.htf_bias.enabled
         elif key == "alpha_ta_candle_interval_seconds":
             from alpha.decision.ta_config import effective_ta_candle_interval_seconds
 
@@ -290,6 +308,9 @@ def _coerce_override(key: str, value: Any) -> Any:
         "alpha_ta_stoch_enabled",
         "alpha_ta_bollinger_enabled",
         "alpha_ta_engulfing_enabled",
+        "alpha_ta_divergence_enabled",
+        "alpha_ta_volume_enabled",
+        "alpha_ta_htf_enabled",
         "alpha_reentry_enabled",
         "alpha_stale_pending_buy_enabled",
         "alpha_deferred_sl_enabled",

@@ -359,10 +359,19 @@ class AlphaApplication:
                 sample_interval_seconds=self.config.alpha_price_sample_interval_seconds,
             )
             ohlc = get_candles(ta_interval, logs_dir=self._state_dir)
+            from alpha.decision.htf_bias import resolve_htf_interval_seconds
+
+            htf_sec = resolve_htf_interval_seconds(
+                ta_cfg.htf_bias,
+                ltf_interval_seconds=ta_interval,
+            )
+            htf_ohlc = get_candles(htf_sec, logs_dir=self._state_dir)
             ta_snapshot = self._ta.analyze(
                 prices,
                 mid=ref or book.mid,
                 candles=ohlc if len(ohlc) >= 2 else None,
+                htf_candles=htf_ohlc if len(htf_ohlc) >= 2 else None,
+                htf_interval_seconds=htf_sec,
             )
             self._last_ta = ta_snapshot
             self._orders.set_ta(ta_snapshot)

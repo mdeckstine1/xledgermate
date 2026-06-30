@@ -74,6 +74,8 @@ For install, VPS, dry-run cutover, and the **Config** tab (credentials + withdra
 | **TA / OHLC** | Completed bars advance correctly on live ticks; warmup no longer stuck after rebuild. |
 | **Elliott 5-wave** | Zigzag pivots on ~50 closed OHLC bars — wave label (`W3↑`, `W4↑`), trend (`bullish_impulse` / `bearish_impulse`), graded buy/sell contribution. **Does not arm accumulation alone.** |
 | **Divergence detector** | Pivot-based **RSI / Stoch** (optional MACD) disagreement — boosts buy/sell scores; surfaced on TA tab, accumulation scorecard, SKYNET context. HUD toggle **`alpha_ta_divergence_enabled`**. |
+| **Volume confirmation** | Last closed bar **tick_count** vs rolling avg — spike boosts move/breakout scores; low activity dampens chop. HUD **Volume** toggle. |
+| **HTF bias filter** | **1h** SMA stack (default) on cached OHLC — light multiplier on aligned LTF scores, dampens counter-trend. HUD **HTF bias** toggle. |
 | **SKYNET gate diagnostics** | Each Ask includes **authoritative PASS/FAIL** for dip gate, dev caps, TA breakout, structure arm, momentum, accumulation — SKYNET should not guess thresholds. |
 | **Scale-phase dev caps** | Operator overrides `alpha_accumulation_max_deviation` / `alpha_bull_run_max_deviation` (e.g. **0.08**) let accumulation arm when mildly XRP-heavy; still blocked by `alpha_max_inventory_imbalance_pct` (default **0.10**). |
 | **Reload fill tracking** | Funding sells record fills in `reload_session` — committed RLUSD and deploy floor math stay accurate. |
@@ -618,6 +620,34 @@ buy_weight: 0.7      sell_weight: 0.7        hidden_weight_mult: 0.45
 **Narrative:** Bullish divergence + fib support + oversold RSI — higher-confidence dip bid; bearish divergence while XRP-heavy — consider deferring strength asks (`ta_sell_deferred`).
 
 **See also:** [Appendix Z](#appendix-z--elliott-5-wave--divergence-detector) · [Appendix J](#appendix-j--ta-blocking-buys-in-chop)
+
+#### Volume confirmation
+
+**What it is:** Under **Bias**, **Volume: …** compares the last **closed** bar’s tick activity (`tick_count` in OHLC cache) to the rolling average.
+
+| Read | Meaning |
+|------|---------|
+| **spike_up** + ratio ≥ 1.25 | Green bar with above-average activity — +buy / +breakout score |
+| **spike_down** | Red bar with spike — +sell score |
+| **low_vol_noise** | Ratio below 0.65 — dampens buy/sell/breakout (chop filter) |
+
+**HUD:** TA tab **Volume** toggle (`alpha_ta_volume_enabled`). Not exchange tape volume — book-sample density proxy, live-friendly on XRPL.
+
+#### HTF bias filter
+
+**What it is:** **1h bias: bullish/bearish** (default **3600s** bars from SQLite cache). Fast/slow SMA stack on HTF closes multiplies LTF scores — **light filter**, not a hard block.
+
+| HTF | LTF effect |
+|-----|------------|
+| **Bullish** | Buy/breakout scores × up to ~1.15; sell scores slightly damped |
+| **Bearish** | Sell scores boosted; buy/breakout damped |
+| **Neutral / warming** | Multipliers 1.0 |
+
+Use **7200s** (2h) in config for a slower anchor. Auto-bumps above your TA candle window if needed.
+
+**HUD:** **HTF bias** toggle (`alpha_ta_htf_enabled`).
+
+**See also:** [Appendix Z](#appendix-z--elliott-5-wave--divergence-detector)
 
 ### Brackets tab
 
@@ -2521,9 +2551,9 @@ alpha_risk_per_trade_pct          = 3–4%          ← only on larger book you 
 
 **SKYNET:** Ask with Live context — read **`gate_diagnostics`** block before advising “wait for next cycle.” Compare `accumulation_dev_cap` and `bull_run_dev_cap` to live `dev`.
 
-**Config path:** `alpha_technical_analysis.elliott_wave` · `alpha_technical_analysis.divergence` in `config.yaml`.
+**Config path:** `alpha_technical_analysis.elliott_wave` · `divergence` · `volume_confirmation` · `htf_bias` in `config.yaml`.
 
-**Not yet in engine (roadmap):** volume confirmation, vol-adjusted BB/RSI, daily/4h anchor filter, XRPL flow tie-in.
+**Roadmap (not yet):** vol-adjusted BB/RSI bands, daily anchor, XRPL on-chain flow tie-in.
 
 ---
 

@@ -186,6 +186,32 @@ class DivergenceConfig:
 
 
 @dataclass
+class VolumeConfirmationConfig:
+    enabled: bool = True
+    lookback_bars: int = 20
+    min_spike_ratio: float = 1.25  # last bar tick_count vs rolling avg
+    low_volume_ratio: float = 0.65
+    buy_weight: float = 0.5
+    sell_weight: float = 0.5
+    breakout_weight: float = 0.8
+    noise_penalty: float = 0.25  # dampen scores when activity below low_volume_ratio
+
+
+@dataclass
+class HtfBiasConfig:
+    enabled: bool = True
+    interval_seconds: int = 3600  # 1h default; must be > LTF (auto-bumps from cache)
+    min_closed_bars: int = 12
+    fast_sma: int = 8
+    slow_sma: int = 21
+    trend_sep_pct: float = 0.15  # fast/slow separation for full strength
+    buy_align_boost: float = 0.15
+    sell_align_boost: float = 0.15
+    breakout_align_boost: float = 0.12
+    counter_trend_dampen: float = 0.12
+
+
+@dataclass
 class AlphaTechnicalAnalysisConfig:
     """Master TA config — nested under ``alpha_technical_analysis`` in config.yaml."""
 
@@ -214,6 +240,8 @@ class AlphaTechnicalAnalysisConfig:
     fair_value_gap: FairValueGapConfig = field(default_factory=FairValueGapConfig)
     liquidity_grab: LiquidityGrabConfig = field(default_factory=LiquidityGrabConfig)
     divergence: DivergenceConfig = field(default_factory=DivergenceConfig)
+    volume_confirmation: VolumeConfirmationConfig = field(default_factory=VolumeConfirmationConfig)
+    htf_bias: HtfBiasConfig = field(default_factory=HtfBiasConfig)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -318,6 +346,7 @@ def recommended_price_history_max_samples(
         cfg.order_block.lookback if cfg.order_block.enabled else 0,
         cfg.liquidity_grab.lookback if cfg.liquidity_grab.enabled else 0,
         cfg.divergence.lookback_bars if cfg.divergence.enabled else 0,
+        cfg.htf_bias.slow_sma + cfg.htf_bias.min_closed_bars if cfg.htf_bias.enabled else 0,
         cfg.structure_bos.lookback if cfg.structure_bos.enabled else 0,
         cfg.consolidation.lookback if cfg.consolidation.enabled else 0,
         cfg.bollinger.period if cfg.bollinger.enabled else 0,

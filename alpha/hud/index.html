@@ -465,6 +465,8 @@
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_bollinger_enabled" title="Bollinger band squeeze and band-touch signals."><input type="checkbox" id="taBbEnabled"> Bollinger</label></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_engulfing_enabled" title="Bullish/bearish engulfing candle patterns."><input type="checkbox" id="taEngulfEnabled"> Engulfing</label></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_divergence_enabled" title="RSI/Stoch pivot divergence — boosts weakness buys and strength sells."><input type="checkbox" id="taDivEnabled"> Divergence</label></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_ta_volume_enabled" title="Tick-activity spike on last closed bar — confirms moves vs chop noise."><input type="checkbox" id="taVolEnabled"> Volume</label></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_ta_htf_enabled" title="1h SMA trend filter — boosts aligned LTF scores, dampens counter-trend."><input type="checkbox" id="taHtfEnabled"> HTF bias</label></div>
           <button id="btnApplyTa">Apply TA settings</button>
         </div>
         <div id="taDisabled" class="card ta-disabled-msg" style="display:none">
@@ -474,7 +476,7 @@
         <div id="taContent">
           <div class="grid ta-grid">
             <div class="card"><h3>Status</h3><div id="taStatus" class="big">—</div><div id="taSummary" class="muted"></div></div>
-            <div class="card"><h3>Bias</h3><div id="taBias" class="big">—</div><div id="taElliott" class="muted"></div><div id="taDivergence" class="muted"></div></div>
+            <div class="card"><h3>Bias</h3><div id="taBias" class="big">—</div><div id="taElliott" class="muted"></div><div id="taDivergence" class="muted"></div><div id="taVolume" class="muted"></div><div id="taHtf" class="muted"></div></div>
             <div class="card"><h3>Buy score</h3><div id="taBuyScore" class="big">—</div><div id="taBuyGate" class="muted"></div></div>
             <div class="card"><h3>Sell score</h3><div id="taSellScore" class="big">—</div><div id="taSellGate" class="muted"></div></div>
             <div class="card"><h3>Breakout score</h3><div id="taBreakScore" class="big">—</div><div id="taBreakGate" class="muted"></div></div>
@@ -1019,6 +1021,8 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if ($('taBbEnabled')) $('taBbEnabled').checked = c.alpha_ta_bollinger_enabled !== false;
       if ($('taEngulfEnabled')) $('taEngulfEnabled').checked = c.alpha_ta_engulfing_enabled !== false;
       if ($('taDivEnabled')) $('taDivEnabled').checked = c.alpha_ta_divergence_enabled !== false;
+      if ($('taVolEnabled')) $('taVolEnabled').checked = c.alpha_ta_volume_enabled !== false;
+      if ($('taHtfEnabled')) $('taHtfEnabled').checked = c.alpha_ta_htf_enabled !== false;
       syncTrail(c.trailing_step_pct ?? 1.5);
       syncBreakout(c.alpha_breakout_pct ?? 0.02);
       syncLookback(c.alpha_structure_lookback ?? 20);
@@ -1144,6 +1148,8 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         alpha_ta_bollinger_enabled: $('taBbEnabled').checked,
         alpha_ta_engulfing_enabled: $('taEngulfEnabled').checked,
         alpha_ta_divergence_enabled: $('taDivEnabled').checked,
+        alpha_ta_volume_enabled: $('taVolEnabled').checked,
+        alpha_ta_htf_enabled: $('taHtfEnabled').checked,
       }});
       if (d?.ok) { toast('TA settings updated'); operatorConfig = d; poll(); }
     };
@@ -2137,6 +2143,35 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         } else {
           divEl.textContent = 'Divergence: none';
           divEl.className = 'muted';
+        }
+      }
+      const volEl = $('taVolume');
+      if (volEl) {
+        if (ta.volume_fired) {
+          volEl.textContent = [
+            `Volume: ${ta.volume_bias || 'spike'}`,
+            ta.volume_ratio != null ? `ratio ${Number(ta.volume_ratio).toFixed(2)}` : '',
+            ta.volume_detail ? `— ${ta.volume_detail}` : '',
+          ].filter(Boolean).join(' ');
+          volEl.className = 'muted ta-div-' + (ta.volume_bias || 'neutral');
+        } else {
+          volEl.textContent = ta.volume_detail ? `Volume: ${ta.volume_detail}` : 'Volume: —';
+          volEl.className = 'muted';
+        }
+      }
+      const htfEl = $('taHtf');
+      if (htfEl) {
+        const htfLabel = ta.htf_interval_seconds ? formatTaCandleLabel(ta.htf_interval_seconds) : 'HTF';
+        if (ta.htf_bias && ta.htf_bias !== 'neutral') {
+          htfEl.textContent = [
+            `${htfLabel} bias: ${ta.htf_bias}`,
+            ta.htf_strength != null ? `str ${Number(ta.htf_strength).toFixed(2)}` : '',
+            ta.htf_detail ? `— ${ta.htf_detail}` : '',
+          ].filter(Boolean).join(' ');
+          htfEl.className = 'muted ta-div-' + ta.htf_bias;
+        } else {
+          htfEl.textContent = ta.htf_detail ? `${htfLabel}: ${ta.htf_detail}` : `${htfLabel}: neutral`;
+          htfEl.className = 'muted';
         }
       }
       $('taBuyScore').textContent = fmt(ta.buy_score, 2);
