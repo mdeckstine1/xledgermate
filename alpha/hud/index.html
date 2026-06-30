@@ -120,6 +120,9 @@
     .ta-signals td.bias-bullish { color:var(--ok); }
     .ta-signals td.bias-bearish { color:var(--bad); }
     .ta-signals tr.fired td:first-child { font-weight:600; }
+    .arb-banner { border-left:3px solid var(--accent); padding:10px 12px; margin-bottom:12px; font-size:.8rem; line-height:1.45; color:var(--muted); }
+    .arb-disloc { color:var(--warn); font-weight:600; }
+    .arb-ok { color:var(--ok); }
     .ta-disabled-msg { padding:16px; text-align:center; color:var(--muted); }
     .reports-catalog { display:flex; flex-direction:column; gap:10px; }
     .reports-catalog .report-cat { margin-bottom:4px; }
@@ -290,6 +293,7 @@
         <div class="tab" data-tab="activity">Activity</div>
         <div class="tab" data-tab="pro">PRO</div>
         <div class="tab" data-tab="skynet">SKYNET</div>
+        <div class="tab" data-tab="arb">Arb</div>
         <div class="tab" data-tab="config">Config</div>
       </div>
       <section id="live" class="panel active">
@@ -636,6 +640,48 @@
           <div id="transferLog" class="transfer-log muted">Loading…</div>
         </div>
       </section>
+      <section id="arb" class="panel">
+        <div class="card arb-banner">
+          <strong>Read-only monitor</strong> — CLOB mid (from Alpha state) vs XRPL AMM implied price.
+          No trades, no engine changes. Polls every ~60s via HUD only. Live arb later = wallet B + separate service.
+        </div>
+        <div class="grid live-grid">
+          <div class="card">
+            <h3>Spread</h3>
+            <div id="arbSpread" class="big">—</div>
+            <div id="arbDisloc" class="muted"></div>
+          </div>
+          <div class="card">
+            <h3>CLOB mid</h3>
+            <div id="arbClob" class="big">—</div>
+            <div class="muted">Alpha runtime reference</div>
+          </div>
+          <div class="card">
+            <h3>AMM mid</h3>
+            <div id="arbAmm" class="big">—</div>
+            <div id="arbAmmStatus" class="muted">—</div>
+          </div>
+          <div class="card">
+            <h3>24h soak</h3>
+            <div id="arbSoak" class="big">—</div>
+            <div id="arbSoakDetail" class="muted"></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:12px">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:8px">
+            <h3 style="margin:0">Recent samples</h3>
+            <button type="button" id="btnArbRefresh" class="secondary" style="margin-left:auto;font-size:.75rem;padding:4px 10px">Poll now</button>
+            <span id="arbUpdated" class="muted" style="font-size:.72rem">—</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="ta-signals">
+              <thead><tr><th>Time (UTC)</th><th>CLOB</th><th>AMM</th><th>Spread</th><th>Flag</th></tr></thead>
+              <tbody id="arbHistoryTable"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <p id="arbNote" class="muted" style="font-size:.75rem;margin-top:10px"></p>
+      </section>
       <section id="skynet" class="panel">
         <p class="skynet-status" id="skynetStatus">Loading SKYNET status…</p>
         <div class="card" style="margin-bottom:12px;border-color:#2a4a3d">
@@ -803,11 +849,13 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       el.classList.add('active');
       $(el.dataset.tab).classList.add('active');
       skynetTabActive = el.dataset.tab === 'skynet';
+      arbTabActive = el.dataset.tab === 'arb';
       if (el.dataset.tab === 'live' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'ta' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'config') loadAccountConfig();
       if (el.dataset.tab === 'pro') loadProReplay();
       if (el.dataset.tab === 'skynet') loadSkynetStatus();
+      if (el.dataset.tab === 'arb') loadArbState();
       if (el.dataset.tab === 'reports') { loadReportsCatalog(); loadTaxPeriods(); }
     }));
 
@@ -2606,6 +2654,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     let skynetAgentKnobChanges = [];
     let skynetAskKnobChanges = [];
     let skynetTabActive = false;
+    let arbTabActive = false;
     let skynetTogglePending = false;
 
     function _knobTitleBase(el) {
@@ -3126,6 +3175,99 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       }
     };
 
+    function fmtArbPrice(v) {
+      if (v == null || v === '' || Number.isNaN(Number(v))) return '—';
+      return Number(v).toFixed(6);
+    }
+
+    function fmtArbBps(v) {
+      if (v == null || v === '' || Number.isNaN(Number(v))) return '—';
+      return Number(v).toFixed(2) + ' bps';
+    }
+
+    function renderArb(d) {
+      if (!d) return;
+      const latest = d.latest || {};
+      const summary = d.summary || {};
+      const spreadEl = $('arbSpread');
+      const dislocEl = $('arbDisloc');
+      const bps = latest.spread_bps;
+      if (spreadEl) {
+        spreadEl.textContent = fmtArbBps(bps);
+        spreadEl.className = 'big' + (latest.dislocation ? ' arb-disloc' : (bps != null ? ' arb-ok' : ''));
+      }
+      if (dislocEl) {
+        const thr = d.dislocation_threshold_bps;
+        if (latest.dislocation) {
+          dislocEl.textContent = `Dislocation ≥ ${thr} bps`;
+          dislocEl.className = 'arb-disloc';
+        } else if (bps != null) {
+          dislocEl.textContent = `Below ${thr} bps threshold`;
+          dislocEl.className = 'muted';
+        } else {
+          dislocEl.textContent = latest.status || '—';
+          dislocEl.className = 'muted';
+        }
+      }
+      if ($('arbClob')) $('arbClob').textContent = fmtArbPrice(latest.clob_mid_rlusd_per_xrp);
+      if ($('arbAmm')) $('arbAmm').textContent = fmtArbPrice(latest.amm_mid_rlusd_per_xrp);
+      if ($('arbAmmStatus')) {
+        $('arbAmmStatus').textContent = latest.status === 'amm_unavailable' ? 'AMM unavailable' : (latest.status || '—');
+      }
+      const soakEl = $('arbSoak');
+      const soakDetail = $('arbSoakDetail');
+      if (soakEl) {
+        const pct = summary.dislocation_pct;
+        soakEl.textContent = summary.samples ? `${pct}% disloc` : '—';
+      }
+      if (soakDetail) {
+        const parts = [];
+        if (summary.samples) parts.push(`${summary.samples} samples`);
+        if (summary.max_spread_bps != null) parts.push(`max ${summary.max_spread_bps} bps`);
+        if (summary.avg_spread_bps != null) parts.push(`avg ${summary.avg_spread_bps} bps`);
+        soakDetail.textContent = parts.join(' · ') || 'No history yet';
+      }
+      const tbody = $('arbHistoryTable');
+      if (tbody) {
+        const rows = d.history || [];
+        if (!rows.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">No samples yet — wait ~60s or click Poll now</td></tr>';
+        } else {
+          tbody.innerHTML = rows.slice().reverse().map(r => {
+            const ts = (r.ts_utc || '').replace('T', ' ').replace(/\+00:00$/, ' UTC').slice(0, 22);
+            const flag = r.dislocation ? '<span class="arb-disloc">DISLOC</span>' : '<span class="arb-ok">ok</span>';
+            return `<tr><td>${ts || '—'}</td><td>${fmtArbPrice(r.clob_mid_rlusd_per_xrp)}</td><td>${fmtArbPrice(r.amm_mid_rlusd_per_xrp)}</td><td>${fmtArbBps(r.spread_bps)}</td><td>${flag}</td></tr>`;
+          }).join('');
+        }
+      }
+      if ($('arbUpdated')) {
+        const u = d.updated_utc ? d.updated_utc.replace('T', ' ').slice(0, 19) + ' UTC' : '—';
+        $('arbUpdated').textContent = 'Updated ' + u;
+      }
+      if ($('arbNote') && d.note) $('arbNote').textContent = d.note;
+    }
+
+    async function loadArbState(forceRefresh) {
+      if (!arbTabActive && !forceRefresh) return;
+      try {
+        const url = forceRefresh ? '/arb/refresh' : '/arb/state?_=' + Date.now();
+        const r = await fetch(url, forceRefresh ? { method: 'POST' } : undefined);
+        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+        const d = await r.json();
+        renderArb(forceRefresh ? d : d);
+      } catch (e) {
+        if ($('arbNote')) $('arbNote').textContent = 'Arb load error: ' + (e?.message || e);
+      }
+    }
+
+    $('btnArbRefresh')?.addEventListener('click', async () => {
+      const btn = $('btnArbRefresh');
+      if (btn) btn.disabled = true;
+      await loadArbState(true);
+      if (btn) btn.disabled = false;
+      toast('Arb poll complete');
+    });
+
     async function poll() {
       try {
         const r = await fetch('/state?_=' + Date.now());
@@ -3143,6 +3285,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     loadSkynetAgent();
     setInterval(poll, 1000);
     setInterval(loadSkynetAgent, 12000);
+    setInterval(() => { if (arbTabActive) loadArbState(false); }, 20000);
   </script>
 </body>
 </html>

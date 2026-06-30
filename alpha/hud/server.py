@@ -54,13 +54,29 @@ if app is not None:
     from alpha.hud.routes_operator import register_operator_routes
     from alpha.hud.routes_pro import register_pro_routes
     from alpha.hud.routes_skynet import register_skynet_routes
+    from alpha.hud.routes_arb import register_arb_routes
 
     register_operator_routes(app)
     register_config_routes(app)
     register_pro_routes(app)
     register_skynet_routes(app)
+    register_arb_routes(app)
 
     import time
+
+    def _arb_monitor_background() -> None:
+        from alpha.hud.arb_monitor import refresh_arb_snapshot
+
+        # Stagger first poll so HUD startup is not blocked on amm_info RPC.
+        time.sleep(12)
+        while True:
+            try:
+                refresh_arb_snapshot()
+            except Exception as exc:
+                logger.warning("arb_monitor_background | %s", exc)
+            time.sleep(60)
+
+    threading.Thread(target=_arb_monitor_background, daemon=True, name="arb-monitor").start()
 
     def _skynet_agent_background() -> None:
         from alpha.hud.skynet_agent import maybe_run_agent_tick
