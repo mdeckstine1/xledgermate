@@ -26,7 +26,7 @@ INDICATOR_MIN_BARS: dict[str, int] = {
     "stochastic": 20,
     "bollinger": 20,
     "fibonacci": 50,
-    "elliott_wave": 30,
+    "elliott_wave": 50,
     "min_candles": 20,
 }
 

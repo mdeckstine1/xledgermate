@@ -80,9 +80,14 @@ class FibonacciConfig:
 @dataclass
 class ElliottWaveConfig:
     enabled: bool = True
-    lookback: int = 30
-    impulse_weight: float = 1.0
-    corrective_weight: float = 0.5
+    lookback: int = 50  # closed bars — matches Fib / OHLC cache depth
+    min_swing_pct: float = 0.35  # pivot zigzag reversal threshold
+    impulse_weight: float = 0.6  # max score at W3 (was 1.0 flat)
+    corrective_weight: float = 0.4
+    wave3_weight_mult: float = 1.0
+    wave5_weight_mult: float = 0.5
+    wave1_weight_mult: float = 0.35
+    dip_wave_weight_mult: float = 0.25  # W2/W4 pullbacks in impulse — accumulation-friendly
 
 
 @dataclass

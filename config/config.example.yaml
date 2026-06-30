@@ -205,9 +205,14 @@ alpha_technical_analysis:
     sell_weight: 1.0
   elliott_wave:
     enabled: true
-    lookback: 30
-    impulse_weight: 1.0
-    corrective_weight: 0.5
+    lookback: 50
+    min_swing_pct: 0.35
+    impulse_weight: 0.6
+    corrective_weight: 0.4
+    wave3_weight_mult: 1.0
+    wave5_weight_mult: 0.5
+    wave1_weight_mult: 0.35
+    dip_wave_weight_mult: 0.25
   candle_streak:
     enabled: true
     min_green_streak: 3

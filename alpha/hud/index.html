@@ -2115,7 +2115,11 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const biasEl = $('taBias');
       biasEl.textContent = (ta.bias || 'neutral').toUpperCase();
       biasEl.className = 'big ta-bias-' + (ta.bias || 'neutral');
-      $('taElliott').textContent = 'Elliott: ' + (ta.elliott_bias || 'neutral');
+      $('taElliott').textContent = [
+        ta.elliott_wave_label ? `Elliott ${ta.elliott_wave_label}` : `Elliott: ${ta.elliott_bias || 'neutral'}`,
+        ta.elliott_trend && ta.elliott_trend !== 'neutral' ? `(${ta.elliott_trend.replace('_', ' ')})` : '',
+        ta.elliott_confidence != null && ta.elliott_confidence > 0 ? `conf ${Number(ta.elliott_confidence).toFixed(2)}` : '',
+      ].filter(Boolean).join(' ');
       $('taBuyScore').textContent = fmt(ta.buy_score, 2);
       $('taSellScore').textContent = fmt(ta.sell_score, 2);
       $('taBreakScore').textContent = fmt(ta.breakout_score, 2);

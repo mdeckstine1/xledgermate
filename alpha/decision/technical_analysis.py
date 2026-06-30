@@ -79,6 +79,11 @@ class TechnicalAnalysisSnapshot:
     bb_bandwidth_pct: Optional[float] = None
     fib_levels: Dict[str, float] = field(default_factory=dict)
     elliott_bias: str = "neutral"
+    elliott_phase: str = "neutral"
+    elliott_trend: str = "neutral"
+    elliott_wave_label: str = ""
+    elliott_confidence: float = 0.0
+    elliott_detail: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -103,6 +108,11 @@ class TechnicalAnalysisSnapshot:
                 k: v for k, v in self.fib_levels.items() if _finite_float(v) is not None
             },
             "elliott_bias": self.elliott_bias,
+            "elliott_phase": self.elliott_phase,
+            "elliott_trend": self.elliott_trend,
+            "elliott_wave_label": self.elliott_wave_label,
+            "elliott_confidence": _finite_float(self.elliott_confidence) or 0.0,
+            "elliott_detail": self.elliott_detail,
             "signals": [
                 {
                     "name": s.name,
@@ -129,6 +139,11 @@ def _empty_snapshot(mid: float, *, reason: str, enabled: bool = False) -> Techni
         entry_sell_allowed=True,
         breakout_confirmed=False,
         summary=reason,
+        elliott_phase="neutral",
+        elliott_trend="neutral",
+        elliott_wave_label="",
+        elliott_confidence=0.0,
+        elliott_detail="",
     )
 
 
@@ -306,25 +321,6 @@ def _higher_highs_lower_lows(candles: Sequence[CandleData], lookback: int) -> st
         return "bullish"
     if ll >= 2 and lh >= 2:
         return "bearish"
-    return "neutral"
-
-
-def _elliott_bias(candles: Sequence[CandleData], lookback: int) -> str:
-    """Simplified impulse vs corrective bias from swing structure."""
-    window = candles[-lookback:]
-    if len(window) < 6:
-        return "neutral"
-    closes = [c.close for c in window]
-    third = len(closes) // 3
-    a = sum(closes[:third]) / max(third, 1)
-    b = sum(closes[third : 2 * third]) / max(third, 1)
-    c = sum(closes[2 * third :]) / max(len(closes) - 2 * third, 1)
-    if c > a * 1.002 and c > b:
-        return "impulse_up"
-    if c < a * 0.998 and c < b:
-        return "impulse_down"
-    if abs(c - b) / max(b, _PRICE_EPS) < 0.003:
-        return "corrective"
     return "neutral"
 
 
@@ -628,6 +624,11 @@ class TechnicalAnalysis:
         bb_bw: Optional[float] = None
         fib: Dict[str, float] = {}
         elliott = "neutral"
+        elliott_phase = "neutral"
+        elliott_trend = "neutral"
+        elliott_wave_label = ""
+        elliott_confidence = 0.0
+        elliott_detail = ""
 
         # RSI
         rc = self._cfg.rsi
@@ -774,9 +775,11 @@ class TechnicalAnalysis:
                 detail = f"fib={','.join(f'{k}:{v:.6f}' for k, v in fib.items())}"
                 signals.append(TechnicalSignal("fibonacci", True, fired, bias, score, detail))
 
-        # Elliott wave (simplified)
+        # Elliott wave — 5-wave swing pivots on full OHLC lookback
         ec = self._cfg.elliott_wave
         if ec.enabled:
+            from alpha.decision.elliott_wave import analyze_elliott_five_wave
+
             if closed_count < ec.lookback:
                 signals.append(
                     TechnicalSignal(
@@ -788,23 +791,41 @@ class TechnicalAnalysis:
                         f"warming_up bars={closed_count}/{ec.lookback}",
                     )
                 )
-                elliott = "neutral"
             else:
-                elliott = _elliott_bias(candles, ec.lookback)
-                fired = elliott != "neutral"
-                bias = "bullish" if elliott == "impulse_up" else ("bearish" if elliott == "impulse_down" else "neutral")
-                score = 0.0
-                if elliott == "impulse_up":
-                    score = ec.impulse_weight
-                    buy_score += score
-                elif elliott == "impulse_down":
-                    score = ec.impulse_weight
-                    sell_score += score
-                elif elliott == "corrective":
-                    score = ec.corrective_weight
+                ew = analyze_elliott_five_wave(
+                    candles,
+                    lookback=ec.lookback,
+                    min_swing_pct=ec.min_swing_pct,
+                    impulse_weight=ec.impulse_weight,
+                    corrective_weight=ec.corrective_weight,
+                    wave3_mult=ec.wave3_weight_mult,
+                    wave5_mult=ec.wave5_weight_mult,
+                    wave1_mult=ec.wave1_weight_mult,
+                    dip_wave_mult=ec.dip_wave_weight_mult,
+                )
+                elliott = ew.bias
+                elliott_phase = ew.phase
+                elliott_trend = ew.trend
+                elliott_wave_label = ew.wave_label
+                elliott_confidence = ew.confidence
+                elliott_detail = ew.detail
+                fired = ew.confidence >= 0.3 and ew.bias != "neutral"
+                bias = (
+                    "bullish"
+                    if ew.trend == "bullish_impulse"
+                    else ("bearish" if ew.trend == "bearish_impulse" else "neutral")
+                )
+                buy_score += max(0.0, ew.buy_contribution)
+                sell_score += max(0.0, ew.sell_contribution)
+                if ew.trend == "corrective":
                     buy_score *= max(0.5, 1.0 - ec.corrective_weight * 0.25)
                     sell_score *= max(0.5, 1.0 - ec.corrective_weight * 0.25)
-                signals.append(TechnicalSignal("elliott_wave", True, fired, bias, score, f"bias={elliott}"))
+                score = max(ew.buy_contribution, ew.sell_contribution)
+                detail = (
+                    f"{ew.wave_label} trend={ew.trend} conf={ew.confidence:.2f} "
+                    f"pivots={ew.pivot_count} {ew.detail}"
+                )
+                signals.append(TechnicalSignal("elliott_wave", True, fired, bias, score, detail))
 
         # Candle streaks
         csc = self._cfg.candle_streak
@@ -890,18 +911,39 @@ class TechnicalAnalysis:
                 sell_score += ib.sell_weight
             signals.append(TechnicalSignal("inside_bar", True, fired, bias, score, f"inside={inside}"))
 
-        # HH / LL structure (BOS)
+        # HH / LL structure (BOS) — boosted when 5-wave trend confirms
         bos = self._cfg.structure_bos
         if bos.enabled:
             struct = _higher_highs_lower_lows(candles, bos.lookback)
+            if struct == "neutral" and ec.enabled and elliott_trend == "bullish_impulse":
+                struct = "bullish"
+            elif struct == "neutral" and ec.enabled and elliott_trend == "bearish_impulse":
+                struct = "bearish"
             fired = struct != "neutral"
             bias = struct
             score = bos.buy_weight if struct == "bullish" else (bos.sell_weight if struct == "bearish" else 0.0)
+            if (
+                ec.enabled
+                and elliott_trend == "bullish_impulse"
+                and elliott_phase in ("wave3", "wave5")
+                and struct == "bullish"
+            ):
+                score += bos.buy_weight * 0.25 * max(0.0, elliott_confidence)
+            elif (
+                ec.enabled
+                and elliott_trend == "bearish_impulse"
+                and elliott_phase in ("wave3", "wave5")
+                and struct == "bearish"
+            ):
+                score += bos.sell_weight * 0.25 * max(0.0, elliott_confidence)
             if struct == "bullish":
                 buy_score += score
             elif struct == "bearish":
                 sell_score += score
-            signals.append(TechnicalSignal("structure_bos", True, fired, bias, score, f"trend={struct}"))
+            bos_detail = f"trend={struct}"
+            if elliott_wave_label:
+                bos_detail += f" elliott={elliott_wave_label}"
+            signals.append(TechnicalSignal("structure_bos", True, fired, bias, score, bos_detail))
 
         # Order blocks
         ob = self._cfg.order_block
@@ -965,7 +1007,7 @@ class TechnicalAnalysis:
             bars_note = f" bars={len(candles)}/{self._cfg.min_candles}"
         summary = (
             f"ta buy={buy_score:.2f} sell={sell_score:.2f} breakout={breakout_score:.2f} "
-            f"bias={bias} elliott={elliott}{bars_note}"
+            f"bias={bias} elliott={elliott_wave_label or elliott}{bars_note}"
         )
         logger.info("technical_analysis | %s", summary)
 
@@ -990,4 +1032,9 @@ class TechnicalAnalysis:
             bb_bandwidth_pct=bb_bw,
             fib_levels=fib,
             elliott_bias=elliott,
+            elliott_phase=elliott_phase,
+            elliott_trend=elliott_trend,
+            elliott_wave_label=elliott_wave_label,
+            elliott_confidence=_finite_float(round(elliott_confidence, 3)) or 0.0,
+            elliott_detail=elliott_detail,
         )
