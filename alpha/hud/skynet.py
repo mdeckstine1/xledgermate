@@ -78,7 +78,8 @@ Operator prompt priority (critical):
 - session_pnl_xrp is mark-to-market portfolio drift — NOT realized trading profit. Use bracket TP/SL outcomes when judging bleed.
 - Context block `realized_bracket_pnl` (tax CSV) is authoritative for trading edge in trust phase — prefer over session_pnl_xrp_mtm.
 
-Explain HOLD reasons using inventory deviation, edge gates, re-entry cooldowns, TA, depth, and max_pending_buys.
+- When explaining WATCHING vs ARMED, read `Engine gate diagnostics` and `Market structure` blocks — do not infer breakout thresholds from TA bias alone.
+- `accumulation_dev_cap` FAIL means breakout can fire but accumulation stays blocked until dev eases or operator raises alpha_accumulation_max_deviation (not in apply allowlist — mention only).
 - When the operator describes desired settings in natural language (e.g. "risk 4%", "stickier bids", "max pending 1", "bullish consolidation buy"), translate into concrete suggested_changes — do not answer with unrelated scenario C presets.
 - Pending buy limits are passive: they fill when best ask hits the bid, NOT when mid crosses entry.
 - Stale pending buy policy (see context `pending_buy_stale`):
@@ -115,21 +116,166 @@ def skynet_status(config: BotConfig | None = None) -> Dict[str, Any]:
     }
 
 
+def build_structure_context_block(
+    structure: Dict[str, Any],
+    *,
+    mid: float = 0.0,
+) -> str:
+    """Market structure snapshot — primary input for breakout / drift arming."""
+    if not structure:
+        return "=== Market structure ===\n(not available — engine needs price history)"
+    rh = float(structure.get("recent_high") or 0.0)
+    rl = float(structure.get("recent_low") or 0.0)
+    mean = float(structure.get("mean_mid") or 0.0)
+    mid_f = float(structure.get("mid") or mid or 0.0)
+    extra: list[str] = []
+    if rh > 0 and mid_f > 0:
+        extra.append(f"pct_below_recent_high={(rh - mid_f) / rh * 100.0:.3f}%")
+    if mean > 0 and mid_f > 0:
+        extra.append(f"pct_above_mean={(mid_f - mean) / mean * 100.0:.3f}%")
+    lines = [
+        "=== Market structure (breakout / drift arming uses this — not just TA) ===",
+        f"trend={structure.get('trend')} breakout_up={structure.get('breakout_up')} breakout_down={structure.get('breakout_down')}",
+        f"mid={mid_f:.6f} mean_mid={mean:.6f} recent_high={rh:.6f} recent_low={rl:.6f}",
+        f"swing_high={structure.get('swing_high')} sample_count={structure.get('sample_count')}",
+        f"summary={structure.get('summary') or ''}",
+    ]
+    if extra:
+        lines.append(" | ".join(extra))
+    cc = structure.get("confirmation_candle")
+    if isinstance(cc, dict) and cc:
+        lines.append(f"confirmation_candle={json.dumps(cc, default=str)[:400]}")
+    return "\n".join(lines)
+
+
+def build_gate_diagnostics_block(
+    hud_state: Dict[str, Any],
+    config: BotConfig,
+) -> str:
+    """Pre-compute engine threshold comparisons so SKYNET does not guess gate math."""
+    inv = hud_state.get("inventory") or {}
+    ta = hud_state.get("technical_analysis") or {}
+    structure = hud_state.get("structure") or {}
+    momentum = hud_state.get("momentum_entry") or {}
+    tape = hud_state.get("tape_participation") or {}
+    acc = hud_state.get("accumulation_regime") or {}
+    decision = hud_state.get("decision") or {}
+    execution = hud_state.get("execution") or {}
+
+    dev = float(inv.get("deviation") or 0.0)
+    weakness = float(config.alpha_weakness_deviation)
+    accum_max = float(getattr(config, "alpha_accumulation_max_deviation", 0.04))
+    bull_max = float(getattr(config, "alpha_bull_run_max_deviation", 0.02))
+    ta_cfg = config.alpha_technical_analysis
+    min_breakout = float(ta_cfg.min_breakout_score)
+    min_buy = float(ta_cfg.min_buy_score)
+    breakout_score = float(ta.get("breakout_score") or 0.0)
+    buy_score = float(ta.get("buy_score") or 0.0)
+
+    mid_f = float(hud_state.get("mid") or structure.get("mid") or 0.0)
+    mean = float(structure.get("mean_mid") or 0.0)
+    rh = float(structure.get("recent_high") or 0.0)
+    drift_pct = float(getattr(config, "alpha_tape_uptrend_drift_pct", 0.25))
+    drift_ok = mean > 0 and mid_f >= mean * (1.0 + drift_pct / 100.0)
+    near_high_pct = float(getattr(config, "alpha_bull_run_near_high_pct", 0.06))
+    near_high_ok = rh > 0 and mid_f >= rh * (1.0 - near_high_pct / 100.0)
+
+    def _pass_fail(ok: bool) -> str:
+        return "PASS" if ok else "FAIL"
+
+    lines = [
+        "=== Engine gate diagnostics (authoritative — compare numbers before advising patience) ===",
+        (
+            f"dip_only_gate: dev={dev:+.3f} need≤{-weakness:+.3f} → "
+            f"{_pass_fail(dev <= -weakness)} (classic weakness buys)"
+        ),
+        (
+            f"accumulation_dev_cap: dev={dev:+.3f} max={accum_max:+.3f} → "
+            f"{_pass_fail(dev <= accum_max)} (blocks accumulation ARMED even on breakout)"
+        ),
+        (
+            f"bull_run_dev_cap: dev={dev:+.3f} max={bull_max:+.3f} → "
+            f"{_pass_fail(dev <= bull_max)} (momentum_entry path)"
+        ),
+        (
+            f"ta_breakout: score={breakout_score:.2f} need≥{min_breakout:.2f} "
+            f"confirmed={ta.get('breakout_confirmed')} → {_pass_fail(breakout_score >= min_breakout)}"
+        ),
+        (
+            f"ta_buy_gate: buy={buy_score:.2f} min={min_buy:.2f} "
+            f"entry_buy_allowed={ta.get('entry_buy_allowed')} bias={ta.get('bias')}"
+        ),
+        (
+            f"structure_arm: trend={structure.get('trend')} breakout_up={structure.get('breakout_up')} "
+            f"drift_ok={drift_ok} near_high_ok={near_high_ok}"
+        ),
+        f"momentum_entry: active={momentum.get('active')} reason={momentum.get('reason') or '—'}",
+        (
+            "tape_participation: "
+            f"active={tape.get('active')} reason={tape.get('reason') or '—'} "
+            "(waiver path — inactive when TA already bullish)"
+        ),
+        (
+            f"accumulation: phase={acc.get('phase')} armed={acc.get('armed')} "
+            f"entry_allowed={acc.get('entry_allowed')} blockers={acc.get('blockers')}"
+        ),
+        f"last_decision: action={decision.get('action')} reason={decision.get('reason')}",
+    ]
+    if execution:
+        lines.append(
+            f"last_execution: action={execution.get('action')} executed={execution.get('executed')} "
+            f"message={execution.get('message')}"
+        )
+    cycle = hud_state.get("engine_cycle")
+    if cycle is not None:
+        lines.append(
+            f"engine_cycle={cycle} interval_sec={int(config.alpha_cycle_interval_seconds)} "
+            "(patience = cycles until signal, not wall-clock chop)"
+        )
+    return "\n".join(lines)
+
+
+def _technical_analysis_context(ta: Dict[str, Any]) -> str:
+    if not ta:
+        return "=== Technical analysis ===\n(not evaluated)"
+    payload = {
+        k: ta.get(k)
+        for k in (
+            "enabled",
+            "bias",
+            "buy_score",
+            "sell_score",
+            "breakout_score",
+            "breakout_confirmed",
+            "entry_buy_allowed",
+            "entry_sell_allowed",
+            "summary",
+            "rsi",
+            "bb_bandwidth_pct",
+        )
+        if ta.get(k) is not None
+    }
+    return "=== Technical analysis ===\n" + json.dumps(payload, default=str)
+
+
 def build_skynet_context(
     hud_state: Dict[str, Any],
     *,
     operator_config: Optional[Dict[str, Any]] = None,
+    effective_config: Optional[BotConfig] = None,
 ) -> str:
     """Serialize rich operator context for the SKYNET advisor."""
     inv = hud_state.get("inventory") or {}
     risk = hud_state.get("risk") or {}
     decision = hud_state.get("decision") or {}
     mc = hud_state.get("market_conditions") or {}
-    ta = hud_state.get("technical_analysis") or {}
     brackets = hud_state.get("brackets") or {}
     reentry = hud_state.get("reentry") or {}
     cfg = operator_config or hud_state.get("config_effective") or {}
+    bot_cfg = effective_config or BotConfig.load()
     mid = float(hud_state.get("mid") or 0.0)
+    structure = hud_state.get("structure") if isinstance(hud_state.get("structure"), dict) else {}
+    ta = hud_state.get("technical_analysis") if isinstance(hud_state.get("technical_analysis"), dict) else {}
     pending_records = [
         r for r in (brackets.get("records") or []) if r.get("state") == "pending_buy"
     ]
@@ -184,6 +330,10 @@ def build_skynet_context(
         "=== Decision (latest cycle) ===",
         f"action={decision.get('action')} reason={decision.get('reason')} edge_pct={decision.get('edge_pct')}",
         "",
+        build_gate_diagnostics_block(hud_state, bot_cfg),
+        "",
+        build_structure_context_block(structure, mid=mid),
+        "",
         "=== Opportunity watch (operator readiness — NOT the same as posture) ===",
         json.dumps(hud_state.get("opportunity_watch") or {}, default=str)[:2000],
         "",
@@ -208,24 +358,7 @@ def build_skynet_context(
         "=== Market conditions ===",
         json.dumps(mc, default=str)[:2500],
         "",
-        "=== Technical analysis ===",
-        json.dumps(
-            {
-                k: ta.get(k)
-                for k in (
-                    "enabled",
-                    "bias",
-                    "buy_score",
-                    "sell_score",
-                    "breakout_score",
-                    "buy_gate",
-                    "sell_gate",
-                    "summary",
-                )
-                if ta.get(k) is not None
-            },
-            default=str,
-        ),
+        _technical_analysis_context(ta),
         "",
         "=== Re-entry gate ===",
         json.dumps(reentry, default=str)[:1200],

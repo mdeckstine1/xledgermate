@@ -772,7 +772,9 @@ def run_skynet_agent(
             hud_state, agent.get("last_event_snapshot")
         )
 
-        context = build_skynet_context(hud_state, operator_config=effective_snap)
+        context = build_skynet_context(
+            hud_state, operator_config=effective_snap, effective_config=effective
+        )
 
         guardrails = load_agent_config(agent_path).get("guardrails") or _DEFAULT_GUARDRAILS
         max_changes = int(guardrails.get("max_changes_per_cycle", 3) or 3)

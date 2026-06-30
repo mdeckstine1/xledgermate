@@ -72,8 +72,8 @@ def register_skynet_routes(app: Any) -> None:
             "accumulation_regime" in inspect.signature(infer_scenario_hints).parameters
         )
         try:
-            hud_state, _, snap = _effective_context()
-            build_skynet_context(hud_state, operator_config=snap)
+            hud_state, effective, snap = _effective_context()
+            build_skynet_context(hud_state, operator_config=snap, effective_config=effective)
             payload["context_ready"] = True
         except Exception as exc:
             logger.warning("skynet_context_probe_failed | %s", exc)
@@ -85,8 +85,8 @@ def register_skynet_routes(app: Any) -> None:
     async def post_skynet_ping(body: Dict[str, Any] = Body(default={})) -> JSONResponse:
         """Build context only — no xAI call (isolates code vs API failures)."""
         try:
-            hud_state, _, snap = _effective_context()
-            ctx = build_skynet_context(hud_state, operator_config=snap)
+            hud_state, effective, snap = _effective_context()
+            ctx = build_skynet_context(hud_state, operator_config=snap, effective_config=effective)
             return JSONResponse(
                 {
                     "ok": True,
@@ -201,7 +201,7 @@ def register_skynet_routes(app: Any) -> None:
             hud_state, effective, snap = _effective_context()
             base = BotConfig.load()
             try:
-                context = build_skynet_context(hud_state, operator_config=snap)
+                context = build_skynet_context(hud_state, operator_config=snap, effective_config=effective)
             except Exception as exc:
                 logger.exception("skynet_context_failed")
                 return JSONResponse(

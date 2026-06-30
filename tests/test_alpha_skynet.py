@@ -96,6 +96,46 @@ def test_filter_accepts_hud_alias_keys():
     assert accepted[0]["key"] == "alpha_risk_per_trade_pct"
 
 
+def test_build_skynet_context_includes_gate_diagnostics_and_structure():
+    ctx = build_skynet_context(
+        {
+            "network": "mainnet",
+            "mid": 3.52,
+            "engine_cycle": 42,
+            "inventory": {"deviation": 0.075, "label": "balanced"},
+            "decision": {"action": "hold", "reason": "balanced dev=+0.075"},
+            "structure": {
+                "trend": "neutral",
+                "breakout_up": False,
+                "mean_mid": 3.50,
+                "recent_high": 3.55,
+                "recent_low": 3.40,
+            },
+            "technical_analysis": {
+                "enabled": True,
+                "bias": "bullish",
+                "buy_score": 3.52,
+                "breakout_score": 0.5,
+                "breakout_confirmed": False,
+                "entry_buy_allowed": True,
+            },
+            "momentum_entry": {"active": False, "reason": "dev=+0.075>bull_max=+0.040"},
+            "tape_participation": {"active": False, "reason": "ta_bias=bullish"},
+            "accumulation_regime": {"phase": "primed", "armed": False, "blockers": []},
+            "brackets": {"records": []},
+            "risk": {},
+            "recent_activity": [],
+        },
+        effective_config=BotConfig(),
+    )
+    assert "Engine gate diagnostics" in ctx
+    assert "accumulation_dev_cap" in ctx
+    assert "Market structure" in ctx
+    assert "breakout_up=False" in ctx
+    assert "breakout_confirmed" in ctx
+    assert "engine_cycle=42" in ctx
+
+
 def test_build_skynet_context_includes_decision():
     ctx = build_skynet_context(
         {
