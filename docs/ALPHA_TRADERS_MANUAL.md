@@ -1,12 +1,47 @@
-# xLedgerMate Alpha — Trader’s Manual
+# xLedgerMate Alpha — Trader's Manual
 
-**The no-bullshit guide for people who want to grow their bag.**
+**Organized by HUD tab and card.** Scenarios live in [Appendices](#appendices--scenario-playbook) at the end.
 
 Written for operators who have watched too many green candles turn red.
 
-This bot is not your grandma’s savings account. It is a weapon. You point it, you tune it, and you live with the results.
+For install, VPS, dry-run cutover, and credentials: [`ALPHA_OPERATOR_GUIDE.md`](ALPHA_OPERATOR_GUIDE.md) · [`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md).
 
 ---
+
+## How to read this manual
+
+1. **Part 0** — what the bot does, lifecycle, data speed (read once).
+2. **Part 1** — walk the HUD left-to-right: each **tab**, each **card**, with **Bull / Neutral / Bear** stance.
+3. **Part 2** — funding, coupling, troubleshooting, soak checklists, SKYNET tuning.
+4. **Appendices** — lettered scenario recipes (A–Y) when Decision reason matches a pattern.
+
+**Nav order:** Live · TA · Brackets · Open offers · Reports · Activity · **PRO** · SKYNET · Config
+
+---
+
+## Table of contents
+
+- [Part 0 — Foundations](#part-0--foundations)
+  - [Pro accumulator loop](#pro-accumulator-loop-read-once)
+- [Part 1 — HUD guide](#part-1--hud-guide-by-tab-then-card)
+  - [Always visible](#always-visible--header--sidebar)
+  - [Live tab](#live-tab)
+    - [Accumulation / opportunity](#accumulation--opportunity-watch-card)
+    - [RLUSD reload](#rlusd-reload-card)
+  - [TA tab](#ta-tab)
+  - [Brackets tab](#brackets-tab)
+  - [Open Offers tab](#open-offers-tab)
+  - [Reports tab](#reports-tab)
+  - [Activity tab](#activity-tab)
+  - [PRO tab](#pro-tab)
+  - [SKYNET tab](#skynet-tab)
+  - [Config tab](#config-tab)
+- [Part 2 — Operator playbook](#part-2--operator-playbook)
+- [Appendices — Scenario playbook](#appendices--scenario-playbook)
+
+---
+
+## Part 0 — Foundations
 
 ## What this bot actually does
 
@@ -14,7 +49,8 @@ xLedgerMate Alpha is a **limit-order bag-growth bot** on XRPL (XRP / RLUSD).
 
 - It **does not** market-buy or market-sell.
 - It **does not** have a manual “Buy now” button.
-- It places **limit bids** when inventory is RLUSD-heavy and gates pass.
+- It places **limit bids** when inventory is RLUSD-heavy **or** when the **accumulation regime** arms on bull/breakout tape (even if inventory is only mildly RLUSD-heavy or balanced).
+- It can **reload RLUSD** by selling a controlled slice of XRP in **post-run chop** when dry powder is below the deploy floor (see [RLUSD reload](#rlusd-reload-card) — not the same as classic strength sells).
 - When a buy fills, it automatically places **take-profit + stop-loss** sells (a bracket).
 - It can **trail** those exits as price moves in your favor.
 - After a TP or SL exit, a **re-entry gate** can block impatient reloads.
@@ -29,11 +65,43 @@ For install, VPS, dry-run cutover, and the **Config** tab (credentials + withdra
 
 | Area | What changed |
 |------|----------------|
+| **Accumulation regime** | First-class **bull/breakout deploy** when tape arms — not only dip-only `weakness_deviation`. Tighter offset, chase stale drift, up to 3 pending buys, re-entry bypass on rips. HUD **Accumulation / opportunity** card + scorecard. |
+| **Opportunity watch** | Header **ready** badge + Live card: `idle` → `watching` → `armed` → `executing` / `blocked`. SKYNET scenario **V**. |
+| **RLUSD reload** | **Post-run chop** funding sells to refill deploy floor (~45 XRP-equiv RLUSD default). **Fund then bid** — accumulation blocked until floor met. HUD **RLUSD reload** card. SKYNET scenario **W** (reload). |
+| **Tape participation** | Waives lagging **bearish TA** on closed 5m bars when live tape is up (inside buy path). |
 | **Re-entry** | Scratch/breakeven SL tier, cluster guard, recovery early release, post-clear bid spacing — all tunable in **Live → Re-entry → SL mitigations**. |
+| **PRO / defensive** | Alpha Replay, auto-defensive circuit (recent-window gate, manual release suppress), treasury placeholder. |
 | **TA / OHLC** | Completed bars advance correctly on live ticks; warmup no longer stuck after rebuild. |
 | **Market metrics** | Per-cycle ATR%, realized vol, spread, depth, regime in **Market Conditions** + `logs/alpha_market.db`. |
 | **Tax CSV** | Strength sells log `cost_basis_rlusd_per_xrp` and `proceeds_usd` like bracket exits. |
 | **Restart safety** | Same bracket TP/SL re-detected on restart no longer resets re-entry cooldown. |
+
+### Pro accumulator loop (read once)
+
+Classic Alpha only bought when **RLUSD-heavy** (`dev ≤ −weakness`). On a rip with **balanced** inventory, Decision said `balanced dev=…` and nothing happened.
+
+**Today the engine runs two coordinated regimes:**
+
+```text
+1. ACCUMULATION (deploy RLUSD → XRP on tape)
+   PRIMED / WATCHING → ARMED → EXECUTING
+   Signals: breakout, tape participation, early ARM on slope, bull SKYNET regime
+   Knobs bundle: tight buy offset (~0.06%), chase drift (~0.08%), max_pending 3, RLUSD spend budget (8h window)
+
+2. RLUSD RELOAD (fund dry powder in chop — not into the rip)
+   WATCHING (low RLUSD, still breaking out) → ARMED (post-run chop) → EXECUTING → FUNDED
+   Sells small XRP slice at tight ask when structure neutral near highs after a proven run
+   Policy 4: accumulation bids BLOCKED until deploy floor met (~45 XRP-equiv RLUSD)
+
+Typical sequence on a multi-hour move:
+  Rip → accumulation may ARM but starve if RLUSD thin → RELOAD WATCHING
+  Stall/chop → RELOAD ARMED → funding ask fills → FUNDED
+  Next leg or dip → accumulation unblocked → bids with real budget
+```
+
+**You are not the knob-twiddler for every cycle** — read the **Live cards** and **Decision reason**. SKYNET **Ask** on either card for context.
+
+**Config keys (defaults on):** `alpha_accumulation_regime_enabled`, `alpha_reload_regime_enabled` in `config.yaml` — see [Appendix X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) · [Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding).
 
 ---
 
@@ -59,6 +127,9 @@ Cancelling a pending buy pulls the bid. Cancelling an active bracket cancels TP/
 | Where | What it tells you |
 |--------|-------------------|
 | **Ticker / sidebar** | Mode (LIVE/dry), mid, portfolio, inventory %, drawdown, session P&L |
+| **Ready badge** (header) | **Accumulation / reload phase** — `watching`, `armed`, `executing`, `blocked` (not the same as posture `patient`) |
+| **Accumulation / opportunity** (Live) | Bull/breakout readiness, scorecard (bids/fills/chase/missed move), **Ask SKYNET** |
+| **RLUSD reload** (Live) | Deploy floor, shortfall, chop timing, **accumulation blocked** when under-funded |
 | **Quote age** | How fresh the L1 book patch is (sidebar). Stale >25s = waiting for next book sample |
 | **Chart** | Candle history (lags) + **live** bid/ask/mid lines (1s HUD poll). Candles right-aligned |
 | **Market Conditions** | Spread, **bid/ask depth ±1% of mid**, max buy size, best bid/ask, **regime / ATR% / realized vol** |
@@ -67,7 +138,7 @@ Cancelling a pending buy pulls the bid. Cancelling an active bracket cancels TP/
 | **Open Offers** | Raw ledger orders (✕ cancel, ✎ reprice) |
 | **Reports** | Cycle status text + path to monthly **tax CSV** (`logs/trades_YYYY-MM.csv`) |
 | **PRO** | **Alpha Replay** (realized TP/SL, verdict), **auto-defensive circuit**, treasury placeholder |
-| **SKYNET** | Grok advisor, Agent Smith, operator phase / market regime |
+| **SKYNET** | SKYNET advisor, Agent Smith, operator phase / market regime |
 | **Config** | Credentials, network, **Send / withdraw**, transfer history |
 
 If the bot is “doing nothing,” the **Decision reason** almost always explains why.
@@ -102,465 +173,646 @@ Limit buys are **passive**. You join the bid side of the book and wait for a **s
 
 ---
 
-## Risk & Entry — your main weapons
+## Part 1 — HUD guide (by tab, then card)
 
-All knobs live on the **Live** tab. Hit **Apply** after changes — they take effect on the next engine cycle (no restart).
+Nav order: **Live · TA · Brackets · Open offers · Reports · Activity · PRO · SKYNET · Config**
 
-### `target_xrp_pct`
+Every card below uses the same lens:
 
-How much of your portfolio the bot *wants* in XRP.
+- **What it is** — what you are looking at on screen
+- **How to use it** — when to glance, when to act
+- **Bull / Neutral / Bear** — how tape regime should color your reading (SKYNET **market regime** mirrors this for advice)
+- **Narrative** — one sentence of operator story
+- **See also** — deep-dive **Appendices** at the end of this manual
 
-| Range | Vibe |
-|-------|------|
-| **40–55%** | Defensive. Lots of RLUSD on the sidelines. Safer in crashes, slower bag growth. |
-| **60–70%** | Balanced aggression. Solid starting point while learning. |
-| **75–90%+** | Full send. Hungry for XRP. Where real bag growth lives — and where drawdowns bite harder. |
+---
+### Always visible — header & sidebar
 
-**Default in code:** 75%. You are RLUSD-heavy when **actual XRP % is below target**.
+The ticker and left rail update every **~1 second**. They are your pulse when you are not on the Live tab.
+
+#### Ticker & mode badges
+
+**What it is:** Top bar: version, network, LIVE/dry-run, **posture** (`patient` / buying), **ready** badge (accumulation/reload phase), pause/kill badges, freshness.
+
+**How to use it:** First glance on login. **Posture** is inventory skew; **ready** is opportunity (`watching` → `armed` → `executing` / `blocked`). **Kill** or **Pause** mean stop tuning knobs — fix state first.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | LIVE + ready `armed`/`executing` — accumulation may bid even when `dev` is balanced; check scorecard fills. |
+| **Neutral** | Chop: frequent HOLD is normal if Decision explains; reload **watching** if RLUSD below deploy floor. |
+| **Bear** | Kill lit, ready `blocked`, or defensive ACTIVE — no aggression until cleared. |
+
+**Narrative:** You open the HUD at 7am; ticker says LIVE, ready `watching`, posture `patient` — tape building, not broken.
+
+**See also:** [Accumulation / opportunity](#accumulation--opportunity-watch-card) · [RLUSD reload](#rlusd-reload-card) · [Appendix P](#appendix-p--kill-switch-drawdown-or-pause)
+#### Portfolio, inventory & P&L
+
+**What it is:** Sidebar: mid, XRP/RLUSD balances, XRP %, deviation label, drawdown, session P&L, realized 24h.
+
+**How to use it:** **Session P&L** is mark-to-market (can lie after deposits). **Realized 24h** is tax-CSV truth for bleed.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Session and realized both positive — optional scale phase on SKYNET. |
+| **Neutral** | Session green, realized flat — common in chop; trust realized for edge. |
+| **Bear** | Realized bleeding while session flat — open **PRO** replay; expect defensive circuit. |
+
+**Narrative:** Session says +200 XRP after you funded yesterday — ignore it; read Realized 24h instead.
+
+**See also:** [Appendix W](#appendix-w--sl-heavy-night-defensive-circuit-pro) · [Funding changes](#funding-changes-scaling-toward-11k-xrp)
+#### Quote age
+
+**What it is:** How stale the last L1 book patch is.
+
+**How to use it:** Stale >25s — next full book sample is coming; don't panic on one old mid tick.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Fresh quotes + rising mid — fills may still be passive-limit slow. |
+| **Neutral** | 15–25s age is normal between engine cycles. |
+| **Bear** | Stale during volatility — wait for fresh book before repricing bids. |
+
+**Narrative:** Mid flickers but quote age says 18s — the chart line is live, depth card lags one cycle.
+
+**See also:** [Data speed](#data-speed--what-updates-how-fast)
+
+### Live tab
+
+The command center. Decision + Market Conditions + three control decks (**Risk & entry**, **Structure & trailing**, **Re-entry**).
+
+#### Decision
+
+**What it is:** Last engine action (`HOLD`, `PLACE_BID`, `PLACE_ASK`) and the **reason string**.
+
+**How to use it:** **Always read the reason before touching knobs.** It maps 1:1 to an Appendix letter in the cheat table at the end of Part 2.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | `place_bid` with weakness dev or **`accumulation`** / **`bull_run`** in reason — deployment working. |
+| **Neutral** | `hold` with `max_pending_buys`, re-entry gates, or **`reload_blocks_accumulation`** — patience, not broken. |
+| **Bear** | `hold` with `ta_buy_blocked bearish` after SL streak — don't lower offset; see PRO/SKYNET bear. |
+
+**Narrative:** Decision says `reentry_sl_await_bounce` — the bot is doing what you asked after a stop.
+
+**See also:** [Why no buys?](#why-no-buys--decision-reason-cheat-sheet) · Appendices **K**, **J**, **D**
+#### Book
+
+**What it is:** Mid and spread from the latest book patch.
+
+**How to use it:** Compare to Brackets **entry** and Market Conditions **best bid/ask** — mid alone doesn't fill limits.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Spread tight, mid rising — eager offsets still won't fill until ask trades down. |
+| **Neutral** | Typical 8–15 bps spread on RLUSD/XRP mainnet. |
+| **Bear** | Wide spread or gap — consider wider offsets and lower size. |
+
+**Narrative:** Book mid 1.029 but your bid is 1.027 — you are intentionally below the touch.
+
+**See also:** [Appendix N](#appendix-n--bid-on-book-mid-looks-good-still-no-fill)
+#### Structure
+
+**What it is:** Short HTF trend label + summary from recent mids.
+
+**How to use it:** Context for trailing (**BE**/**BO**) and re-entry stabilization — not a buy button.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | `breakout_up` — trailing may arm on filled bags. |
+| **Neutral** | `neutral` chop — pair with TA bias, not structure alone. |
+| **Bear** | `breakout_down` — post-SL re-entry waits for stabilization. |
+
+**Narrative:** Structure says neutral while TA says bearish — re-entry after SL stays blocked.
+
+**See also:** [Appendix K](#appendix-k--post-sl-re-entry-bot-wont-reload)
+#### Brackets summary
+
+**What it is:** Counts: pending buys, active fixed, SL trail, breakout trail, orphan bids.
+
+**How to use it:** If pending > `max_pending_buys`, expect stale cancels or HOLD — open **Brackets** tab for detail.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Active brackets with **BE** flags — winners trailing. |
+| **Neutral** | One pending buy, zero active — normal deploy queue. |
+| **Bear** | Many pending, none filling — ladder clutter; don't add heat. |
+
+**Narrative:** Summary says 4 pending but cap is 1 — engine is pruning, not ignoring you.
+
+**See also:** [Appendix C](#appendix-c--ladder-clutter-many-pending-buys-none-filling)
+#### Preflight
+
+**What it is:** Wallet/trust-line/config readiness summary.
+
+**How to use it:** Must be green before live quoting. Red here beats every knob tweak.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Preflight OK — focus on Decision. |
+| **Neutral** | — |
+| **Bear** | Preflight fail — fix trust line, balance, or config before trading. |
+
+**Narrative:** You cranked risk to 5% but preflight says trust line missing — nothing will place.
+
+**See also:** [Appendix P](#appendix-p--kill-switch-drawdown-or-pause)
+#### Execution
+
+**What it is:** Last cycle execution result (bid placed, dry-run skip, etc.).
+
+**How to use it:** Confirms whether the last Decision actually hit the ledger.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | `place_bid executed` — offer on book; check Brackets. |
+| **Neutral** | Skipped due to pause — expected if you paused. |
+| **Bear** | Repeated skips with risk allowed — read Decision reason, not Execution alone. |
+
+**Narrative:** Decision said PLACE_BID but Execution dry_run — you are still in sim mode.
+
+**See also:** [Config → dry_run](#config-tab)
+#### Accumulation / opportunity watch card
+
+**What it is:** Live card for the **accumulation regime** — phase (`idle` / `primed` / `watching` / `armed` / `executing` / `blocked`), why it is in that phase, **scorecard** (bids placed, fills, chase cancels, minutes in phase), and **missed move** flag when tape ripped without fills.
+
+**How to use it:** When the chart runs but Decision says `balanced dev=…`, check here first. **ARMED** means the engine will use accumulation knobs (tighter offset, chase drift, up to 3 pending, re-entry bypass) on the next qualifying `place_bid`. **BLOCKED** usually means reload policy (under deploy floor) or risk/pause.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | `armed`/`executing` — let chase work; don’t manually widen offset unless scorecard shows repeated chase cancels with zero fills. |
+| **Neutral** | `watching`/`primed` — signals building; early ARM may fire on tape+slope without full breakout. |
+| **Bear** | Usually `idle`/`blocked` — accumulation should not fight bear tape; trust defensive. |
+
+**Narrative:** Card says **ARMED**, scorecard **0 fills**, missed move **yes** — you under-funded RLUSD; check **RLUSD reload** card.
+
+**See also:** [Pro accumulator loop](#pro-accumulator-loop-read-once) · [Appendix X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) · SKYNET playbook **V** (not operator phase U)
+#### RLUSD reload card
+
+**What it is:** Live card for the **reload regime** — phase, RLUSD vs **deploy floor** (default ~45 XRP-equiv), shortfall, whether **accumulation is blocked**, and last funding sell in the 8h window.
+
+**How to use it:** Reload is **not** classic strength sell (`dev ≥ 4%`). It fires in **post-run chop** — neutral/digesting structure near recent highs after a proven run, when slope/tape are not still ripping. **Policy 4** (`alpha_reload_block_accumulation_until_funded`): bids wait until floor is met.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | During the rip: **WATCHING** (“wait for chop”) — correct; do not expect funding sell into breakout. |
+| **Neutral** | **ARMED** after stall — expect `place_ask` with `reload_funding` reason; then accumulation unblocks. |
+| **Bear** | Reload rarely arms; if RLUSD is ample, ignore reload — focus on not adding heat. |
+
+**Narrative:** RLUSD 28 XRP-equiv, floor 45, accumulation **blocked** — bot will fund in chop, not chase the rip with empty wallet.
+
+**See also:** [Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding) · SKYNET playbook **W**
+#### Mid price chart
+
+**What it is:** Candle history (lagging) + live bid/ask/mid lines (1s poll). Timeframe buttons: 5m–2h.
+
+**How to use it:** Candles lag samples; **live lines** are fresher. Use for context, not exact fill prediction.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Higher highs — don't chase with offset↓ unless scale phase earned. |
+| **Neutral** | Sideways box — TA gate matters more than chart FOMO. |
+| **Bear** | Lower highs — trust phase offsets; PRO/defensive may trip. |
+
+**Narrative:** Candles look bullish but last three Decision lines say `ta_buy_blocked` — believe Decision.
+
+**See also:** [TA tab](#ta-tab) · [Appendix A](#appendix-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind)
+#### Market Conditions
+
+**What it is:** Spread, depth ±1% of mid, max buy size, regime, ATR%, realized vol, DCA lines, cycle timing.
+
+**How to use it:** **Max buy** is the binding clip right now. Depth refreshes each **engine cycle**, not each HUD poll.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Deep ask book, max buy at your risk cap — deploy when gates pass. |
+| **Neutral** | Regime chop, ATR moderate — default offsets. |
+| **Bear** | Thin depth, max buy tiny — don't raise risk%; fix book health first. |
+
+**Narrative:** Max buy 17.5 XRP — that's 3% of book, not a bug.
+
+**See also:** [Appendix H](#appendix-h--order-size-stuck-13-rlusd-or-smaller-than-expected) · [Appendix R](#appendix-r--insufficient_ask_depth)
+
+#### Risk & entry (control deck)
+
+**What it is:** The main tuning surface — target allocation, size, edge, bid placement, stale cancel, deferred SL, cycle speed. **Apply** after changes.
+
+**How to use it:** Change **one knob** per soak window. After Apply, watch Decision 10–20 cycles. Cross-check **Market Conditions → Max buy**.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Modest offset (0.12–0.18), `max_pending_buys` 2–3 only after clean realized week; scale SKYNET phase. |
+| **Neutral** | Default patient offsets (0.15–0.25), `max_pending_buys` 1–2, sticky drift > offset + spread. |
+| **Bear** | Wide offset (0.18+), `max_pending_buys` 1, lower risk%, trust/defensive circuit; no offset chase. |
+
+**Narrative:** You lower offset to catch a rip — fills improve, SLs cluster — PRO trips bear bundle overnight.
+
+**See also:** [Knob coupling](#knob-coupling--change-x-change-y) · Appendices **A–I**, **V**
+
+##### `target_xrp_pct` / `weakness_deviation` / `strength_deviation`
+
+North star XRP share and how far below/above target before buys/sells fire. RLUSD-heavy = below target = buy side eligible.
+
+| Regime | target / weakness |
+|--------|-------------------|
+| **Bull** | target 80–85%, weakness 0.03–0.04 |
+| **Neutral** | target 75–80%, weakness 0.04–0.05 |
+| **Bear** | target unchanged; raise weakness 0.06–0.08 (fewer knives) |
+
+##### `risk_per_trade_pct`
+
+Caps bracket size ≈ `% × portfolio` (also leg cap & depth). HUD **Max buy** confirms.
+
+| Regime | Typical |
+|--------|---------|
+| **Bull** | 2.5–3.5% after trust earned |
+| **Neutral** | 0.5–2.5% |
+| **Bear** | ≤2.5%; defensive circuit may force min |
+
+##### `min_edge_threshold_pct` ⚠️
+
+Must be **≤ `buy_limit_offset_pct`** or HOLD forever (`edge_below_threshold`). Couple with offset changes.
+
+##### `buy_limit_offset_pct` / `sell_limit_offset_pct`
+
+Distance below mid (buy) or above mid (sell). Main fill vs entry-quality lever.
+
+| Regime | buy offset |
+|--------|------------|
+| **Bull** | 0.08–0.15 (eager) only if realized P&L healthy |
+| **Neutral** | 0.15–0.25 |
+| **Bear** | 0.18–0.35 patient |
+
+##### `max_pending_buys` / stale pending buy knobs
+
+`stale_pending_buy_max_drift_pct` must be **> offset + spread** for sticky bids, or ≈ offset to chase. **`mid_passed_entry` trap** — see Appendix G.
+
+##### `deferred_sl_enabled` / `deferred_sl_arm_buffer_pct` ⚠️
+
+XRPL stops below bid cross instantly without deferral. **SL↯** on Brackets = off-ledger stop until arm.
+
+| Regime | deferred SL |
+|--------|-------------|
+| **Bull** | On; buffer 0–0.1% |
+| **Neutral** | On; default buffer 0% |
+| **Bear** | On; avoid disabling; widen `initial_stop_loss_pct` instead |
+
+##### `cycle_interval_seconds`
+
+5–60s between engine cycles. Lower = faster stale cancel/replace, more RPC load.
 
 ---
 
-### `weakness_deviation`
+#### Structure & trailing (control deck)
 
-How far **below** target XRP the bot must be before it even *considers* buying.
+**What it is:** Stop/TP distances, trailing enable, breakout/structure lookback — protects filled bags.
 
-| Range | Vibe |
-|-------|------|
-| **0.02–0.03** | Jumpy. Buys on small dips. Good in chop; dangerous in downtrends. |
-| **0.04–0.05** | Reasonable middle ground. |
-| **0.08+** | Patient. Waits for real blood before deploying RLUSD. |
+**How to use it:** Prove deferred SL before enabling trailing. Watch Brackets **Trail** column (**BE**/**BO**).
 
-Example: target 80%, weakness 0.05 → bot wants to buy when you are at ~75% XRP or lower.
+| Regime | Stance |
+|--------|--------|
+| **Bull** | Trailing on, `trailing_step_pct` 1.5–2%, breakout 0.02 |
+| **Neutral** | Trailing on after soak; fixed TP/SL first week |
+| **Bear** | Trailing off if scratch SL churn; wider `initial_stop_loss_pct` |
 
----
+**Narrative:** BE flags appear on a rally — then one wick scratches four brackets; scratch tier saves you from 71-cycle SL penalty.
 
-### `risk_per_trade_pct`
+**See also:** [Appendix E](#appendix-e--buying-too-often-in-a-downtrend) · SL mitigations below
 
-Max size of **one bracket** as a % of portfolio (also capped by book depth and risk capital).
-
-| Range | Vibe |
-|-------|------|
-| **0.2–0.3%** | Training wheels. |
-| **0.5%** | Normal (config.yaml default). |
-| **2–3%** | Active bag deploy on a ~500+ XRP book. |
-| **4–5%** | Large clips — watch drawdown and leg cap. |
-
-**How size is computed (each PLACE_BID):**
-
-```text
-desired   = alpha_base_order_size_xrp × (1 + |inventory deviation| × 2)
-risk_cap  = portfolio_xrp_equiv × (risk_per_trade_pct / 100)
-leg_cap   = risk_capital_xrp × max_leg_size_pct_of_capital   ← config.yaml only
-size      = min(desired, risk_cap, leg_cap, ask_depth, inventory cap)
-```
-
-The HUD shows **RLUSD notional** on offers as roughly `size_xrp × entry_price`. Engine logs show `size=` in **XRP**.
-
-Check **Market Conditions → Max buy** after **Apply** — that number is the **binding cap right now** (same formula the decision engine uses).
-
-**Example @ portfolio ≈ 584 XRP, mid ≈ 1.103** (your live box, 2026-06-23):
-
-| `risk_per_trade_pct` | Size (XRP) | ≈ RLUSD @ 1.103 |
-|----------------------|------------|-----------------|
-| **2.0%** | ~11.7 | **~12.9** ← what you saw before raising risk |
-| **3.0%** (current HUD) | ~17.5 | **~19.3** |
-| **4.0%** | ~23.3 | **~25.7** |
-| **5.0%** | ~29.2 | **~32.2** |
-| **Leg cap** (`251 XRP × 12%`) | ~30.1 | ~33.2 ← ceiling from `config.yaml` |
-
-To go bigger: raise **`risk_per_trade_pct`** on Live → Apply. **`alpha_base_order_size_xrp`** (config, default 50) only matters once risk cap exceeds desired — at your portfolio it is **not** the limiter until risk ≈ 5%+.
+Key knobs: `bracket_trailing_enabled`, `trailing_step_pct`, `breakout_pct`, `structure_lookback`, `initial_stop_loss_pct`, `take_profit_pct` / `take_profit_rr`.
 
 ---
 
-### `min_edge_threshold_pct` ⚠️
+#### Re-entry after exit (control deck)
 
-Minimum **edge** (spread capture vs mid) required before placing a bid or ask.
+**What it is:** Cooldowns and gates after TP/SL before the next buy — anti-churn discipline.
 
-| Range | Vibe |
-|-------|------|
-| **Low (0.05–0.08)** | Takes smaller edges. Fills more often. |
-| **Middle (0.10–0.15)** | Balanced sniper. |
-| **High (0.3+)** | Picky. Sits on hands until prices are juicy. |
+**How to use it:** Read Decision re-entry line. Cooldowns are **non-negotiable** first; then dip/stabilization/TA.
 
-**Critical rule:** Your edge on a buy is roughly equal to `buy_limit_offset_pct`.  
-If **offset < min edge**, the bot will **never buy**. You will see:
+| Regime | Stance |
+|--------|--------|
+| **Bull** | Shorter TP cooldown/dip; keep SL cooldown meaningful |
+| **Neutral** | Default TP 4 / SL 8–15 cycles |
+| **Bear** | Long SL cooldown, high `sl_min_ta_score`, deep offsets after damage |
 
-```text
-HOLD — edge 0.050% < min 0.500%
-```
+**Narrative:** TP at 1.10 — bot refuses to rebuy at 1.105 because you set `tp_dip_pct` — that's the feature.
 
-That is not a bug. You told it to bid too close to mid while demanding too much edge. **Fix one or the other.**
+**See also:** [Appendix K](#appendix-k--post-sl-re-entry-bot-wont-reload) · [Appendix L](#appendix-l--post-tp-re-entry-waiting-for-dip)
 
-| offset | min edge | Result |
-|--------|----------|--------|
-| 0.15 | 0.08 | ✅ Works (default-ish) |
-| 0.50 | 0.50 | ✅ Works |
-| 0.05 | 0.50 | ❌ Stuck on HOLD forever |
+#### SL mitigations (sub-panel)
 
-**Coupling:** Lowering `buy_limit_offset_pct` to chase price → lower `min_edge_threshold_pct` to match. Set `stale_pending_buy_max_drift_pct` ≈ offset. See [Knob coupling](#knob-coupling--change-x-change-y).
+Scratch tier, cluster window, recovery release, post-clear spacing — tame breakeven SL storms without disabling re-entry.
 
----
-
-### `buy_limit_offset_pct` / `sell_limit_offset_pct`
-
-How far below mid (buy) or above mid (sell) the bot places limits.
-
-**Higher = patient sniper.** Deeper bids, better average entry, slower fills.  
-**Lower = eager.** Near mid, faster fills, worse average price.
-
-HUD range is roughly **0.05% – 1.0%** per side. This is *not* “5% below market” unless you type a large number in the number box — and the slider may cap you.
-
-**Formula:** `target bid ≈ mid × (1 − buy_limit_offset_pct / 100)` — this is where **new** bids land after a stale cancel, not where old resting bids move to.
+| Knob | Bear tip |
+|------|----------|
+| `scratch_sl_max_loss_pct` | 0.10–0.15 — more exits count as scratch |
+| `scratch_sl_cooldown_cycles` | 3–6 |
+| `sl_cluster_window_sec` | 1800+ — cluster doesn't reset timer |
+| `recovery_enabled` | on — end cooldown when price recovers |
 
 ---
 
-### `max_pending_buys` / `max_pending_sells`
+#### Manual actions (control deck)
 
-How many open orders of each type at once.
+**What it is:** Pause, resume, cancel all, config reload, dry-run toggle, engine start.
 
-- **1** = conservative, one shot at a time.  
-- **3–5** = ladders multiple dips (more RLUSD deployed, more to manage).
+**How to use it:** **Pause** stops new entries; brackets stay. **Cancel all** is nuclear — type `CANCEL_ALL`.
 
-### `stale_pending_buy_enabled` / `stale_pending_buy_max_drift_pct`
+| Regime | Action |
+|--------|--------|
+| **Bull** | Rarely touch — let brackets work |
+| **Neutral** | Pause for manual bracket surgery |
+| **Bear** | Pause + review PRO; cancel pending ladder if cluttered |
 
-Each engine cycle, the bot can **auto-cancel resting buy bids** that no longer match where it would place a new entry (mid moved, or your `buy_limit_offset_pct` changed).
+**Narrative:** You cancel all during a bleed — you keep XRP bags without TP/SL until you fix posture.
 
-**Important — limit bids vs mid**
-
-Pending buys are **passive limit orders**. They fill when the **best ask** trades down to your bid price — **not** when mid crosses your entry. Seeing mid below your entry on the HUD does not mean a fill should have happened.
-
-**How it decides “stale”**
-
-1. Compute **target entry** = `mid × (1 − buy_limit_offset_pct / 100)`  
-2. For each **pending buy** bracket, evaluate (any match → cancel on next cycle):
-
-| Rule | Meaning |
-|------|---------|
-| **`entry_drift`** | `|entry − target| / mid × 100` **>** `stale_pending_buy_max_drift_pct` |
-| **`mid_passed_entry`** | Mid rallied above bid without fill by more than max drift |
-| **`entry_above_mid`** | Bid is above mid (off-policy — new bids are always below mid) |
-| **`excess_pending_buy`** | More pending buys than `max_pending_buys` — farthest from target pruned first |
-| **`age`** | Optional: `alpha_stale_pending_buy_max_age_seconds` in `config.yaml` or via operator overrides (e.g. **1800** = 30 min max rest) |
-
-Default **`stale_pending_buy_max_drift_pct` = 0.15%** in code — but see **`mid_passed_entry` trap** below before matching drift to offset.
-
-**`mid_passed_entry` trap (why entries “switch” every cycle)**
-
-A new bid is placed **`buy_limit_offset_pct` below mid** — so at rest, mid is already **~offset% above your entry**. The **`mid_passed_entry`** rule cancels when `(mid − entry) / mid × 100` **>** `stale_pending_buy_max_drift_pct`.
-
-If **drift ≈ offset** (e.g. both **0.12%**), the bid is **stale almost immediately** — any spread tick or mid uptick triggers cancel → replace on the next cycle (~20–34s). Engine logs look like:
-
-```text
-stale_pending_buy_cancelled | … | mid_passed_entry=0.130%>0.12%
-```
-
-**To make entries stick:** set **`stale_pending_buy_max_drift_pct` wider than offset + typical spread**, e.g. offset **0.12%** + spread **~0.10%** → drift **0.35%** (not 0.12–0.20%). See [Scenario G](#scenario-g--entry-price-keeps-moving-cancelreplace-loop).
-
-**Cancel speed**
-
-Each cancel is one **XRPL ledger transaction**. The engine typically processes **one stale cancel per cycle** (`cycle_interval_seconds`). Clearing 20 bids can take **several minutes**, not seconds. Watch engine logs for `stale_pending_buy_cancelled` or `excess_pending_buy_cancelled`.
-
-**Example — clearly stale**
-
-- Mid **1.10**, offset **0.05%** → target ≈ **1.099**  
-- A bid still at **1.04** → drift ≈ **5.5%** → **cancelled**
-
-**Example — ladder stuck (common)**
-
-- Mid **1.103**, offset **0.35%** → target ≈ **1.099**  
-- 20 bids at **1.098–1.100**, **`max_drift` = 0.5%** → drift **0.15–0.25%** → **kept** (under 0.5%)  
-- **`max_pending_buys` = 20** → engine HOLDs with slots full  
-- **Fix:** set **`stale_pending_buy_max_drift_pct` → 0.15** (or match offset), lower **`max_pending_buys`**, then **Apply**
-
-**Don’t confuse Brackets history with live pending**
-
-`logs/alpha_brackets.json` lists old entries from prior sessions. Check the HUD **Brackets** tab **State** column: only rows marked **`pending buy`** count toward the cap.
-
-**Tuning**
-
-| Goal | Action |
-|------|--------|
-| **Stick longer** (fewer cancel/replace) | Raise `stale_pending_buy_max_drift_pct` to **offset + spread + ~0.10%** (e.g. offset 0.12 → drift **0.35**) |
-| Chase market (repricing) | Keep drift **≈ offset** — expect frequent `mid_passed_entry` cancels |
-| Prune bids that drifted far | Lower `stale_pending_buy_max_drift_pct` (e.g. **0.15%**) |
-| Limit ladder size | Lower `max_pending_buys` to **1** (5 slots + fast cycles = churn) |
-| Time-out old bids | Set `alpha_stale_pending_buy_max_age_seconds` to **0** (off) or **3600+** in overrides/config |
-| Turn off auto-prune | Uncheck `stale_pending_buy_enabled` |
-| Force-cancel one bid | Brackets tab **✕** on that row |
-| Nuclear option | **Cancel all** — also kills active TP/SL (you keep XRP) |
-
-Watch **Activity** or engine logs for `stale_pending_buy_cancelled` after a cycle.
-
-**SKYNET / Grok** (manual Ask, **Agent Smith**, or Full SKYNET) receives a **`pending_buy_stale`** block in context: target entry, per-bid `would_cancel` / `reason`, `over_cap_count`, and tuning notes. Use the SKYNET quick prompt **“Stale bid ladder”** or ask why bids are not canceling.
-
-**Coupling:** See [Knob coupling](#knob-coupling--change-x-change-y) — when you change offset, also align `min_edge`, `stale_max_drift`, and often `max_pending_buys`.
+**See also:** [Emergency controls](#emergency-controls)
 
 ---
 
-### `deferred_sl_enabled` / `deferred_sl_arm_buffer_pct` ⚠️ (XRPL stop-loss)
+### TA tab
 
-**Where:** Live → **Risk & entry** (not Structure & trailing).
+Technical analysis gate and indicator detail. **TA tuning** sliders at top; indicator cards below.
 
-After a buy fills, the bot places **take-profit** above market (safe — rests on the book) and a **stop-loss** below entry. On XRPL, a **limit sell below the current best bid crosses the book and fills immediately** — it is not a resting stop. Without deferral, brackets can “stop out” within seconds at ~breakeven even though price never dipped to your stop target.
+#### TA tuning (`ta_enabled`, `ta_weight`, scores, candle interval)
 
-| Knob | Default | What it does |
-|------|---------|--------------|
-| **`deferred_sl_enabled`** | **On** | Keep SL **off the ledger** while best bid is above the stop price. Monitor mid each cycle; place SL only when price approaches the stop. |
-| **`deferred_sl_arm_buffer_pct`** | **0%** | How early to place SL on-ledger. **0** = arm when mid **≤ stop target** (or bid has dropped enough to rest safely). **> 0** = arm when mid is still slightly **above** stop, within this % buffer. |
+**What it is:** Master switch, gate strength, min buy/sell scores, bar size.
 
-**While deferred:** Brackets tab shows **`SL↯`** in State — stop is tracked in software, not as an open ledger offer. **TP** is still on the book.
+**How to use it:** `ta_weight` 0 = advisory; 1 = hard gate. Changing candle interval affects warmup time.
 
-**Engine logs:**
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | weight 0.6–0.8, min_buy 1.2–1.5 — participate in trend. |
+| **Neutral** | weight 0.8, min_buy 1.5–2.0 — default chop filter. |
+| **Bear** | weight 1.0, min_buy 2.0+, bearish bias blocks — expect HOLD. |
 
-```text
-deferred_sl_hold  | sl=1.091000 | reason=best_bid_above_stop   ← after buy fill
-deferred_sl_arm   | sl=1.091000 | mid=1.091200 | arm_at=1.091000  ← SL placed on book
-bracket_place_sl  | reason=deferred_sl_arm | immediate=False
-```
+**Narrative:** You disable TA to force buys in bear tape — you catch the knife; turn it back on.
 
-**`deferred_sl_arm_buffer_pct` — what different values do**
+**See also:** [Appendix J](#appendix-j--ta-blocking-buys-in-chop) · [Appendix Q](#appendix-q--ta_warming_up--insufficient-history)
+#### Status / Bias / Buy / Sell / Breakout scores
 
-Stop target = `entry × (1 − initial_stop_loss_pct)`. Example: entry **1.108**, SL **1.5%** → stop **1.091**, mid **1.111** after fill.
+**What it is:** Composite scores and whether each gate passes.
 
-| Buffer | Arm when mid ≤ | Effect |
-|--------|----------------|--------|
-| **0%** (default) | **1.091** exactly | SL hits the ledger only when price has actually reached the stop zone. Most faithful to your stop distance. |
-| **0.10%** | **~1.092** | Places SL one tick early — slightly faster exit if price is falling through the stop; tiny extra gap vs buffer 0. |
-| **0.25%** | **~1.094** | Arms while price is still **~1.5% above** the raw stop — more protection in fast drops (SL on book before the wick), but you give up a bit more room on normal noise. |
-| **0.50%+** | **~1.096+** | Aggressive early arm — bracket behaves closer to a tight trailing stop; use only if you accept exiting sooner on pullbacks. |
+**How to use it:** Mirror Decision `decTa` line on Live tab. Buy gate FAIL = no PLACE_BID when weight=1.
 
-Formula: `arm_at = stop_price × (1 + buffer_pct / 100)`.
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | buy > min, bias bullish/neutral — gate PASS. |
+| **Neutral** | scores flicker 1.2–1.8 — normal chop. |
+| **Bear** | bearish bias or sell > buy — gate BLOCK. |
 
-**Also arms** when best bid has already dropped to the stop (safe to rest on book) even if mid has not crossed yet.
+**Narrative:** Buy score 1.51, min 1.50 — one tick from HOLD forever.
 
-**Turn off deferral:** Uncheck **`deferred_sl_enabled`** → legacy behavior (SL placed immediately after fill). Only do this if you understand instant XRPL exits when SL < bid.
+**See also:** [Appendix J](#appendix-j--ta-blocking-buys-in-chop)
+#### RSI / Stochastic / Bollinger / Fibonacci / Signals
 
-**Coupling:** **`initial_stop_loss_pct`** (Structure & trailing) sets **how far** the stop is; deferred SL sets **when** it goes on-ledger. Widen **`initial_stop_loss_pct`** for a wider stop target; adjust **`deferred_sl_arm_buffer_pct`** for how eagerly the bot posts that stop before price gets there.
+**What it is:** Indicator breakdown and recent signal list.
 
-**Related:** Trailing SL **updates** (`sl_trail`) always attempt a ledger place; only the **first** deferred SL below market uses the bid-above-stop hold.
+**How to use it:** Diagnostics when you disagree with composite score. Signals table = last fired rules.
 
----
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Oversold RSI + bullish engulfing — supports buy score. |
+| **Neutral** | Mixed signals — trust composite over one indicator. |
+| **Bear** | Overbought + bearish bias — don't override with weakness alone. |
 
-### `cycle_interval_seconds`
+**Narrative:** RSI 28 but bias bearish — structure still down; re-entry waits.
 
-How often the engine wakes up (5–60s).
-
-- **Lower** = faster reactions, more RPC load.  
-- **Higher** = calmer, cheaper, slower to react.
-
----
-
-## Technical Analysis panel
-
-TA produces **buy** and **sell** scores from RSI, Stochastic, Bollinger, engulfing patterns, etc.
-
-| Knob | What it does |
-|------|----------------|
-| **`ta_enabled`** | Master switch. Off = scores display but do not block trades. |
-| **`ta_weight`** | 0 = advisory only. 1 = full gate at `min_buy_score` / `min_sell_score`. |
-| **`min_buy_score`** | Minimum buy score to allow PLACE_BID (scaled by weight). |
-| **`min_sell_score`** | Minimum sell score for strength sells. |
-
-**Warm-up:** Early on you may see `ta_warming_up` — not enough price history yet. Normal. → [Scenario Q](#scenario-q--ta_warming_up--insufficient-history)
-
-**OHLC bars:** Indicators need **completed** candle bars. The forming bar updates on live ticks but counts as closed only when its time window elapses. After deploy, closed bar count should rise each few minutes (TA tab / warmup UI). Stuck at a low bar count while the bot runs for hours = investigate OHLC health.
-
-**Blocked in chop:** `ta_buy_blocked` / bearish bias with RLUSD-heavy inventory → [Scenario J](#scenario-j--ta-blocking-buys-in-chop)
-
----
-
-## Structure & Trailing — protect the bag you just bought
-
-### `bracket_trailing_enabled`
-
-After a buy fills, the bot can **ratchet TP and SL higher** as price moves in your favor.
-
-**On:** Buy at 1.00, SL 0.985, TP 1.03. Price hits 1.05 → SL trails up toward 1.01, TP can move too. Locks in progress.  
-**Off:** Fixed TP/SL. Simpler. Gives back more on reversals.
-
-#### When to enable trailing (after deferred SL is trusted)
-
-Use **off** during initial soak when you are proving **entry + stop** behavior (instant SL bleed, deferred SL not arming). Turn **on** once:
-
-| Gate | Why |
-|------|-----|
-| **`deferred_sl_enabled` on** and **`deferred_sl_arm`** in logs | Stops are not crossing the book on entry |
-| **No mass instant `sl_filled` at breakeven** right after buys | Exit path is sane |
-| **Rally / consolidation break** with bags **at or above entry** | Trailing only helps when `mid ≥ entry` (**BE**) |
-| You accept **breakeven stops** on pullbacks in chop | Tighter `trailing_step_pct` → more whipsaw |
-
-**Does not help underwater bags** — entries above current mid stay on fixed SL until price recovers past entry.
-
-**Works with deferred SL:** initial SL stays **SL↯** until arm. After **BE**, trailing updates the stop target in software (`trailing_sl_rest_pending` in logs when bid is still above the trailed price — avoids instant cross-out). When bid drops to the trailed level, **`deferred_sl_arm`** places a **resting** sell so a reversal **executes** on the run.
-
-**Rising market / post-consolidation preset (Structure & trailing → Apply):**
-
-```text
-bracket_trailing_enabled   = on
-trailing_step_pct          = 1.5     # 2.0 if BE stops feel too twitchy in chop
-alpha_breakout_pct         = 0.02
-alpha_structure_lookback   = 20
-initial_stop_loss_pct      = 0.02    # keep — pairs with deferred SL
-```
-
-Keep **`deferred_sl_enabled` on** (Risk & entry). Watch Brackets **Trail** column for **BE** (SL trail armed) and **BO** (TP trail armed after breakout).
-
-**Turn off again if:** `sl_filled` clusters right after `trailing_sl_update`, or you re-enter trust phase after an SL streak.
-
-### `trailing_step_pct`
-
-How much favorable move before the trail steps again.
-
-| Range | Vibe |
-|-------|------|
-| **0.5–1.0%** | Tight. Great trends; easy whipsaw. |
-| **1.5%** | Balanced default territory. |
-| **3%+** | Loose. Room to breathe; give back more on pullbacks. |
-
-### `breakout_pct`
-
-How far past recent structure high/low counts as a breakout (feeds trailing logic and the **BO** flag on active brackets — see [Brackets tab: BE and BO](#brackets-tab-be-and-bo-trail-column)).
-
-### `structure_lookback`
-
-How many recent mid samples define “structure” (trend / swing levels).
-
-| Range | Vibe |
-|-------|------|
-| **~10** | Short-term, twitchy. |
-| **~20** | Balanced. |
-| **50+** | Big picture, ignores noise. |
-
-### `initial_stop_loss_pct`
-
-Stop distance below entry — sets the **target** stop price (`entry × (1 − pct)`).
-
-| Range | Vibe |
-|-------|------|
-| **0.8–1.0%** | Tight. Small losses if the stop actually triggers at that price. |
-| **1.5%** | Reasonable. |
-| **3%+** | Wide. Survives noise; bigger loss if wrong. |
-
-**XRPL note:** A stop **below** the current bid is a marketable sell if placed on-ledger immediately. With **`deferred_sl_enabled`** on (Risk & entry), the bot holds SL off-book until price nears this target — so **`initial_stop_loss_pct`** defines distance, not instant exit. See [deferred SL](#deferred_sl_enabled--deferred_sl_arm_buffer_pct--xrpl-stop-loss).
-
-### `take_profit_pct` / `take_profit_rr`
-
-- **`take_profit_pct`** — fixed TP % above entry when RR is off.  
-- **`take_profit_rr`** — TP distance = SL distance × RR (preferred when > 0).
-
-| RR | Vibe |
-|----|------|
-| **1.5** | Conservative. |
-| **2.0–3.0** | Standard. |
-| **4.0+** | Aggressive — needs real trends to pay off. |
-
-### Brackets tab: **BE** and **BO** (Trail column)
-
-On **active** brackets only (after the buy has filled), the HUD shows short tags in **State** and spelled-out labels in **Trail**:
-
-| Tag | Full name (Trail column) | Meaning |
-|-----|--------------------------|---------|
-| **BE** | **Breakeven** | Price moved favorably enough that **stop-loss trailing is armed** — the SL can ratchet up as price rises, locking in progress. |
-| **BO** | **Breakout** | Structure confirmed a **breakout** — **take-profit trailing is armed** — the TP can ratchet up in a strong trend. |
-
-**Important:**
-
-- **BE** and **BO** are **trailing milestones**, not separate orders. They tell you which exit leg is allowed to trail.
-- They only matter when **`bracket_trailing_enabled`** is on (Live → Structure & trailing).
-- **Pending buys** never show BE/BO — nothing has filled yet.
-- Hover the Trail column labels in the HUD for the same tooltips.
-
-**Example:** Buy fills at 1.00. Price reaches ~1.015 → **BE** appears → SL may move up from 0.985 toward breakeven. Price breaks structure → **BO** appears → TP may trail above the original 1.03 target.
-
----
-
-## Re-entry after exit — the “don’t be stupid” panel
-
-After you **sell** (TP or SL), the bot can forbid immediate re-buys. This protects the spread: *sell high → wait → buy lower*.
-
-### `reentry_enabled`
-
-On = respect all cooldown / dip / stabilization rules.  
-Off = can reload immediately (more aggressive, more knife-catching risk).
-
-### After take-profit (TP)
-
-| Knob | Purpose |
-|------|---------|
-| **`tp_cooldown_cycles`** | Hard wait (engine cycles) after TP. **Cannot be overridden** by inventory or TA. |
-| **`tp_cooldown_minutes`** | Optional time gate (0 = cycles only). |
-| **`tp_dip_pct`** | After cooldown, mid must dip X% below exit price before buy. |
-| **`tp_min_ta_score`** | TA buy score required for reload. |
-
-**Example:** Sold at 1.10, `tp_dip_pct` 0.08 → need mid **≤ ~1.0991** (0.08% below exit) before re-entry is considered. See [Scenario L](#scenario-l--post-tp-re-entry-waiting-for-dip).
-
-### After stop-loss (SL)
-
-| Knob | Purpose |
-|------|---------|
-| **`sl_cooldown_cycles`** | Usually **longer** than TP cooldown. |
-| **`sl_cooldown_minutes`** | Optional time gate. |
-| **`sl_stabilization_pct`** | Price must bounce X% off recent low. |
-| **`sl_min_ta_score`** | **Higher** bar than TP — demand real reversal confirmation. |
-
-**Real save:** SL hits at 1.00. Bot waits. Price dumps to 0.85. You are *not* auto-buying at 0.95 because TA and stabilization said no. That is the feature working. See [Scenario K](#scenario-k--post-sl-re-entry-bot-wont-reload).
-
-### SL mitigations — scratch stops, clusters, recovery (Live → Re-entry panel)
-
-These knobs address a common live pattern: **trailing SL moves to breakeven**, a small wick stops out several brackets at ~scratch, and the bot sits out for a long `sl_cooldown_cycles` penalty even though you did not take a real loss.
-
-| Knob (HUD label) | Config key | Default | Purpose |
-|------------------|------------|---------|---------|
-| **`scratch_sl_max_loss_pct`** | `alpha_reentry_scratch_sl_max_loss_pct` | 0.15 | If exit is within this % of **entry** (breakeven/small scratch), treat as **scratch tier** — not a full stop-loss. |
-| **`scratch_sl_cooldown_cycles`** | `alpha_reentry_scratch_sl_cooldown_cycles` | 4 | Short cooldown after scratch SL (similar to TP). |
-| **`sl_cluster_window_sec`** | `alpha_reentry_sl_cluster_window_seconds` | 1800 (30 min) | Additional SLs from **different brackets** inside this window **do not reset** the cooldown timer. |
-| **`recovery_enabled`** | `alpha_reentry_recovery_enabled` | on | Allow early end to SL cooldown when price recovers. |
-| **`recovery_release_pct`** | `alpha_reentry_recovery_release_pct` | 0.05 | Mid must rise this % **above** the SL `exit_mid` before recovery applies. |
-| **`recovery_min_cycles`** | `alpha_reentry_recovery_min_cycles` | 2 | Minimum cycles after SL before recovery can fire. |
-| **`post_clear_buy_spacing_cycles`** | `alpha_reentry_post_clear_buy_spacing_cycles` | 5 | After the gate clears, wait N cycles before the next bid — avoids stacking `max_pending_buys` on one wick. |
-
-**Scratch example:** Entry 1.031, trailing SL at breakeven, exit 1.03112 → loss ≈ −0.01% → **scratch** tier → **4-cycle** cooldown instead of your full `sl_cooldown_cycles` (e.g. 71).
-
-**Cluster example:** Four brackets scratch out within minutes. Only the **first** SL starts the timer; the rest update worst `exit_mid` but **do not** reset `cycles_since_exit` to 0.
-
-**Recovery example:** SL exit at 1.031, mid recovers to 1.032+ with non-bearish TA → remaining cooldown skipped (`recovery_early_release` in logs).
-
-**Spacing example:** Gate clears → Decision may show `reentry_reload_spacing cycles=2/5` before the next `place_bid`.
-
-**Persisted state:** `logs/alpha_reentry.json` includes `sl_tier`, `cooldown_cycles_required`, `entry_price`, `buy_spacing_cycles_remaining`. HUD overrides live in `logs/alpha_overrides.json`.
-
-**Full SL** (real loss beyond scratch threshold) still uses `sl_cooldown_cycles`, `sl_stabilization_pct`, and `sl_min_ta_score` — scratch tier skips stabilization and uses the lighter TA bar (`tp_min_ta_score`).
-
----
-
-## Brackets & offers — managing live orders
+**See also:** [Appendix J](#appendix-j--ta-blocking-buys-in-chop)
 
 ### Brackets tab
 
-| State | Meaning |
-|-------|---------|
-| **pending buy** | Limit bid resting; RLUSD committed |
-| **active · bracket** | Filled; TP on book; SL on book **or** deferred (**SL↯**) |
-| **active · bracket · SL↯** | Filled; TP on book; SL held off-ledger until price nears stop |
-| **active · bracket · BE** | Filled; SL trailing armed (breakeven passed) |
-| **active · bracket · BE · BO** | Filled; SL and TP trailing both armed |
-| **BE** (in State) | Shorthand for **Breakeven passed** — see [BE and BO](#brackets-tab-be-and-bo-trail-column) |
-| **BO** (in State) | Shorthand for **Breakout confirmed** — TP trailing armed |
+Full bracket table: state, mode, entry, size, TP/SL, trail flags, per-row cancel/edit.
 
-**Trail column** spells these out as **Breakeven** / **Breakout** (hover for detail). They are trailing milestones, not separate orders.
+**What it is:** Source of truth for **pending buy** vs **active** vs history rows.
 
-- **✕** — Cancel that bracket’s open orders (pending bid or TP/SL legs).  
-- **✎** — Edit pending buy entry price. Active brackets: edit TP/SL with **Set**.
+**How to use it:** Only **`pending buy`** counts toward cap. **SL↯** = deferred stop. **BE**/**BO** = trailing milestones.
+
+| Regime | Stance |
+|--------|--------|
+| **Bull** | Watch BE/BO; trail winners |
+| **Neutral** | One pending, edit entry with ✎ if needed |
+| **Bear** | Cancel excess pending; don't stack ladder |
+
+**Narrative:** JSON file shows 1058 rows; HUD shows 1 pending — believe the HUD State column.
+
+**See also:** [Appendix C](#appendix-c--ladder-clutter-many-pending-buys-none-filling) · [Appendix G](#appendix-g--entry-price-keeps-moving-cancelreplace-loop)
+
+---
 
 ### Open Offers tab
 
-Every raw ledger order. Same ✕ / ✎ controls.
+Raw XRPL offers (sequence, side, price, size). ✕ cancel, ✎ reprice.
 
-### Cancel all orders
+**What it is:** Ledger truth — one row per open offer including non-bracket asks.
 
-Live tab — nuclear option. Type `CANCEL_ALL`. Use when you want a clean slate.
+**How to use it:** When Brackets and Offers disagree, Offers wins for "what's on chain."
+
+| Regime | Stance |
+|--------|--------|
+| **Bull** | Expect bid + TP legs on active bags |
+| **Neutral** | Single bid typical |
+| **Bear** | Many stale bids — prune via Brackets or Cancel all |
+
+**Narrative:** One offer, sequence 12345 — that's your only pending bid.
+
+**See also:** [Appendix N](#appendix-n--bid-on-book-mid-looks-good-still-no-fill)
 
 ---
+
+### Reports tab
+
+Cycle report text, tax CSV path, download helpers, transfer index.
+
+**What it is:** Human-readable cycle dump + pointer to `logs/trades_YYYY-MM.csv`.
+
+**How to use it:** Archive monthly CSV for taxes. Cross-check realized P&L vs PRO replay.
+
+| Regime | Stance |
+|--------|--------|
+| **Bull** | TP rows dominate CSV |
+| **Neutral** | Mixed small P&L |
+| **Bear** | SL rows cluster — sum `profit_xrp_equiv` |
+
+**Narrative:** Session P&L +200, CSV sum −5 — you were measuring the wrong scoreboard.
+
+**See also:** [Tax & transfer records](#tax--transfer-records) · [Appendix W](#appendix-w--sl-heavy-night-defensive-circuit-pro)
+
+---
+
+### Activity tab
+
+Reverse-chronological engine events (cycles, cancels, fills, defensive circuit).
+
+**What it is:** Lightweight log tail — faster than SSH for "did stale cancel fire?"
+
+**How to use it:** After Apply, look for `stale_pending_buy_cancelled`, `defensive_circuit`, `place_bid`.
+
+| Regime | Stance |
+|--------|--------|
+| **Bull** | Regular `place_bid` / fills |
+| **Neutral** | Mix HOLD + occasional bid |
+| **Bear** | SL cluster in log; `defensive_circuit_activated` |
+
+**Narrative:** Activity every 34s says hold — that's one engine cycle, not a freeze.
+
+**See also:** [Appendix G](#appendix-g--entry-price-keeps-moving-cancelreplace-loop)
+
+---
+
+### PRO tab
+
+**Alpha Replay**, **auto-defensive circuit**, **treasury placeholder**.
+
+#### Alpha Replay
+
+**What it is:** Rolling TP/SL, realized P&L, scratch SLs, verdict (`healthy`/`sl_heavy`/`bleeding`/`churn`).
+
+**How to use it:** Pick window (14h default). Judge bleed here — not Session P&L.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | TP ≥ SL, verdict healthy — optional release defensive. |
+| **Neutral** | Mixed — watch trend over 48h. |
+| **Bear** | sl_heavy / bleeding — expect or confirm defensive ACTIVE. |
+
+**Narrative:** 63 SL, 0 TP — verdict sl_heavy; you didn't need to wait for Session P&L to tell you.
+
+**See also:** [Appendix W](#appendix-w--sl-heavy-night-defensive-circuit-pro)
+#### Auto-defensive circuit
+
+**What it is:** Auto bear bundle via overrides when replay trips thresholds.
+
+**How to use it:** Let it work in bear; **Release defensive** (type RELEASE) restores saved knobs.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Armed but inactive — normal. |
+| **Neutral** | Hold defensive if churning chop. |
+| **Bear** | DEFENSIVE ACTIVE — don't SKYNET-Apply aggressive offsets in parallel. |
+
+**Narrative:** Circuit trips at 3am; you wake up to bear regime without touching SKYNET.
+
+**See also:** [Appendix W](#appendix-w--sl-heavy-night-defensive-circuit-pro) · [Appendix S](#appendix-s--trust-phase-skynet-bias)
+#### Treasury (placeholder)
+
+**What it is:** Future sideline Tangem tranche deploy — not wired.
+
+**How to use it:** Fund manually: Config → RLUSD issuer + Xaman send to bot address.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | — |
+| **Neutral** | — |
+| **Bear** | — |
+
+**Narrative:** 11k on Tangem stays manual until Phase 2 treasury ships.
+
+**See also:** [Funding changes](#funding-changes-scaling-toward-11k-xrp)
+
+### SKYNET tab
+
+SKYNET advisor — operator phase, market regime, Agent Smith, Full SKYNET, manual Ask.
+
+#### Operator phase (trust / scale / aggressive)
+
+**What it is:** Strategy bias for SKYNET suggestions — does not change knobs until Apply.
+
+**How to use it:** Match phase to tranche soak. Trust after deploy/SL streak; scale after clean realized week.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Scale → Aggressive only with guardrails. |
+| **Neutral** | Trust or Scale. |
+| **Bear** | Trust — anti-bleed prompts; max_pending before offset↓. |
+
+**Narrative:** You set Aggressive on day one — SKYNET suggests 0.08% offset; you Apply; SLs follow.
+
+**See also:** [Appendix S](#appendix-s--trust-phase-skynet-bias) · [Appendix T](#appendix-t--scale-phase-modest-accumulation) · [Appendix U](#appendix-u--aggressive-phase-bag-push)
+#### Market regime (bull / neutral / bear)
+
+**What it is:** Tape bias for SKYNET Ask + Agent Smith — mirrors PRO/defensive posture language.
+
+**How to use it:** Set bear after SL-heavy night if circuit disabled. Apply suggestions manually.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Bull — accumulate dips in prompts. |
+| **Neutral** | Neutral — anti-churn language. |
+| **Bear** | Bear — defensive; aligns with auto circuit bundle. |
+
+**Narrative:** Regime bear + phase trust — SKYNET refuses to recommend offset below 0.15.
+
+**See also:** [Appendix W](#appendix-w--sl-heavy-night-defensive-circuit-pro)
+#### Agent Smith (Phase 2)
+
+**What it is:** Bounded auto-suggestions every 3–5 cycles within guardrails.
+
+**How to use it:** Review purple knob highlights on Live; Apply safe changes manually.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Allow modest risk/pending bumps inside guardrails. |
+| **Neutral** | Default guardrails. |
+| **Bear** | Pause Agent Smith during defensive circuit. |
+
+**Narrative:** Purple ◆ on max_pending — Agent Smith agrees you need cap before offset.
+
+**See also:** [Tuning SKYNET](#tuning-skynet-ask-agent-smith-full-mode)
+#### Full SKYNET (Phase 3) & Manual Ask
+
+**What it is:** Autonomous apply (confirmed) vs conversational Ask → Apply.
+
+**How to use it:** Full mode requires `ENABLE_FULL_SKYNET`. Kill/pause always override.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | Still cap with guardrails — not a license for 5% risk. |
+| **Neutral** | Ask for stale bid ladder diagnosis. |
+| **Bear** | Do not enable Full during bleed — use PRO + trust phase. |
+
+**Narrative:** You Ask 'why no fills?' — SKYNET returns pending_buy_stale block with target entry math.
+
+**Scenario quick buttons (2026):** SKYNET playbook letters **U** (bull run / missed move on balanced dev) · **V** (accumulation ARMED/EXECUTING knobs) · **W** (RLUSD reload / deploy floor). Live cards also expose **Ask SKYNET** with the same context pre-loaded. *(Playbook **U** is not the same as operator phase **Aggressive** — [Appendix U](#appendix-u--aggressive-phase-bag-push).)*
+
+**See also:** [Tuning SKYNET](#tuning-skynet-ask-agent-smith-full-mode) · [Appendix X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) · [Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding)
+
+### Config tab
+
+Credentials, network, Telegram/HUD auth, **Send / withdraw**, transfer log.
+
+#### Bot account & network
+
+**What it is:** Address, RLUSD issuer (read-only resolved), secret, testnet, RPC.
+
+**How to use it:** Copy **rlusd_issuer** when funding from Xaman/Tangem. Never commit secrets.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | — |
+| **Neutral** | Verify mainnet + trust line before tranche. |
+| **Bear** | — |
+
+**Narrative:** You paste issuer into Xaman — RLUSD lands on bot with correct trust line.
+
+**See also:** [Funding changes](#funding-changes-scaling-toward-11k-xrp)
+#### Send / withdraw from bot
+
+**What it is:** Signed XRPL payment to any `r…` address. Type SEND to confirm.
+
+**How to use it:** Pause/stop engine before large withdrawals. Logged to transfers.csv + tax CSV.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Bull** | — |
+| **Neutral** | Tranche profit skim — small test send first. |
+| **Bear** | — |
+
+**Narrative:** You SEND 50 XRP to cold wallet after pausing — tax row logs OUT.
+
+**See also:** [`ALPHA_OPERATOR_GUIDE.md`](ALPHA_OPERATOR_GUIDE.md)
+
+## Part 2 — Operator playbook
+
+Cross-tab topics: tax logs, scaling capital, knob coupling, troubleshooting, soak discipline, SKYNET, emergencies.
 
 ## Tax & transfer records
 
@@ -632,7 +884,7 @@ timestamp_utc,event_type,taxable,network,side,xrp_amount,rlusd_amount,price_rlus
 
 Use this when you **add XRP or RLUSD** to the bot wallet on mainnet. The bot does not auto-detect narrative capital — you sync **`risk_capital_xrp`** and HUD knobs after each deposit.
 
-**Rule:** Grow the book in **tranches**. Judge each tranche on **realized** bracket P&amp;L (`profit_xrp_equiv` in tax CSV), not **Session P&amp;L** (MTM). SKYNET **operator phase** should match the tranche ([Scenario S](#scenario-s--trust-phase-skynet-bias) · [T](#scenario-t--scale-phase-modest-accumulation) · [U](#scenario-u--aggressive-phase-bag-push)). To deploy RLUSD already on the book, see [Deploy RLUSD to XRP](#deploy-rlusd-to-xrp-get-xrp-heavy).
+**Rule:** Grow the book in **tranches**. Judge each tranche on **realized** bracket P&amp;L (`profit_xrp_equiv` in tax CSV), not **Session P&amp;L** (MTM). SKYNET **operator phase** should match the tranche ([Appendix S](#appendix-s--trust-phase-skynet-bias) · [T](#appendix-t--scale-phase-modest-accumulation) · [U](#appendix-u--aggressive-phase-bag-push)). To deploy RLUSD already on the book, see [Deploy RLUSD to XRP](#deploy-rlusd-to-xrp-get-xrp-heavy).
 
 ### Before you send anything
 
@@ -848,7 +1100,7 @@ alpha_cycle_interval_seconds   = 20
 risk_capital_xrp: 11000
 ```
 
-**SKYNET:** **scale** first; **aggressive** only if you accept churn and realized P&amp;L is healthy ([Scenario U](#scenario-u--aggressive-phase-bag-push)).
+**SKYNET:** **scale** first; **aggressive** only if you accept churn and realized P&amp;L is healthy ([Appendix U](#appendix-u--aggressive-phase-bag-push)).
 
 **Live → Risk & entry → Apply** (scale-safe full bag)
 
@@ -917,11 +1169,16 @@ Use this when you are **RLUSD-heavy** and want sideline RLUSD **into XRP** — n
 |---------|---------|
 | **`inventory_target_xrp_ratio`** | North star (HUD: **target XRP %**). Default **75%** — design keeps ~25% RLUSD dry powder. |
 | **`deviation`** | `actual_xrp_ratio − target`. **Negative** = RLUSD-heavy (e.g. **−0.29** @ 46% XRP vs 75% target). |
-| **Buys** | When `deviation ≤ −weakness_deviation` (e.g. **−0.05**) and gates pass. Deep RLUSD already qualifies. |
-| **`sell_blocked`** | **On** while RLUSD-heavy — bot **won’t** strength-sell XRP away. Correct for accumulation. |
+| **Buys** | When `deviation ≤ −weakness_deviation` (classic) **or** **accumulation regime ARMED** on bull/breakout tape (even near-balanced `dev`). |
+| **`sell_blocked`** | **On** while RLUSD-heavy — bot **won’t** classic strength-sell XRP away. **Reload** funding sells are separate ([Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding)). |
 | **Fills** | **Passive** — ask must trade **down to your bid**. Mid dipping ≠ fill. |
 
-You are usually already in the **right posture** (`heavy_rlusd`, buys allowed). RLUSD sits on the sidelines because **clips are small**, **`max_pending_buys = 1`**, and **offset** places bids below live price.
+You are usually already in the **right posture** (`heavy_rlusd`, buys allowed). RLUSD sits on the sidelines because **clips are small**, **`max_pending_buys = 1`**, **offset**, or **reload deploy floor** blocking accumulation when wallet RLUSD is thin.
+
+**Two deploy paths (2026):**
+
+1. **Classic** — RLUSD-heavy, weakness gate, your Live offset / pending / risk knobs.  
+2. **Accumulation regime** — tape arms tighter bundle (see [Appendix X](#appendix-x--accumulation-regime-chart-rips-balanced-hold)); may need **reload** first if RLUSD &lt; deploy floor.
 
 #### Why deployment feels slow
 
@@ -953,7 +1210,7 @@ Change **one step at a time**; watch **Decision reason** and **Market Conditions
 | **4** | Heavier end state | `inventory_target_xrp_ratio` **0.75 → 0.80–0.90** |
 | **5** | SKYNET alignment | Phase **scale** when trust metrics OK; prompt: *deploy RLUSD, max_pending + risk before offset↓* |
 
-**Trust phase:** do not lower offset below **0.15** until realized TP/SL in tax CSV looks acceptable ([Scenario S](#scenario-s--trust-phase-skynet-bias)).
+**Trust phase:** do not lower offset below **0.15** until realized TP/SL in tax CSV looks acceptable ([Appendix S](#appendix-s--trust-phase-skynet-bias)).
 
 #### Preset — deploy RLUSD now (trust-safe)
 
@@ -988,7 +1245,7 @@ alpha_stale_pending_buy_max_drift_pct = 0.35
 alpha_weakness_deviation           = 0.04
 ```
 
-See also [Scenario F](#scenario-f--chop--mild-dips-want-more-action) (eager fills) and [Scenario V](#scenario-v--deploy-sideline-rlusd-faster-xrp-heavy).
+See also [Appendix F](#appendix-f--chop--mild-dips-want-more-action) (eager fills) and [Appendix V](#appendix-v--deploy-sideline-rlusd-faster-xrp-heavy).
 
 #### What not to do
 
@@ -1043,56 +1300,23 @@ Matches **heavy_rlusd** posture — use [Deploy RLUSD to XRP](#deploy-rlusd-to-x
 
 ---
 
-## Real-talk scenarios
+### Why no buys? — Decision reason cheat sheet
 
-### Bull market — ride it
+You are RLUSD-heavy. TA looks fine. Bot still HOLD. **Read the Decision reason**, then open the matching appendix:
 
-```text
-target_xrp_pct = 80
-weakness_deviation = 0.03
-ta_weight = 0.7
-buy_limit_offset_pct ≥ min_edge_threshold_pct
-tp_cooldown_cycles = 3–4
-```
-
-Bot buys dips, reloads after profit with discipline, trails winners.
-
-### Stop-loss hit — survive it
-
-Price dumps → SL fills → bot goes quiet.  
-`sl_cooldown_cycles` ticks down. Stabilization + `sl_min_ta_score` must pass.  
-You do **not** catch the falling knife because you were greedy on cooldown.
-
-### Too aggressive — degenerate mode
-
-```text
-target_xrp_pct = 90
-weakness_deviation = 0.02
-risk_per_trade_pct = 2+
-max_pending_buys = 5
-reentry_enabled = off
-ta_weight = 0.2
-```
-
-The bot becomes a gambler with limit orders. You either print or get rekt. **Kill switch exists for a reason.**
-
-### “Why no buys?” — today’s classic
-
-You are RLUSD-heavy. TA is fine. Bot still HOLD.
-
-**Check Decision reason** — then jump to the scenario:
-
-| Reason pattern | Scenario |
+| Reason pattern | Appendix |
 |----------------|----------|
-| `edge_below_threshold` / edge < min | [D](#scenario-d--hold-forever-edge-in-the-reason) |
-| `post_sl_` / `post_tp_` / `reentry_` / `reentry_reload_spacing` | [K](#scenario-k--post-sl-re-entry-bot-wont-reload) · [L](#scenario-l--post-tp-re-entry-waiting-for-dip) |
-| `ta_buy_blocked` / `ta_warming_up` | [J](#scenario-j--ta-blocking-buys-in-chop) · [Q](#scenario-q--ta_warming_up--insufficient-history) |
-| `balanced dev=` | [M](#scenario-m--balanced-inventory-nothing-to-do) |
-| `max_pending_buys=` | [C](#scenario-c--ladder-clutter-many-pending-buys-none-filling) · [G](#scenario-g--entry-price-keeps-moving-cancelreplace-loop) |
-| `insufficient_ask_depth` | [R](#scenario-r--insufficient_ask_depth) |
-| `kill_switch` / `pause_bids` / preflight | [P](#scenario-p--kill-switch-drawdown-or-pause) |
-| Pending buy exists, no fill | [N](#scenario-n--bid-on-book-mid-looks-good-still-no-fill) |
-| `weakness dev=` but no bid | [I](#scenario-i--rlusd-heavy-sell-blocked-buys-only) · [V](#scenario-v--deploy-sideline-rlusd-faster-xrp-heavy) |
+| `edge_below_threshold` / edge < min | [D](#appendix-d--hold-forever-edge-in-the-reason) |
+| `post_sl_` / `post_tp_` / `reentry_` / `reentry_reload_spacing` | [K](#appendix-k--post-sl-re-entry-bot-wont-reload) · [L](#appendix-l--post-tp-re-entry-waiting-for-dip) |
+| `ta_buy_blocked` / `ta_warming_up` | [J](#appendix-j--ta-blocking-buys-in-chop) · [Q](#appendix-q--ta-warming-up-insufficient-history) |
+| `balanced dev=` | [M](#appendix-m--balanced-inventory-nothing-to-do) · [X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) if accumulation card armed |
+| `accumulation` / `bull_run` / `tape_participation` | [X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) |
+| `reload_funding` / `reload_blocks_accumulation` | [Y](#appendix-y--rlusd-reload-post-run-chop-funding) |
+| `max_pending_buys=` | [C](#appendix-c--ladder-clutter-many-pending-buys-none-filling) · [G](#appendix-g--entry-price-keeps-moving-cancelreplace-loop) |
+| `insufficient_ask_depth` | [R](#appendix-r--insufficient_ask_depth) |
+| `kill_switch` / `pause_bids` / preflight | [P](#appendix-p--kill-switch-drawdown-or-pause) |
+| Pending buy exists, no fill | [N](#appendix-n--bid-on-book-mid-looks-good-still-no-fill) |
+| `weakness dev=` but no bid | [I](#appendix-i--rlusd-heavy-sell-blocked-buys-only) · [V](#appendix-v--deploy-sideline-rlusd-faster-xrp-heavy) |
 
 ---
 
@@ -1100,34 +1324,36 @@ You are RLUSD-heavy. TA is fine. Bot still HOLD.
 
 | Problem | Likely cause | What to do |
 |---------|--------------|------------|
-| Stuck on HOLD, edge in reason | Offset < min edge | [Scenario D](#scenario-d--hold-forever-edge-in-the-reason) |
-| RLUSD-heavy, only bids, no sells | Normal `sell_block` | [Scenario I](#scenario-i--rlusd-heavy-sell-blocked-buys-only) |
-| `ta_buy_blocked` / bearish | TA gate in chop | [Scenario J](#scenario-j--ta-blocking-buys-in-chop) |
-| Quiet after SL | Re-entry gate (check `sl_tier` scratch vs full) | [Scenario K](#scenario-k--post-sl-re-entry-bot-wont-reload) |
+| Stuck on HOLD, edge in reason | Offset < min edge | [Appendix D](#appendix-d--hold-forever-edge-in-the-reason) |
+| RLUSD-heavy, only bids, no sells | Normal `sell_block` | [Appendix I](#appendix-i--rlusd-heavy-sell-blocked-buys-only) |
+| `ta_buy_blocked` / bearish | TA gate in chop | [Appendix J](#appendix-j--ta-blocking-buys-in-chop) |
+| Quiet after SL | Re-entry gate (check `sl_tier` scratch vs full) | [Appendix K](#appendix-k--post-sl-re-entry-bot-wont-reload) |
 | Quiet after gate cleared | Buy spacing | `reentry_reload_spacing` in Decision |
-| Quiet after TP | Await dip + cooldown | [Scenario L](#scenario-l--post-tp-re-entry-waiting-for-dip) |
-| `balanced dev=…` | On target band | [Scenario M](#scenario-m--balanced-inventory-nothing-to-do) |
-| Bid resting, no fill | Passive limit | [Scenario N](#scenario-n--bid-on-book-mid-looks-good-still-no-fill) |
-| XRP-heavy, no asks | Strength threshold | [Scenario O](#scenario-o--xrp-heavy-want-strength-sells) |
-| Kill / pause / preflight | Risk state | [Scenario P](#scenario-p--kill-switch-drawdown-or-pause) |
-| Entry keeps jumping | Stale `mid_passed_entry` | [Scenario G](#scenario-g--entry-price-keeps-moving-cancelreplace-loop) |
-| Size ~13 RLUSD | `risk_per_trade_pct` cap | [Scenario H](#scenario-h--order-size-stuck-13-rlusd-or-smaller-than-expected) |
-| No buys, RLUSD-heavy | Weakness too high | Lower `weakness_deviation` or [Scenario M](#scenario-m--balanced-inventory-nothing-to-do) |
-| Buying too soon after sells | Cooldowns too short | [Scenario L/K](#scenario-l--post-tp-re-entry-waiting-for-dip) |
-| Bids way below mid (~5%) | Offset set very high | [Scenario A](#scenario-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) |
+| Quiet after TP | Await dip + cooldown | [Appendix L](#appendix-l--post-tp-re-entry-waiting-for-dip) |
+| `balanced dev=…` | On target band — or accumulation waiting on tape | [Appendix M](#appendix-m--balanced-inventory-nothing-to-do) · [X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) |
+| Chart ripping, 0 fills, RLUSD low | Reload blocks accumulation | [Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding) |
+| `reload_funding` / funding ask | Post-run chop sell — not strength unload | [Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding) · [O](#appendix-o--xrp-heavy-want-strength-sells) |
+| Bid resting, no fill | Passive limit | [Appendix N](#appendix-n--bid-on-book-mid-looks-good-still-no-fill) |
+| XRP-heavy, no asks | Strength threshold | [Appendix O](#appendix-o--xrp-heavy-want-strength-sells) |
+| Kill / pause / preflight | Risk state | [Appendix P](#appendix-p--kill-switch-drawdown-or-pause) |
+| Entry keeps jumping | Stale `mid_passed_entry` | [Appendix G](#appendix-g--entry-price-keeps-moving-cancelreplace-loop) |
+| Size ~13 RLUSD | `risk_per_trade_pct` cap | [Appendix H](#appendix-h--order-size-stuck-13-rlusd-or-smaller-than-expected) |
+| No buys, RLUSD-heavy | Weakness too high | Lower `weakness_deviation` or [Appendix M](#appendix-m--balanced-inventory-nothing-to-do) |
+| Buying too soon after sells | Cooldowns too short | [Appendix L/K](#appendix-l--post-tp-re-entry-waiting-for-dip) |
+| Bids way below mid (~5%) | Offset set very high | [Appendix A](#appendix-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) |
 | Bids at ~1.04 when mid ~1.10 | Old bracket history or deep offset | Check Brackets **State** = `pending buy`; stale cancel only hits live pending rows |
-| HOLD at max pending, bids ~1.097–1.10 | Bids match current offset (low drift) | [Scenario C](#scenario-c--ladder-clutter-many-pending-buys-none-filling) |
-| Many pending bids, mid “passed”, no cancel | `max_drift` too loose (e.g. 0.5%) vs offset 0.15–0.35% | [Scenario C](#scenario-c--ladder-clutter-many-pending-buys-none-filling) |
-| Bid feels left behind as price rises | Offset too high vs movement | [Scenario A](#scenario-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) |
+| HOLD at max pending, bids ~1.097–1.10 | Bids match current offset (low drift) | [Appendix C](#appendix-c--ladder-clutter-many-pending-buys-none-filling) |
+| Many pending bids, mid “passed”, no cancel | `max_drift` too loose (e.g. 0.5%) vs offset 0.15–0.35% | [Appendix C](#appendix-c--ladder-clutter-many-pending-buys-none-filling) |
+| Bid feels left behind as price rises | Offset too high vs movement | [Appendix A](#appendix-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) |
 | Cancels very slow | One XRPL cancel per engine cycle | Normal — wait or lower pending count / use Cancel all |
 | Cancelled but orders still show | Active brackets ≠ pending | Check state column; active = exits on filled bags |
 | What does **BE** / **BO** mean? | Trailing flags on active brackets | **BE** = breakeven passed, SL can trail · **BO** = breakout confirmed, TP can trail · needs `bracket_trailing_enabled` |
 | What does **SL↯** mean? | Deferred stop (Risk & entry) | SL target set but **not on ledger yet** — avoids instant XRPL exit; arms when mid reaches stop (+ buffer) |
 | Bracket vanishes right after fill | Instant SL cross (legacy) or fast stop | Enable **`deferred_sl_enabled`**; check logs for `deferred_sl_hold` / `sl_filled` |
 | No rows in tax CSV | Dry-run or no fills yet | Switch to LIVE; CSV updates on bracket buy/TP/SL fills and Config → Send |
-| `ta_warming_up` | New session / thin history | [Scenario Q](#scenario-q--ta_warming_up--insufficient-history) |
-| Max buy = 0 | Thin book | [Scenario R](#scenario-r--insufficient_ask_depth) |
-| Preflight not OK | Trust line, balance, config | [Scenario P](#scenario-p--kill-switch-drawdown-or-pause) |
+| `ta_warming_up` | New session / thin history | [Appendix Q](#appendix-q--ta_warming_up--insufficient-history) |
+| Max buy = 0 | Thin book | [Appendix R](#appendix-r--insufficient_ask_depth) |
+| Preflight not OK | Trust line, balance, config | [Appendix P](#appendix-p--kill-switch-drawdown-or-pause) |
 
 ---
 
@@ -1160,6 +1386,9 @@ mid (live book)
 | **`initial_stop_loss_pct`** ↑ / ↓ | **`deferred_sl_enabled`** (keep on for XRPL) | Wider stop = lower stop price; deferral prevents instant cross on placement |
 | **`deferred_sl_arm_buffer_pct`** ↑ | Faster SL on-ledger on pullbacks | Higher buffer = arm before raw stop; 0% = arm at stop only |
 | **`reentry_*` cooldowns** ↓ | **`ta_min_buy_score`** on re-entry | Shorter wait + weak TA = reload into chop |
+| **Accumulation ARMED** | **`buy_limit_offset_pct`** on Live | Engine uses **`alpha_accumulation_*`** bundle — manual offset↓ may not apply until disarmed |
+| **RLUSD below deploy floor** | **`alpha_reload_min_rlusd_deploy_xrp_equiv`** | Lowering floor forces bids with thin wallet — prefer chop reload or deposit |
+| **`alpha_reload_block_accumulation_until_funded`** off | Accumulation + empty RLUSD | Bids may place with no budget — churn risk |
 
 ### Rules of thumb
 
@@ -1247,41 +1476,231 @@ After **Apply**, wait 1–2 cycles and confirm logs show fewer `stale_pending_bu
 
 ---
 
-## Scenarios & suggested presets
+## 48-hour watch checklist (hands-off soak)
 
-Use these as **recipes**, not gospel. Apply on **Live → Risk & entry**, watch **Decision reason** for 10–20 cycles, adjust one knob at a time.
+Use this when the stack is deployed, deferred SL is on, and you want to **let the bot cook** instead of tuning every HOLD. Check the HUD **2–3× per day**; do a full compare **~48 hours** after the baseline timestamp.
 
-### Scenario index
+### Baseline — 2026-06-24 (post deploy `8308ecc`, trailing on)
 
-| | Scenario | When to use |
-|---|----------|-------------|
-| **A** | [Bid left behind in uptrend](#scenario-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) | RLUSD-heavy, price rising, want nearer bids |
-| **B** | [Patient dip sniper](#scenario-b--patient-dip-sniper-default-philosophy) | Deep offsets, can wait hours |
-| **C** | [Ladder clutter](#scenario-c--ladder-clutter-many-pending-buys-none-filling) | Many pending buys, none filling |
-| **D** | [HOLD, edge in reason](#scenario-d--hold-forever-edge-in-the-reason) | `edge_below_threshold` |
-| **E** | [Buying too often in downtrend](#scenario-e--buying-too-often-in-a-downtrend) | SL streak, knife catching |
-| **F** | [Chop, want more action](#scenario-f--chop--mild-dips-want-more-action) | Tight spread, rare fills |
-| **G** | [Entry keeps moving](#scenario-g--entry-price-keeps-moving-cancelreplace-loop) | Cancel/replace every cycle |
-| **H** | [Size stuck ~13 RLUSD](#scenario-h--order-size-stuck-13-rlusd-or-smaller-than-expected) | Clip smaller than expected |
-| **I** | [RLUSD-heavy, sell blocked](#scenario-i--rlusd-heavy-sell-blocked-buys-only) | Heavy RLUSD, only bids fire |
-| **J** | [TA blocking buys in chop](#scenario-j--ta-blocking-buys-in-chop) | `ta_buy_blocked` / bearish |
-| **K** | [Post-SL re-entry](#scenario-k--post-sl-re-entry-bot-wont-reload) | After stop-loss, quiet bot |
-| **L** | [Post-TP re-entry](#scenario-l--post-tp-re-entry-waiting-for-dip) | After take-profit, no reload |
-| **M** | [Balanced HOLD](#scenario-m--balanced-inventory-nothing-to-do) | `balanced dev=…` |
-| **N** | [Bid resting, no fill](#scenario-n--bid-on-book-mid-looks-good-still-no-fill) | Passive limit mechanics |
-| **O** | [XRP-heavy, want sells](#scenario-o--xrp-heavy-want-strength-sells) | Strength asks / unload XRP |
-| **P** | [Kill / drawdown / pause](#scenario-p--kill-switch-drawdown-or-pause) | Hard stops, no trading |
-| **Q** | [TA warming up](#scenario-q--ta_warming_up--insufficient-history) | New session, thin history |
-| **R** | [Thin book](#scenario-r--insufficient_ask_depth) | Depth gate blocks size |
-| **S** | [Trust phase (SKYNET)](#scenario-s--trust-phase-skynet-bias) | Prove overnight, anti-bleed |
-| **T** | [Scale phase (SKYNET)](#scenario-t--scale-phase-modest-accumulation) | After trust earned |
-| **U** | [Aggressive phase (SKYNET)](#scenario-u--aggressive-phase-bag-push) | Bag-growth push |
-| **V** | [Deploy sideline RLUSD faster](#scenario-v--deploy-sideline-rlusd-faster-xrp-heavy) | RLUSD on sidelines, want higher XRP % |
-| **W** | [SL-heavy night / defensive circuit (PRO)](#scenario-w--sl-heavy-night--defensive-circuit-pro) | Auto bear posture after bleed |
+Recorded from live VPS `alpha_runtime_state.json` + activity log.
+
+| Metric | Where on HUD | Baseline (now) | 48h later | Δ | OK? |
+|--------|----------------|----------------|-----------|---|-----|
+| Portfolio (XRP equiv) | Sidebar **Portfolio** | **588.7** | | | |
+| XRP ratio (target 75%) | Sidebar **Inventory** | **51.7%** | | | ↑ or flat |
+| Session P&L (MTM) | Sidebar **Session P&L** | **+214.1 XRP** | | | informational only |
+| Realized 24h (TP/SL) | Sidebar **Realized 24h** | **−7.16 XRP** | | | not worse by >3 XRP |
+| TP exits (24h window) | Realized 24h meta line | **0** | | | any TP is a win |
+| SL exits (24h window) | Realized 24h meta line | **53** | | | not accelerating |
+| Daily drawdown | Sidebar **Drawdown** | **0.0%** / 10% | | | stay &lt; 3% |
+| Kill switch | Sidebar / Risk | **off** | | | must stay off |
+| Operator phase | SKYNET tab | **scale** | | | trust OK; scale if earned |
+| Pending buys | Brackets summary | **1** | | | 0–2 normal |
+| Active fixed TP/SL | Brackets summary | **7** | | | |
+| Active SL trail | Brackets summary | **1** | | | BE in Trail col |
+| Deferred SL | Risk & entry | **on** | | | stay on |
+| Bracket trailing | Overrides / Risk | **on** | | | off if trail→SL churn |
+| Typical HOLD reasons | Decision card | `max_pending_buys`, `reentry_sl_await_bounce`, `ta_buy_blocked` | | | patience, not stuck |
+
+**Copy row values from the sidebar at check-in.** MTM can diverge wildly from realized — judge bleed on **Realized 24h**, not Session P&L.
+
+### Daily glance (2 minutes)
+
+1. **Kill switch** off, **drawdown** under 3%.
+2. **Realized 24h** — trending flat or up? SL count not spiking?
+3. **XRP ratio** — drifting toward 75% or at least not falling?
+4. **Decision reason** + **ready** badge — re-entry gates and `max_pending_buys` are **expected**; on rips check **Accumulation** / **RLUSD reload** cards before tweaking offset.
+5. **Brackets** — pending buys filling, trails arming (BE), no burst of `sl_filled` right after `trailing_sl_update` in Activity.
+
+### 48-hour decision tree
+
+```text
+After 48h, compare to baseline table:
+
+GOOD (keep cooking, no knob changes)
+  • Realized 24h improved or flat (not −3 XRP worse than baseline)
+  • XRP ratio ≥ baseline (51.7%) or clearly climbing
+  • Drawdown < 3%, kill off
+  • Some TP exits OR SL rate slowed vs baseline window
+
+WATCH (check daily, still no knobs unless bleed worsens)
+  • Realized still negative but SL count stable; ratio flat
+  • MTM green, realized red — normal; do not chase with offset↓
+
+ACT (one change only, then another 24–48h soak)
+  • Realized 24h worse by >3 XRP AND SL >> TP → SKYNET phase **trust**, review offset (do not go below 0.15)
+  • Trailing SL churn (fills right after trail update) → run disable trailing script; stay trust
+  • Drawdown > 5% → pause, review; kill if > 8%
+
+SCALE (only if GOOD + ratio climbing + TP:SL improving)
+  • Already on scale phase — do not add heat until realized turns positive over multi-day window
+  • Next step: max_pending_buys before buy_limit_offset_pct↓
+```
+
+### SKYNET quick prompts at check-in
+
+| When | Prompt |
+|------|--------|
+| Daily | **Trust phase review** (even on scale — asks about bleed) |
+| Bull rip | SKYNET playbook **U** / **V** — bull run missed · accumulation knobs |
+| Low RLUSD after run | SKYNET playbook **W** — reload / deploy floor |
+| 48h | Paste sidebar numbers: ratio, realized 24h, TP/SL counts, last decision reason, **ready** badge |
+| If bleeding | **Anti-bleed** / Appendix S knobs |
+
+### Telegram / logs (optional)
+
+- Hourly Telegram: alive + portfolio snapshot.
+- Tax truth: `logs/trades_YYYY-MM.csv` on VPS — sum `profit_xrp_equiv` on SELL rows should match **Realized 24h** on HUD.
+
+**Next full compare target:** ~**2026-06-26** (48h from baseline).
 
 ---
 
-### Scenario A — RLUSD-heavy, price drifting up, bid feels “left behind”
+## Suggested starter settings (first week)
+
+Conservative learner preset:
+
+```text
+target_xrp_pct          = 65–70
+weakness_deviation      = 0.04
+risk_per_trade_pct      = 0.4
+min_edge_threshold_pct  = 0.08
+buy_limit_offset_pct    = 0.15    ← must be ≥ min edge
+sell_limit_offset_pct   = 0.15
+max_pending_buys        = 1
+stale_pending_buy_max_drift_pct = 0.15   ← match buy_limit_offset
+ta_weight               = 0.8
+ta_min_buy_score        = 1.5
+reentry_enabled         = on
+tp_cooldown_cycles      = 4
+sl_cooldown_cycles      = 8
+bracket_trailing_enabled = on
+trailing_step_pct       = 1.5
+```
+
+**Rules while learning:**
+
+1. Change **one knob** at a time.  
+2. Watch **Decision reason** for 10–20 cycles after each change.  
+3. Read **Market Conditions** before cranking aggression.  
+4. Use **dry_run** until you trust the behavior.  
+5. **Kill** without hesitation if something looks wrong.
+
+When you understand how each knob *feels*, then turn up the aggression.
+
+---
+
+## Tuning SKYNET (Ask, Agent Smith, Full mode)
+
+SKYNET is the **advisor layer** — it does not place trades. Set **operator phase** on the SKYNET tab so advice matches soak vs scale goals.
+
+**Backend note:** Inference runs on xAI's API (Grok-family models). **Prompts, playbooks, guardrails, and Apply logic are ours** — you talk to SKYNET; you are not chatting with stock Grok.
+
+**HUD names:** Phase 1 manual prompt = **Ask SKYNET**; Phase 2 bounded automation = **Agent Smith** (checkbox **Enable Agent Smith Mode**); Phase 3 = **Full SKYNET**.
+
+### Operator phase (trust / scale / aggressive)
+
+**SKYNET tab → Operator phase → Save phase.** Persisted as `alpha_operator_phase`. See [Appendix S](#appendix-s--trust-phase-skynet-bias), [T](#appendix-t--scale-phase-modest-accumulation), [U](#appendix-u--aggressive-phase-bag-push).
+
+| Phase | Use when | SKYNET bias |
+|-------|----------|-------------|
+| **Trust** (default) | Soak, SL streak | `max_pending↑` before `offset↓` |
+| **Scale** | Clean nights | offset 0.15–0.20, max_pending 2–3 |
+| **Aggressive** | Bag push | offset 0.08–0.12; revert if SL streak |
+
+Phase does **not** change knobs until you Apply.
+
+### Runtime context (each Ask / Agent Smith cycle)
+
+- **`alpha_operator_phase`** and playbook **S–U**
+- **`pending_buy_stale`** — target entry, per pending bid `would_cancel` / `reason`, `over_cap_count`
+- **`likely_scenarios`** — auto hints (A–Y) from decision reason + inventory (reference only)
+- **`accumulation_regime`** / **`reload_regime`** — phase, blockers, scorecard, deploy floor (mirrors Live cards)
+- **Appendix playbook (A–Y, S–U)** — condensed presets matching this manual
+- **Operator knobs (effective)** — current HUD overrides
+
+**Session P&L** is MTM — use **`realized_bracket_pnl`** in SKYNET context (`realized_profit_xrp_equiv`, `tp_exits` / `sl_exits` from tax CSV) for bleed in trust phase.
+
+**Natural language → Apply**
+
+On the SKYNET tab, set **operator phase**, type your goal in plain English, click **Send**, then **Apply suggested changes**:
+
+```text
+Trust phase: max pending 2 only — keep offset 0.20, weakness 0.05. Do not tighten drift.
+```
+
+SKYNET maps your goals to allowlisted keys. Quick buttons **Trust phase review**, **Scale phase knobs**, **Preset: sticky + 4% risk**, **My settings → Apply**.
+
+If **Apply** stays disabled, name settings explicitly (percent values help) or check the hint for guardrail errors.
+
+**Modes**
+
+| Mode | Behavior |
+|------|----------|
+| **SKYNET tab — Ask** | You prompt; SKYNET suggests changes; you **Apply** manually |
+| **Agent Smith** (Phase 2) | SKYNET runs every 3–5 cycles; **Apply safe** for guardrailed suggestions |
+| **Full SKYNET** (Phase 3) | Auto-applies guardrailed changes (confirm with `ENABLE_FULL_SKYNET`; requires Agent Smith mode) |
+
+SKYNET uses operator phase + appendix playbook + `pending_buy_stale`. **Agent Smith** proposals do **not** overwrite the Ask response box.
+
+**Purple knob labels (Live / TA tabs):** When **Agent Smith** proposes safe changes (or SKYNET Ask returns applicable changes), matching knob labels turn **purple ◆** with the suggested value in the tooltip. Legend appears under Risk & entry. Highlights clear after Apply or when values already match effective config.
+
+---
+
+## Emergency controls
+
+| Control | Effect |
+|---------|--------|
+| **Pause** | Stops new entries; existing brackets remain |
+| **Kill switch** | Hard stop — no new risk |
+| **Cancel all** | Pulls open ledger offers |
+| **Config → Send** | Withdraw XRP or RLUSD to any `r…` address (type `SEND` to confirm) |
+| **Reports tab** | Cycle report + path to `logs/trades_YYYY-MM.csv` tax log |
+| **Dry run toggle** | Simulates without submitting (when enabled); **no tax CSV rows** |
+
+The bot is live. The market is live. You are live.
+
+**Trade accordingly.**
+
+— xLedgerMate Alpha · Aggressive Bag Growth
+
+## Appendices — Scenario playbook
+
+Lettered recipes — not gospel. Change **one knob**, watch Decision **10–20 cycles**.
+
+### Appendix index
+
+| | Appendix | When to use |
+|---|----------|-------------|
+| **A** | [Bid left behind in uptrend](#appendix-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) | RLUSD-heavy, price rising, want nearer bids |
+| **B** | [Patient dip sniper](#appendix-b--patient-dip-sniper-default-philosophy) | Deep offsets, can wait hours |
+| **C** | [Ladder clutter](#appendix-c--ladder-clutter-many-pending-buys-none-filling) | Many pending buys, none filling |
+| **D** | [HOLD, edge in reason](#appendix-d--hold-forever-edge-in-the-reason) | `edge_below_threshold` |
+| **E** | [Buying too often in downtrend](#appendix-e--buying-too-often-in-a-downtrend) | SL streak, knife catching |
+| **F** | [Chop, want more action](#appendix-f--chop-mild-dips-want-more-action) | Tight spread, rare fills |
+| **G** | [Entry keeps moving](#appendix-g--entry-price-keeps-moving-cancel-replace-loop) | Cancel/replace every cycle |
+| **H** | [Size stuck ~13 RLUSD](#appendix-h--order-size-stuck-13-rlusd-or-smaller-than-expected) | Clip smaller than expected |
+| **I** | [RLUSD-heavy, sell blocked](#appendix-i--rlusd-heavy-sell-blocked-buys-only) | Heavy RLUSD, only bids fire |
+| **J** | [TA blocking buys in chop](#appendix-j--ta-blocking-buys-in-chop) | `ta_buy_blocked` / bearish |
+| **K** | [Post-SL re-entry](#appendix-k--post-sl-re-entry-bot-wont-reload) | After stop-loss, quiet bot |
+| **L** | [Post-TP re-entry](#appendix-l--post-tp-re-entry-waiting-for-dip) | After take-profit, no reload |
+| **M** | [Balanced HOLD](#appendix-m--balanced-inventory-nothing-to-do) | `balanced dev=…` |
+| **N** | [Bid resting, no fill](#appendix-n--bid-on-book-mid-looks-good-still-no-fill) | Passive limit mechanics |
+| **O** | [XRP-heavy, want sells](#appendix-o--xrp-heavy-want-strength-sells) | Strength asks / unload XRP |
+| **P** | [Kill / drawdown / pause](#appendix-p--kill-switch-drawdown-or-pause) | Hard stops, no trading |
+| **Q** | [TA warming up](#appendix-q--ta-warming-up-insufficient-history) | New session, thin history |
+| **R** | [Thin book](#appendix-r--insufficient-ask-depth) | Depth gate blocks size |
+| **S** | [Trust phase (SKYNET)](#appendix-s--trust-phase-skynet-bias) | Prove overnight, anti-bleed |
+| **T** | [Scale phase (SKYNET)](#appendix-t--scale-phase-modest-accumulation) | After trust earned |
+| **U** | [Aggressive phase (SKYNET)](#appendix-u--aggressive-phase-bag-push) | Bag-growth push |
+| **V** | [Deploy sideline RLUSD faster](#appendix-v--deploy-sideline-rlusd-faster-xrp-heavy) | RLUSD on sidelines, want higher XRP % |
+| **W** | [SL-heavy night / defensive circuit (PRO)](#appendix-w--sl-heavy-night-defensive-circuit-pro) | Auto bear posture after bleed |
+| **X** | [Accumulation regime](#appendix-x--accumulation-regime-chart-rips-balanced-hold) | Chart rips, `balanced dev`, missed move |
+| **Y** | [RLUSD reload](#appendix-y--rlusd-reload-post-run-chop-funding) | Fund dry powder in chop; blocks bids |
+
+---
+
+### Appendix A — RLUSD-heavy, price drifting up, bid feels “left behind”
 
 **Symptoms:** One (or few) pending buys ~0.3%+ below mid; market moving up; you want to participate without waiting for a deep dip.
 
@@ -1297,11 +1716,14 @@ max_pending_buys               = 1
 cycle_interval_seconds         = 20     ← optional; faster cancel/replace
 ```
 
-**If fills still rare:** ask is still above your bid — try offset **0.08–0.10** only if you accept worse entries. If entries **keep moving**, drift is still too tight — see [Scenario G](#scenario-g--entry-price-keeps-moving-cancelreplace-loop).
+**If fills still rare:** ask is still above your bid — try offset **0.08–0.10** only if you accept worse entries. If entries **keep moving**, drift is still too tight — see [Appendix G](#appendix-g--entry-price-keeps-moving-cancelreplace-loop).
 
 ---
 
-### Scenario B — Patient dip sniper (default philosophy)
+
+---
+
+### Appendix B — Patient dip sniper (default philosophy)
 
 **Symptoms:** You want better entries, can wait; RLUSD-heavy is fine for hours.
 
@@ -1317,7 +1739,10 @@ weakness_deviation             = 0.05–0.08
 
 ---
 
-### Scenario C — Ladder clutter (many pending buys, none filling)
+
+---
+
+### Appendix C — Ladder clutter (many pending buys, none filling)
 
 **Symptoms:** 10–20+ pending buys; HOLD `max_pending_buys=N`; mid moved; orders “just sit there.”
 
@@ -1334,7 +1759,10 @@ Optional in `config.yaml`: `alpha_stale_pending_buy_max_age_seconds: 1800` (30 m
 
 ---
 
-### Scenario D — HOLD forever, edge in the reason
+
+---
+
+### Appendix D — HOLD forever, edge in the reason
 
 **Symptoms:** `edge 0.050% < min 0.500%` or similar.
 
@@ -1347,7 +1775,10 @@ Never leave **offset < min edge**.
 
 ---
 
-### Scenario E — Buying too often in a downtrend
+
+---
+
+### Appendix E — Buying too often in a downtrend
 
 **Symptoms:** Repeated fills, SL hits, bag not growing.
 
@@ -1363,7 +1794,10 @@ buy_limit_offset_pct           = 0.20+       ↑ (deeper bids only)
 
 ---
 
-### Scenario F — Chop / mild dips, want more action
+
+---
+
+### Appendix F — Chop / mild dips, want more action
 
 **Symptoms:** RLUSD-heavy, TA OK, bot buys but fills are rare; spread is tight.
 
@@ -1379,7 +1813,10 @@ cycle_interval_seconds         = 15–20
 
 ---
 
-### Scenario G — Entry price keeps moving (cancel/replace loop)
+
+---
+
+### Appendix G — Entry price keeps moving (cancel/replace loop)
 
 **Symptoms:** Pending buy entry changes every **20–60s**; Activity shows **`place_bid`** almost every cycle; logs show **`mid_passed_entry`** or **`entry_drift`**.
 
@@ -1400,7 +1837,10 @@ buy_limit_offset_pct            = 0.12          ← keep unless you want deeper 
 
 ---
 
-### Scenario H — Order size stuck ~13 RLUSD (or smaller than expected)
+
+---
+
+### Appendix H — Order size stuck ~13 RLUSD (or smaller than expected)
 
 **Symptoms:** HUD / Open Offers show **~12–13 RLUSD** per buy; **Max buy** on Market Conditions matches that number.
 
@@ -1419,7 +1859,10 @@ buy_limit_offset_pct            = 0.12          ← keep unless you want deeper 
 
 ---
 
-### Scenario I — RLUSD-heavy, sell blocked, buys only
+
+---
+
+### Appendix I — RLUSD-heavy, sell blocked, buys only
 
 **Symptoms:** Sidebar shows **~20–30% XRP** vs **95% target**; inventory label **`heavy_rlusd`** or **`rlusd_heavy`**; Decision **`place_bid`** or **`weakness dev=…`**; **`sell_block=True`** in logs; no strength sells.
 
@@ -1433,13 +1876,16 @@ buy_limit_offset_pct            = 0.12          ← keep unless you want deeper 
 
 **If buys are too aggressive:** raise **`weakness_deviation`** (e.g. **0.05–0.08**) or lower **`risk_per_trade_pct`**.
 
-**If you want faster XRP accumulation:** you are usually already past the weakness gate — use **`max_pending_buys`**, **`risk_per_trade_pct`**, and **`buy_limit_offset_pct`** in that order. Full presets: [Deploy RLUSD to XRP](#deploy-rlusd-to-xrp-get-xrp-heavy) · [Scenario V](#scenario-v--deploy-sideline-rlusd-faster-xrp-heavy). Don’t expect strength sells until **`dev`** recovers toward target.
+**If you want faster XRP accumulation:** you are usually already past the weakness gate — use **`max_pending_buys`**, **`risk_per_trade_pct`**, and **`buy_limit_offset_pct`** in that order. Full presets: [Deploy RLUSD to XRP](#deploy-rlusd-to-xrp-get-xrp-heavy) · [Appendix V](#appendix-v--deploy-sideline-rlusd-faster-xrp-heavy). Don’t expect strength sells until **`dev`** recovers toward target.
 
 **Config note:** **`inventory_target_xrp_ratio`** (HUD: target XRP %) sets the north star. At **75%** target with **46%** actual, large negative deviation is expected until many fills land. For **85–90%** target, raise **`inventory_target_xrp_ratio`** explicitly.
 
 ---
 
-### Scenario V — Deploy sideline RLUSD faster (XRP-heavy)
+
+---
+
+### Appendix V — Deploy sideline RLUSD faster (XRP-heavy)
 
 **Symptoms:** **`heavy_rlusd`** / **`rlusd_heavy`**; **`sell_block=True`**; lots of RLUSD in wallet; XRP ratio stuck or climbing slowly; Decision often **`max_pending_buys=1`** or small **`place_bid`** clips.
 
@@ -1464,7 +1910,10 @@ alpha_deferred_sl_enabled          = on
 
 ---
 
-### Scenario W — SL-heavy night / defensive circuit (PRO)
+
+---
+
+### Appendix W — SL-heavy night / defensive circuit (PRO)
 
 **Symptoms:** Overnight **`sl_exits` ≫ `tp_exits`** in tax CSV; realized **`profit_xrp_equiv`** negative; Session P&amp;L may still look fine (MTM); scratch SLs at entry; HUD **PRO** verdict **`sl_heavy`**, **`bleeding`**, or **`churn`**.
 
@@ -1490,11 +1939,92 @@ alpha_risk_per_trade_pct             = ≤ 2.5
 
 **Treasury:** PRO tab shows **placeholder** only — sideline Tangem tranches still manual via Config → RLUSD issuer + Xaman.
 
-**Coupling:** [Scenario K](#scenario-k--post-sl-re-entry-bot-wont-reload) (per-SL cooldown) · [Scenario S](#scenario-s--trust-phase-skynet-bias) (trust phase after bleed) · [Funding changes](#funding-changes-scaling-toward-11k-xrp) (don’t scale tranche while defensive).
+**Coupling:** [Appendix K](#appendix-k--post-sl-re-entry-bot-wont-reload) (per-SL cooldown) · [Appendix S](#appendix-s--trust-phase-skynet-bias) (trust phase after bleed) · [Funding changes](#funding-changes-scaling-toward-11k-xrp) (don’t scale tranche while defensive).
 
 ---
 
-### Scenario J — TA blocking buys in chop
+
+---
+
+### Appendix X — Accumulation regime (chart rips, balanced HOLD)
+
+**Symptoms:** Price ripping on chart; Decision **`HOLD — balanced dev=…`** or only occasional small bids; Live **Accumulation** card **`watching`/`armed`**; scorecard **missed move**; header **ready** badge lit.
+
+**What’s happening:** The **accumulation regime** deploys RLUSD on **tape** (breakout, bull structure, tape participation, optional **early ARM** on slope) — not only when `dev ≤ −weakness`. When **ARMED**, bids use a bundled profile:
+
+```text
+alpha_accumulation_buy_offset_pct           ≈ 0.06   (tighter than default buy offset)
+alpha_accumulation_stale_drift_pct              ≈ 0.08   (chase-until-fill on mid_passed)
+alpha_accumulation_max_pending_buys         = 3
+alpha_accumulation_risk_boost               = 1.5×   (within global risk cap)
+alpha_accumulation_rlusd_budget_pct         = spend cap per 8h window
+alpha_accumulation_early_arm_enabled        = on     (tape + slope without full breakout)
+```
+
+**Chase-until-fill:** Stale cancel on **`mid_passed_entry`** re-places with slightly tighter offset; **chase count** on scorecard tracks reprices. Repeated chase with **zero fills** usually means **ask never traded to your bid** — passive limit mechanics ([Appendix N](#appendix-n--bid-on-book-mid-looks-good-still-no-fill)), not a broken engine.
+
+**BLOCKED on card:** Often **`reload_blocks_accumulation`** — RLUSD below deploy floor ([Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding)). Fix funding before lowering offset.
+
+**Operator checklist:**
+
+1. Read **Accumulation** card phase + scorecard (bids / fills / chase cancels).
+2. If **blocked** — open **RLUSD reload** card; do not crank `buy_limit_offset_pct` on Live unless scorecard shows chase loop with ample RLUSD.
+3. SKYNET playbook **V** or card **Ask SKYNET** for diagnosis.
+4. Session log: `logs/accumulation_session.json` on VPS.
+
+**Do not:** disable accumulation to “fix” balanced dev during a rip — you will miss the move. **Do:** fund RLUSD via reload chop path or manual deposit, then let regime execute.
+
+**Coupling:** [Appendix A](#appendix-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind) (offset math) · [Appendix V](#appendix-v--deploy-sideline-rlusd-faster-xrp-heavy) (classic RLUSD-heavy deploy) · [Pro accumulator loop](#pro-accumulator-loop-read-once)
+
+---
+
+
+---
+
+### Appendix Y — RLUSD reload (post-run chop funding)
+
+**Symptoms:** RLUSD wallet thin vs deploy ambition; **Accumulation** **blocked**; **RLUSD reload** card **`watching`** during rip → **`armed`** after stall; Decision **`reload_funding`** / **`place_ask`** with tight offset; or **`reload_blocks_accumulation`** on bids.
+
+**What’s happening:** **Reload** refills **dry powder** after a proven run — **not** into active breakout. Arms when structure is **neutral/digesting** near **recent high**, run proven from **recent low**, slope/tape not still ripping. Sells a **capped** XRP slice (`reload_funding` mode) with TA bullish-defer **bypass** when armed.
+
+**Policy 4 (default on):** `alpha_reload_block_accumulation_until_funded` — accumulation bids wait until RLUSD ≥ **deploy floor** (`alpha_reload_min_rlusd_deploy_xrp_equiv`, default **~45** XRP-equiv).
+
+| Concept | Reload funding sell | Classic strength sell |
+|---------|---------------------|------------------------|
+| Trigger | Low RLUSD + chop after run | `dev ≥ strength_deviation` (~4%) |
+| Timing | Post-run consolidation | XRP-heavy inventory |
+| TA | Bypass when reload armed | May defer (`ta_sell_deferred`) |
+| Goal | Fund bids for next leg | Trim XRP toward target ratio |
+
+**Default knobs (config.yaml):**
+
+```text
+alpha_reload_regime_enabled                 = true
+alpha_reload_min_rlusd_deploy_xrp_equiv     = 45
+alpha_reload_block_accumulation_until_funded = true
+alpha_reload_max_sells_per_window           = 1      (8h window)
+alpha_reload_sell_offset_pct                = tight  (~0.06% above mid)
+```
+
+**Operator checklist:**
+
+1. During rip with low RLUSD: **WATCHING** is correct — wait for chop.
+2. After stall: expect at most **one** funding sell per 8h window; then **FUNDED** → accumulation unblocks.
+3. SKYNET playbook **W** or reload card **Ask SKYNET**.
+4. Session log: `logs/reload_session.json` on VPS.
+
+**Do not:** confuse reload ask with panic unload — check Decision reason. **Do not** lower deploy floor to force bids mid-rip without accepting empty-wallet risk.
+
+**Manual alternative:** Deposit RLUSD from Tangem → **Config → Reload** → accumulation unblocks when floor met.
+
+**Coupling:** [Appendix X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) · [Deploy RLUSD to XRP](#deploy-rlusd-to-xrp-get-xrp-heavy) · [Appendix O](#appendix-o--xrp-heavy-want-strength-sells)
+
+---
+
+
+---
+
+### Appendix J — TA blocking buys in chop
 
 **Symptoms:** RLUSD-heavy, inventory OK, but HOLD with reasons like:
 
@@ -1519,7 +2049,7 @@ ta_enabled           = on
 ```text
 ta_min_buy_score     = 2.0–2.5
 ta_weight            = 1.0
-reentry_sl_min_ta_score = 2.0+     ← pairs with [Scenario K](#scenario-k--post-sl-re-entry-bot-wont-reload)
+reentry_sl_min_ta_score = 2.0+     ← pairs with [Appendix K](#appendix-k--post-sl-re-entry-bot-wont-reload)
 ```
 
 **Coupling:** Lower **`ta_min_buy_score`** + lower **`weakness_deviation`** together = very eager reload in sideways markets. Change one at a time.
@@ -1528,7 +2058,10 @@ reentry_sl_min_ta_score = 2.0+     ← pairs with [Scenario K](#scenario-k--post
 
 ---
 
-### Scenario K — Post-SL re-entry (bot won’t reload)
+
+---
+
+### Appendix K — Post-SL re-entry (bot won’t reload)
 
 **Symptoms:** Stop-loss filled; bot goes quiet for cycles/minutes; Decision shows:
 
@@ -1572,13 +2105,16 @@ sl_min_ta_score              = 1.0–1.5
 sl_stabilization_pct         = 0.02
 ```
 
-**Nuclear:** `reentry_enabled = off` — SL exits do not block the next buy (see [Scenario E](#scenario-e--buying-too-often-in-a-downtrend) trade-offs).
+**Nuclear:** `reentry_enabled = off` — SL exits do not block the next buy (see [Appendix E](#appendix-e--buying-too-often-in-a-downtrend) trade-offs).
 
 **Verify:** `logs/alpha_reentry.json` shows cooldown counting down; reason shifts from `post_sl_cooldown` → stabilization/TA → then **`place_bid`**.
 
 ---
 
-### Scenario L — Post-TP re-entry (waiting for dip)
+
+---
+
+### Appendix L — Post-TP re-entry (waiting for dip)
 
 **Symptoms:** Take-profit filled; bot won’t immediately rebuy; Decision shows:
 
@@ -1614,21 +2150,29 @@ tp_min_ta_score        = 2.0
 
 ---
 
-### Scenario M — Balanced inventory, nothing to do
-
-**Symptoms:** Decision **`HOLD — balanced dev=+0.02`** (or similar small deviation); neither buy nor sell; inventory label **`balanced`**.
-
-**What’s happening:** **`deviation`** is between **`−weakness_deviation`** and **`+strength_deviation`**. The bot considers the book **on target enough** — no weakness buys, no strength sells.
-
-**To buy anyway:** lower **`weakness_deviation`** so current **`dev`** qualifies (e.g. dev **−0.04** needs weakness **≥ 0.04**).
-
-**To sell anyway:** raise **`strength_deviation`** in config (default **0.04**; HUD exposes weakness only today) or wait until XRP allocation rises.
-
-**Often confused with:** [Scenario D](#scenario-d--hold-forever-edge-in-the-reason) (edge gate) or [Scenario J](#scenario-j--ta-blocking-buys-in-chop) (TA gate) — read the **exact reason string**.
 
 ---
 
-### Scenario N — Bid on book, mid looks good, still no fill
+### Appendix M — Balanced inventory, nothing to do
+
+**Symptoms:** Decision **`HOLD — balanced dev=+0.02`** (or similar small deviation); neither buy nor sell; inventory label **`balanced`**.
+
+**What’s happening:** **`deviation`** is between **`−weakness_deviation`** and **`+strength_deviation`**. Classic path: no weakness buys, no strength sells.
+
+**Accumulation override (2026):** On bull/breakout tape the **accumulation regime** can still **`place_bid`** when the Live card shows **`armed`/`executing`** — Decision reason may say **`accumulation`**, **`bull_run`**, or **`tape_participation`** instead of weakness dev. If card is **`idle`** and reason is purely **`balanced dev`**, you are truly on target for classic logic.
+
+**To buy on classic path:** lower **`weakness_deviation`** so current **`dev`** qualifies (e.g. dev **−0.04** needs weakness **≥ 0.04**).
+
+**To sell anyway:** raise **`strength_deviation`** in config (default **0.04**; HUD exposes weakness only today) or wait until XRP allocation rises — or see [Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding) for **reload** funding sells (different gate).
+
+**Often confused with:** [Appendix X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) (tape armed but starved) · [Appendix D](#appendix-d--hold-forever-edge-in-the-reason) (edge gate) · [Appendix J](#appendix-j--ta-blocking-buys-in-chop) (TA gate) — read the **exact reason string** and **both Live cards**.
+
+---
+
+
+---
+
+### Appendix N — Bid on book, mid looks good, still no fill
 
 **Symptoms:** Brackets show **pending buy**; mid at or below entry on HUD; **`place_bid`** already executed; offer rests for minutes; no fill.
 
@@ -1640,11 +2184,14 @@ tp_min_ta_score        = 2.0
 | Spread ~10+ bps | Need a trade through the spread |
 | Entry below best bid | You’re behind the touch — lower offset or wait |
 
-**Fix for more fills:** lower **`buy_limit_offset_pct`** (nearer ask) — see [Scenario A/F](#scenario-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind). **Not a bug** if mid dips visually but ask never trades to your bid.
+**Fix for more fills:** lower **`buy_limit_offset_pct`** (nearer ask) — see [Appendix A/F](#appendix-a--rlusd-heavy-price-drifting-up-bid-feels-left-behind). **Not a bug** if mid dips visually but ask never trades to your bid.
 
 ---
 
-### Scenario O — XRP-heavy, want strength sells
+
+---
+
+### Appendix O — XRP-heavy, want strength sells
 
 **Symptoms:** **70%+ XRP**, target lower or at cap; HOLD **`sell_blocked_imbalance`** when too RLUSD-heavy *or* **`place_ask` / strength** when **`dev ≥ strength_deviation`**; TA may show **`ta_sell_deferred bullish`**.
 
@@ -1671,7 +2218,10 @@ ta_sell_deferred         ← respect bullish deferral in reason
 
 ---
 
-### Scenario P — Kill switch, drawdown, or pause
+
+---
+
+### Appendix P — Kill switch, drawdown, or pause
 
 **Symptoms:** Sidebar **Kill** or **Pause**; Decision **`kill_switch: …`**, **`risk_trading_not_allowed`**, **`preflight_not_ready`**, **`pause_bids`**, or **`buy_blocked_imbalance`** when XRP **too high** (opposite of RLUSD-heavy).
 
@@ -1690,7 +2240,10 @@ ta_sell_deferred         ← respect bullish deferral in reason
 
 ---
 
-### Scenario Q — `ta_warming_up` / insufficient history
+
+---
+
+### Appendix Q — `ta_warming_up` / insufficient history
 
 **Symptoms:** Early session or after restart; Decision **`ta_warming_up — insufficient price history for buy gate`**; TA panel sparse.
 
@@ -1707,7 +2260,10 @@ ta_enabled = off       ← last resort while learning
 
 ---
 
-### Scenario R — `insufficient_ask_depth`
+
+---
+
+### Appendix R — `insufficient_ask_depth`
 
 **Symptoms:** HOLD **`insufficient_ask_depth depth=0.XX`**; Market Conditions **Max buy** = **0** or tiny.
 
@@ -1717,7 +2273,10 @@ ta_enabled = off       ← last resort while learning
 
 ---
 
-### Scenario S — Trust phase (SKYNET bias)
+
+---
+
+### Appendix S — Trust phase (SKYNET bias)
 
 **When:** New deploy, post-fix soak, SL streak, or underwater open brackets. You want the bot to **prove** behavior overnight without bleeding on instant SL churn.
 
@@ -1778,7 +2337,7 @@ Recorded from live VPS `alpha_runtime_state.json` + activity log.
 1. **Kill switch** off, **drawdown** under 3%.
 2. **Realized 24h** — trending flat or up? SL count not spiking?
 3. **XRP ratio** — drifting toward 75% or at least not falling?
-4. **Decision reason** — re-entry gates and `max_pending_buys` are **expected**; only worry if cycles stop entirely.
+4. **Decision reason** + **ready** badge — re-entry gates and `max_pending_buys` are **expected**; on rips check **Accumulation** / **RLUSD reload** cards before tweaking offset.
 5. **Brackets** — pending buys filling, trails arming (BE), no burst of `sl_filled` right after `trailing_sl_update` in Activity.
 
 ### 48-hour decision tree
@@ -1811,8 +2370,10 @@ SCALE (only if GOOD + ratio climbing + TP:SL improving)
 | When | Prompt |
 |------|--------|
 | Daily | **Trust phase review** (even on scale — asks about bleed) |
-| 48h | Paste sidebar numbers: ratio, realized 24h, TP/SL counts, last decision reason |
-| If bleeding | **Anti-bleed** / Scenario S knobs |
+| Bull rip | SKYNET playbook **U** / **V** — bull run missed · accumulation knobs |
+| Low RLUSD after run | SKYNET playbook **W** — reload / deploy floor |
+| 48h | Paste sidebar numbers: ratio, realized 24h, TP/SL counts, last decision reason, **ready** badge |
+| If bleeding | **Anti-bleed** / Appendix S knobs |
 
 ### Telegram / logs (optional)
 
@@ -1823,7 +2384,10 @@ SCALE (only if GOOD + ratio climbing + TP:SL improving)
 
 ---
 
-### Scenario T — Scale phase (modest accumulation)
+
+---
+
+### Appendix T — Scale phase (modest accumulation)
 
 **When:** Clean nights, deferred SL arming, XRP ratio climbing toward target, TP:SL improving. You earned trust — want **one notch** more deploy.
 
@@ -1843,21 +2407,29 @@ alpha_risk_per_trade_pct        = 2–3%
 
 ---
 
-### Scenario U — Aggressive phase (bag push)
 
-**When:** You accept churn; book healthy; TA supportive; bleed under control; scaling toward a large XRP bag.
+---
 
-**HUD:** Operator phase → **Aggressive** → Save. **Agent Smith** guardrails still cap risk — Full SKYNET cannot exceed bounds.
+### Appendix U — Aggressive phase (bag push)
+
+**When:** Multi-day realized P&amp;L healthy, TP:SL acceptable, you accept churn. Often paired with **bull** SKYNET **market regime** so accumulation can arm on rips.
+
+**HUD:** Operator phase → **Aggressive** → Save. Set **market regime** → **Bull** if you want tape-aligned deploy (not required for every night).
 
 ```text
-alpha_operator_phase            = aggressive
-alpha_buy_limit_offset_pct      = 0.08–0.12
-alpha_stale_pending_buy_max_drift_pct = 0.35   ← sticky
-alpha_max_pending_buys          = 2–3
-alpha_risk_per_trade_pct        = toward guardrail max (e.g. 4%)
+alpha_operator_phase              = aggressive
+alpha_operator_market_regime      = bull          ← advisory; helps accumulation prompts
+alpha_buy_limit_offset_pct        = 0.08–0.12
+alpha_weakness_deviation          = 0.03–0.04
+alpha_max_pending_buys            = 3
+alpha_risk_per_trade_pct          = 3–4%          ← only on larger book you can afford to bleed
 ```
 
-**Stop rule:** If SL streak returns or realized P&L turns negative → drop back to **trust** phase knobs, not more heat.
+**With accumulation regime on (default):** engine may use **tighter** accumulation offset (~0.06%) when **ARMED** — you do not need to manually set 0.08% unless scorecard shows zero fills and no reload block.
+
+**Revert triggers:** SL streak, PRO **sl_heavy**, missed-move + zero fills with RLUSD starved → back to **trust**, check [Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding) before cranking offset.
+
+**Quick prompt:** **Aggressive phase knobs** · SKYNET playbook **U**/**V** if chart rips on balanced dev.
 
 ---
 
@@ -1886,107 +2458,5 @@ When you say *“price is leaving my bid behind”*:
 
 ---
 
-## Suggested starter settings (first week)
 
-Conservative learner preset:
-
-```text
-target_xrp_pct          = 65–70
-weakness_deviation      = 0.04
-risk_per_trade_pct      = 0.4
-min_edge_threshold_pct  = 0.08
-buy_limit_offset_pct    = 0.15    ← must be ≥ min edge
-sell_limit_offset_pct   = 0.15
-max_pending_buys        = 1
-stale_pending_buy_max_drift_pct = 0.15   ← match buy_limit_offset
-ta_weight               = 0.8
-ta_min_buy_score        = 1.5
-reentry_enabled         = on
-tp_cooldown_cycles      = 4
-sl_cooldown_cycles      = 8
-bracket_trailing_enabled = on
-trailing_step_pct       = 1.5
-```
-
-**Rules while learning:**
-
-1. Change **one knob** at a time.  
-2. Watch **Decision reason** for 10–20 cycles after each change.  
-3. Read **Market Conditions** before cranking aggression.  
-4. Use **dry_run** until you trust the behavior.  
-5. **Kill** without hesitation if something looks wrong.
-
-When you understand how each knob *feels*, then turn up the aggression.
-
----
-
-## Tuning SKYNET (Grok Ask, Agent Smith, Full mode)
-
-SKYNET is the **advisor layer** — it does not place trades. Set **operator phase** on the SKYNET tab so Grok matches soak vs scale goals.
-
-**HUD names:** Phase 1 manual prompt = **Send to Grok**; Phase 2 bounded automation = **Agent Smith** (checkbox **Enable Agent Smith Mode**); Phase 3 = **Full SKYNET**.
-
-### Operator phase (trust / scale / aggressive)
-
-**SKYNET tab → Operator phase → Save phase.** Persisted as `alpha_operator_phase`. See [Scenario S](#scenario-s--trust-phase-skynet-bias), [T](#scenario-t--scale-phase-modest-accumulation), [U](#scenario-u--aggressive-phase-bag-push).
-
-| Phase | Use when | SKYNET bias |
-|-------|----------|-------------|
-| **Trust** (default) | Soak, SL streak | `max_pending↑` before `offset↓` |
-| **Scale** | Clean nights | offset 0.15–0.20, max_pending 2–3 |
-| **Aggressive** | Bag push | offset 0.08–0.12; revert if SL streak |
-
-Phase does **not** change knobs until you Apply.
-
-### Runtime context (each Ask / Agent Smith cycle)
-
-- **`alpha_operator_phase`** and playbook **S–U**
-- **`pending_buy_stale`** — target entry, per pending bid `would_cancel` / `reason`, `over_cap_count`
-- **`likely_scenarios`** — auto hints (A–R) from decision reason + inventory (reference only)
-- **Scenario playbook (A–R, S–U)** — condensed presets matching this manual
-- **Operator knobs (effective)** — current HUD overrides
-
-**Session P&L** is MTM — use **`realized_bracket_pnl`** in SKYNET context (`realized_profit_xrp_equiv`, `tp_exits` / `sl_exits` from tax CSV) for bleed in trust phase.
-
-**Natural language → Apply**
-
-On the SKYNET tab, set **operator phase**, type your goal in plain English, click **Send**, then **Apply suggested changes**:
-
-```text
-Trust phase: max pending 2 only — keep offset 0.20, weakness 0.05. Do not tighten drift.
-```
-
-Grok maps your goals to allowlisted keys. Quick buttons **Trust phase review**, **Scale phase knobs**, **Preset: sticky + 4% risk**, **My settings → Apply**.
-
-If **Apply** stays disabled, name settings explicitly (percent values help) or check the hint for guardrail errors.
-
-**Modes**
-
-| Mode | Behavior |
-|------|----------|
-| **SKYNET tab — Ask** | You prompt; Grok suggests changes; you **Apply** manually |
-| **Agent Smith** (Phase 2) | Grok runs every 3–5 cycles; **Apply safe** for guardrailed suggestions |
-| **Full SKYNET** (Phase 3) | Auto-applies guardrailed changes (confirm with `ENABLE_FULL_SKYNET`; requires Agent Smith mode) |
-
-Grok uses operator phase + scenario playbook + `pending_buy_stale`. **Agent Smith** proposals do **not** overwrite the Ask response box.
-
-**Purple knob labels (Live / TA tabs):** When **Agent Smith** proposes safe changes (or SKYNET Ask returns applicable changes), matching knob labels turn **purple ◆** with the suggested value in the tooltip. Legend appears under Risk & entry. Highlights clear after Apply or when values already match effective config.
-
----
-
-## Emergency controls
-
-| Control | Effect |
-|---------|--------|
-| **Pause** | Stops new entries; existing brackets remain |
-| **Kill switch** | Hard stop — no new risk |
-| **Cancel all** | Pulls open ledger offers |
-| **Config → Send** | Withdraw XRP or RLUSD to any `r…` address (type `SEND` to confirm) |
-| **Reports tab** | Cycle report + path to `logs/trades_YYYY-MM.csv` tax log |
-| **Dry run toggle** | Simulates without submitting (when enabled); **no tax CSV rows** |
-
-The bot is live. The market is live. You are live.
-
-**Trade accordingly.**
-
-— xLedgerMate Alpha · Aggressive Bag Growth
+*Grow the bag. Respect the spread. Read the reason string.*

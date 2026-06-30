@@ -5,7 +5,7 @@
 **HUD:** `http://YOUR_VPS:8765` — **primary tuning surface** (no terminal edits needed after initial setup)  
 **There is no manual Buy button** — the engine places limit orders when all gates pass.
 
-> **New operator?** Read **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — plain-English guide to every HUD knob, scenarios, and troubleshooting.
+> **New operator?** Read **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — **Part 1** walks each HUD tab and card; **Appendices** are preset recipes when Decision reason matches.
 
 ---
 
@@ -153,7 +153,7 @@ After an SL-heavy session, open **PRO** (nav: Activity · **PRO** · SKYNET · C
 | **Defensive circuit** | Auto-applies bear posture when replay verdict is bad; **Release defensive** restores saved overrides |
 | **Treasury** | Placeholder — manual RLUSD funding via Config until Phase 2 |
 
-See **[Scenario W](ALPHA_TRADERS_MANUAL.md#scenario-w--sl-heavy-night--defensive-circuit-pro)** in the traders manual.
+See **[Appendix W](ALPHA_TRADERS_MANUAL.md#appendix-w--sl-heavy-night-defensive-circuit-pro)** in the traders manual.
 
 ---
 

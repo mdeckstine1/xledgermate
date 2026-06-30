@@ -7,7 +7,7 @@ This guide is for the **new Alpha bot**, not the legacy `ws-engine` market maker
 
 > **Going live?** Read **[`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md)** first — step-by-step HUD walkthrough, how orders are created (there is no manual Buy button), inventory requirements, and HOLD troubleshooting.
 
-> **Want the trader’s voice?** **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — beginner-friendly knob guide, real scenarios, edge-mismatch fixes.
+> **Want the trader's voice?** **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — HUD guide by tab/card (Bull/Neutral/Bear per card) + **Appendices A–W**.
 
 > **Hands-off soak?** **[48-hour watch checklist](ALPHA_TRADERS_MANUAL.md#48-hour-watch-checklist-hands-off-soak)** in the traders manual — baseline snapshot (2026-06-24) and compare table for ~2026-06-26.
 
@@ -218,7 +218,7 @@ alpha_defensive_min_exits: 4
 alpha_defensive_auto_release_hours: 6.0
 ```
 
-Traders manual: **[Scenario W — SL-heavy night / defensive circuit](ALPHA_TRADERS_MANUAL.md#scenario-w--sl-heavy-night--defensive-circuit-pro)**.
+Traders manual: **[Appendix W — SL-heavy night / defensive circuit](ALPHA_TRADERS_MANUAL.md#appendix-w--sl-heavy-night-defensive-circuit-pro)**.
 
 ---
 
@@ -232,7 +232,7 @@ The HUD **SKYNET** tab provides AI-powered knob suggestions (**Ask SKYNET**), bo
 | **scale** | Modest accumulation after clean nights |
 | **aggressive** | Bag-growth push within guardrails |
 
-Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-ask-agent-smith-full-mode)** and scenarios **S–U** in the traders manual. Requires `XAI_API_KEY` or `XLG_GROK_KEY` in `.env` (xAI backend).
+Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-ask-agent-smith-full-mode)** and **Appendices S–U** in the traders manual. Requires an xAI API key in `.env` (`XAI_API_KEY`). Inference uses Grok-family models on xAI's backend; prompts and guardrails are SKYNET-owned.
 
 ---
 
@@ -262,7 +262,7 @@ Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-ask-age
 ## Further reading
 
 - **[`ALPHA_LIVE_RUN_MANUAL.md`](ALPHA_LIVE_RUN_MANUAL.md)** — **start here for live trading & orders**
-- **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — scenarios A–W, **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-grok-ask-agent-smith-full-mode)**, **[Funding changes](ALPHA_TRADERS_MANUAL.md#funding-changes-scaling-toward-11k-xrp)**, **[Deploy RLUSD → XRP](ALPHA_TRADERS_MANUAL.md#deploy-rlusd-to-xrp-get-xrp-heavy)**
+- **[`ALPHA_TRADERS_MANUAL.md`](ALPHA_TRADERS_MANUAL.md)** — **Part 1:** HUD by tab/card · **Part 2:** funding, coupling, soak · **Appendices A–W**
 - [`PROJECT_INSTRUCTIONS.md`](../PROJECT_INSTRUCTIONS.md)
 - [`ALPHA_MAINNET_CUTOVER.md`](ALPHA_MAINNET_CUTOVER.md)
 - [`ALPHA_FINAL_REPORT.md`](ALPHA_FINAL_REPORT.md)

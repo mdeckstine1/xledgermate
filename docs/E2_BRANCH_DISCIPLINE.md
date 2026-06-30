@@ -29,7 +29,7 @@ alpha            ← separate line; stable; do not mix Samurai feature commits h
 
 | Branch | Deploy to VPS live? | Role |
 |--------|---------------------|------|
-| **`samurai`** | No (dev) | **Active Samurai development** — feature work in Cursor |
+| **`samurai`** | No (dev) | **Active Samurai development** — feature work in Cursor; includes **MDS** ([`MARKET_DATA_SERVICE.md`](MARKET_DATA_SERVICE.md)) |
 | **`samurai-v1.0.1`** | **Yes (production pin)** | Frozen v1.0.1 — reproducible mainnet deploy only |
 | **`alpha`** | Optional | Trading Bot Alpha baseline (solid); parallel line, not Samurai features |
 | **`samurai-v1.0.0`** | No (legacy MM) | Pre-Alpha MM line — superseded |
