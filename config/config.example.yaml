@@ -263,6 +263,18 @@ alpha_technical_analysis:
     wick_penetration_pct: 0.1
     buy_weight: 1.5
     sell_weight: 1.5
+  divergence:
+    enabled: true
+    lookback_bars: 50
+    min_swing_pct: 0.25
+    min_strength: 0.35
+    use_rsi: true
+    use_stochastic: true
+    use_macd: false
+    stoch_series: k
+    buy_weight: 0.7
+    sell_weight: 0.7
+    hidden_weight_mult: 0.45
 
 max_daily_drawdown_percent: 10.0
 min_drawdown_percent: 2.0

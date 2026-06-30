@@ -37,6 +37,7 @@ KNOB_ALIASES: Dict[str, str] = {
     "ta_stoch_enabled": "alpha_ta_stoch_enabled",
     "ta_bollinger_enabled": "alpha_ta_bollinger_enabled",
     "ta_engulfing_enabled": "alpha_ta_engulfing_enabled",
+    "ta_divergence_enabled": "alpha_ta_divergence_enabled",
     "reentry_enabled": "alpha_reentry_enabled",
     "tp_cooldown_cycles": "alpha_reentry_tp_cooldown_cycles",
     "tp_cooldown_minutes": "alpha_reentry_tp_cooldown_minutes",

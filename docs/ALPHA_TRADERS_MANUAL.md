@@ -13,7 +13,7 @@ For install, VPS, dry-run cutover, and credentials: [`ALPHA_OPERATOR_GUIDE.md`](
 1. **Part 0** — what the bot does, lifecycle, data speed (read once).
 2. **Part 1** — walk the HUD left-to-right: each **tab**, each **card**, with **Bull / Neutral / Bear** stance.
 3. **Part 2** — funding, coupling, troubleshooting, soak checklists, SKYNET tuning.
-4. **Appendices** — lettered scenario recipes (A–Y) when Decision reason matches a pattern.
+4. **Appendices** — lettered scenario recipes (A–Z) when Decision reason matches a pattern.
 
 **Nav order:** Live · TA · Brackets · Open offers · Reports · Activity · **PRO** · SKYNET · Config
 
@@ -72,6 +72,11 @@ For install, VPS, dry-run cutover, and the **Config** tab (credentials + withdra
 | **Re-entry** | Scratch/breakeven SL tier, cluster guard, recovery early release, post-clear bid spacing — all tunable in **Live → Re-entry → SL mitigations**. |
 | **PRO / defensive** | Alpha Replay, auto-defensive circuit (recent-window gate, manual release suppress), treasury placeholder. |
 | **TA / OHLC** | Completed bars advance correctly on live ticks; warmup no longer stuck after rebuild. |
+| **Elliott 5-wave** | Zigzag pivots on ~50 closed OHLC bars — wave label (`W3↑`, `W4↑`), trend (`bullish_impulse` / `bearish_impulse`), graded buy/sell contribution. **Does not arm accumulation alone.** |
+| **Divergence detector** | Pivot-based **RSI / Stoch** (optional MACD) disagreement — boosts buy/sell scores; surfaced on TA tab, accumulation scorecard, SKYNET context. HUD toggle **`alpha_ta_divergence_enabled`**. |
+| **SKYNET gate diagnostics** | Each Ask includes **authoritative PASS/FAIL** for dip gate, dev caps, TA breakout, structure arm, momentum, accumulation — SKYNET should not guess thresholds. |
+| **Scale-phase dev caps** | Operator overrides `alpha_accumulation_max_deviation` / `alpha_bull_run_max_deviation` (e.g. **0.08**) let accumulation arm when mildly XRP-heavy; still blocked by `alpha_max_inventory_imbalance_pct` (default **0.10**). |
+| **Reload fill tracking** | Funding sells record fills in `reload_session` — committed RLUSD and deploy floor math stay accurate. |
 | **Market metrics** | Per-cycle ATR%, realized vol, spread, depth, regime in **Market Conditions** + `logs/alpha_market.db`. |
 | **Tax CSV** | Strength sells log `cost_basis_rlusd_per_xrp` and `proceeds_usd` like bracket exits. |
 | **Restart safety** | Same bracket TP/SL re-detected on restart no longer resets re-entry cooldown. |
@@ -332,7 +337,7 @@ The command center. Decision + Market Conditions + three control decks (**Risk &
 **See also:** [Config → dry_run](#config-tab)
 #### Accumulation / opportunity watch card
 
-**What it is:** Live card for the **accumulation regime** — phase (`idle` / `primed` / `watching` / `armed` / `executing` / `blocked`), why it is in that phase, **scorecard** (bids placed, fills, chase cancels, minutes in phase), and **missed move** flag when tape ripped without fills.
+**What it is:** Live card for the **accumulation regime** — phase (`idle` / `primed` / `watching` / `armed` / `executing` / `blocked`), why it is in that phase, **scorecard** (bids placed, fills, chase cancels, minutes in phase, **divergence** when TA fires), and **missed move** flag when tape ripped without fills.
 
 **How to use it:** When the chart runs but Decision says `balanced dev=…`, check here first. **ARMED** means the engine will use accumulation knobs (tighter offset, chase drift, up to 3 pending, re-entry bypass) on the next qualifying `place_bid`. **BLOCKED** usually means reload policy (under deploy floor) or risk/pause.
 
@@ -577,6 +582,42 @@ Technical analysis gate and indicator detail. **TA tuning** sliders at top; indi
 **Narrative:** RSI 28 but bias bearish — structure still down; re-entry waits.
 
 **See also:** [Appendix J](#appendix-j--ta-blocking-buys-in-chop)
+#### Elliott wave (5-wave pivots)
+
+**What it is:** Under **Bias**, the muted **Elliott** line shows wave position from zigzag pivots on the TA lookback window (default **50** closed bars): labels like **`W3↑`**, **`W4↑`**, trend (`bullish_impulse` / `bearish_impulse` / `corrective`), and confidence.
+
+**How to read it:**
+
+| HUD label | Meaning |
+|-----------|---------|
+| **`W4↑`** | Wave 4 **up-leg** inside the detected pattern — **not** the same as legacy bias `impulse_up`. |
+| **`impulse_up` / `impulse_down`** | Legacy bias field in the signals table — overall impulse direction. |
+| **Corrective / low conf** | Dampens TA scores; accumulation still needs structure/tape gates. |
+
+**Operator rule:** Elliott **grades** buy/sell scores; it does **not** replace breakout, bull_run drift, momentum, or dip-only weakness paths. A bullish TA card with **`bearish_impulse`** Elliott is possible — read both lines.
+
+**See also:** [Appendix Z](#appendix-z--elliott-5-wave--divergence-detector)
+#### Divergence detector (RSI / Stoch / MACD)
+
+**What it is:** Under **Bias**, **Divergence: …** when price pivots and momentum disagree:
+
+- **Bullish regular** — price lower low, RSI/Stoch higher low → **+buy score** (weakness reversal).
+- **Bearish regular** — price higher high, indicator lower high → **+sell score** (strength exhaustion).
+- **Hidden** variants — continuation setups at **~45%** of regular weight.
+
+**HUD:** TA tab toggle **Divergence** (`alpha_ta_divergence_enabled`). Signals table row **`divergence`** with kind, indicator, strength. Accumulation scorecard copies the live read when fired.
+
+**Config** (`config.yaml` → `alpha_technical_analysis.divergence`):
+
+```text
+lookback_bars: 50    min_swing_pct: 0.25    min_strength: 0.35
+use_rsi: true        use_stochastic: true    use_macd: false
+buy_weight: 0.7      sell_weight: 0.7        hidden_weight_mult: 0.45
+```
+
+**Narrative:** Bullish divergence + fib support + oversold RSI — higher-confidence dip bid; bearish divergence while XRP-heavy — consider deferring strength asks (`ta_sell_deferred`).
+
+**See also:** [Appendix Z](#appendix-z--elliott-5-wave--divergence-detector) · [Appendix J](#appendix-j--ta-blocking-buys-in-chop)
 
 ### Brackets tab
 
@@ -1335,6 +1376,10 @@ You are RLUSD-heavy. TA looks fine. Bot still HOLD. **Read the Decision reason**
 | `reload_funding` / funding ask | Post-run chop sell — not strength unload | [Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding) · [O](#appendix-o--xrp-heavy-want-strength-sells) |
 | Bid resting, no fill | Passive limit | [Appendix N](#appendix-n--bid-on-book-mid-looks-good-still-no-fill) |
 | XRP-heavy, no asks | Strength threshold | [Appendix O](#appendix-o--xrp-heavy-want-strength-sells) |
+| `ta_sell_blocked` / `ta_sell_deferred` | XRP-heavy path evaluated **sells** first — not accumulation | [Appendix O](#appendix-o--xrp-heavy-want-strength-sells) · [Appendix J](#appendix-j--ta-blocking-buys-in-chop) |
+| Chart bullish, accumulation `off`, dev +0.10 | Dev cap / buy imbalance — not “between cycles” | [Appendix X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) · SKYNET **gate_diagnostics** |
+| `W4↑` on TA but no accumulation | Wave label ≠ `impulse_up`; need breakout/drift | [Appendix Z](#appendix-z--elliott-5-wave--divergence-detector) |
+| Bullish **divergence** on scorecard | TA confluence only — still need ARMED + RLUSD budget | [Appendix Z](#appendix-z--elliott-5-wave--divergence-detector) · [Appendix X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) |
 | Kill / pause / preflight | Risk state | [Appendix P](#appendix-p--kill-switch-drawdown-or-pause) |
 | Entry keeps jumping | Stale `mid_passed_entry` | [Appendix G](#appendix-g--entry-price-keeps-moving-cancelreplace-loop) |
 | Size ~13 RLUSD | `risk_per_trade_pct` cap | [Appendix H](#appendix-h--order-size-stuck-13-rlusd-or-smaller-than-expected) |
@@ -1614,9 +1659,11 @@ Phase does **not** change knobs until you Apply.
 
 - **`alpha_operator_phase`** and playbook **S–U**
 - **`pending_buy_stale`** — target entry, per pending bid `would_cancel` / `reason`, `over_cap_count`
-- **`likely_scenarios`** — auto hints (A–Y) from decision reason + inventory (reference only)
-- **`accumulation_regime`** / **`reload_regime`** — phase, blockers, scorecard, deploy floor (mirrors Live cards)
-- **Appendix playbook (A–Y, S–U)** — condensed presets matching this manual
+- **`likely_scenarios`** — auto hints (A–Z) from decision reason + inventory (reference only)
+- **`accumulation_regime`** / **`reload_regime`** — phase, blockers, scorecard (incl. **divergence**), deploy floor (mirrors Live cards)
+- **`gate_diagnostics`** — pre-computed PASS/FAIL for dip gate, `accumulation_dev_cap`, `bull_run_dev_cap`, TA breakout/buy, structure arm, momentum, tape, last decision (authoritative — do not invent thresholds)
+- **`structure`** — trend, swing high, breakout flags, confirmation candle
+- **Appendix playbook (A–Z, S–U)** — condensed presets matching this manual
 - **Operator knobs (effective)** — current HUD overrides
 
 **Session P&L** is MTM — use **`realized_bracket_pnl`** in SKYNET context (`realized_profit_xrp_equiv`, `tp_exits` / `sl_exits` from tax CSV) for bleed in trust phase.
@@ -2395,11 +2442,16 @@ SCALE (only if GOOD + ratio climbing + TP:SL improving)
 
 ```text
 alpha_operator_phase            = scale
+alpha_operator_market_regime    = bull          ← optional; accumulation signals
 alpha_buy_limit_offset_pct      = 0.15–0.20
 alpha_weakness_deviation        = 0.04
+alpha_accumulation_max_deviation = 0.06–0.08   ← mild XRP-heavy still arms on tape
+alpha_bull_run_max_deviation    = match accum cap
 alpha_max_pending_buys          = 2–3
 alpha_risk_per_trade_pct        = 2–3%
 ```
+
+**Dev caps vs imbalance:** `accumulation_max_deviation` allows accumulation logic when **mildly** above target XRP; **`alpha_max_inventory_imbalance_pct`** (default **0.10**) still hard-blocks new bids when too XRP-heavy. Raise caps together only with intent.
 
 **Rule:** Change **one knob at a time**. Prefer **`max_pending_buys`** before **`buy_limit_offset_pct↓`**.
 
@@ -2430,6 +2482,48 @@ alpha_risk_per_trade_pct          = 3–4%          ← only on larger book you 
 **Revert triggers:** SL streak, PRO **sl_heavy**, missed-move + zero fills with RLUSD starved → back to **trust**, check [Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding) before cranking offset.
 
 **Quick prompt:** **Aggressive phase knobs** · SKYNET playbook **U**/**V** if chart rips on balanced dev.
+
+---
+
+### Appendix Z — Elliott 5-wave + divergence detector
+
+**When to use:** TA tab looks bullish but accumulation stays **off** / Decision shows **`ta_sell_blocked`** while XRP-heavy; or you want reversal confluence before lowering `weakness_deviation`.
+
+#### Elliott (structure context, not arming)
+
+- Scans **zigzag pivots** on **`elliott_wave.lookback`** closed bars (default **50**).
+- **Wave label** (`W1↑` … `W5↑`, `W4↑`, `ABC?`) describes position in the best-fit 5-wave count.
+- **↑ / ↓** on the label = direction of **that wave leg**, not the strategy mode name.
+- **`elliott_trend`**: `bullish_impulse` | `bearish_impulse` | `corrective` | `neutral`.
+- **Scoring:** W3 strongest buy/sell contribution; W5 half; W2/W4 dip-friendly (`dip_wave_weight_mult`).
+
+**Does not arm accumulation.** Arming still requires signals such as `breakout_up`, bull_run drift, `momentum_entry`, tape + slope, or classic `dev ≤ −weakness`.
+
+**Common misread:** **`W4↑`** with **`bearish_impulse`** — counter-trend bounce inside a down-impulse count; TA bias can still be **bullish** from RSI/Stoch.
+
+#### Divergence (reversal confluence)
+
+| Type | Price | Indicator | TA effect |
+|------|-------|-----------|-----------|
+| Bullish regular | Lower low | Higher low (RSI/Stoch) | +buy score |
+| Bearish regular | Higher high | Lower high | +sell score |
+| Hidden | Continuation pivot | Opposite indicator move | Milder weight |
+
+- Pivot scan shares the same family as Elliott (`min_swing_pct` on `divergence` config).
+- Fires appear in: TA **Signals** row `divergence`, **Bias** sub-line, **accumulation scorecard**, SKYNET `technical_analysis` payload.
+- **`alpha_ta_divergence_enabled`** on TA tab — master HUD toggle.
+
+**Strategy fit:**
+
+- **Weakness buys** — bullish divergence + fib + oversold RSI → stronger dip bids (brackets unchanged).
+- **Strength sells** — bearish divergence → favor `ta_sell_deferred` / tighter RLUSD brackets on rips.
+- **Accumulation** — `divergence:bullish_regular@rsi` signal when fired; still blocked by dev cap, reload floor, inventory.
+
+**SKYNET:** Ask with Live context — read **`gate_diagnostics`** block before advising “wait for next cycle.” Compare `accumulation_dev_cap` and `bull_run_dev_cap` to live `dev`.
+
+**Config path:** `alpha_technical_analysis.elliott_wave` · `alpha_technical_analysis.divergence` in `config.yaml`.
+
+**Not yet in engine (roadmap):** volume confirmation, vol-adjusted BB/RSI, daily/4h anchor filter, XRPL flow tie-in.
 
 ---
 

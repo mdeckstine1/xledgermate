@@ -84,6 +84,12 @@ class TechnicalAnalysisSnapshot:
     elliott_wave_label: str = ""
     elliott_confidence: float = 0.0
     elliott_detail: str = ""
+    divergence_bias: str = "neutral"
+    divergence_fired: bool = False
+    divergence_kind: str = ""
+    divergence_indicator: str = ""
+    divergence_strength: float = 0.0
+    divergence_detail: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -113,6 +119,12 @@ class TechnicalAnalysisSnapshot:
             "elliott_wave_label": self.elliott_wave_label,
             "elliott_confidence": _finite_float(self.elliott_confidence) or 0.0,
             "elliott_detail": self.elliott_detail,
+            "divergence_bias": self.divergence_bias,
+            "divergence_fired": self.divergence_fired,
+            "divergence_kind": self.divergence_kind,
+            "divergence_indicator": self.divergence_indicator,
+            "divergence_strength": _finite_float(self.divergence_strength) or 0.0,
+            "divergence_detail": self.divergence_detail,
             "signals": [
                 {
                     "name": s.name,
@@ -629,6 +641,16 @@ class TechnicalAnalysis:
         elliott_wave_label = ""
         elliott_confidence = 0.0
         elliott_detail = ""
+        divergence_bias = "neutral"
+        divergence_fired = False
+        divergence_kind = ""
+        divergence_indicator = ""
+        divergence_strength = 0.0
+        divergence_detail = ""
+
+        rsi_series: Optional[pd.Series] = None
+        stoch_k_series: Optional[pd.Series] = None
+        stoch_d_series: Optional[pd.Series] = None
 
         # RSI
         rc = self._cfg.rsi
@@ -673,6 +695,7 @@ class TechnicalAnalysis:
                 d_period=sc.d_period,
                 smooth_k=sc.smooth_k,
             )
+            stoch_k_series, stoch_d_series = k_s, d_s
             stoch_k_val = _series_last(k_s)
             stoch_d_val = _series_last(d_s)
             fired = False
@@ -987,6 +1010,44 @@ class TechnicalAnalysis:
                 sell_score += score
             signals.append(TechnicalSignal("liquidity_grab", True, fired, bias, score, f"buy={buy_grab} sell={sell_grab}"))
 
+        # Divergence — price pivots vs RSI/Stoch/MACD
+        dc = self._cfg.divergence
+        if dc.enabled:
+            from alpha.decision.divergence import detect_divergences
+
+            div = detect_divergences(
+                candles,
+                cfg=dc,
+                rsi=rsi_series,
+                stoch_k=stoch_k_series,
+                stoch_d=stoch_d_series,
+                close=close,
+            )
+            divergence_bias = div.bias
+            divergence_fired = div.fired
+            divergence_kind = div.kind
+            divergence_indicator = div.indicator
+            divergence_strength = div.strength
+            divergence_detail = div.detail
+            buy_score += max(0.0, div.buy_contribution)
+            sell_score += max(0.0, div.sell_contribution)
+            fired = div.fired
+            bias = div.bias if div.fired else "neutral"
+            score = max(div.buy_contribution, div.sell_contribution)
+            label = div.kind.replace("_", " ") if div.kind else "none"
+            detail = div.detail or f"scan pivots lookback={dc.lookback_bars}"
+            if div.fired:
+                logger.info(
+                    "divergence | %s %s strength=%.2f buy+=%.2f sell+=%.2f | %s",
+                    div.kind,
+                    div.indicator,
+                    div.strength,
+                    div.buy_contribution,
+                    div.sell_contribution,
+                    div.detail,
+                )
+            signals.append(TechnicalSignal("divergence", True, fired, bias, score, f"{label} {detail}"))
+
         if buy_score > sell_score + 0.25:
             bias = "bullish"
         elif sell_score > buy_score + 0.25:
@@ -1007,7 +1068,8 @@ class TechnicalAnalysis:
             bars_note = f" bars={len(candles)}/{self._cfg.min_candles}"
         summary = (
             f"ta buy={buy_score:.2f} sell={sell_score:.2f} breakout={breakout_score:.2f} "
-            f"bias={bias} elliott={elliott_wave_label or elliott}{bars_note}"
+            f"bias={bias} elliott={elliott_wave_label or elliott}"
+            f"{f' div={divergence_kind}' if divergence_fired else ''}{bars_note}"
         )
         logger.info("technical_analysis | %s", summary)
 
@@ -1037,4 +1099,10 @@ class TechnicalAnalysis:
             elliott_wave_label=elliott_wave_label,
             elliott_confidence=_finite_float(round(elliott_confidence, 3)) or 0.0,
             elliott_detail=elliott_detail,
+            divergence_bias=divergence_bias,
+            divergence_fired=divergence_fired,
+            divergence_kind=divergence_kind,
+            divergence_indicator=divergence_indicator,
+            divergence_strength=_finite_float(round(divergence_strength, 3)) or 0.0,
+            divergence_detail=divergence_detail,
         )

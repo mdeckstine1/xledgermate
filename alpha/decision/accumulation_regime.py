@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from alpha.decision.momentum_entry import evaluate_bull_run_entry
+from alpha.decision.accumulation_scorecard import merge_ta_divergence_into_scorecard
 from alpha.decision.price_history import normalize_price_source
 from alpha.decision.tape_participation import (
     _short_term_slope_positive,
@@ -382,6 +383,10 @@ def evaluate_accumulation_regime(
         signals.append(f"tape:{tape.reason or 'active'}")
     if regime == "bull":
         signals.append("operator_regime_bull")
+    if ta is not None and getattr(ta, "divergence_fired", False):
+        kind = getattr(ta, "divergence_kind", "") or "divergence"
+        ind = getattr(ta, "divergence_indicator", "")
+        signals.append(f"divergence:{kind}" + (f"@{ind}" if ind else ""))
 
     blockers: list[str] = []
     if inventory.pause_bids or inventory.buy_blocked_imbalance:
@@ -432,7 +437,7 @@ def evaluate_accumulation_regime(
     active = armed or primed or (regime_ok and tape.active and not blockers)
 
     sess = session or AccumulationSessionTracker()
-    scorecard = sess.scorecard(config)
+    scorecard = merge_ta_divergence_into_scorecard(sess.scorecard(config), ta)
     budget = sess.budget_rlusd(config, rlusd_balance=rlusd_balance)
     committed = sess.committed_rlusd()
     remaining = max(0.0, budget - committed)

@@ -252,6 +252,12 @@ def _technical_analysis_context(ta: Dict[str, Any]) -> str:
             "summary",
             "rsi",
             "bb_bandwidth_pct",
+            "divergence_fired",
+            "divergence_bias",
+            "divergence_kind",
+            "divergence_indicator",
+            "divergence_strength",
+            "divergence_detail",
         )
         if ta.get(k) is not None
     }

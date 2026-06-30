@@ -39,6 +39,7 @@ _TA_VIRTUAL_KEYS = frozenset(
         "alpha_ta_stoch_enabled",
         "alpha_ta_bollinger_enabled",
         "alpha_ta_engulfing_enabled",
+        "alpha_ta_divergence_enabled",
         "alpha_ta_candle_interval_seconds",
     }
 )
@@ -78,6 +79,7 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_ta_stoch_enabled",
     "alpha_ta_bollinger_enabled",
     "alpha_ta_engulfing_enabled",
+    "alpha_ta_divergence_enabled",
     "alpha_ta_candle_interval_seconds",
     "alpha_reentry_enabled",
     "alpha_reentry_tp_dip_pct",
@@ -165,6 +167,8 @@ def _apply_ta_virtual_overrides(config: BotConfig, overrides: Dict[str, Any]) ->
         ta = replace(ta, bollinger=replace(ta.bollinger, enabled=bool(overrides["alpha_ta_bollinger_enabled"])))
     if "alpha_ta_engulfing_enabled" in overrides:
         ta = replace(ta, engulfing=replace(ta.engulfing, enabled=bool(overrides["alpha_ta_engulfing_enabled"])))
+    if "alpha_ta_divergence_enabled" in overrides:
+        ta = replace(ta, divergence=replace(ta.divergence, enabled=bool(overrides["alpha_ta_divergence_enabled"])))
     if "alpha_ta_candle_interval_seconds" in overrides:
         ta = replace(ta, candle_interval_seconds=int(overrides["alpha_ta_candle_interval_seconds"]))
     return replace(config, alpha_technical_analysis=ta)
@@ -217,6 +221,8 @@ def effective_config_snapshot(
             snap[key] = ta.bollinger.enabled
         elif key == "alpha_ta_engulfing_enabled":
             snap[key] = ta.engulfing.enabled
+        elif key == "alpha_ta_divergence_enabled":
+            snap[key] = ta.divergence.enabled
         elif key == "alpha_ta_candle_interval_seconds":
             from alpha.decision.ta_config import effective_ta_candle_interval_seconds
 

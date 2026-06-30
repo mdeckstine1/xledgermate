@@ -464,6 +464,7 @@
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_stoch_enabled" title="Stochastic momentum for entries and breakouts."><input type="checkbox" id="taStochEnabled"> Stochastic</label></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_bollinger_enabled" title="Bollinger band squeeze and band-touch signals."><input type="checkbox" id="taBbEnabled"> Bollinger</label></div>
           <div class="ctrl-row toggle"><label data-knob="alpha_ta_engulfing_enabled" title="Bullish/bearish engulfing candle patterns."><input type="checkbox" id="taEngulfEnabled"> Engulfing</label></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_ta_divergence_enabled" title="RSI/Stoch pivot divergence — boosts weakness buys and strength sells."><input type="checkbox" id="taDivEnabled"> Divergence</label></div>
           <button id="btnApplyTa">Apply TA settings</button>
         </div>
         <div id="taDisabled" class="card ta-disabled-msg" style="display:none">
@@ -473,7 +474,7 @@
         <div id="taContent">
           <div class="grid ta-grid">
             <div class="card"><h3>Status</h3><div id="taStatus" class="big">—</div><div id="taSummary" class="muted"></div></div>
-            <div class="card"><h3>Bias</h3><div id="taBias" class="big">—</div><div id="taElliott" class="muted"></div></div>
+            <div class="card"><h3>Bias</h3><div id="taBias" class="big">—</div><div id="taElliott" class="muted"></div><div id="taDivergence" class="muted"></div></div>
             <div class="card"><h3>Buy score</h3><div id="taBuyScore" class="big">—</div><div id="taBuyGate" class="muted"></div></div>
             <div class="card"><h3>Sell score</h3><div id="taSellScore" class="big">—</div><div id="taSellGate" class="muted"></div></div>
             <div class="card"><h3>Breakout score</h3><div id="taBreakScore" class="big">—</div><div id="taBreakGate" class="muted"></div></div>
@@ -1017,6 +1018,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if ($('taStochEnabled')) $('taStochEnabled').checked = c.alpha_ta_stoch_enabled !== false;
       if ($('taBbEnabled')) $('taBbEnabled').checked = c.alpha_ta_bollinger_enabled !== false;
       if ($('taEngulfEnabled')) $('taEngulfEnabled').checked = c.alpha_ta_engulfing_enabled !== false;
+      if ($('taDivEnabled')) $('taDivEnabled').checked = c.alpha_ta_divergence_enabled !== false;
       syncTrail(c.trailing_step_pct ?? 1.5);
       syncBreakout(c.alpha_breakout_pct ?? 0.02);
       syncLookback(c.alpha_structure_lookback ?? 20);
@@ -1141,6 +1143,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         alpha_ta_stoch_enabled: $('taStochEnabled').checked,
         alpha_ta_bollinger_enabled: $('taBbEnabled').checked,
         alpha_ta_engulfing_enabled: $('taEngulfEnabled').checked,
+        alpha_ta_divergence_enabled: $('taDivEnabled').checked,
       }});
       if (d?.ok) { toast('TA settings updated'); operatorConfig = d; poll(); }
     };
@@ -2120,6 +2123,22 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         ta.elliott_trend && ta.elliott_trend !== 'neutral' ? `(${ta.elliott_trend.replace('_', ' ')})` : '',
         ta.elliott_confidence != null && ta.elliott_confidence > 0 ? `conf ${Number(ta.elliott_confidence).toFixed(2)}` : '',
       ].filter(Boolean).join(' ');
+      const divEl = $('taDivergence');
+      if (divEl) {
+        if (ta.divergence_fired) {
+          const kind = (ta.divergence_kind || '').replace(/_/g, ' ');
+          divEl.textContent = [
+            `Divergence: ${kind || ta.divergence_bias}`,
+            ta.divergence_indicator ? `@ ${ta.divergence_indicator}` : '',
+            ta.divergence_strength != null ? `str ${Number(ta.divergence_strength).toFixed(2)}` : '',
+            ta.divergence_detail ? `— ${ta.divergence_detail}` : '',
+          ].filter(Boolean).join(' ');
+          divEl.className = 'muted ta-div-' + (ta.divergence_bias || 'neutral');
+        } else {
+          divEl.textContent = 'Divergence: none';
+          divEl.className = 'muted';
+        }
+      }
       $('taBuyScore').textContent = fmt(ta.buy_score, 2);
       $('taSellScore').textContent = fmt(ta.sell_score, 2);
       $('taBreakScore').textContent = fmt(ta.breakout_score, 2);

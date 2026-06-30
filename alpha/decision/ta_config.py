@@ -168,6 +168,24 @@ class LiquidityGrabConfig:
 
 
 @dataclass
+class DivergenceConfig:
+    enabled: bool = True
+    lookback_bars: int = 50
+    min_swing_pct: float = 0.25
+    min_strength: float = 0.35
+    use_rsi: bool = True
+    use_stochastic: bool = True
+    use_macd: bool = False
+    stoch_series: str = "k"  # k | d
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    buy_weight: float = 0.7
+    sell_weight: float = 0.7
+    hidden_weight_mult: float = 0.45
+
+
+@dataclass
 class AlphaTechnicalAnalysisConfig:
     """Master TA config — nested under ``alpha_technical_analysis`` in config.yaml."""
 
@@ -195,6 +213,7 @@ class AlphaTechnicalAnalysisConfig:
     order_block: OrderBlockConfig = field(default_factory=OrderBlockConfig)
     fair_value_gap: FairValueGapConfig = field(default_factory=FairValueGapConfig)
     liquidity_grab: LiquidityGrabConfig = field(default_factory=LiquidityGrabConfig)
+    divergence: DivergenceConfig = field(default_factory=DivergenceConfig)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -298,6 +317,7 @@ def recommended_price_history_max_samples(
         cfg.fair_value_gap.lookback if cfg.fair_value_gap.enabled else 0,
         cfg.order_block.lookback if cfg.order_block.enabled else 0,
         cfg.liquidity_grab.lookback if cfg.liquidity_grab.enabled else 0,
+        cfg.divergence.lookback_bars if cfg.divergence.enabled else 0,
         cfg.structure_bos.lookback if cfg.structure_bos.enabled else 0,
         cfg.consolidation.lookback if cfg.consolidation.enabled else 0,
         cfg.bollinger.period if cfg.bollinger.enabled else 0,
