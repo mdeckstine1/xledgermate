@@ -24,6 +24,7 @@ def test_list_reports_has_alpha_entries() -> None:
     assert "alpha_ohlc_ta" in ids
     assert "alpha_trades_csv" in ids
     assert "alpha_transfers" in ids
+    assert "alpha_clob_amm_soak" in ids
     assert all(r["soak_safe"] for r in reports)
 
 

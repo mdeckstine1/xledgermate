@@ -123,6 +123,8 @@
     .arb-banner { border-left:3px solid var(--accent); padding:10px 12px; margin-bottom:12px; font-size:.8rem; line-height:1.45; color:var(--muted); }
     .arb-disloc { color:var(--warn); font-weight:600; }
     .arb-ok { color:var(--ok); }
+    .arb-net-pos { color:var(--ok); font-weight:600; }
+    .arb-net-neg { color:var(--muted); }
     .ta-disabled-msg { padding:16px; text-align:center; color:var(--muted); }
     .reports-catalog { display:flex; flex-direction:column; gap:10px; }
     .reports-catalog .report-cat { margin-bottom:4px; }
@@ -647,14 +649,19 @@
         </div>
         <div class="grid live-grid">
           <div class="card">
-            <h3>Spread</h3>
+            <h3>Gross spread</h3>
             <div id="arbSpread" class="big">—</div>
             <div id="arbDisloc" class="muted"></div>
           </div>
           <div class="card">
+            <h3>Net edge</h3>
+            <div id="arbNetEdge" class="big">—</div>
+            <div id="arbCostBreakdown" class="muted" style="font-size:.72rem;line-height:1.4"></div>
+          </div>
+          <div class="card">
             <h3>CLOB mid</h3>
             <div id="arbClob" class="big">—</div>
-            <div class="muted">Alpha runtime reference</div>
+            <div id="arbClobSpread" class="muted">—</div>
           </div>
           <div class="card">
             <h3>AMM mid</h3>
@@ -670,13 +677,14 @@
         <div class="card" style="margin-top:12px">
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:8px">
             <h3 style="margin:0">Recent samples</h3>
+            <button type="button" id="btnArbSoakReport" class="secondary" style="font-size:.75rem;padding:4px 10px">Soak report ↗</button>
             <button type="button" id="btnArbRefresh" class="secondary" style="margin-left:auto;font-size:.75rem;padding:4px 10px">Poll now</button>
             <span id="arbUpdated" class="muted" style="font-size:.72rem">—</span>
           </div>
           <div style="overflow-x:auto">
             <table class="ta-signals">
-              <thead><tr><th>Time (UTC)</th><th>CLOB</th><th>AMM</th><th>Spread</th><th>Flag</th></tr></thead>
-              <tbody id="arbHistoryTable"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+              <thead><tr><th>Time (UTC)</th><th>CLOB</th><th>AMM</th><th>Gross</th><th>Cost</th><th>Net</th><th>Flag</th></tr></thead>
+              <tbody id="arbHistoryTable"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -2077,7 +2085,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         if (!byCategory[cat]) byCategory[cat] = [];
         byCategory[cat].push(r);
       });
-      const order = ['Operator', 'P&L', 'Tax & transfers', 'Technical analysis', 'Orders', 'Other'];
+      const order = ['Operator', 'P&L', 'Tax & transfers', 'Technical analysis', 'Orders', 'Arbitrage', 'Market', 'Other'];
       const renderCategory = (cat, rows) => {
         let block = '<div class="report-cat"><div class="muted" style="font-size:.7rem;text-transform:uppercase;margin-bottom:4px">' + cat + '</div>';
         rows.forEach(r => {
@@ -3185,10 +3193,17 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       return Number(v).toFixed(2) + ' bps';
     }
 
+    function fmtArbSignedBps(v) {
+      if (v == null || v === '' || Number.isNaN(Number(v))) return '—';
+      const n = Number(v);
+      return (n > 0 ? '+' : '') + n.toFixed(2) + ' bps';
+    }
+
     function renderArb(d) {
       if (!d) return;
       const latest = d.latest || {};
       const summary = d.summary || {};
+      const costs = d.cost_model || {};
       const spreadEl = $('arbSpread');
       const dislocEl = $('arbDisloc');
       const bps = latest.spread_bps;
@@ -3199,44 +3214,75 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if (dislocEl) {
         const thr = d.dislocation_threshold_bps;
         if (latest.dislocation) {
-          dislocEl.textContent = `Dislocation ≥ ${thr} bps`;
+          dislocEl.textContent = `Gross dislocation ≥ ${thr} bps`;
           dislocEl.className = 'arb-disloc';
         } else if (bps != null) {
-          dislocEl.textContent = `Below ${thr} bps threshold`;
+          dislocEl.textContent = `Gross below ${thr} bps`;
           dislocEl.className = 'muted';
         } else {
           dislocEl.textContent = latest.status || '—';
           dislocEl.className = 'muted';
         }
       }
+      const netEl = $('arbNetEdge');
+      const net = latest.net_edge_bps;
+      if (netEl) {
+        netEl.textContent = fmtArbSignedBps(net);
+        netEl.className = 'big' + (latest.net_positive ? ' arb-net-pos' : (net != null ? ' arb-net-neg' : ''));
+      }
+      const costEl = $('arbCostBreakdown');
+      if (costEl) {
+        const parts = [];
+        if (latest.clob_half_spread_bps != null) parts.push(`CLOB ½ ${Number(latest.clob_half_spread_bps).toFixed(1)}`);
+        if (latest.amm_fee_bps != null) parts.push(`AMM ${Number(latest.amm_fee_bps).toFixed(1)}`);
+        else if (costs.amm_fee_note) parts.push('AMM fee from pool');
+        const slip = latest.slippage_buffer_bps ?? costs.slippage_buffer_bps;
+        if (slip != null) parts.push(`slip ${Number(slip).toFixed(1)}`);
+        if (latest.total_cost_bps != null) parts.push(`= ${Number(latest.total_cost_bps).toFixed(1)} bps`);
+        costEl.textContent = parts.length ? parts.join(' · ') : 'Cost model loads on next poll';
+      }
       if ($('arbClob')) $('arbClob').textContent = fmtArbPrice(latest.clob_mid_rlusd_per_xrp);
+      if ($('arbClobSpread')) {
+        const pct = latest.clob_spread_pct ?? costs.clob_spread_pct;
+        $('arbClobSpread').textContent = pct != null
+          ? `Book spread ${Number(pct).toFixed(3)}% · Alpha runtime`
+          : 'Alpha runtime reference';
+      }
       if ($('arbAmm')) $('arbAmm').textContent = fmtArbPrice(latest.amm_mid_rlusd_per_xrp);
       if ($('arbAmmStatus')) {
-        $('arbAmmStatus').textContent = latest.status === 'amm_unavailable' ? 'AMM unavailable' : (latest.status || '—');
+        const fee = latest.amm_fee_bps;
+        const feeTxt = fee != null ? ` · pool fee ${Number(fee).toFixed(1)} bps` : '';
+        $('arbAmmStatus').textContent = (latest.status === 'amm_unavailable' ? 'AMM unavailable' : (latest.status || '—')) + feeTxt;
       }
       const soakEl = $('arbSoak');
       const soakDetail = $('arbSoakDetail');
       if (soakEl) {
-        const pct = summary.dislocation_pct;
-        soakEl.textContent = summary.samples ? `${pct}% disloc` : '—';
+        const grossPct = summary.dislocation_pct;
+        const netPct = summary.net_positive_pct;
+        soakEl.textContent = summary.samples
+          ? `${netPct != null ? netPct : '—'}% net+`
+          : '—';
       }
       if (soakDetail) {
         const parts = [];
         if (summary.samples) parts.push(`${summary.samples} samples`);
-        if (summary.max_spread_bps != null) parts.push(`max ${summary.max_spread_bps} bps`);
-        if (summary.avg_spread_bps != null) parts.push(`avg ${summary.avg_spread_bps} bps`);
+        if (summary.dislocation_pct != null) parts.push(`${summary.dislocation_pct}% gross disloc`);
+        if (summary.max_net_edge_bps != null) parts.push(`max net ${fmtArbSignedBps(summary.max_net_edge_bps)}`);
+        if (summary.avg_net_edge_bps != null) parts.push(`avg net ${fmtArbSignedBps(summary.avg_net_edge_bps)}`);
         soakDetail.textContent = parts.join(' · ') || 'No history yet';
       }
       const tbody = $('arbHistoryTable');
       if (tbody) {
         const rows = d.history || [];
         if (!rows.length) {
-          tbody.innerHTML = '<tr><td colspan="5" class="muted">No samples yet — wait ~60s or click Poll now</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" class="muted">No samples yet — wait ~60s or click Poll now</td></tr>';
         } else {
           tbody.innerHTML = rows.slice().reverse().map(r => {
             const ts = (r.ts_utc || '').replace('T', ' ').replace(/\+00:00$/, ' UTC').slice(0, 22);
-            const flag = r.dislocation ? '<span class="arb-disloc">DISLOC</span>' : '<span class="arb-ok">ok</span>';
-            return `<tr><td>${ts || '—'}</td><td>${fmtArbPrice(r.clob_mid_rlusd_per_xrp)}</td><td>${fmtArbPrice(r.amm_mid_rlusd_per_xrp)}</td><td>${fmtArbBps(r.spread_bps)}</td><td>${flag}</td></tr>`;
+            let flag = '<span class="arb-ok">ok</span>';
+            if (r.net_positive) flag = '<span class="arb-net-pos">NET+</span>';
+            else if (r.dislocation) flag = '<span class="arb-disloc">GROSS</span>';
+            return `<tr><td>${ts || '—'}</td><td>${fmtArbPrice(r.clob_mid_rlusd_per_xrp)}</td><td>${fmtArbPrice(r.amm_mid_rlusd_per_xrp)}</td><td>${fmtArbBps(r.spread_bps)}</td><td>${r.total_cost_bps != null ? Number(r.total_cost_bps).toFixed(1) : '—'}</td><td>${fmtArbSignedBps(r.net_edge_bps)}</td><td>${flag}</td></tr>`;
           }).join('');
         }
       }
@@ -3267,6 +3313,8 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if (btn) btn.disabled = false;
       toast('Arb poll complete');
     });
+
+    $('btnArbSoakReport')?.addEventListener('click', () => openReportInNewTab('alpha_clob_amm_soak'));
 
     async function poll() {
       try {

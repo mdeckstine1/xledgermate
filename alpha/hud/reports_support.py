@@ -334,7 +334,24 @@ def _gen_alpha_trades_archive(logs: Path) -> str:
     return "\n".join(lines).rstrip()
 
 
+def _gen_alpha_clob_amm_soak(logs: Path) -> str:
+    from alpha.hud.arb_monitor import arb_soak_report_text
+
+    return arb_soak_report_text(logs_dir=logs)
+
+
 REPORT_SPECS: List[ReportSpec] = [
+    ReportSpec(
+        id="alpha_clob_amm_soak",
+        title="CLOB vs AMM arb soak",
+        subtitle="Gross + net edge · tail JSONL",
+        category="Arbitrage",
+        description="Soak report from logs/clob_amm_spread.jsonl — gross spread, estimated costs, net edge after CLOB half-spread + AMM fee + slippage buffer.",
+        soak_safe=True,
+        engine_restart=False,
+        cli_command="(HUD report · /arb/report.txt)",
+        phase_ref="Arb monitor",
+    ),
     ReportSpec(
         id="alpha_cycle",
         title="Latest cycle report",
@@ -492,6 +509,7 @@ REPORT_SPECS: List[ReportSpec] = [
 ]
 
 _GENERATORS: Dict[str, ReportGenerator] = {
+    "alpha_clob_amm_soak": _gen_alpha_clob_amm_soak,
     "alpha_cycle": _gen_alpha_cycle,
     "alpha_hourly": _gen_alpha_hourly,
     "alpha_hourly_24h": _gen_alpha_hourly_24h,

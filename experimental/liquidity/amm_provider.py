@@ -56,14 +56,25 @@ def implied_mid_rlusd_per_xrp_from_amm_info(result: Dict[str, Any]) -> Optional[
     return rlusd / xrp
 
 
-def fetch_amm_implied_mid_sync(
+def trading_fee_bps_from_amm(amm: Dict[str, Any]) -> Optional[float]:
+    """XRPL TradingFee is millionths of notional (500 → 0.05% → 5 bps)."""
+    raw = amm.get("TradingFee")
+    if raw is None:
+        return None
+    try:
+        return round(float(raw) / 100.0, 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def fetch_amm_info_sync(
     *,
     rpc_url: str,
     rlusd_issuer: str,
     rlusd_currency: str = "RLUSD",
     timeout_s: float = 15.0,
-) -> Optional[float]:
-    """Blocking JSON-RPC amm_info — returns None when pool missing or RPC fails."""
+) -> Optional[Dict[str, Any]]:
+    """Blocking amm_info — mid + pool trading fee (read-only)."""
     try:
         import requests
     except ImportError:
@@ -94,4 +105,30 @@ def fetch_amm_implied_mid_sync(
         return None
     result = body.get("result") or {}
     amm = result.get("amm") or result
-    return implied_mid_rlusd_per_xrp_from_amm_info(amm if isinstance(amm, dict) else result)
+    if not isinstance(amm, dict):
+        return None
+    return {
+        "mid": implied_mid_rlusd_per_xrp_from_amm_info(amm),
+        "trading_fee": amm.get("TradingFee"),
+        "trading_fee_bps": trading_fee_bps_from_amm(amm),
+    }
+
+
+def fetch_amm_implied_mid_sync(
+    *,
+    rpc_url: str,
+    rlusd_issuer: str,
+    rlusd_currency: str = "RLUSD",
+    timeout_s: float = 15.0,
+) -> Optional[float]:
+    """Blocking JSON-RPC amm_info — returns None when pool missing or RPC fails."""
+    info = fetch_amm_info_sync(
+        rpc_url=rpc_url,
+        rlusd_issuer=rlusd_issuer,
+        rlusd_currency=rlusd_currency,
+        timeout_s=timeout_s,
+    )
+    if not info:
+        return None
+    mid = info.get("mid")
+    return float(mid) if mid is not None else None

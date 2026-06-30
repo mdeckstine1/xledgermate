@@ -93,7 +93,18 @@ def test_read_alpha_mid_from_runtime_state(tmp_path):
     logs = tmp_path / "logs"
     logs.mkdir()
     (logs / "alpha_runtime_state.json").write_text(
-        json.dumps({"mid": 2.123456}),
+        json.dumps({"mid": 2.123456, "book": {"spread_pct": 0.0987}}),
         encoding="utf-8",
     )
-    assert arb_monitor._read_alpha_mid(logs) == pytest.approx(2.123456)
+    assert arb_monitor._read_alpha_book_context(logs)["mid"] == pytest.approx(2.123456)
+    assert arb_monitor._read_alpha_book_context(logs)["spread_pct"] == pytest.approx(0.0987)
+
+
+def test_arb_soak_report_route(client, monkeypatch):
+    monkeypatch.setattr(
+        "alpha.hud.arb_monitor.arb_soak_report_text",
+        lambda **_: "=== soak ===\nnet positive",
+    )
+    r = client.get("/arb/report.txt")
+    assert r.status_code == 200
+    assert "net positive" in r.text
