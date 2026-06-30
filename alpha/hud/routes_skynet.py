@@ -59,7 +59,6 @@ def register_skynet_routes(app: Any) -> None:
         overrides = _runtime().load_overrides()
         effective = apply_overrides(base, overrides)
         snap = effective_config_snapshot(effective, overrides)
-        context = build_skynet_context(hud_state, operator_config=snap)
         return hud_state, effective, snap
 
     @app.get("/operator/skynet/status")
@@ -163,7 +162,14 @@ def register_skynet_routes(app: Any) -> None:
 
         hud_state, effective, snap = _effective_context()
         base = BotConfig.load()
-        context = build_skynet_context(hud_state, operator_config=snap)
+        try:
+            context = build_skynet_context(hud_state, operator_config=snap)
+        except Exception as exc:
+            logger.exception("skynet_context_failed")
+            return JSONResponse(
+                {"ok": False, "message": f"SKYNET context build failed: {exc}"},
+                status_code=400,
+            )
 
         try:
             raw, parsed = call_skynet_advisor(

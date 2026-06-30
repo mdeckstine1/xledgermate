@@ -169,6 +169,8 @@
     .skynet-response { flex:1 1 auto; width:100%; min-height:280px; height:min(58vh, 520px); max-height:min(58vh, 520px); background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:10px; font-size:.85rem; font-family:ui-monospace,monospace; line-height:1.45; white-space:pre-wrap; overflow-y:auto; overflow-x:hidden; resize:vertical; box-sizing:border-box; overscroll-behavior:contain; }
     .skynet-quick { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
     .skynet-quick button { font-size:.75rem; padding:6px 10px; }
+    .skynet-quick button.regime-neutral { border-color:#a16207; color:#fde68a; }
+    .skynet-quick button.regime-neutral:hover { background:#1a1608; }
     .skynet-regime-btns { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 4px; }
     .skynet-regime-btns button { font-size:.78rem; padding:7px 14px; border-radius:6px; }
     .skynet-regime-btns button.active { border-color:var(--accent); color:var(--accent); background:#0f1f18; }
@@ -730,6 +732,19 @@
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Evaluate the re-entry gate and cooldown situation. Should we wait or adjust re-entry settings?">Re-entry / cooldown</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Perform a risk and safety check: drawdown, kill switch, preflight, inventory imbalance, and anything dangerous in current settings.">Risk check</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Analyze pending buy ladder and stale cancel policy. Use pending_buy_stale in context: which bids should cancel, why are unfilled bids sitting, and what knob changes (max_drift, max_pending_buys, buy_limit_offset) do you recommend?">Stale bid ladder</button>
+              <button type="button" class="secondary skynet-quick-btn regime-neutral" data-prompt="Neutral regime — analysis &amp; recommendations (PRIMARY prompt):
+
+Use a neutral/chop lens: sideways or digesting tape, mixed TA, balanced or mild inventory skew.
+
+Read from context: market_regime, structure, TA scores/bias, decision reason, accumulation_regime, reload_regime, opportunity_watch, realized_bracket_pnl, pending_buy_stale, re-entry gate.
+
+Deliver in plain English:
+1) Tape read — chop, grind, or slow drift? What is structure saying (neutral vs bullish digest vs still breaking out)?
+2) Bot posture — what happens next WITHOUT knob changes? Cover classic weakness path, accumulation phase (idle/watching/armed/blocked), reload (watching for post-run chop vs armed), and fund-then-bid policy.
+3) Recommendations — only if justified for neutral/chop: max_pending before offset↓; buy_offset ≥ 0.15–0.18 if churn/scratch SLs; patience on re-entry; reload timing if RLUSD below deploy floor.
+4) What NOT to do — no aggression into chop, no offset chase if reload blocks accumulation, no session MTM bleed panic.
+
+Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. Output suggested_changes only when clearly warranted; empty array OK if HOLD is correct.">Neutral — analysis &amp; recs</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Neutral / chop regime: we had SL churn overnight. Recommend anti-churn knobs only — max_pending 1–2, buy_offset ≥ 0.18, weakness ≥ 0.05, wider stale drift before offset↓. Use realized_bracket_pnl not session MTM. Plain English, a little personality.">Neutral — anti-churn review</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Bear / defensive regime: downtrend or SL streak. Risk down, max_pending 1, buy_offset up, sl_cooldown up, ta_min_buy up. Suggest trust phase if we're bleeding. Be blunt and conversational.">Bear — defensive review</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Bull regime: constructive dips, RLUSD-heavy, TA supportive. Patient accumulation only — max_pending before offset↓. Explain in plain English with personality.">Bull — dip buy review</button>
@@ -805,7 +820,9 @@
       });
       if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return null; }
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) toast(data.message || data.errors?.join?.('; ') || ('HTTP ' + r.status), true);
+      const errMsg = data.message || (typeof data.detail === 'string' ? data.detail : null) || data.errors?.join?.('; ') || ('HTTP ' + r.status);
+      if (!r.ok) toast(errMsg, true);
+      if (!r.ok) return { ...data, ok: false, message: data.message || errMsg };
       return data;
     }
 

@@ -72,6 +72,7 @@ def infer_scenario_hints(
     reentry: Optional[Dict[str, Any]] = None,
     stale_snapshot: Optional[Dict[str, Any]] = None,
     opportunity_watch: Optional[Dict[str, Any]] = None,
+    accumulation_regime: Optional[Dict[str, Any]] = None,
     reload_regime: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     """Heuristic scenario letters for SKYNET (non-exhaustive)."""

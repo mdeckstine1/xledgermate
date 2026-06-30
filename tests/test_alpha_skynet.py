@@ -147,6 +147,42 @@ def test_build_skynet_user_message_bullish_buy_intent():
     assert msg.index(prompt) < msg.index("=== snapshot ===")
 
 
+def test_infer_scenario_hints_accumulation_regime_kwarg():
+    from alpha.hud.skynet_scenarios import infer_scenario_hints
+
+    hints = infer_scenario_hints(
+        decision_reason="balanced dev=+0.02",
+        inventory={"deviation": 0.02, "label": "balanced"},
+        accumulation_regime={"armed": True, "phase": "armed"},
+        reload_regime={"blocks_accumulation": True, "phase": "watching"},
+        opportunity_watch={"state": "armed"},
+    )
+    assert "V" in hints
+    assert "W" in hints
+    assert "U" in hints
+
+
+def test_build_skynet_context_with_accumulation_reload():
+    ctx = build_skynet_context(
+        {
+            "network": "mainnet",
+            "dry_run": False,
+            "mid": 1.1,
+            "inventory": {"deviation": 0.02, "label": "balanced"},
+            "decision": {"action": "hold", "reason": "balanced dev=+0.02"},
+            "accumulation_regime": {"phase": "armed", "armed": True},
+            "reload_regime": {"phase": "watching", "blocks_accumulation": True},
+            "opportunity_watch": {"state": "armed"},
+            "brackets": {"records": []},
+            "risk": {},
+            "recent_activity": [],
+        },
+        operator_config={"alpha_operator_phase": "trust"},
+    )
+    assert "accumulation_regime" in ctx.lower() or "Accumulation" in ctx
+    assert "likely_scenarios=" in ctx
+
+
 def test_infer_scenario_hints_max_pending_rlusd_heavy():
     from alpha.hud.skynet_scenarios import infer_scenario_hints
 
