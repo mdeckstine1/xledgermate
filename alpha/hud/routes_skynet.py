@@ -13,18 +13,18 @@ _RUNTIME = Path("logs/alpha_runtime_state.json")
 _OVERRIDES = Path("logs/alpha_overrides.json")
 _COMMANDS = Path("logs/alpha_commands.json")
 
+from alpha.hud import skynet as skynet_mod  # noqa: E402 — patchable in tests
+
 
 def register_skynet_routes(app: Any) -> None:
     from fastapi import Body
     from fastapi.responses import JSONResponse
 
-    from alpha.hud.skynet import (
-        build_skynet_context,
-        call_skynet_advisor,
-        filter_applicable_suggestions,
-        format_advisor_display,
-        skynet_status,
-    )
+    build_skynet_context = skynet_mod.build_skynet_context
+    call_skynet_advisor = skynet_mod.call_skynet_advisor
+    filter_applicable_suggestions = skynet_mod.filter_applicable_suggestions
+    format_advisor_display = skynet_mod.format_advisor_display
+    skynet_status = skynet_mod.skynet_status
     from alpha.hud.skynet_agent import (
         agent_status_payload,
         load_agent_config,
@@ -63,7 +63,16 @@ def register_skynet_routes(app: Any) -> None:
 
     @app.get("/operator/skynet/status")
     async def get_skynet_status() -> JSONResponse:
-        return JSONResponse({"ok": True, **skynet_status(), **agent_status_payload()})
+        payload: Dict[str, Any] = {"ok": True, **skynet_status(), **agent_status_payload()}
+        try:
+            hud_state, _, snap = _effective_context()
+            build_skynet_context(hud_state, operator_config=snap)
+            payload["context_ready"] = True
+        except Exception as exc:
+            logger.warning("skynet_context_probe_failed | %s", exc)
+            payload["context_ready"] = False
+            payload["context_error"] = str(exc)[:500]
+        return JSONResponse(payload)
 
     @app.get("/operator/skynet/agent")
     async def get_skynet_agent() -> JSONResponse:
@@ -139,69 +148,76 @@ def register_skynet_routes(app: Any) -> None:
 
     @app.post("/operator/skynet/ask")
     async def post_skynet_ask(body: Dict[str, Any] = Body(...)) -> JSONResponse:
-        cfg = BotConfig.load()
-        status = skynet_status(cfg)
-        if not status["enabled"]:
-            return JSONResponse(
-                {"ok": False, "message": "SKYNET disabled in config (alpha_skynet_enabled)."},
-                status_code=400,
+        try:
+            cfg = BotConfig.load()
+            status = skynet_status(cfg)
+            if not status["enabled"]:
+                return JSONResponse(
+                    {"ok": False, "message": "SKYNET disabled in config (alpha_skynet_enabled)."},
+                    status_code=400,
+                )
+            api_key = resolve_grok_key(getattr(cfg, "alpha_grok_api_key", "") or "")
+            if not api_key:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "message": "SKYNET API key not configured. Set XAI_API_KEY or XLG_GROK_KEY in .env on the server.",
+                    },
+                    status_code=400,
+                )
+
+            prompt = str(body.get("prompt") or "").strip()
+            if not prompt:
+                return JSONResponse({"ok": False, "message": "prompt required"}, status_code=400)
+
+            hud_state, effective, snap = _effective_context()
+            base = BotConfig.load()
+            try:
+                context = build_skynet_context(hud_state, operator_config=snap)
+            except Exception as exc:
+                logger.exception("skynet_context_failed")
+                return JSONResponse(
+                    {"ok": False, "message": f"SKYNET context build failed: {exc}"},
+                    status_code=400,
+                )
+
+            try:
+                raw, parsed = call_skynet_advisor(
+                    user_prompt=prompt,
+                    context=context,
+                    api_key=api_key,
+                    model=status["model"],
+                    max_tokens=status.get("max_tokens", 4096),
+                    operator_phase=snap.get("alpha_operator_phase"),
+                    market_regime=snap.get("alpha_operator_market_regime"),
+                )
+            except Exception as exc:
+                logger.warning("skynet_ask_failed | %s", exc)
+                return JSONResponse({"ok": False, "message": str(exc)[:800]}, status_code=400)
+
+            sanitized, accepted, apply_errors = filter_applicable_suggestions(
+                parsed.get("suggested_changes") or [],
+                base=base,
             )
-        api_key = resolve_grok_key(getattr(cfg, "alpha_grok_api_key", "") or "")
-        if not api_key:
+
             return JSONResponse(
                 {
-                    "ok": False,
-                    "message": "SKYNET API key not configured. Set XAI_API_KEY or XLG_GROK_KEY in .env on the server.",
-                },
-                status_code=400,
+                    "ok": True,
+                    "raw_response": raw,
+                    "parsed": parsed,
+                    "display": format_advisor_display(parsed),
+                    "applicable_overrides": sanitized,
+                    "applicable_changes": accepted,
+                    "apply_preview_errors": apply_errors,
+                    "model": status["model"],
+                }
             )
-
-        prompt = str(body.get("prompt") or "").strip()
-        if not prompt:
-            return JSONResponse({"ok": False, "message": "prompt required"}, status_code=400)
-
-        hud_state, effective, snap = _effective_context()
-        base = BotConfig.load()
-        try:
-            context = build_skynet_context(hud_state, operator_config=snap)
         except Exception as exc:
-            logger.exception("skynet_context_failed")
+            logger.exception("skynet_ask_unhandled")
             return JSONResponse(
-                {"ok": False, "message": f"SKYNET context build failed: {exc}"},
-                status_code=400,
+                {"ok": False, "message": f"SKYNET ask failed: {exc}"},
+                status_code=500,
             )
-
-        try:
-            raw, parsed = call_skynet_advisor(
-                user_prompt=prompt,
-                context=context,
-                api_key=api_key,
-                model=status["model"],
-                max_tokens=status.get("max_tokens", 4096),
-                operator_phase=snap.get("alpha_operator_phase"),
-                market_regime=snap.get("alpha_operator_market_regime"),
-            )
-        except Exception as exc:
-            logger.warning("skynet_ask_failed | %s", exc)
-            return JSONResponse({"ok": False, "message": str(exc)[:800]}, status_code=400)
-
-        sanitized, accepted, apply_errors = filter_applicable_suggestions(
-            parsed.get("suggested_changes") or [],
-            base=base,
-        )
-
-        return JSONResponse(
-            {
-                "ok": True,
-                "raw_response": raw,
-                "parsed": parsed,
-                "display": format_advisor_display(parsed),
-                "applicable_overrides": sanitized,
-                "applicable_changes": accepted,
-                "apply_preview_errors": apply_errors,
-                "model": status["model"],
-            }
-        )
 
     @app.post("/operator/skynet/apply")
     async def post_skynet_apply(body: Dict[str, Any] = Body(...)) -> JSONResponse:

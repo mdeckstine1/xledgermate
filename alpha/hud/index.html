@@ -163,7 +163,7 @@
     .transfer-form .ctrl-row input[type=number] { width:120px; }
     .transfer-log { font-size:.78rem; max-height:240px; overflow:auto; }
     .skynet-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
-    @media (max-width:900px) { .skynet-grid { grid-template-columns:1fr; } }
+    @media (max-width:900px) { .skynet-grid { grid-template-columns:1fr; } .regime-cards-row { grid-template-columns:1fr; } }
     .skynet-response-card { display:flex; flex-direction:column; min-height:min(72vh, 640px); }
     .skynet-prompt { width:100%; min-height:120px; background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:10px; font-size:.9rem; font-family:inherit; resize:vertical; box-sizing:border-box; }
     .skynet-response { flex:1 1 auto; width:100%; min-height:280px; height:min(58vh, 520px); max-height:min(58vh, 520px); background:#0b1220; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:10px; font-size:.85rem; font-family:ui-monospace,monospace; line-height:1.45; white-space:pre-wrap; overflow-y:auto; overflow-x:hidden; resize:vertical; box-sizing:border-box; overscroll-behavior:contain; }
@@ -194,7 +194,10 @@
     .ready-badge-watching { background:#422006; color:#fcd34d; border:1px solid #ca8a04; }
     .ready-badge-blocked { background:#450a0a; color:#fca5a5; border:1px solid #dc2626; }
     .ready-badge-executing { background:#1e3a5f; color:#93c5fd; border:1px solid #3b82f6; }
-    .opp-watch-card { border-color:#4c1d95; margin-bottom:12px; }
+    .opp-watch-card { border-color:#4c1d95; }
+    .regime-cards-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; align-items:stretch; }
+    .regime-cards-row .opp-watch-card { margin-bottom:0; min-width:0; height:100%; box-sizing:border-box; }
+    #reloadWatchCard { border-color:#1e3a5f; }
     .opp-watch-headline { font-size:1.05rem; font-weight:600; margin:4px 0; }
     .opp-watch-armed { color:#86efac; }
     .opp-watch-watching { color:#fcd34d; }
@@ -298,6 +301,7 @@
           <div class="card"><h3>Preflight</h3><div id="preflight" class="value">—</div></div>
           <div class="card"><h3>Execution</h3><div id="exec" class="value">—</div></div>
         </div>
+        <div class="regime-cards-row">
         <div class="card opp-watch-card" id="oppWatchCard">
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:6px">
             <h3 style="margin:0">Accumulation / opportunity</h3>
@@ -310,7 +314,7 @@
           <div id="oppWatchSuggest" class="muted" style="font-size:.75rem;margin-top:8px;line-height:1.5;color:#c4b5fd"></div>
           <div id="oppWatchScorecard" class="acc-budget" style="margin-top:8px"></div>
         </div>
-        <div class="card opp-watch-card" id="reloadWatchCard" style="border-color:#1e3a5f;margin-bottom:12px">
+        <div class="card opp-watch-card" id="reloadWatchCard">
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:6px">
             <h3 style="margin:0">RLUSD reload</h3>
             <span id="reloadWatchState" class="muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em">—</span>
@@ -318,6 +322,7 @@
           <div id="reloadWatchHeadline" class="opp-watch-headline">—</div>
           <div id="reloadWatchDetail" class="muted" style="font-size:.78rem;line-height:1.45"></div>
           <div id="reloadWatchFloor" class="acc-budget" style="margin-top:6px"></div>
+        </div>
         </div>
         <div class="live-charts-row">
         <div class="card chart-card">
@@ -812,6 +817,16 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       toast._t = setTimeout(() => { t.style.display = 'none'; }, 4000);
     }
 
+    function formatApiError(data, status) {
+      if (!data || typeof data !== 'object') return 'HTTP ' + status;
+      if (data.message) return data.message;
+      const d = data.detail;
+      if (typeof d === 'string') return d;
+      if (Array.isArray(d)) return d.map((x) => x.msg || JSON.stringify(x)).join('; ');
+      if (data.errors?.join) return data.errors.join('; ');
+      return 'HTTP ' + status;
+    }
+
     async function postJson(path, body) {
       const r = await fetch(path, {
         method: 'POST',
@@ -820,9 +835,9 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       });
       if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return null; }
       const data = await r.json().catch(() => ({}));
-      const errMsg = data.message || (typeof data.detail === 'string' ? data.detail : null) || data.errors?.join?.('; ') || ('HTTP ' + r.status);
+      const errMsg = formatApiError(data, r.status);
       if (!r.ok) toast(errMsg, true);
-      if (!r.ok) return { ...data, ok: false, message: data.message || errMsg };
+      if (!r.ok) return { ...data, ok: false, message: errMsg };
       return data;
     }
 
@@ -2779,6 +2794,13 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
           $('btnSkynetSend').disabled = true;
           return;
         }
+        if (d.context_ready === false) {
+          el.textContent = 'SKYNET context error — restart HUD after deploy: ' + (d.context_error || 'unknown');
+          el.style.color = 'var(--bad)';
+          $('btnSkynetSend').disabled = true;
+          return;
+        }
+        el.style.color = '';
         el.textContent = `SKYNET ready · model ${d.model}${d.key_hint ? ' · key ' + d.key_hint : ''} · Phase 1 manual + Phase 2 Agent Smith + Phase 3 full mode`;
         $('btnSkynetSend').disabled = false;
         if (d.guardrails) fillGuardrailsForm(d.guardrails);
@@ -2966,22 +2988,32 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       skynetLastApplicable = null;
       updateAskKnobHighlights([]);
       $('skynetApplyHint').textContent = '';
-      const d = await postJson('/operator/skynet/ask', { prompt });
-      $('btnSkynetSend').disabled = false;
-      if (!d?.ok) {
-        setSkynetResponse(d?.message || 'SKYNET request failed');
-        return;
+      try {
+        const d = await postJson('/operator/skynet/ask', { prompt });
+        if (!d) {
+          setSkynetResponse('SKYNET request failed — not authenticated or network error.');
+          return;
+        }
+        if (!d.ok) {
+          setSkynetResponse(d.message || 'SKYNET request failed');
+          return;
+        }
+        setSkynetResponse(d.display || d.raw_response || '(empty response)');
+        skynetLastApplicable = d.applicable_changes || [];
+        updateAskKnobHighlights(skynetLastApplicable);
+        const n = skynetLastApplicable.length;
+        $('btnSkynetApply').disabled = n === 0;
+        const applyList = n ? skynetLastApplicable.map(c => `${c.key} → ${c.value}`).join(', ') : '';
+        $('skynetApplyHint').textContent = n
+          ? `${n} change(s) ready to apply: ${applyList}`
+          : (d.apply_preview_errors?.length ? d.apply_preview_errors.join('; ') : 'No auto-applicable changes — try naming settings explicitly (risk %, offset, drift, max pending)');
+        toast('SKYNET response received');
+      } catch (e) {
+        setSkynetResponse('SKYNET request failed: ' + (e?.message || e));
+        toast('SKYNET network error', true);
+      } finally {
+        $('btnSkynetSend').disabled = false;
       }
-      setSkynetResponse(d.display || d.raw_response || '(empty response)');
-      skynetLastApplicable = d.applicable_changes || [];
-      updateAskKnobHighlights(skynetLastApplicable);
-      const n = skynetLastApplicable.length;
-      $('btnSkynetApply').disabled = n === 0;
-      const applyList = n ? skynetLastApplicable.map(c => `${c.key} → ${c.value}`).join(', ') : '';
-      $('skynetApplyHint').textContent = n
-        ? `${n} change(s) ready to apply: ${applyList}`
-        : (d.apply_preview_errors?.length ? d.apply_preview_errors.join('; ') : 'No auto-applicable changes — try naming settings explicitly (risk %, offset, drift, max pending)');
-      toast('SKYNET response received');
     };
 
     $('btnSkynetApply').onclick = async () => {
