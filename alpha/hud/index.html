@@ -644,9 +644,20 @@
       </section>
       <section id="arb" class="panel">
         <div class="card arb-banner">
-          <strong>Read-only monitor</strong> — CLOB mid (from Alpha state) vs XRPL AMM implied price.
+          <strong>Read-only monitor</strong> — CLOB vs AMM on RLUSD/XRP, USDC/XRP, legacy USD/XRP, plus RLUSD/USDC basis.
           No trades, no engine changes. Polls every ~60s via HUD only. Live arb later = wallet B + separate service.
         </div>
+        <div class="card" style="margin-bottom:12px">
+          <h3 style="margin:0 0 8px">Arb universe</h3>
+          <div style="overflow-x:auto">
+            <table class="ta-signals" id="arbUniverseTable">
+              <thead><tr><th>Pair</th><th>CLOB / implied</th><th>AMM / direct</th><th>Gross</th><th>Net</th><th>Flag</th></tr></thead>
+              <tbody id="arbUniverseBody"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <p id="arbUniverseMeta" class="muted" style="font-size:.72rem;margin:8px 0 0"></p>
+        </div>
+        <h3 style="margin:0 0 8px;font-size:.85rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">RLUSD/XRP focus</h3>
         <div class="grid live-grid">
           <div class="card">
             <h3>Gross spread</h3>
@@ -3199,8 +3210,42 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       return (n > 0 ? '+' : '') + n.toFixed(2) + ' bps';
     }
 
+    function renderArbUniverse(uni) {
+      const tbody = $('arbUniverseBody');
+      const meta = $('arbUniverseMeta');
+      if (!tbody) return;
+      const pairs = (uni && uni.pairs) || [];
+      if (!pairs.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="muted">Universe loads on next poll (~60s)</td></tr>';
+        if (meta) meta.textContent = '';
+        return;
+      }
+      tbody.innerHTML = pairs.map(p => {
+        let colA = '—', colB = '—';
+        if (p.kind === 'stable_basis') {
+          colA = p.implied_rlusd_per_usdc != null ? fmtArbPrice(p.implied_rlusd_per_usdc) + ' impl' : '—';
+          colB = p.direct_rlusd_per_usdc != null ? fmtArbPrice(p.direct_rlusd_per_usdc) + ' book' : '—';
+        } else {
+          colA = fmtArbPrice(p.clob_mid_stable_per_xrp);
+          colB = fmtArbPrice(p.amm_mid_stable_per_xrp);
+        }
+        let flag = '<span class="arb-ok">ok</span>';
+        if (p.net_positive) flag = '<span class="arb-net-pos">NET+</span>';
+        else if (p.dislocation) flag = '<span class="arb-disloc">GROSS</span>';
+        else if (p.kind === 'stable_basis' && p.peg_deviation_bps != null && Math.abs(p.peg_deviation_bps) >= 8) {
+          flag = '<span class="arb-disloc">PEG</span>';
+        }
+        return `<tr><td>${p.label || p.id}</td><td>${colA}</td><td>${colB}</td><td>${fmtArbBps(p.spread_bps)}</td><td>${fmtArbSignedBps(p.net_edge_bps)}</td><td>${flag}</td></tr>`;
+      }).join('');
+      if (meta) {
+        const best = uni.best_net != null ? fmtArbSignedBps(uni.best_net) : '—';
+        meta.textContent = `NET+ pairs: ${uni.net_positive_count ?? 0} · best net: ${best}`;
+      }
+    }
+
     function renderArb(d) {
       if (!d) return;
+      renderArbUniverse(d.universe);
       const latest = d.latest || {};
       const summary = d.summary || {};
       const costs = d.cost_model || {};

@@ -15,6 +15,7 @@ _ARB_CACHE: Dict[str, Any] = {
     "history": [],
     "summary": {},
     "cost_model": {},
+    "universe": None,
 }
 
 _DEFAULT_DISLOCATION_BPS = 8.0
@@ -92,6 +93,7 @@ def refresh_arb_snapshot(
     Uses Alpha runtime mid for CLOB reference — does not call the trading engine.
     """
     from config.settings import BotConfig
+    from experimental.arb.arb_universe import refresh_arb_universe
     from experimental.arb.clob_amm_monitor import (
         record_clob_amm_snapshot,
         summarize_clob_amm_rows,
@@ -112,6 +114,15 @@ def refresh_arb_snapshot(
         dislocation_bps=dislocation_bps,
         path=logs / "clob_amm_spread.jsonl",
     )
+    universe = refresh_arb_universe(
+        rpc_url=cfg.resolved_rpc_url(),
+        rlusd_currency=cfg.resolved_rlusd_currency_code(),
+        rlusd_issuer=cfg.resolved_rlusd_issuer(),
+        rlusd_clob_mid=clob_mid,
+        rlusd_spread_pct=spread_pct,
+        dislocation_bps=dislocation_bps,
+        path=logs / "arb_universe.jsonl",
+    )
     history = tail_clob_amm_records(limit=history_limit, path=logs / "clob_amm_spread.jsonl")
     enriched = _enrich_history(history, default_clob_spread_pct=spread_pct)
     summary = summarize_clob_amm_rows(enriched, default_clob_spread_pct=spread_pct)
@@ -124,20 +135,21 @@ def refresh_arb_snapshot(
         "history": enriched[-24:],
         "summary": summary,
         "cost_model": cost_model,
+        "universe": universe,
         "note": (
             "Monitor only — no arb execution. Alpha engine unchanged. "
-            "Net edge subtracts CLOB half-spread, AMM fee, and slippage buffer."
+            "Universe: RLUSD/XRP, USDC/XRP, USD/XRP, RLUSD/USDC basis."
         ),
     }
     global _ARB_CACHE
     _ARB_CACHE = out
     logger.info(
-        "arb_monitor | clob=%s amm=%s spread_bps=%s net=%s disloc=%s",
+        "arb_monitor | clob=%s amm=%s spread_bps=%s net=%s universe_net+=%s",
         row.get("clob_mid_rlusd_per_xrp"),
         row.get("amm_mid_rlusd_per_xrp"),
         row.get("spread_bps"),
         row.get("net_edge_bps"),
-        row.get("dislocation"),
+        universe.get("net_positive_count"),
     )
     return out
 
@@ -148,6 +160,7 @@ def arb_snapshot_cached(
     history_limit: int = _DEFAULT_HISTORY_LIMIT,
 ) -> Dict[str, Any]:
     """Return cache; backfill history from JSONL if cache empty."""
+    from experimental.arb.arb_universe import tail_universe_records
     from experimental.arb.clob_amm_monitor import summarize_clob_amm_rows, tail_clob_amm_records
 
     if _ARB_CACHE.get("latest"):
@@ -159,6 +172,7 @@ def arb_snapshot_cached(
     history = tail_clob_amm_records(limit=history_limit, path=logs / "clob_amm_spread.jsonl")
     enriched = _enrich_history(history, default_clob_spread_pct=spread_pct)
     latest = enriched[-1] if enriched else None
+    uni_rows = tail_universe_records(limit=1, path=logs / "arb_universe.jsonl")
     return {
         "mode": "read_only",
         "updated_utc": None,
@@ -167,17 +181,21 @@ def arb_snapshot_cached(
         "history": enriched[-24:],
         "summary": summarize_clob_amm_rows(enriched, default_clob_spread_pct=spread_pct),
         "cost_model": _cost_model_payload(spread_pct),
+        "universe": uni_rows[-1] if uni_rows else None,
         "note": "Waiting for first arb poll — open Arb tab or wait ~60s.",
     }
 
 
 def arb_soak_report_text(*, logs_dir: Optional[Path] = None, limit: int = _DEFAULT_HISTORY_LIMIT) -> str:
+    from experimental.arb.arb_universe import format_universe_report
     from experimental.arb.clob_amm_monitor import format_clob_amm_report
 
     logs = _logs_dir(logs_dir)
     spread_pct = _read_alpha_book_context(logs).get("spread_pct")
-    return format_clob_amm_report(
+    primary = format_clob_amm_report(
         logs_dir=logs,
         limit=limit,
         default_clob_spread_pct=spread_pct,
     )
+    universe = format_universe_report(logs_dir=logs, limit=limit)
+    return primary + "\n\n" + universe
