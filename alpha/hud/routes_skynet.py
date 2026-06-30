@@ -63,7 +63,14 @@ def register_skynet_routes(app: Any) -> None:
 
     @app.get("/operator/skynet/status")
     async def get_skynet_status() -> JSONResponse:
+        import inspect
+
+        from alpha.hud.skynet_scenarios import infer_scenario_hints
+
         payload: Dict[str, Any] = {"ok": True, **skynet_status(), **agent_status_payload()}
+        payload["accumulation_regime_param_ok"] = (
+            "accumulation_regime" in inspect.signature(infer_scenario_hints).parameters
+        )
         try:
             hud_state, _, snap = _effective_context()
             build_skynet_context(hud_state, operator_config=snap)
@@ -73,6 +80,27 @@ def register_skynet_routes(app: Any) -> None:
             payload["context_ready"] = False
             payload["context_error"] = str(exc)[:500]
         return JSONResponse(payload)
+
+    @app.post("/operator/skynet/ping")
+    async def post_skynet_ping(body: Dict[str, Any] = Body(default={})) -> JSONResponse:
+        """Build context only — no xAI call (isolates code vs API failures)."""
+        try:
+            hud_state, _, snap = _effective_context()
+            ctx = build_skynet_context(hud_state, operator_config=snap)
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "message": "SKYNET context built OK",
+                    "context_chars": len(ctx),
+                    "accumulation_regime_param_ok": True,
+                }
+            )
+        except Exception as exc:
+            logger.exception("skynet_ping_failed")
+            return JSONResponse(
+                {"ok": False, "message": f"SKYNET context build failed: {exc}"},
+                status_code=400,
+            )
 
     @app.get("/operator/skynet/agent")
     async def get_skynet_agent() -> JSONResponse:

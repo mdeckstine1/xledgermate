@@ -839,8 +839,10 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const data = await r.json().catch(() => ({}));
       const errMsg = formatApiError(data, r.status);
       if (!r.ok) toast(errMsg, true);
-      if (!r.ok) return { ...data, ok: false, message: errMsg };
-      return data;
+      if (!r.ok || data.ok === false) {
+        return { ...data, ok: false, message: data.message || errMsg || ('HTTP ' + r.status), http_status: r.status };
+      }
+      return { ...data, ok: data.ok !== false };
     }
 
     async function patchJson(path, body) {
@@ -2797,7 +2799,13 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
           return;
         }
         if (d.context_ready === false) {
-          el.textContent = 'SKYNET context error — restart HUD after deploy: ' + (d.context_error || 'unknown');
+          el.textContent = 'SKYNET context error — pull samurai + restart HUD: ' + (d.context_error || 'unknown');
+          el.style.color = 'var(--bad)';
+          $('btnSkynetSend').disabled = true;
+          return;
+        }
+        if (d.accumulation_regime_param_ok === false) {
+          el.textContent = 'SKYNET code outdated (missing accumulation fix) — git pull + restart HUD';
           el.style.color = 'var(--bad)';
           $('btnSkynetSend').disabled = true;
           return;
@@ -2998,7 +3006,8 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
           return;
         }
         if (!d.ok) {
-          setSkynetResponse(d.message || 'SKYNET request failed');
+          const detail = [d.message, d.http_status ? ('HTTP ' + d.http_status) : ''].filter(Boolean).join(' — ');
+          setSkynetResponse(detail || 'SKYNET request failed (no detail — DevTools → Network → skynet/ask)');
           return;
         }
         setSkynetResponse(d.display || d.raw_response || '(empty response)');
