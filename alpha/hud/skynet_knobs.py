@@ -71,6 +71,8 @@ _KNOB_HINTS: Dict[str, str] = {
     "inventory_target_xrp_ratio": "Target XRP share of portfolio (0–1, not %)",
     "alpha_risk_per_trade_pct": "Max XRP per entry as % of portfolio",
     "alpha_weakness_deviation": "RLUSD deploy when this far below XRP target",
+    "alpha_bull_run_max_deviation": "Bull-run/momentum bids allowed until this far above XRP target",
+    "alpha_accumulation_max_deviation": "Accumulation regime deploy cap above XRP target (scale ~0.08)",
     "alpha_strength_deviation": "Strength sell when this far above XRP target",
     "alpha_max_pending_buys": "Max concurrent resting buy brackets",
     "alpha_stale_pending_buy_max_age_seconds": "Cancel stale bids after N seconds (0=off)",

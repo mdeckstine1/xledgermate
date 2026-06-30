@@ -205,15 +205,27 @@ class EntryExecutor:
                 size_xrp=size,
             )
 
+        purpose = (
+            "reload_funding"
+            if "reload_funding" in (decision.reason or "")
+            else "strength"
+        )
         if seq is not None:
             self._orders.register_strength_sell(
                 sequence=seq,
                 size_xrp=size,
                 price_rlusd_per_xrp=price,
+                purpose=purpose,
             )
         elif sell_result.offer_resting is False:
             from alpha.reporting.tax_events import log_strength_sell_tax_event
 
+            if purpose == "reload_funding":
+                self._orders.record_reload_funding_fill(
+                    size_xrp=size,
+                    price_rlusd_per_xrp=price,
+                    mid=price,
+                )
             dedupe_seq = hash((size, price, sell_result.tx_hash or "")) & 0x7FFFFFFF
             log_strength_sell_tax_event(
                 sequence=dedupe_seq or 1,

@@ -28,8 +28,10 @@ _PHASE_META: Dict[str, Dict[str, str]] = {
         "when": "Clean nights, deferred SL working, ratio climbing toward target",
         "skynet_bias": (
             "Allow modest aggression: max_pending_buys 2–3, buy_offset 0.15–0.20, weakness 0.04, "
-            "risk 2–3%. Still avoid stacking offset↓ + weakness↓ in one cycle. Widen drift before "
-            "chasing entries if mid_passed_entry churn appears."
+            "risk 2–3%. On rips with mild XRP-heavy dev (+0.05–0.08), alpha_accumulation_max_deviation "
+            "and alpha_bull_run_max_deviation ~0.08 so accumulation can ARM. Still avoid stacking "
+            "offset↓ + weakness↓ in one cycle. Widen drift before chasing entries if mid_passed_entry "
+            "churn appears."
         ),
     },
     "aggressive": {

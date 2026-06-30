@@ -79,7 +79,7 @@ Operator prompt priority (critical):
 - Context block `realized_bracket_pnl` (tax CSV) is authoritative for trading edge in trust phase — prefer over session_pnl_xrp_mtm.
 
 - When explaining WATCHING vs ARMED, read `Engine gate diagnostics` and `Market structure` blocks — do not infer breakout thresholds from TA bias alone.
-- `accumulation_dev_cap` FAIL means breakout can fire but accumulation stays blocked until dev eases or operator raises alpha_accumulation_max_deviation (not in apply allowlist — mention only).
+- `accumulation_dev_cap` FAIL means breakout can fire but accumulation stays blocked until dev eases or operator raises alpha_accumulation_max_deviation / alpha_bull_run_max_deviation (scale phase often uses 0.08).
 - When the operator describes desired settings in natural language (e.g. "risk 4%", "stickier bids", "max pending 1", "bullish consolidation buy"), translate into concrete suggested_changes — do not answer with unrelated scenario C presets.
 - Pending buy limits are passive: they fill when best ask hits the bid, NOT when mid crosses entry.
 - Stale pending buy policy (see context `pending_buy_stale`):

@@ -92,9 +92,13 @@ class OrderManager:
         self._last_risk: Optional[RiskSnapshot] = None
         self._accumulation_knobs: object | None = None
         self._accumulation_session: AccumulationSessionTracker | None = None
+        self._reload_session: object | None = None
 
     def set_accumulation_session(self, session: AccumulationSessionTracker | None) -> None:
         self._accumulation_session = session
+
+    def set_reload_session(self, session: object | None) -> None:
+        self._reload_session = session
 
     def set_accumulation_knobs(self, knobs: object | None) -> None:
         self._accumulation_knobs = knobs
@@ -182,17 +186,53 @@ class OrderManager:
         sequence: int,
         size_xrp: float,
         price_rlusd_per_xrp: float,
+        purpose: str = "strength",
     ) -> None:
         """Track a non-bracket inventory ask until fill or cancel."""
         seq = int(sequence)
         if seq <= 0 or size_xrp <= 0 or price_rlusd_per_xrp <= 0:
             return
+        kind = str(purpose or "strength").strip().lower()
+        if kind not in ("strength", "reload_funding"):
+            kind = "strength"
         self._strength_sells.register(
             StrengthSellRecord(
                 sequence=seq,
                 size_xrp=float(size_xrp),
                 price_rlusd_per_xrp=float(price_rlusd_per_xrp),
+                purpose=kind,
             )
+        )
+
+    def _record_reload_funding_fill(
+        self,
+        *,
+        size_xrp: float,
+        price_rlusd_per_xrp: float,
+        mid: Optional[float],
+    ) -> None:
+        if self._reload_session is None or size_xrp <= 0 or price_rlusd_per_xrp <= 0:
+            return
+        record_fill = getattr(self._reload_session, "record_fill", None)
+        if not callable(record_fill):
+            return
+        ref_mid = float(mid or 0.0)
+        if ref_mid <= 0:
+            ref_mid = float(price_rlusd_per_xrp)
+        rlusd_xrp_equiv = (size_xrp * price_rlusd_per_xrp) / ref_mid
+        record_fill(rlusd_xrp_equiv=rlusd_xrp_equiv)
+
+    def record_reload_funding_fill(
+        self,
+        *,
+        size_xrp: float,
+        price_rlusd_per_xrp: float,
+        mid: Optional[float] = None,
+    ) -> None:
+        self._record_reload_funding_fill(
+            size_xrp=size_xrp,
+            price_rlusd_per_xrp=price_rlusd_per_xrp,
+            mid=mid,
         )
 
     async def sync_state(self, *, risk: Optional[RiskSnapshot] = None) -> OrderManagerState:
@@ -1702,12 +1742,19 @@ class OrderManager:
                 dry_run=self._guard.dry_run,
                 mid=mid,
             )
+            if rec.purpose == "reload_funding":
+                self._record_reload_funding_fill(
+                    size_xrp=rec.size_xrp,
+                    price_rlusd_per_xrp=rec.price_rlusd_per_xrp,
+                    mid=mid,
+                )
             self._strength_sells.remove(rec.sequence)
             logger.info(
-                "strength_sell_filled | seq=%s | size=%.4f | price=%.6f",
+                "strength_sell_filled | seq=%s | size=%.4f | price=%.6f | purpose=%s",
                 rec.sequence,
                 rec.size_xrp,
                 rec.price_rlusd_per_xrp,
+                rec.purpose,
             )
 
 

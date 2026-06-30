@@ -96,6 +96,20 @@ def test_filter_accepts_hud_alias_keys():
     assert accepted[0]["key"] == "alpha_risk_per_trade_pct"
 
 
+def test_filter_accepts_accumulation_dev_knobs():
+    base = BotConfig()
+    sanitized, accepted, errors = filter_applicable_suggestions(
+        [
+            {"key": "alpha_accumulation_max_deviation", "value": 0.08, "reason": "scale rip"},
+            {"key": "alpha_bull_run_max_deviation", "value": 0.08, "reason": "momentum path"},
+        ],
+        base=base,
+    )
+    assert not errors
+    assert sanitized["alpha_accumulation_max_deviation"] == 0.08
+    assert sanitized["alpha_bull_run_max_deviation"] == 0.08
+
+
 def test_build_skynet_context_includes_gate_diagnostics_and_structure():
     ctx = build_skynet_context(
         {

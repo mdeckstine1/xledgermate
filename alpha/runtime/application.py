@@ -120,6 +120,7 @@ class AlphaApplication:
             reentry_gate=self._reentry,
         )
         self._orders.set_accumulation_session(self._accumulation_session)
+        self._orders.set_reload_session(self._reload_session)
         self._decision = DecisionEngine(
             config,
             inventory=self._inventory,
