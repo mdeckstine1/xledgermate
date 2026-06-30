@@ -162,7 +162,7 @@ def _session_response(settings: HudAuthSettings, *, next_url: str = "/") -> Resp
 
 
 def _unauthorized_json() -> JSONResponse:
-    return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    return JSONResponse({"ok": False, "error": "unauthorized", "message": "unauthorized — sign in again"}, status_code=401)
 
 
 def _rp_id_for_request(request: Request, settings: HudAuthSettings) -> str:

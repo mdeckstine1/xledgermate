@@ -18,6 +18,22 @@ fi
 echo "=== pip install (if needed) ==="
 .venv/bin/pip install -q -r requirements.txt
 
+echo "=== SKYNET / Grok key check ==="
+if ! .venv/bin/python - <<'PY'
+from config.settings import BotConfig
+from utils.env_secrets import resolve_grok_key
+cfg = BotConfig.load()
+key = resolve_grok_key(cfg.alpha_grok_api_key)
+if not key:
+    raise SystemExit(1)
+print(f"ok key_source={'config' if (cfg.alpha_grok_api_key or '').strip() else 'env'} hint=xai-…{key[-4:]}")
+PY
+then
+  echo "WARN: No Grok API key on this host."
+  echo "  Add XLG_GROK_KEY to /root/xledgermate/.env OR alpha_grok_api_key to config/credentials.local.yaml"
+  echo "  SKYNET Ask will fail until one of those is set."
+fi
+
 _restart_unit() {
   local unit="$1"
   if systemctl cat "${unit}" >/dev/null 2>&1; then

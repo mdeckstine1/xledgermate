@@ -11,6 +11,10 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+from utils.env_secrets import load_dotenv_local
+
+load_dotenv_local()
+
 _HUD_DIR = Path(__file__).resolve().parent
 _INDEX = _HUD_DIR / "index.html"
 _FAVICON = Path(__file__).resolve().parents[2] / "experimental" / "ws_feed" / "hud" / "favicon.png"

@@ -87,7 +87,8 @@ alpha_skynet_enabled: true
 alpha_skynet_grok_model: grok-3
 alpha_skynet_grok_max_tokens: 4096   # SKYNET Grok response length (manual + agent)
 # Phase 2 agent guardrails + enable toggle persist in logs/alpha_skynet_agent.json (HUD SKYNET tab).
-# alpha_grok_api_key: ""   # optional; prefer XLG_GROK_KEY or XAI_API_KEY in .env
+# Optional: store in config/credentials.local.yaml (gitignored) instead of .env:
+# alpha_grok_api_key: "xai-..."
 
 # PRO tab — replay analytics + auto-defensive circuit (treasury = placeholder)
 alpha_defensive_circuit_enabled: true

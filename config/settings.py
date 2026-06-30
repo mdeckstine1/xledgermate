@@ -8,7 +8,7 @@ from alpha.decision.ta_config import AlphaTechnicalAnalysisConfig
 
 CONFIG_FILE = Path(__file__).resolve().parent / "config.yaml"
 CREDENTIALS_SIDECAR_NAME = "credentials.local.yaml"
-_CREDENTIAL_FIELDS = ("bot_account_address", "bot_secret_key")
+_CREDENTIAL_FIELDS = ("bot_account_address", "bot_secret_key", "alpha_grok_api_key")
 
 
 def credentials_sidecar_path(config_path: Optional[Union[str, Path]] = None) -> Path:

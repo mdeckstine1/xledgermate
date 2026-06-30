@@ -99,13 +99,16 @@ _BLOCKED_APPLY_KEYS = frozenset({"dry_run"})
 
 def skynet_status(config: BotConfig | None = None) -> Dict[str, Any]:
     cfg = config or BotConfig.load()
-    key = resolve_grok_key(getattr(cfg, "alpha_grok_api_key", "") or "")
+    explicit = (getattr(cfg, "alpha_grok_api_key", "") or "").strip()
+    key = resolve_grok_key(explicit)
+    key_source = "config" if explicit else ("env" if key else "missing")
     model = (getattr(cfg, "alpha_skynet_grok_model", None) or "grok-3").strip() or "grok-3"
     max_tokens = int(getattr(cfg, "alpha_skynet_grok_max_tokens", 4096) or 4096)
     enabled = bool(getattr(cfg, "alpha_skynet_enabled", True))
     return {
         "enabled": enabled,
         "configured": bool(key),
+        "key_source": key_source,
         "model": model,
         "max_tokens": max(256, min(8192, max_tokens)),
         "key_hint": f"xai-…{key[-4:]}" if len(key) >= 8 else "",

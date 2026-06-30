@@ -8,6 +8,7 @@ Type=simple
 User=root
 WorkingDirectory=/root/xledgermate
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/root/xledgermate/.env
 ExecStart=/root/xledgermate/.venv/bin/python -m alpha run
 Restart=on-failure
 RestartSec=15

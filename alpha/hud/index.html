@@ -820,6 +820,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     function formatApiError(data, status) {
       if (!data || typeof data !== 'object') return 'HTTP ' + status;
       if (data.message) return data.message;
+      if (data.error) return String(data.error);
       const d = data.detail;
       if (typeof d === 'string') return d;
       if (Array.isArray(d)) return d.map((x) => x.msg || JSON.stringify(x)).join('; ');
@@ -830,6 +831,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     async function postJson(path, body) {
       const r = await fetch(path, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       });
@@ -2801,7 +2803,8 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
           return;
         }
         el.style.color = '';
-        el.textContent = `SKYNET ready · model ${d.model}${d.key_hint ? ' · key ' + d.key_hint : ''} · Phase 1 manual + Phase 2 Agent Smith + Phase 3 full mode`;
+        const src = d.key_source ? ` · key ${d.key_source}` : '';
+        el.textContent = `SKYNET ready · model ${d.model}${d.key_hint ? ' · ' + d.key_hint : ''}${src} · Phase 1 manual + Phase 2 Agent Smith + Phase 3 full mode`;
         $('btnSkynetSend').disabled = false;
         if (d.guardrails) fillGuardrailsForm(d.guardrails);
         if (d.emergency_rules) fillEmergencyForm(d.emergency_rules);
