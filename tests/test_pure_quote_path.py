@@ -265,9 +265,12 @@ def test_g7_xrp_heavy_ask_tighter_touch() -> None:
         assert "join" in d.g7_scaler_label
         assert d.g2_scaler_label
         assert "G7" in d.execution_brakes_summary
-        assert d.suggested_ask is None  # v2.2 QD solo accumulate — bid only
+        assert d.qd_intent == "two_sided_skim"
+        assert d.suggested_ask is not None
+        assert d.suggested_ask >= d.best_ask
         assert d.suggested_bid is not None
         assert d.suggested_bid <= d.best_bid
         assert d.qd_bid_allowed is True
+        assert d.qd_ask_allowed is True
 
     asyncio.run(run())
