@@ -57,6 +57,7 @@ def build_cycle_inputs(
     inventory_label: str,
     peer_lane_empty: bool,
     peer_lane_count: int = 0,
+    peer_lane_known: Optional[bool] = None,
     toxic_ratio_30s: float = 0.0,
     g2_spread_mult: float = 1.0,
     g2_grade: str = "",
@@ -72,6 +73,11 @@ def build_cycle_inputs(
         mid=mid,
     )
     buys, sells = _split_recent_fills(recent_fills or ())
+    peer_known = (
+        bool(peer_lane_empty or peer_lane_count > 0)
+        if peer_lane_known is None
+        else bool(peer_lane_known)
+    )
     return CycleQuoteInputs(
         mid=mid,
         best_bid=best_bid,
@@ -83,6 +89,7 @@ def build_cycle_inputs(
         inventory_label=inventory_label,
         peer_lane_empty=peer_lane_empty,
         peer_lane_count=peer_lane_count,
+        peer_lane_known=peer_known,
         toxic_ratio_30s=toxic_ratio_30s,
         g2_spread_mult=g2_spread_mult,
         g2_grade=g2_grade,
@@ -108,6 +115,7 @@ def compute_quoting_decision(
     inventory_label: str,
     peer_lane_empty: bool,
     peer_lane_count: int = 0,
+    peer_lane_known: Optional[bool] = None,
     toxic_ratio_30s: float = 0.0,
     g2_spread_mult: float = 1.0,
     g2_grade: str = "",
@@ -130,6 +138,7 @@ def compute_quoting_decision(
         inventory_label=inventory_label,
         peer_lane_empty=peer_lane_empty,
         peer_lane_count=peer_lane_count,
+        peer_lane_known=peer_lane_known,
         toxic_ratio_30s=toxic_ratio_30s,
         g2_spread_mult=g2_spread_mult,
         g2_grade=g2_grade,

@@ -173,6 +173,7 @@ class CycleQuoteInputs:
     inventory_label: str
     peer_lane_empty: bool
     peer_lane_count: int = 0
+    peer_lane_known: bool = False
     toxic_ratio_30s: float = 0.0
     g2_spread_mult: float = 1.0
     g2_grade: str = ""

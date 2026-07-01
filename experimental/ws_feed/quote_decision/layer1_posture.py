@@ -41,7 +41,7 @@ def _drift_band(deviation: float) -> DriftBand:
 
 
 def _book_mode(*, solo: bool, peer_lane_count: int) -> BookMode:
-    if solo or peer_lane_count <= 0:
+    if solo:
         return BookMode.SOLO
     if peer_lane_count <= 2:
         return BookMode.SPARSE
@@ -92,7 +92,10 @@ def _side_quality(
 def build_posture_snapshot(inputs: CycleQuoteInputs) -> PostureSnapshot:
     """Construct Layer 1 snapshot from cycle inputs."""
     deviation = inputs.xrp_ratio - inputs.target_xrp_ratio
-    solo = bool(inputs.peer_lane_empty or inputs.peer_lane_count <= 0)
+    solo = bool(
+        inputs.peer_lane_empty
+        or (inputs.peer_lane_known and inputs.peer_lane_count <= 0)
+    )
 
     return PostureSnapshot(
         book=BookPosture(

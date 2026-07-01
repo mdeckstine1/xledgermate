@@ -201,6 +201,28 @@ def test_g4_peer_lane_in_quote_path() -> None:
     asyncio.run(run())
 
 
+def test_unknown_peer_lane_intel_does_not_trigger_solo_qd() -> None:
+    path = PureQuotePath(gamma=0.35, kappa=3.5)
+
+    async def run() -> None:
+        d = await path.compute_decision(
+            mid=1.10,
+            best_bid=1.099,
+            best_ask=1.101,
+            xrp_bal=138.0,
+            rlusd_bal=124.0,
+            competitor_intel={"competitor_pressure": 0.5},
+        )
+        assert d.g7_solo_acquisition is False
+        assert d.qd_intent == "two_sided_skim"
+        assert d.qd_bid_allowed is True
+        assert d.qd_ask_allowed is True
+        assert d.suggested_bid is not None
+        assert d.suggested_ask is not None
+
+    asyncio.run(run())
+
+
 def test_v220_xrp_heavy_solo_no_deadlock() -> None:
     """Regression v2.1.40: inv pause_bids + ask brake → both off; QD allows bid at edge."""
     path = PureQuotePath(gamma=0.35, kappa=3.5, configured_l1_xrp=150.0)
