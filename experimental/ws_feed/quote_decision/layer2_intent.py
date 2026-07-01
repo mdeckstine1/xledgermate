@@ -94,6 +94,23 @@ def select_quote_intent(
             allow_two_sided=False,
         )
 
+    if inv.band == DriftBand.HEAVY_RLUSD:
+        if buy_edge_viable:
+            return IntentSelection(
+                intent=QuoteIntent.TWO_SIDED_SKIM,
+                reason=f"{book.mode.value} + rlusd-heavy buy edge",
+                favor_bid=True,
+                favor_ask=False,
+                allow_two_sided=False,
+            )
+        return IntentSelection(
+            intent=QuoteIntent.PATIENT_SOLO,
+            reason=f"{book.mode.value} + rlusd-heavy — waiting for buy edge",
+            favor_bid=False,
+            favor_ask=False,
+            allow_two_sided=False,
+        )
+
     # Crowded / sparse — two-sided skim when edges allow.
     if buy_edge_viable or sell_edge_viable:
         return IntentSelection(

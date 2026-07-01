@@ -177,3 +177,62 @@ def test_compute_quoting_decision_adapter() -> None:
     assert qd.would_quote is True
     flags = qd.to_legacy_flags()
     assert "quote_intent" in flags
+
+
+def test_unknown_peer_lane_is_not_treated_as_solo() -> None:
+    qd = compute_quoting_decision(
+        mid=1.10,
+        best_bid=1.099,
+        best_ask=1.101,
+        l1_bid_price=1.098,
+        l1_ask_price=1.102,
+        xrp_balance=200.0,
+        rlusd_balance=200.0,
+        target_xrp_ratio=0.55,
+        inventory_label="balanced",
+        peer_lane_empty=False,
+    )
+    assert qd.posture.book.solo is False
+    assert qd.posture.book.mode == BookMode.SPARSE
+    assert qd.intent == QuoteIntent.TWO_SIDED_SKIM
+    assert qd.bid.allowed is True
+    assert qd.ask.allowed is True
+
+
+def test_known_zero_peer_lane_remains_solo() -> None:
+    qd = compute_quoting_decision(
+        mid=1.10,
+        best_bid=1.099,
+        best_ask=1.101,
+        l1_bid_price=1.098,
+        l1_ask_price=1.102,
+        xrp_balance=200.0,
+        rlusd_balance=200.0,
+        target_xrp_ratio=0.55,
+        inventory_label="balanced",
+        peer_lane_empty=False,
+        peer_lane_count=0,
+        peer_lane_known=True,
+    )
+    assert qd.posture.book.solo is True
+    assert qd.posture.book.mode == BookMode.SOLO
+    assert qd.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
+
+
+def test_unknown_peer_lane_preserves_heavy_rlusd_bid_only() -> None:
+    qd = compute_quoting_decision(
+        mid=1.10,
+        best_bid=1.099,
+        best_ask=1.101,
+        l1_bid_price=1.098,
+        l1_ask_price=1.102,
+        xrp_balance=80.0,
+        rlusd_balance=220.0,
+        target_xrp_ratio=0.55,
+        inventory_label="rlusd_heavy",
+        peer_lane_empty=False,
+    )
+    assert qd.posture.book.mode == BookMode.SPARSE
+    assert qd.intent == QuoteIntent.TWO_SIDED_SKIM
+    assert qd.bid.allowed is True
+    assert qd.ask.allowed is False

@@ -374,6 +374,14 @@ class PureQuotePath:
         inv_skew = _inventory_skew_from_label(inv_state.label)
 
         quoting_intel = prepare_quoting_intel(competitor_intel if competitor_pressure_enabled else None)
+        peer_lane_known = bool(
+            quoting_intel
+            and (
+                "peer_lane_count" in quoting_intel
+                or "peer_lane_empty" in quoting_intel
+            )
+        )
+        peer_lane_empty = is_peer_lane_empty(quoting_intel)
         pressure_model = from_intel_dict(quoting_intel) if competitor_pressure_enabled else None
         pressure_preview = pressure_model.value if pressure_model else None
         age_adj = apply_ws_book_age_modulator(
@@ -538,7 +546,7 @@ class PureQuotePath:
                 float(fill_quality.mean_markout_30s_pct) if fill_quality else 0.0
             ),
             recent_fills=int(fill_quality.recent_fills) if fill_quality else 0,
-            peer_lane_empty=is_peer_lane_empty(quoting_intel),
+            peer_lane_empty=peer_lane_empty,
         )
         l1_bid_price, l1_ask_price = touch_prices_from_backoff(
             best_bid=best_bid,
@@ -556,8 +564,9 @@ class PureQuotePath:
             rlusd_balance=rlusd_bal,
             target_xrp_ratio=target_ratio,
             inventory_label=inv_state.label,
-            peer_lane_empty=is_peer_lane_empty(quoting_intel),
+            peer_lane_empty=peer_lane_empty,
             peer_lane_count=g4.peer_lane_count,
+            peer_lane_known=peer_lane_known,
             toxic_ratio_30s=(
                 float(fill_quality.toxic_ratio_30s) if fill_quality else 0.0
             ),
