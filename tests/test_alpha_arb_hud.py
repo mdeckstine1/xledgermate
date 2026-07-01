@@ -100,6 +100,39 @@ def test_read_alpha_mid_from_runtime_state(tmp_path):
     assert arb_monitor._read_alpha_book_context(logs)["spread_pct"] == pytest.approx(0.0987)
 
 
+def test_arb_snapshot_includes_fill_simulation(tmp_path, monkeypatch):
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    depth_row = {
+        "ts_utc": "2026-06-22T11:00:00+00:00",
+        "clob_mid_rlusd_per_xrp": 1.12,
+        "amm_mid_rlusd_per_xrp": 1.10,
+        "spread_bps": 18.0,
+        "clob_spread_pct": 0.1,
+        "amm_fee_bps": 5.0,
+        "dislocation": True,
+        "status": "ok",
+        "amm_xrp_reserve": 50_000.0,
+        "amm_rlusd_reserve": 55_000.0,
+        "book_depth": {
+            "best_bid": 1.12,
+            "best_ask": 1.13,
+            "mid": 1.125,
+            "bids": [{"p": 1.12, "x": 500.0}],
+            "asks": [{"p": 1.13, "x": 500.0}],
+        },
+    }
+    path = logs / "clob_amm_spread.jsonl"
+    path.write_text(json.dumps(depth_row) + "\n", encoding="utf-8")
+
+    monkeypatch.setattr(arb_monitor, "_ARB_CACHE", {"latest": None, "history": []})
+
+    snap = arb_monitor.arb_snapshot_cached(logs_dir=logs)
+    assert "fill_simulation" in snap
+    assert snap["fill_simulation"]["live"]["available"] is True
+    assert len(snap["fill_simulation"]["live"]["rows"]) == 3
+
+
 def test_arb_soak_report_route(client, monkeypatch):
     monkeypatch.setattr(
         "alpha.hud.arb_monitor.arb_soak_report_text",

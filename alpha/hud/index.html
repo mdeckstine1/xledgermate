@@ -686,6 +686,27 @@
           </div>
         </div>
         <div class="card" style="margin-top:12px">
+          <h3 style="margin:0 0 6px">Fill simulation</h3>
+          <p class="muted" style="margin:0 0 10px;font-size:.75rem;line-height:1.4">
+            Book walk + AMM pool at size — not the mid-based net edge above. Best direction per row.
+          </p>
+          <p id="arbFillLiveMeta" class="muted" style="font-size:.72rem;margin:0 0 8px"></p>
+          <div style="overflow-x:auto;margin-bottom:12px">
+            <table class="ta-signals" id="arbFillLiveTable">
+              <thead><tr><th>Notional</th><th>Direction</th><th>Fill edge</th><th>P&amp;L</th><th>Feasible</th><th>Flag</th></tr></thead>
+              <tbody id="arbFillLiveBody"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <h4 style="margin:0 0 6px;font-size:.8rem;color:var(--muted)">24h soak replay (depth snapshots)</h4>
+          <p id="arbFillSoakMeta" class="muted" style="font-size:.72rem;margin:0 0 8px"></p>
+          <div style="overflow-x:auto">
+            <table class="ta-signals" id="arbFillSoakTable">
+              <thead><tr><th>Notional</th><th>Samples</th><th>Feasible</th><th>Fill PROFIT</th><th>Avg mid</th><th>Avg fill</th><th>Haircut</th></tr></thead>
+              <tbody id="arbFillSoakBody"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card" style="margin-top:12px">
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:8px">
             <h3 style="margin:0">Recent samples</h3>
             <button type="button" id="btnArbSoakReport" class="secondary" style="font-size:.75rem;padding:4px 10px">Soak report ↗</button>
@@ -3243,9 +3264,85 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       }
     }
 
+    function renderArbFillSimulation(fs) {
+      const live = fs?.live || {};
+      const soak = fs?.soak_replay || {};
+      const liveMeta = $('arbFillLiveMeta');
+      const liveBody = $('arbFillLiveBody');
+      const soakMeta = $('arbFillSoakMeta');
+      const soakBody = $('arbFillSoakBody');
+
+      if (liveMeta) {
+        const parts = [];
+        if (live.mid_net_bps != null) parts.push(`mid net ${fmtArbSignedBps(live.mid_net_bps)}`);
+        if (live.available) {
+          parts.push(`${live.book_bid_levels} bids / ${live.book_ask_levels} asks`);
+          if (live.amm_xrp_reserve != null) {
+            parts.push(
+              `pool ${Number(live.amm_xrp_reserve).toLocaleString()} XRP · `
+              + `${Number(live.amm_rlusd_reserve).toLocaleString()} RLUSD`
+              + (live.amm_fee_bps != null ? ` · fee ${live.amm_fee_bps} bps` : '')
+            );
+          }
+        }
+        const note = live.note || '';
+        liveMeta.textContent = parts.length ? parts.join(' · ') + (note ? ' — ' + note : '') : note;
+      }
+
+      if (liveBody) {
+        const rows = live.rows || [];
+        if (!rows.length) {
+          liveBody.innerHTML = '<tr><td colspan="6" class="muted">No depth on latest poll yet</td></tr>';
+        } else {
+          liveBody.innerHTML = rows.map((r) => {
+            const flag = r.profitable
+              ? '<span class="arb-net-pos">PROFIT</span>'
+              : (r.feasible ? '<span class="arb-net-neg">loss</span>' : '<span class="arb-disloc">short</span>');
+            const feas = r.feasible ? 'yes' : 'no';
+            return `<tr><td>${r.notional_rlusd} RLUSD</td><td>${r.direction || '—'}</td>`
+              + `<td>${fmtArbSignedBps(r.profit_bps)}</td><td>${r.profit_rlusd >= 0 ? '+' : ''}${Number(r.profit_rlusd).toFixed(4)}</td>`
+              + `<td>${feas}</td><td>${flag}</td></tr>`;
+          }).join('');
+        }
+      }
+
+      if (soakMeta) {
+        const n = soak.depth_samples || 0;
+        if (!n) {
+          soakMeta.textContent = soak.note || 'Waiting for depth snapshots in soak JSONL.';
+        } else {
+          const start = (soak.window_start_utc || '').slice(0, 19).replace('T', ' ');
+          const end = (soak.window_end_utc || '').slice(0, 19).replace('T', ' ');
+          soakMeta.textContent = `${n} samples · ${soak.window_hours || 24}h window · ${start} → ${end}`;
+        }
+      }
+
+      if (soakBody) {
+        const by = soak.by_notional || {};
+        const keys = Object.keys(by).sort((a, b) => Number(a) - Number(b));
+        if (!keys.length || !(soak.depth_samples > 0)) {
+          soakBody.innerHTML = '<tr><td colspan="7" class="muted">No replay data yet</td></tr>';
+        } else {
+          soakBody.innerHTML = keys.map((k) => {
+            const s = by[k] || {};
+            if (!s.samples) {
+              return `<tr><td>${k} RLUSD</td><td colspan="6" class="muted">—</td></tr>`;
+            }
+            return `<tr><td>${k} RLUSD</td><td>${s.samples}</td>`
+              + `<td>${s.feasible_pct != null ? s.feasible_pct + '%' : '—'}</td>`
+              + `<td>${s.profitable_pct != null ? s.profitable_pct + '%' : '—'}</td>`
+              + `<td>${fmtArbSignedBps(s.avg_mid_edge_bps)}</td>`
+              + `<td>${fmtArbSignedBps(s.avg_fill_edge_bps)}</td>`
+              + `<td>${s.haircut_bps != null ? fmtArbSignedBps(s.haircut_bps) : '—'}</td></tr>`;
+          }).join('');
+        }
+      }
+    }
+
     function renderArb(d) {
       if (!d) return;
       renderArbUniverse(d.universe);
+      renderArbFillSimulation(d.fill_simulation);
       const latest = d.latest || {};
       const summary = d.summary || {};
       const costs = d.cost_model || {};

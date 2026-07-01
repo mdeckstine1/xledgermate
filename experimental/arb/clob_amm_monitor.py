@@ -181,6 +181,8 @@ def record_clob_amm_snapshot(
     dislocation_bps: float = DEFAULT_DISLOCATION_BPS,
     slippage_buffer_bps: float = DEFAULT_SLIPPAGE_BUFFER_BPS,
     path: Path = CLOB_AMM_LOG,
+    book_depth_limit: int = 20,
+    capture_fill_depth: bool = True,
 ) -> Dict[str, Any]:
     """Fetch AMM mid + fee, log spread/net edge, return HUD fields."""
     row: Dict[str, Any] = {
@@ -213,6 +215,29 @@ def record_clob_amm_snapshot(
         row["amm_trading_fee"] = amm_info.get("trading_fee")
     if amm_info.get("trading_fee_bps") is not None:
         row["amm_fee_bps"] = amm_info.get("trading_fee_bps")
+    if amm_info.get("xrp_reserve") is not None:
+        row["amm_xrp_reserve"] = round(float(amm_info["xrp_reserve"]), 6)
+    if amm_info.get("rlusd_reserve") is not None:
+        row["amm_rlusd_reserve"] = round(float(amm_info["rlusd_reserve"]), 6)
+
+    if capture_fill_depth:
+        try:
+            from experimental.arb.book_provider import (
+                book_depth_to_json,
+                fetch_token_xrp_book_depth_sync,
+            )
+
+            depth = fetch_token_xrp_book_depth_sync(
+                rpc_url=rpc_url,
+                currency=rlusd_currency,
+                issuer=rlusd_issuer,
+                limit=book_depth_limit,
+            )
+            row["book_depth"] = book_depth_to_json(depth)
+            if clob_spread_pct is None and depth.spread_pct is not None:
+                row["clob_spread_pct"] = round(float(depth.spread_pct), 4)
+        except Exception as exc:
+            logger.debug("book_depth capture failed: %s", exc)
 
     if amm_mid is None:
         row["status"] = "amm_unavailable"

@@ -107,10 +107,17 @@ def fetch_amm_info_sync(
     amm = result.get("amm") or result
     if not isinstance(amm, dict):
         return None
+    xrp = _parse_amount_xrp(amm.get("amount"))
+    rlusd = _parse_amount_rlusd(amm.get("amount2"))
+    if xrp is None or rlusd is None or xrp <= 0:
+        xrp = _parse_amount_xrp(amm.get("amount2"))
+        rlusd = _parse_amount_rlusd(amm.get("amount"))
     return {
         "mid": implied_mid_rlusd_per_xrp_from_amm_info(amm),
         "trading_fee": amm.get("TradingFee"),
         "trading_fee_bps": trading_fee_bps_from_amm(amm),
+        "xrp_reserve": xrp,
+        "rlusd_reserve": rlusd,
     }
 
 

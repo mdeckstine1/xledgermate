@@ -16,6 +16,7 @@ _ARB_CACHE: Dict[str, Any] = {
     "summary": {},
     "cost_model": {},
     "universe": None,
+    "fill_simulation": {},
 }
 
 _DEFAULT_DISLOCATION_BPS = 8.0
@@ -127,6 +128,9 @@ def refresh_arb_snapshot(
     enriched = _enrich_history(history, default_clob_spread_pct=spread_pct)
     summary = summarize_clob_amm_rows(enriched, default_clob_spread_pct=spread_pct)
     cost_model = _cost_model_payload(spread_pct)
+    from experimental.arb.fill_simulator import build_arb_fill_simulation_payload
+
+    fill_simulation = build_arb_fill_simulation_payload(latest=row, logs_dir=logs)
     out = {
         "mode": "read_only",
         "updated_utc": datetime.now(tz=timezone.utc).isoformat(),
@@ -136,6 +140,7 @@ def refresh_arb_snapshot(
         "summary": summary,
         "cost_model": cost_model,
         "universe": universe,
+        "fill_simulation": fill_simulation,
         "note": (
             "Monitor only — no arb execution. Alpha engine unchanged. "
             "Universe: RLUSD/XRP, USDC/XRP, USD/XRP, RLUSD/USDC basis."
@@ -173,6 +178,9 @@ def arb_snapshot_cached(
     enriched = _enrich_history(history, default_clob_spread_pct=spread_pct)
     latest = enriched[-1] if enriched else None
     uni_rows = tail_universe_records(limit=1, path=logs / "arb_universe.jsonl")
+    from experimental.arb.fill_simulator import build_arb_fill_simulation_payload
+
+    fill_simulation = build_arb_fill_simulation_payload(latest=latest, logs_dir=logs)
     return {
         "mode": "read_only",
         "updated_utc": None,
@@ -182,6 +190,7 @@ def arb_snapshot_cached(
         "summary": summarize_clob_amm_rows(enriched, default_clob_spread_pct=spread_pct),
         "cost_model": _cost_model_payload(spread_pct),
         "universe": uni_rows[-1] if uni_rows else None,
+        "fill_simulation": fill_simulation,
         "note": "Waiting for first arb poll — open Arb tab or wait ~60s.",
     }
 
