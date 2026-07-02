@@ -116,9 +116,10 @@ if app is not None:
 
     @app.get("/state")
     async def get_state() -> JSONResponse:
-        from alpha.hud.state_export import sanitize_for_json
+        from alpha.hud.state_export import refresh_live_metrics_in_state, sanitize_for_json
 
-        return JSONResponse(sanitize_for_json(_load_state()))
+        state = refresh_live_metrics_in_state(_load_state(), logs_dir=_RUNTIME.parent)
+        return JSONResponse(sanitize_for_json(state))
 
     @app.get("/reports/catalog")
     async def reports_catalog() -> JSONResponse:

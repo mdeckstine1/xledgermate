@@ -651,6 +651,61 @@ def build_hud_state(
     }
 
 
+def refresh_live_metrics_in_state(
+    state: Dict[str, Any],
+    *,
+    logs_dir: str | Path = "logs",
+    persist_week: bool = False,
+) -> Dict[str, Any]:
+    """
+    Recompute bag growth (and session MTM) when serving HUD /state.
+
+    Operator deposits and session baseline resets apply on the next poll without
+    waiting for an engine restart or cycle publish.
+    """
+    if not isinstance(state, dict):
+        return state
+    logs = Path(logs_dir)
+    mid_raw = state.get("mid")
+    try:
+        mid = float(mid_raw) if mid_raw is not None else None
+    except (TypeError, ValueError):
+        mid = None
+    if mid is not None and mid <= 0:
+        mid = None
+
+    xrp = float(state.get("xrp") or 0.0)
+    rlusd = float(state.get("rlusd") or 0.0)
+
+    state["bag_growth"] = build_bag_growth_snapshot(
+        xrp=xrp,
+        rlusd=rlusd,
+        mid_rlusd_per_xrp=mid,
+        logs_dir=logs,
+        persist_week=persist_week,
+    )
+
+    if mid is not None:
+        from risk.drawdown import portfolio_value_xrp
+
+        portfolio = portfolio_value_xrp(xrp, rlusd, mid)
+        session_path = logs / "alpha_session.json"
+        if session_path.is_file():
+            try:
+                sess = json.loads(session_path.read_text(encoding="utf-8"))
+                baseline = float(sess.get("baseline_portfolio_xrp") or 0.0)
+                if baseline > 0:
+                    risk = state.get("risk")
+                    if not isinstance(risk, dict):
+                        risk = {}
+                        state["risk"] = risk
+                    risk["session_pnl_xrp"] = round(portfolio - baseline, 4)
+            except (json.JSONDecodeError, OSError, TypeError, ValueError):
+                pass
+
+    return state
+
+
 def write_alpha_runtime_state(path: Path, state: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
