@@ -108,11 +108,11 @@ def load_all_tax_rows(logs_dir: Path) -> List[Dict[str, str]]:
     return rows
 
 
-def estimate_avg_cost_basis_rlusd(logs_dir: Path) -> float:
+def estimate_open_lot_cost_basis(logs_dir: Path) -> tuple[float, float]:
     """
-    Running average XRP cost (RLUSD/XRP) from taxable BUY/SELL rows.
+    Running-average cost of unsold XRP lots from taxable BUY/SELL rows.
 
-    Used for strength sells when no bracket entry price exists.
+    Returns (avg_rlusd_per_xrp, remaining_xrp).
     """
     total_xrp = 0.0
     total_cost = 0.0
@@ -136,7 +136,19 @@ def estimate_avg_cost_basis_rlusd(logs_dir: Path) -> float:
             sold = min(xrp, total_xrp)
             total_cost -= avg * sold
             total_xrp -= sold
-    return total_cost / total_xrp if total_xrp > 1e-9 else 0.0
+    if total_xrp <= 1e-9:
+        return 0.0, 0.0
+    return total_cost / total_xrp, total_xrp
+
+
+def estimate_avg_cost_basis_rlusd(logs_dir: Path) -> float:
+    """
+    Running average XRP cost (RLUSD/XRP) from taxable BUY/SELL rows.
+
+    Used for strength sells when no bracket entry price exists.
+    """
+    avg, _ = estimate_open_lot_cost_basis(logs_dir)
+    return avg
 
 
 def _classify_exit(notes: str) -> str:

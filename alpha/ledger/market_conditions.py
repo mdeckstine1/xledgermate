@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, Optional, TYPE_CHECKING
 from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
 from alpha.ledger.liquidity import depth_within_mid_band
 from alpha.precision import DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS, price_decimals, round_rlusd_price
+from alpha.reporting.tax_ledger import estimate_open_lot_cost_basis
 from alpha.types import LiquidityDepth, OrderBookSnapshot
 from config.settings import BotConfig
 
@@ -93,6 +94,7 @@ def compute_bracket_dca(
             "position_count": 0,
             "vs_mid_pct": None,
             "grade": "yellow",
+            "source": "brackets",
         }
 
     avg_entry = total_rlusd / total_xrp
@@ -106,6 +108,37 @@ def compute_bracket_dca(
         "position_count": lots,
         "vs_mid_pct": round(vs_mid_pct, 3) if vs_mid_pct is not None else None,
         "grade": _dca_grade(vs_mid_pct),
+        "source": "brackets",
+    }
+
+
+def compute_bag_dca(
+    logs_dir: Path,
+    *,
+    mid: float,
+    price_decimals: int = DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS,
+) -> Dict[str, Any]:
+    """Tax-ledger running average for unsold XRP when no active brackets."""
+    avg_entry, total_xrp = estimate_open_lot_cost_basis(logs_dir)
+    if total_xrp <= 0 or avg_entry <= 0:
+        return {
+            "avg_entry_rlusd_per_xrp": None,
+            "total_xrp": 0.0,
+            "position_count": 0,
+            "vs_mid_pct": None,
+            "grade": "yellow",
+            "source": "bag",
+        }
+    vs_mid_pct: Optional[float] = None
+    if mid > 0:
+        vs_mid_pct = (mid - avg_entry) / avg_entry * 100.0
+    return {
+        "avg_entry_rlusd_per_xrp": round_rlusd_price(avg_entry, price_decimals),
+        "total_xrp": round(total_xrp, 4),
+        "position_count": 0,
+        "vs_mid_pct": round(vs_mid_pct, 3) if vs_mid_pct is not None else None,
+        "grade": _dca_grade(vs_mid_pct),
+        "source": "bag",
     }
 
 
@@ -253,6 +286,14 @@ def build_market_conditions(
         mid=mid_f,
         price_decimals=price_decimals(config),
     )
+    if (dca.get("total_xrp") or 0) <= 0:
+        bag_dca = compute_bag_dca(
+            log_dir,
+            mid=mid_f,
+            price_decimals=price_decimals(config),
+        )
+        if (bag_dca.get("total_xrp") or 0) > 0:
+            dca = bag_dca
     order_counts = compute_order_counts(brackets or [], log_dir=log_dir)
 
     return {

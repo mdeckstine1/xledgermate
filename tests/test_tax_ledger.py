@@ -10,6 +10,7 @@ from alpha.hud.reports_support import generate_report_text
 from alpha.reporting.tax_ledger import (
     annual_csv_path,
     estimate_avg_cost_basis_rlusd,
+    estimate_open_lot_cost_basis,
     list_trade_months,
     list_trade_years,
     load_year_rows,
@@ -78,3 +79,6 @@ def test_estimate_avg_cost_basis_rlusd(tmp_path: Path) -> None:
         "2026-06-02T00:00:00+00:00,SELL,Y,mainnet,SELL,4,8.8,2.2,0.2,,1,tp,,,\n",
     )
     assert estimate_avg_cost_basis_rlusd(logs) == pytest.approx(2.0)
+    avg, remaining = estimate_open_lot_cost_basis(logs)
+    assert avg == pytest.approx(2.0)
+    assert remaining == pytest.approx(6.0)
