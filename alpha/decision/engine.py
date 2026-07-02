@@ -21,7 +21,7 @@ from config.settings import BotConfig
 
 if TYPE_CHECKING:
     from alpha.decision.accumulation_regime import AccumulationKnobs, AccumulationRegimeSnapshot
-    from alpha.decision.harvest_watch import HarvestKnobs, HarvestWatchSnapshot
+    from alpha.decision.harvest_watch import HarvestKnobs, HarvestWatchSnapshot, DipDeployKnobs, DipDeploySnapshot
     from alpha.decision.reload_regime import ReloadKnobs, ReloadRegimeSnapshot
     from alpha.decision.structure import MarketStructureSnapshot
     from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
@@ -75,6 +75,8 @@ class DecisionEngine:
         self._harvest: Optional["HarvestWatchSnapshot"] = None
         self._harvest_knobs: Optional["HarvestKnobs"] = None
         self._harvest_reentry_pending: bool = False
+        self._dip: Optional["DipDeploySnapshot"] = None
+        self._dip_knobs: Optional["DipDeployKnobs"] = None
 
     def set_accumulation(
         self,
@@ -102,6 +104,14 @@ class DecisionEngine:
         self._harvest = snapshot
         self._harvest_knobs = knobs
         self._harvest_reentry_pending = reentry_pending
+
+    def set_dip_deploy(
+        self,
+        snapshot: Optional["DipDeploySnapshot"],
+        knobs: Optional["DipDeployKnobs"],
+    ) -> None:
+        self._dip = snapshot
+        self._dip_knobs = knobs
 
     def evaluate(
         self,
@@ -167,6 +177,26 @@ class DecisionEngine:
                 structure=structure,
                 entry_mode="harvest_reentry",
                 entry_reason=reentry_reason,
+            )
+
+        dip_reason = self._dip_deploy_allowed(
+            inventory=inventory,
+            book=book,
+            pending_buy_count=pending_buy_count,
+            balances=balances or (operator.balances if operator else None),
+        )
+        if dip_reason is not None:
+            return self._build_bid(
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_buy_count=pending_buy_count,
+                balances=balances or (operator.balances if operator else None),
+                ta=ta,
+                structure=structure,
+                entry_mode="dip_deploy",
+                entry_reason=dip_reason,
             )
 
         harvest_reason = self._harvest_trim_allowed(
@@ -348,7 +378,7 @@ class DecisionEngine:
             structure=structure,
             ta=ta,
         )
-        if snap.active and self._harvest_pause_bids():
+        if snap.active and (self._harvest_pause_bids() or (self._dip_knobs is not None and self._dip_knobs.armed)):
             return None
         return snap.reason if snap.active else None
 
@@ -444,6 +474,36 @@ class DecisionEngine:
         logger.info("harvest_watch | reentry | %s", reason)
         return reason
 
+    def _dip_deploy_allowed(
+        self,
+        *,
+        inventory: InventorySnapshot,
+        book: OrderBookSnapshot,
+        pending_buy_count: int,
+        balances: Optional[BalanceSnapshot],
+    ) -> Optional[str]:
+        snap = self._dip
+        knobs = self._dip_knobs
+        if snap is None or knobs is None or not knobs.execute or not knobs.armed:
+            return None
+        if snap.phase != "armed" or not snap.entry_allowed:
+            return None
+        if inventory.pause_bids or inventory.buy_blocked_imbalance:
+            return None
+        if balances is None or balances.rlusd <= 0:
+            return None
+        max_pending = int(self._config.alpha_max_pending_buys)
+        if pending_buy_count >= max_pending:
+            return None
+        mid = book.mid
+        if mid is None or mid <= 0:
+            return None
+        reason = snap.reason or snap.detail or "dip_armed"
+        if snap.signals:
+            reason = f"dip_deploy {'+'.join(snap.signals[:3])} | {reason}"
+        logger.info("dip_deploy | entry | %s", reason)
+        return reason
+
     def _accumulation_entry_allowed(
         self,
         *,
@@ -457,6 +517,8 @@ class DecisionEngine:
         if snap is None or knobs is None or not snap.entry_allowed or not knobs.armed:
             return None
         if self._harvest_pause_bids():
+            return None
+        if self._dip_knobs is not None and self._dip_knobs.armed:
             return None
         if inventory.pause_bids or inventory.buy_blocked_imbalance:
             return None
@@ -488,6 +550,8 @@ class DecisionEngine:
             offset_pct = self._accumulation_knobs.buy_offset_pct
         elif entry_mode == "harvest_reentry" and self._harvest_knobs is not None:
             offset_pct = self._harvest_knobs.reentry_buy_offset_pct
+        elif entry_mode == "dip_deploy" and self._dip_knobs is not None:
+            offset_pct = self._dip_knobs.buy_offset_pct
         else:
             offset_pct = self._effective_buy_offset_pct()
         dec = price_decimals(self._config)
@@ -548,13 +612,15 @@ class DecisionEngine:
             return 0.0
         return round(capped, 4)
 
-    def _ta_effective_min_buy(self) -> float:
+    def _ta_effective_min_buy(self, *, entry_mode: str = "weakness") -> float:
         """Scale buy gate by alpha_ta_weight (0=advisory only, 1=full min_buy_score)."""
         cfg = self._config.alpha_technical_analysis
         weight = max(0.0, min(1.0, getattr(self._config, "alpha_ta_weight", 1.0)))
         knobs = self._accumulation_knobs
-        if knobs is not None and knobs.armed:
+        if entry_mode == "accumulation" and knobs is not None and knobs.armed:
             weight *= max(0.0, min(1.0, knobs.ta_weight_factor))
+        if entry_mode == "dip_deploy" and self._dip_knobs is not None and self._dip_knobs.armed:
+            weight *= max(0.0, min(1.0, self._dip_knobs.ta_weight_factor))
         if weight <= 0:
             return 0.0
         return cfg.min_buy_score * weight
@@ -573,6 +639,7 @@ class DecisionEngine:
         *,
         mid: Optional[float] = None,
         structure: Optional["MarketStructureSnapshot"] = None,
+        entry_mode: str = "weakness",
     ) -> Optional[str]:
         cfg = self._config.alpha_technical_analysis
         weight = getattr(self._config, "alpha_ta_weight", 1.0)
@@ -580,7 +647,7 @@ class DecisionEngine:
             return None
         if ta is None or not ta.enabled:
             return "ta_warming_up — insufficient price history for buy gate"
-        effective_min = self._ta_effective_min_buy()
+        effective_min = self._ta_effective_min_buy(entry_mode=entry_mode)
         if ta.buy_score < effective_min:
             return (
                 f"ta_buy_blocked score={ta.buy_score:.2f}<{effective_min:.2f} "
@@ -697,12 +764,12 @@ class DecisionEngine:
                 ta=ta,
                 structure=structure,
                 momentum_chase=(entry_mode == "bull_run"),
-                accumulation_chase=entry_mode in ("accumulation", "harvest_reentry"),
+                accumulation_chase=entry_mode in ("accumulation", "harvest_reentry", "dip_deploy"),
             )
             if blocked:
                 return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
 
-        blocked = self._ta_blocks_buy(ta, mid=mid, structure=structure)
+        blocked = self._ta_blocks_buy(ta, mid=mid, structure=structure, entry_mode=entry_mode)
         if blocked:
             return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
         mid = book.mid
@@ -717,6 +784,8 @@ class DecisionEngine:
             min_edge = min(min_edge, knobs.min_edge_pct)
         elif entry_mode == "harvest_reentry" and self._accumulation_knobs is not None:
             min_edge = min(min_edge, self._accumulation_knobs.min_edge_pct)
+        elif entry_mode == "dip_deploy":
+            min_edge = min(min_edge, float(self._config.alpha_min_edge_threshold_pct) * 0.75)
         if self._risk is not None:
             ok, msg = self._risk.validate_entry(risk, edge_pct=edge)
             if not ok:
@@ -745,6 +814,8 @@ class DecisionEngine:
         risk_pct = self._config.alpha_risk_per_trade_pct
         if entry_mode == "accumulation" and knobs is not None and knobs.armed:
             risk_pct = knobs.risk_per_trade_pct
+        elif entry_mode == "dip_deploy" and self._dip_knobs is not None:
+            risk_pct = self._dip_knobs.risk_per_trade_pct
         size = self._cap_size_xrp(
             desired=desired,
             depth_cap=depth_cap,
@@ -754,7 +825,7 @@ class DecisionEngine:
             inventory=inventory,
             balances=balances,
             risk_per_trade_pct=risk_pct,
-            skip_inventory_cap=(entry_mode == "harvest_reentry"),
+            skip_inventory_cap=(entry_mode in ("harvest_reentry", "dip_deploy")),
         )
         if size <= 0:
             return DecisionResult(

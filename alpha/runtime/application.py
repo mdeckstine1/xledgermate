@@ -32,7 +32,7 @@ from alpha.decision.reload_regime import (
     evaluate_reload_regime,
     reload_knobs_from_snapshot,
 )
-from alpha.decision.harvest_watch import HarvestSessionTracker, harvest_knobs_from_snapshot
+from alpha.decision.harvest_watch import HarvestSessionTracker, dip_deploy_knobs_from_snapshot, harvest_knobs_from_snapshot
 from alpha.decision.engine import DecisionEngine, DecisionResult
 from alpha.dry_run import DryRunGuard
 from alpha.inventory.manager import InventoryManager
@@ -435,6 +435,13 @@ class AlphaApplication:
             harvest_knobs,
             reentry_pending=self._harvest_session.pending_reentry(),
         )
+        dip_snap = acc_snap.dip_deploy_watch
+        dip_knobs = (
+            dip_deploy_knobs_from_snapshot(dip_snap, self.config)
+            if dip_snap is not None
+            else None
+        )
+        self._decision.set_dip_deploy(dip_snap, dip_knobs)
 
         pending_sells = self._orders.count_strength_sells(orders.open_offers)
         reload_snap = evaluate_reload_regime(

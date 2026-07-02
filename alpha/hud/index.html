@@ -2468,6 +2468,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if ($('oppWatchScorecard')) {
         const miss = sc.missed_opportunity ? ' ⚠ missed move' : '';
         const hw = acc.harvest_watch || {};
+        const dip = acc.dip_deploy_watch || {};
         let harvestLine = '';
         if (hw.phase && hw.phase !== 'idle') {
           const roll = hw.rolling || {};
@@ -2475,11 +2476,19 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
             + ' ' + (roll.move_pct != null ? (roll.move_pct >= 0 ? '+' : '') + roll.move_pct + '%' : '')
             + (roll.pullback_pct != null ? ' pb ' + roll.pullback_pct + '%' : '');
         }
+        let dipLine = '';
+        if (dip.phase && dip.phase !== 'idle') {
+          const roll = dip.rolling || {};
+          dipLine = ' · DIP ' + (dip.phase || '').toUpperCase()
+            + ' ' + (roll.move_pct != null ? (roll.move_pct >= 0 ? '+' : '') + roll.move_pct + '%' : '')
+            + (roll.bounce_from_low_pct != null ? ' bounce ' + roll.bounce_from_low_pct + '%' : '');
+        }
         $('oppWatchScorecard').textContent = sc.headline
-          ? (sc.headline + miss + harvestLine + ' · bids ' + (sc.bids_placed ?? 0) + ' · fills ' + (sc.fills_count ?? 0)
+          ? (sc.headline + miss + harvestLine + dipLine + ' · bids ' + (sc.bids_placed ?? 0) + ' · fills ' + (sc.fills_count ?? 0)
             + ' · chase ' + (sc.chase_cancels ?? 0) + ' · mid +' + (sc.window_mid_move_pct ?? 0) + '%')
-          : (harvestLine ? harvestLine.slice(3) : '');
-        $('oppWatchScorecard').style.color = sc.missed_opportunity ? '#fca5a5' : (hw.phase === 'armed' ? '#fdba74' : '#a5b4fc');
+          : ((harvestLine || dipLine) ? (harvestLine + dipLine).slice(3) : '');
+        const swingPhase = dip.phase === 'armed' ? 'armed' : (hw.phase === 'armed' ? 'armed' : (dip.phase || hw.phase || ''));
+        $('oppWatchScorecard').style.color = sc.missed_opportunity ? '#fca5a5' : (swingPhase === 'armed' ? '#fdba74' : '#a5b4fc');
       }
       if ($('reloadWatchState')) $('reloadWatchState').textContent = rel.phase || 'off';
       if ($('reloadWatchHeadline')) {

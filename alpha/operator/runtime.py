@@ -108,6 +108,12 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "initial_stop_loss_pct",
     "take_profit_pct",
     "take_profit_rr",
+    "alpha_accumulation_harvest_move_24h_watch_pct",
+    "alpha_accumulation_harvest_pullback_arm_pct",
+    "alpha_accumulation_harvest_trim_risk_pct",
+    "alpha_accumulation_dip_move_24h_arm_pct",
+    "alpha_accumulation_dip_bounce_arm_pct",
+    "alpha_accumulation_dip_buy_offset_pct",
 )
 
 OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
@@ -151,6 +157,12 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "initial_stop_loss_pct": {"min": 0.005, "max": 0.10, "step": 0.001},
     "take_profit_pct": {"min": 0.01, "max": 0.20, "step": 0.01},
     "take_profit_rr": {"min": 0.5, "max": 5.0, "step": 0.1},
+    "alpha_accumulation_harvest_move_24h_watch_pct": {"min": 2.0, "max": 15.0, "step": 0.5},
+    "alpha_accumulation_harvest_pullback_arm_pct": {"min": 0.25, "max": 5.0, "step": 0.25},
+    "alpha_accumulation_harvest_trim_risk_pct": {"min": 0.5, "max": 5.0, "step": 0.25},
+    "alpha_accumulation_dip_move_24h_arm_pct": {"min": 2.0, "max": 15.0, "step": 0.5},
+    "alpha_accumulation_dip_bounce_arm_pct": {"min": 0.05, "max": 2.0, "step": 0.05},
+    "alpha_accumulation_dip_buy_offset_pct": {"min": 0.05, "max": 1.0, "step": 0.01},
 }
 
 

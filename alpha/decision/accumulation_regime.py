@@ -67,6 +67,7 @@ class AccumulationRegimeSnapshot:
     skynet_nudge: str = ""
     scorecard: Dict[str, Any] | None = None
     harvest_watch: "HarvestWatchSnapshot | None" = None
+    dip_deploy_watch: "DipDeploySnapshot | None" = None
 
     def to_dict(self) -> Dict[str, Any]:
         out = {
@@ -89,6 +90,8 @@ class AccumulationRegimeSnapshot:
             out["scorecard"] = self.scorecard
         if self.harvest_watch is not None:
             out["harvest_watch"] = self.harvest_watch.to_dict()
+        if self.dip_deploy_watch is not None:
+            out["dip_deploy_watch"] = self.dip_deploy_watch.to_dict()
         return out
 
 
@@ -471,7 +474,12 @@ def evaluate_accumulation_regime(
         )
 
     def _with_harvest(snap: AccumulationRegimeSnapshot) -> AccumulationRegimeSnapshot:
-        from alpha.decision.harvest_watch import HarvestSessionTracker, evaluate_harvest_watch
+        from alpha.decision.harvest_watch import (
+            DipDeploySnapshot,
+            HarvestSessionTracker,
+            evaluate_dip_deploy_watch,
+            evaluate_harvest_watch,
+        )
 
         hw = evaluate_harvest_watch(
             config,
@@ -487,6 +495,15 @@ def evaluate_accumulation_regime(
             decision_action=decision_action,
             session=harvest_session or HarvestSessionTracker(),
             tape_active=tape.active,
+        )
+        dip = evaluate_dip_deploy_watch(
+            config,
+            inventory=inventory,
+            mid=mid,
+            structure=structure,
+            ta=ta,
+            rlusd_balance=rlusd_balance,
+            harvest_phase=hw.phase,
         )
         return AccumulationRegimeSnapshot(
             enabled=snap.enabled,
@@ -505,6 +522,7 @@ def evaluate_accumulation_regime(
             skynet_nudge=snap.skynet_nudge,
             scorecard=snap.scorecard,
             harvest_watch=hw,
+            dip_deploy_watch=dip,
         )
 
     def _finish(snap: AccumulationRegimeSnapshot) -> AccumulationRegimeSnapshot:

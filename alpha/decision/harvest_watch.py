@@ -33,7 +33,9 @@ class RollingMoveSnapshot:
     move_pct: float
     ref_mid: float
     high: float
+    low: float
     pullback_pct: float
+    bounce_from_low_pct: float
     samples_used: int
     hours: float
 
@@ -42,7 +44,9 @@ class RollingMoveSnapshot:
             "move_pct": round(self.move_pct, 3),
             "ref_mid": round(self.ref_mid, 6),
             "high": round(self.high, 6),
+            "low": round(self.low, 6),
             "pullback_pct": round(self.pullback_pct, 3),
+            "bounce_from_low_pct": round(self.bounce_from_low_pct, 3),
             "samples_used": self.samples_used,
             "hours": self.hours,
         }
@@ -224,13 +228,17 @@ def rolling_move_snapshot(
     if ref <= 0:
         return None
     high = max(float(x) for x in window)
+    low = min(float(x) for x in window)
     move_pct = (mid - ref) / ref * 100.0
     pullback_pct = ((high - mid) / high * 100.0) if high > 0 and high > mid else 0.0
+    bounce_from_low_pct = ((mid - low) / low * 100.0) if low > 0 and mid > low else 0.0
     return RollingMoveSnapshot(
         move_pct=move_pct,
         ref_mid=ref,
         high=high,
+        low=low,
         pullback_pct=pullback_pct,
+        bounce_from_low_pct=bounce_from_low_pct,
         samples_used=len(window),
         hours=hours,
     )
@@ -318,6 +326,28 @@ def evaluate_harvest_watch(
     strength_dev = float(config.alpha_strength_deviation)
     execute = bool(getattr(config, "alpha_accumulation_harvest_execute_enabled", True))
 
+    if rolling.move_pct < 0:
+        return HarvestWatchSnapshot(
+            enabled=True,
+            phase="idle",
+            headline="HARVEST IDLE — down leg (use dip deploy)",
+            detail=(
+                f"{rolling.move_pct:+.2f}% over {hours:.0f}h — harvest only trims extended UP legs"
+            ),
+            entry_allowed=False,
+            reason="negative_24h_leg",
+            signals=(f"move_{int(hours)}h={rolling.move_pct:+.2f}%",),
+            blockers=("negative_24h_move",),
+            rolling=rolling,
+            release_streak=sess.release_streak(),
+            tranches_in_window=sess.tranches_in_window(config),
+            pending_reentry=sess.pending_reentry(),
+            skynet_nudge=(
+                "Price leg is DOWN — do NOT harvest. Deploy RLUSD on dips via dip_deploy_watch "
+                "(scenario Z) or classic weakness when RLUSD-heavy."
+            ),
+        )
+
     release_signal = bool(
         momentum_active
         or early_arm
@@ -369,7 +399,7 @@ def evaluate_harvest_watch(
             signals=tuple(signals),
             rolling=rolling,
             release_streak=streak,
-            tranches_in_window=sess.tranches_in_window(),
+            tranches_in_window=sess.tranches_in_window(config),
             pending_reentry=sess.pending_reentry(),
             skynet_nudge="Harvest cleared — accumulation is primary again.",
         )
@@ -386,7 +416,7 @@ def evaluate_harvest_watch(
             blockers=tuple(blockers),
             rolling=rolling,
             release_streak=streak,
-            tranches_in_window=sess.tranches_in_window(),
+            tranches_in_window=sess.tranches_in_window(config),
             pending_reentry=sess.pending_reentry(),
             skynet_nudge="Harvest EXECUTING — trim into RLUSD; re-entry bid queues on fill.",
         )
@@ -446,7 +476,7 @@ def evaluate_harvest_watch(
         blockers=tuple(blockers),
         rolling=rolling,
         release_streak=streak,
-        tranches_in_window=sess.tranches_in_window(),
+        tranches_in_window=sess.tranches_in_window(config),
         pending_reentry=sess.pending_reentry(),
         skynet_nudge=nudge,
     )
@@ -465,3 +495,251 @@ def compute_harvest_trim_size_xrp(
     if cap > 0:
         size = min(size, cap)
     return round(max(0.0, size), 4)
+
+
+@dataclass(frozen=True)
+class DipDeployKnobs:
+    active: bool
+    armed: bool
+    execute: bool
+    buy_offset_pct: float
+    risk_per_trade_pct: float
+    ta_weight_factor: float
+
+
+@dataclass(frozen=True)
+class DipDeploySnapshot:
+    enabled: bool
+    phase: str  # idle | watching | armed
+    headline: str
+    detail: str
+    entry_allowed: bool
+    reason: str
+    signals: tuple[str, ...] = ()
+    blockers: tuple[str, ...] = ()
+    rolling: Optional[RollingMoveSnapshot] = None
+    skynet_nudge: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "enabled": self.enabled,
+            "phase": self.phase,
+            "headline": self.headline,
+            "detail": self.detail,
+            "entry_allowed": self.entry_allowed,
+            "reason": self.reason,
+            "signals": list(self.signals),
+            "blockers": list(self.blockers),
+            "skynet_nudge": self.skynet_nudge,
+        }
+        if self.rolling is not None:
+            out["rolling"] = self.rolling.to_dict()
+        return out
+
+
+def dip_deploy_knobs_from_snapshot(
+    snap: DipDeploySnapshot,
+    config: BotConfig,
+) -> DipDeployKnobs:
+    execute = bool(getattr(config, "alpha_accumulation_dip_deploy_execute_enabled", True))
+    armed = snap.phase == "armed" and execute
+    boost = float(getattr(config, "alpha_accumulation_dip_risk_boost", 1.25))
+    return DipDeployKnobs(
+        active=snap.phase != "idle",
+        armed=armed,
+        execute=execute and snap.enabled,
+        buy_offset_pct=float(getattr(config, "alpha_accumulation_dip_buy_offset_pct", 0.22)),
+        risk_per_trade_pct=float(config.alpha_risk_per_trade_pct) * boost,
+        ta_weight_factor=float(getattr(config, "alpha_accumulation_dip_ta_weight_factor", 0.70)),
+    )
+
+
+def evaluate_dip_deploy_watch(
+    config: BotConfig,
+    *,
+    inventory: "InventorySnapshot",
+    mid: float,
+    structure: Optional["MarketStructureSnapshot"],
+    ta: Optional["TechnicalAnalysisSnapshot"],
+    rlusd_balance: float,
+    harvest_phase: str = "idle",
+    price_history_path: Path | None = None,
+) -> DipDeploySnapshot:
+    disabled = DipDeploySnapshot(
+        enabled=False,
+        phase="idle",
+        headline="DIP DEPLOY IDLE",
+        detail="alpha_accumulation_dip_deploy_enabled=false",
+        entry_allowed=False,
+        reason="disabled",
+    )
+    if not getattr(config, "alpha_accumulation_dip_deploy_enabled", True):
+        return disabled
+
+    hours = float(getattr(config, "alpha_accumulation_harvest_move_hours", 24.0))
+    rolling = rolling_move_snapshot(
+        config,
+        mid=mid,
+        hours=hours,
+        price_history_path=price_history_path,
+    )
+    if rolling is None:
+        return DipDeploySnapshot(
+            enabled=True,
+            phase="idle",
+            headline="DIP DEPLOY IDLE",
+            detail="insufficient price history",
+            entry_allowed=False,
+            reason="warming_up",
+        )
+
+    watch_pct = float(getattr(config, "alpha_accumulation_dip_move_24h_watch_pct", 4.0))
+    arm_pct = float(getattr(config, "alpha_accumulation_dip_move_24h_arm_pct", 5.0))
+    bounce_arm = float(getattr(config, "alpha_accumulation_dip_bounce_arm_pct", 0.25))
+    min_rlusd = float(getattr(config, "alpha_accumulation_dip_min_rlusd", 25.0))
+    execute = bool(getattr(config, "alpha_accumulation_dip_deploy_execute_enabled", True))
+
+    signals: list[str] = [
+        f"move_{int(hours)}h={rolling.move_pct:+.2f}%",
+        f"bounce={rolling.bounce_from_low_pct:.2f}%",
+    ]
+    blockers: list[str] = []
+    if harvest_phase in ("armed", "executing"):
+        blockers.append("harvest_active")
+    if inventory.pause_bids or inventory.buy_blocked_imbalance:
+        blockers.append("inventory_blocked")
+    if rlusd_balance < min_rlusd:
+        blockers.append(f"rlusd={rlusd_balance:.1f}<{min_rlusd:.1f}")
+    if structure is not None and structure.breakout_down:
+        blockers.append("structure_breakout_down")
+    if ta is not None and getattr(ta, "bias", "") == "bearish" and getattr(ta, "sell_score", 0) > 4.0:
+        blockers.append("ta_bearish_heavy")
+
+    drop_watch = rolling.move_pct <= -watch_pct
+    drop_arm = (
+        rolling.move_pct <= -arm_pct
+        and rolling.bounce_from_low_pct >= bounce_arm
+        and not blockers
+    )
+
+    if drop_arm:
+        return DipDeploySnapshot(
+            enabled=True,
+            phase="armed",
+            headline="DIP DEPLOY ARMED — deploy RLUSD after sharp drop",
+            detail=(
+                f"{rolling.move_pct:+.2f}% over {hours:.0f}h · "
+                f"+{rolling.bounce_from_low_pct:.2f}% off {hours:.0f}h low"
+            ),
+            entry_allowed=execute,
+            reason="armed",
+            signals=tuple(signals),
+            blockers=tuple(blockers),
+            rolling=rolling,
+            skynet_nudge=(
+                "Dip ARMED — engine should place_bid dip_deploy (wider offset, RLUSD→XRP). "
+                "NOT harvest — down legs are buy opportunities. Bracket TP/SL on fill."
+            ),
+        )
+    if drop_watch:
+        return DipDeploySnapshot(
+            enabled=True,
+            phase="watching",
+            headline="DIP DEPLOY WATCHING — sharp drop, wait for stabilization",
+            detail=(
+                f"{rolling.move_pct:+.2f}% over {hours:.0f}h · "
+                f"need bounce ≥{bounce_arm:.2f}% off low"
+            ),
+            entry_allowed=False,
+            reason="watching",
+            signals=tuple(signals),
+            blockers=tuple(blockers),
+            rolling=rolling,
+            skynet_nudge="Fast drops need a stabilization bounce before bidding — avoids catching the knife.",
+        )
+
+    return DipDeploySnapshot(
+        enabled=True,
+        phase="idle",
+        headline="DIP DEPLOY IDLE",
+        detail=f"{rolling.move_pct:+.2f}% over {hours:.0f}h",
+        entry_allowed=False,
+        reason="idle",
+        signals=tuple(signals),
+        rolling=rolling,
+    )
+
+
+def build_harvest_context_block(snap: Dict[str, Any]) -> str:
+    if not snap:
+        return "=== Swing harvest watch ===\n(not evaluated)"
+    lines = [
+        "=== Swing harvest watch (UP-leg trim overlay — NOT for down legs) ===",
+        f"phase={snap.get('phase')} entry_allowed={snap.get('entry_allowed')} reason={snap.get('reason')}",
+        f"headline={snap.get('headline')}",
+        f"detail={snap.get('detail')}",
+        f"signals={snap.get('signals')} blockers={snap.get('blockers')}",
+        f"tranches_in_window={snap.get('tranches_in_window')} pending_reentry={snap.get('pending_reentry')}",
+    ]
+    rolling = snap.get("rolling")
+    if isinstance(rolling, dict):
+        lines.append(
+            "rolling="
+            f"move={rolling.get('move_pct')}% high={rolling.get('high')} "
+            f"pullback={rolling.get('pullback_pct')}%"
+        )
+    nudge = snap.get("skynet_nudge")
+    if nudge:
+        lines.append(f"skynet_nudge={nudge}")
+    lines.extend(
+        [
+            "",
+            "Philosophy: harvest trims XRP into RLUSD when a multi-hour UP leg turns (24h move + pullback).",
+            "Mutually exclusive with dip deploy. On fill → harvest_reentry bracketed buy.",
+            "Do NOT recommend harvest when move_24h is negative — use dip deploy or weakness buys.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def build_dip_deploy_context_block(snap: Dict[str, Any]) -> str:
+    if not snap:
+        return "=== Dip deploy watch ===\n(not evaluated)"
+    lines = [
+        "=== Dip deploy watch (DOWN-leg RLUSD deployment — inverse of harvest) ===",
+        f"phase={snap.get('phase')} entry_allowed={snap.get('entry_allowed')} reason={snap.get('reason')}",
+        f"headline={snap.get('headline')}",
+        f"detail={snap.get('detail')}",
+        f"signals={snap.get('signals')} blockers={snap.get('blockers')}",
+    ]
+    rolling = snap.get("rolling")
+    if isinstance(rolling, dict):
+        lines.append(
+            "rolling="
+            f"move={rolling.get('move_pct')}% low={rolling.get('low')} "
+            f"bounce={rolling.get('bounce_from_low_pct')}%"
+        )
+    nudge = snap.get("skynet_nudge")
+    if nudge:
+        lines.append(f"skynet_nudge={nudge}")
+    lines.extend(
+        [
+            "",
+            "Philosophy: sharp 24h DROPS are buy opportunities (deploy RLUSD), not harvest.",
+            "Arms after drop + small bounce off 24h low (stabilization). Wider bid offset than accumulation.",
+            "Classic weakness buys still apply when RLUSD-heavy (dev≤−weakness); dip deploy also works when XRP-heavy if RLUSD dry powder exists.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def build_swing_playbook_context_block() -> str:
+    return """=== Bag-growth swing playbook (accumulation overlay) ===
+1. BULL RIP → accumulation ARMED: deploy RLUSD → XRP (hold stack, chase with brackets).
+2. EXTENDED UP leg turning → harvest WATCHING→ARMED: trim XRP → RLUSD, pause acc bids, bracketed re-entry on fill.
+3. SHARP DOWN leg stabilizing → dip deploy WATCHING→ARMED: deploy RLUSD on bounce off 24h low (wider offset).
+4. RLUSD LOW + post-run chop → reload WATCHING→ARMED: fund floor, then accumulation.
+5. RLUSD-heavy dip → classic weakness bids (scenario F/I) — still valid.
+
+Harvest and dip deploy are MUTUALLY EXCLUSIVE (sign of 24h move). Never harvest on red 24h legs.
+Session P&L MTM ≠ bag growth — read bag_growth block for bot-adjusted stack Δ and trading edge."""

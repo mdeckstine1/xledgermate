@@ -356,3 +356,29 @@ def format_bag_growth_telegram_block(snap: Dict[str, Any]) -> str:
 
     lines.append("(Value moves with price; XRP stack Δ is coin count only.)")
     return "\n".join(lines)
+
+
+def format_bag_growth_context_block(snap: Dict[str, Any]) -> str:
+    """SKYNET context — bag size vs trading edge (authoritative for 'building the bag')."""
+    if not snap or not snap.get("available"):
+        return "=== Bag growth ===\n(baseline not set — wait for valid mid)"
+    lines = [
+        "=== Bag growth (are we building the bag? — prefer over session_pnl MTM) ===",
+        f"portfolio_xrp_equiv={snap.get('portfolio_xrp_equiv')} mid={snap.get('mid_rlusd_per_xrp')}",
+        f"since_baseline_bot_xrp={snap.get('since_baseline_bot_xrp')} "
+        f"since_baseline_bot_pct={snap.get('since_baseline_bot_pct')}",
+        f"xrp_stack_delta_bot={snap.get('xrp_stack_delta_bot')} "
+        f"(raw coins Δ; baseline source={snap.get('stack_baseline_source')})",
+        f"operator_deposits_xrp_equiv={snap.get('operator_deposits_xrp_equiv')}",
+        f"week_delta_xrp={snap.get('week_delta_xrp')} week_delta_pct={snap.get('week_delta_pct')}",
+    ]
+    edge = snap.get("trading_edge_7d") or {}
+    if edge.get("available"):
+        lines.append(
+            f"trading_edge_7d={edge.get('realized_profit_xrp_equiv')} XRP "
+            f"(TP {edge.get('tp_exits')} / SL {edge.get('sl_exits')})"
+        )
+    explain = snap.get("explain")
+    if explain:
+        lines.append(f"explain={explain}")
+    return "\n".join(lines)

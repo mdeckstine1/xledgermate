@@ -285,6 +285,16 @@ class BotConfig:
     alpha_accumulation_harvest_bypass_ta_bullish_defer: bool = True
     alpha_accumulation_harvest_reentry_enabled: bool = True
     alpha_accumulation_harvest_reentry_buy_offset_pct: float = 0.18
+    # Dip deploy — inverse of harvest: deploy RLUSD after sharp 24h drops (with bounce confirm)
+    alpha_accumulation_dip_deploy_enabled: bool = True
+    alpha_accumulation_dip_deploy_execute_enabled: bool = True
+    alpha_accumulation_dip_move_24h_watch_pct: float = 4.0
+    alpha_accumulation_dip_move_24h_arm_pct: float = 5.0
+    alpha_accumulation_dip_bounce_arm_pct: float = 0.25
+    alpha_accumulation_dip_buy_offset_pct: float = 0.22
+    alpha_accumulation_dip_min_rlusd: float = 25.0
+    alpha_accumulation_dip_risk_boost: float = 1.25
+    alpha_accumulation_dip_ta_weight_factor: float = 0.70
     # RLUSD reload — sell XRP in post-run chop to fund accumulation deploy floor
     alpha_reload_regime_enabled: bool = True
     alpha_reload_min_rlusd_deploy_xrp_equiv: float = 45.0  # Min RLUSD dry powder (XRP-equiv)

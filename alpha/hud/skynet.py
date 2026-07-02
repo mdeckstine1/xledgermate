@@ -28,7 +28,13 @@ from alpha.hud.skynet_scenarios import (
     infer_scenario_hints,
 )
 from alpha.decision.accumulation_regime import build_accumulation_context_block
+from alpha.decision.harvest_watch import (
+    build_dip_deploy_context_block,
+    build_harvest_context_block,
+    build_swing_playbook_context_block,
+)
 from alpha.decision.reload_regime import build_reload_context_block
+from alpha.reporting.bag_growth import format_bag_growth_context_block
 from config.settings import BotConfig
 from utils.env_secrets import resolve_grok_key
 
@@ -66,16 +72,18 @@ Rules for suggested_changes:
 - inventory_target_xrp_ratio is 0.0-1.0 (not percent). The HUD also accepts target_xrp_pct as alias — prefer inventory_target_xrp_ratio.
 - Do NOT suggest dry_run changes — the operator must toggle LIVE/dry-run manually.
 - Prefer small, incremental knob adjustments aligned with bag growth and risk.
+- Read `bag_growth`, swing_playbook, harvest_watch, and dip_deploy_watch blocks — they define the three-mode bag strategy (accumulate / harvest / dip deploy).
+- Never recommend harvest trims on negative 24h legs; recommend dip deploy or weakness buys instead.
 - If no changes are warranted, return an empty suggested_changes array.
-
-Operator prompt priority (critical):
+- session_pnl_xrp is mark-to-market portfolio drift — NOT realized trading profit. Use bracket TP/SL outcomes and bag_growth.trading_edge when judging bleed.
 - The user message begins with OPERATOR PROMPT (PRIMARY). Your reasoning and summary MUST address it directly.
 - Do NOT ignore operator market view, strategy, or goals in favor of automated scenario hints or playbook presets.
 - Scenario playbook and likely_scenarios are REFERENCE ONLY — use when aligned with operator intent, not as a default template.
 - HOLD due to max_pending_buys alone does NOT mean "tighten drift" — if operator wants bullish buy / RLUSD deployment, suggest accumulation knobs per operator phase (trust: max_pending↑ before offset↓; scale/aggressive: offset↓ may apply).
 - Respect `alpha_operator_phase` in context (trust | scale | aggressive). Trust phase: do NOT lower alpha_buy_limit_offset_pct below effective without explicit operator ask or sharp dip.
 - Respect `alpha_operator_market_regime` (bull | neutral | bear). Bear/neutral after SL streaks → defense first, not more bids.
-- session_pnl_xrp is mark-to-market portfolio drift — NOT realized trading profit. Use bracket TP/SL outcomes when judging bleed.
+
+Operator prompt priority (critical):
 - Context block `realized_bracket_pnl` (tax CSV) is authoritative for trading edge in trust phase — prefer over session_pnl_xrp_mtm.
 
 - When explaining WATCHING vs ARMED, read `Engine gate diagnostics` and `Market structure` blocks — do not infer breakout thresholds from TA bias alone.
@@ -351,6 +359,14 @@ def build_skynet_context(
         json.dumps(hud_state.get("opportunity_watch") or {}, default=str)[:2000],
         "",
         build_accumulation_context_block(hud_state.get("accumulation_regime") or {}),
+        "",
+        build_harvest_context_block((hud_state.get("accumulation_regime") or {}).get("harvest_watch") or {}),
+        "",
+        build_dip_deploy_context_block((hud_state.get("accumulation_regime") or {}).get("dip_deploy_watch") or {}),
+        "",
+        build_swing_playbook_context_block(),
+        "",
+        format_bag_growth_context_block(hud_state.get("bag_growth") or {}),
         "",
         build_reload_context_block(hud_state.get("reload_regime") or {}),
         "",

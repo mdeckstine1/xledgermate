@@ -9,6 +9,8 @@ import pytest
 from alpha.decision.engine import DecisionAction, DecisionEngine
 from alpha.decision.harvest_watch import (
     HarvestSessionTracker,
+    dip_deploy_knobs_from_snapshot,
+    evaluate_dip_deploy_watch,
     evaluate_harvest_watch,
     harvest_knobs_from_snapshot,
     rolling_move_snapshot,
@@ -274,3 +276,136 @@ def test_harvest_reentry_pending_triggers_bid():
     )
     assert decision.action == DecisionAction.PLACE_BID
     assert "harvest_reentry" in decision.reason
+
+
+@pytest.fixture
+def price_history_drop(tmp_path):
+    path = tmp_path / "alpha_price_history_drop.json"
+    n = 3000
+    start, end = 1.15, 1.05
+    step = (end - start) / (n - 1)
+    mids = [start + step * i for i in range(n)]
+    store = {"bid": [], "ask": [], "mid": mids, "last": []}
+    store["ask"] = [m * 1.00015 for m in mids]
+    store["bid"] = [m * 0.99985 for m in mids]
+    _save_store(store, path)
+    return path
+
+
+def test_harvest_blocks_on_negative_24h_leg(price_history_drop):
+    cfg = BotConfig(alpha_accumulation_harvest_watch_enabled=True)
+    sess = HarvestSessionTracker(path=price_history_drop.parent / "harvest_neg.json")
+    sess.record_accumulation_active()
+    mid = 1.055  # small bounce off 24h low ~1.05
+    snap = evaluate_harvest_watch(
+        cfg,
+        inventory=_xrp_heavy(),
+        mid=mid,
+        structure=_structure_neutral(mid),
+        ta=None,
+        momentum_active=False,
+        early_arm=False,
+        accumulation_armed=True,
+        accumulation_executing=False,
+        pending_harvest_sells=0,
+        session=sess,
+        price_history_path=price_history_drop,
+    )
+    assert snap.phase == "idle"
+    assert snap.reason == "negative_24h_leg"
+    assert snap.rolling is not None
+    assert snap.rolling.move_pct < 0
+
+
+def test_dip_deploy_arms_after_drop_with_bounce(price_history_drop):
+    cfg = BotConfig(
+        alpha_accumulation_dip_deploy_enabled=True,
+        alpha_accumulation_dip_deploy_execute_enabled=True,
+        alpha_accumulation_dip_move_24h_arm_pct=5.0,
+        alpha_accumulation_dip_bounce_arm_pct=0.25,
+        alpha_accumulation_dip_min_rlusd=25.0,
+    )
+    mid = 1.055
+    snap = evaluate_dip_deploy_watch(
+        cfg,
+        inventory=_xrp_heavy(),
+        mid=mid,
+        structure=_structure_neutral(mid),
+        ta=None,
+        rlusd_balance=100.0,
+        harvest_phase="idle",
+        price_history_path=price_history_drop,
+    )
+    assert snap.phase == "armed"
+    assert snap.entry_allowed is True
+    assert snap.rolling is not None
+    assert snap.rolling.move_pct <= -5.0
+    assert snap.rolling.bounce_from_low_pct >= 0.25
+
+
+def test_engine_dip_deploy_bid_when_armed(price_history_drop):
+    cfg = BotConfig(
+        alpha_accumulation_dip_deploy_enabled=True,
+        alpha_accumulation_dip_deploy_execute_enabled=True,
+        alpha_accumulation_dip_move_24h_arm_pct=5.0,
+        alpha_accumulation_dip_bounce_arm_pct=0.25,
+        alpha_min_edge_threshold_pct=0.01,
+        min_order_size_xrp=1.0,
+        alpha_ta_weight=0.0,
+    )
+    mid = 1.055
+    dip = evaluate_dip_deploy_watch(
+        cfg,
+        inventory=_xrp_heavy(),
+        mid=mid,
+        structure=_structure_neutral(mid),
+        ta=None,
+        rlusd_balance=100.0,
+        harvest_phase="idle",
+        price_history_path=price_history_drop,
+    )
+    knobs = dip_deploy_knobs_from_snapshot(dip, cfg)
+    engine = DecisionEngine(cfg, inventory=InventoryManager(cfg))
+    engine.set_dip_deploy(dip, knobs)
+    book = OrderBookSnapshot(
+        bids=(BookLevel(1.054, 500.0),),
+        asks=(BookLevel(1.056, 500.0),),
+        best_bid=1.054,
+        best_ask=1.056,
+        mid=mid,
+        spread=0.002,
+        spread_pct=0.19,
+        fetched_utc=utc_now(),
+    )
+    risk = RiskSnapshot(
+        kill_switch_active=False,
+        kill_switch_reason="",
+        drawdown_pct=0.0,
+        max_drawdown_pct=10.0,
+        session_pnl_xrp=0.0,
+        preflight_ready=True,
+        preflight_summary="ok",
+        trading_allowed=True,
+        alerts=(),
+    )
+    balances = BalanceSnapshot(
+        xrp=500.0, rlusd=100.0, mid_rlusd_per_xrp=mid, portfolio_xrp_equiv=600.0
+    )
+    liq = LiquidityDepth(
+        max_slippage_pct=0.5,
+        bid_depth_xrp=100.0,
+        ask_depth_xrp=100.0,
+        best_bid=1.054,
+        best_ask=1.056,
+        mid=mid,
+        spread_pct=0.19,
+    )
+    decision = engine.evaluate(
+        inventory=_xrp_heavy(),
+        risk=risk,
+        book=book,
+        liquidity=liq,
+        balances=balances,
+    )
+    assert decision.action == DecisionAction.PLACE_BID
+    assert "dip_deploy" in decision.reason
