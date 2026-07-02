@@ -8,7 +8,7 @@ User=root
 WorkingDirectory=/root/xledgermate
 Environment=XLEDGERMATE_ROOT=/root/xledgermate
 EnvironmentFile=-/root/xledgermate/.env
-ExecStart=/root/xledgermate/scripts/start_alpha_hud.sh
+ExecStart=/bin/bash /root/xledgermate/scripts/start_alpha_hud.sh
 Restart=on-failure
 
 [Install]
