@@ -57,6 +57,8 @@ def _stack_baseline_from_tax_csv(
                         br = float(row.get("balance_rlusd_after") or 0)
                     except (TypeError, ValueError):
                         continue
+                    if bx <= 0:
+                        continue
                     if best is None or ts > best:
                         best = ts
                         best_xrp = bx
@@ -64,6 +66,31 @@ def _stack_baseline_from_tax_csv(
         except (OSError, csv.Error):
             continue
     return best_xrp, best_rlusd
+
+
+def _persist_stack_baseline(
+    logs: Path,
+    *,
+    baseline_xrp: float,
+    baseline_rlusd: float,
+) -> None:
+    """Write backfilled stack baseline into alpha_session.json (one-time anchor)."""
+    session_path = logs / "alpha_session.json"
+    if not session_path.is_file():
+        return
+    try:
+        data = json.loads(session_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    if not isinstance(data, dict):
+        return
+    if float(data.get("baseline_xrp") or 0) > 0:
+        return
+    data["baseline_xrp"] = round(baseline_xrp, 6)
+    data["baseline_rlusd"] = round(baseline_rlusd, 6)
+    tmp = session_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    tmp.replace(session_path)
 
 
 def _utc_now() -> datetime:
@@ -135,6 +162,7 @@ def build_bag_growth_snapshot(
     logs_dir: str | Path = "logs",
     now: Optional[datetime] = None,
     persist_week: bool = True,
+    persist_stack_baseline: bool = True,
 ) -> Dict[str, Any]:
     """
     Bag growth separates **portfolio size** (holdings + price) from **trading edge**
@@ -189,6 +217,12 @@ def build_bag_growth_snapshot(
             baseline_xrp = tax_xrp
             baseline_rlusd = float(tax_rlusd or 0.0)
             stack_baseline_source = "tax_csv"
+            if persist_stack_baseline:
+                _persist_stack_baseline(
+                    logs,
+                    baseline_xrp=baseline_xrp,
+                    baseline_rlusd=baseline_rlusd,
+                )
 
     xrp_stack_delta_raw = None
     xrp_stack_delta_bot = None
