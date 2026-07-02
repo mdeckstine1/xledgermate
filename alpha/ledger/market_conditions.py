@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, Optional, TYPE_CHECKING
 from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
 from alpha.ledger.liquidity import depth_within_mid_band
 from alpha.precision import DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS, price_decimals, round_rlusd_price
-from alpha.reporting.tax_ledger import estimate_open_lot_cost_basis
+from alpha.reporting.tax_ledger import estimate_lifetime_buy_average, estimate_open_lot_cost_basis
 from alpha.types import LiquidityDepth, OrderBookSnapshot
 from config.settings import BotConfig
 
@@ -142,6 +142,37 @@ def compute_bag_dca(
     }
 
 
+def compute_lifetime_buy_dca(
+    logs_dir: Path,
+    *,
+    balance_xrp: float,
+    mid: float,
+    price_decimals: int = DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS,
+) -> Dict[str, Any]:
+    """Lifetime taxable buy average vs current wallet XRP (deposit-heavy bags)."""
+    avg_entry, _ = estimate_lifetime_buy_average(logs_dir)
+    if avg_entry <= 0 or balance_xrp <= 0:
+        return {
+            "avg_entry_rlusd_per_xrp": None,
+            "total_xrp": 0.0,
+            "position_count": 0,
+            "vs_mid_pct": None,
+            "grade": "yellow",
+            "source": "lifetime_buys",
+        }
+    vs_mid_pct: Optional[float] = None
+    if mid > 0:
+        vs_mid_pct = (mid - avg_entry) / avg_entry * 100.0
+    return {
+        "avg_entry_rlusd_per_xrp": round_rlusd_price(avg_entry, price_decimals),
+        "total_xrp": round(balance_xrp, 4),
+        "position_count": 0,
+        "vs_mid_pct": round(vs_mid_pct, 3) if vs_mid_pct is not None else None,
+        "grade": _dca_grade(vs_mid_pct),
+        "source": "lifetime_buys",
+    }
+
+
 def refresh_dca_vs_mid(market_conditions: Dict[str, Any], mid: float) -> None:
     """Update DCA vs-mid after a live book quote patch."""
     dca = market_conditions.get("dca")
@@ -216,6 +247,7 @@ def build_market_conditions(
     ta: Optional[TechnicalAnalysisSnapshot],
     brackets: Optional[Iterable["BracketRecord"]] = None,
     log_dir: Path = Path("logs"),
+    balance_xrp: float = 0.0,
 ) -> Dict[str, Any]:
     """Serialize live market conditions for the operator HUD."""
     mid = book.mid if book and book.mid else (liquidity.mid if liquidity else None)
@@ -294,6 +326,15 @@ def build_market_conditions(
         )
         if (bag_dca.get("total_xrp") or 0) > 0:
             dca = bag_dca
+    if (dca.get("total_xrp") or 0) <= 0 and balance_xrp > 0:
+        lifetime_dca = compute_lifetime_buy_dca(
+            log_dir,
+            balance_xrp=balance_xrp,
+            mid=mid_f,
+            price_decimals=price_decimals(config),
+        )
+        if (lifetime_dca.get("total_xrp") or 0) > 0:
+            dca = lifetime_dca
     order_counts = compute_order_counts(brackets or [], log_dir=log_dir)
 
     return {

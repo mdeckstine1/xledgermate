@@ -527,6 +527,7 @@ def build_hud_state(
         ta=ta,
         brackets=brackets,
         log_dir=runtime_state_path.parent,
+        balance_xrp=snap.balances.xrp,
     )
 
     realized_pnl_24h = build_realized_pnl_snapshot(

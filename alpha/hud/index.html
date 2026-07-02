@@ -2062,7 +2062,8 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if (dca.avg_entry_rlusd_per_xrp != null && dca.total_xrp > 0) {
         const lotLabel = dca.position_count
           ? (' (' + dca.position_count + ' lots)')
-          : (dca.source === 'bag' ? ' (bag basis)' : '');
+          : (dca.source === 'bag' ? ' (bag basis)'
+            : (dca.source === 'lifetime_buys' ? ' (lifetime buys)' : ''));
         dcaEntry.textContent = fmtPrice(dca.avg_entry_rlusd_per_xrp)
           + ' · ' + Number(dca.total_xrp).toFixed(2) + ' XRP'
           + lotLabel;

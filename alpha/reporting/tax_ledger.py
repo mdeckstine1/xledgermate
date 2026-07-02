@@ -141,6 +141,31 @@ def estimate_open_lot_cost_basis(logs_dir: Path) -> tuple[float, float]:
     return total_cost / total_xrp, total_xrp
 
 
+def estimate_lifetime_buy_average(logs_dir: Path) -> tuple[float, float]:
+    """Volume-weighted average price of all taxable BUY fills."""
+    total_xrp = 0.0
+    total_rlusd = 0.0
+    for row in load_all_tax_rows(logs_dir):
+        if str(row.get("taxable") or "").upper() != "Y":
+            continue
+        side = (row.get("side") or row.get("event_type") or "").upper()
+        if side != "BUY":
+            continue
+        try:
+            xrp = float(row.get("xrp_amount") or 0)
+            rlusd = float(row.get("rlusd_amount") or 0)
+            price = float(row.get("price_rlusd_per_xrp") or 0)
+        except (TypeError, ValueError):
+            continue
+        if xrp <= 0:
+            continue
+        total_xrp += xrp
+        total_rlusd += rlusd if rlusd > 0 else xrp * price
+    if total_xrp <= 1e-9:
+        return 0.0, 0.0
+    return total_rlusd / total_xrp, total_xrp
+
+
 def estimate_avg_cost_basis_rlusd(logs_dir: Path) -> float:
     """
     Running average XRP cost (RLUSD/XRP) from taxable BUY/SELL rows.

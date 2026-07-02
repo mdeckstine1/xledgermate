@@ -182,6 +182,35 @@ def test_market_conditions_dca_falls_back_to_bag_basis(tmp_path) -> None:
     assert mc["dca"]["vs_mid_pct"] is not None
 
 
+def test_market_conditions_dca_falls_back_to_lifetime_buys(tmp_path) -> None:
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    header = (
+        "timestamp_utc,event_type,taxable,network,side,xrp_amount,rlusd_amount,"
+        "price_rlusd_per_xrp,profit_xrp_equiv,tx_hash,cycle,notes,balance_xrp_after,balance_rlusd_after\n"
+    )
+    (logs / "trades_2026-06.csv").write_text(
+        header
+        + "t,BUY,Y,mainnet,BUY,10,10.5,1.05,0,,0,,,\n"
+        + "t,SELL,Y,mainnet,SELL,12,13.2,1.10,0.1,,0,tp,,,\n",
+        encoding="utf-8",
+    )
+    cfg = BotConfig(min_order_size_xrp=1.0, alpha_base_order_size_xrp=50.0)
+    mc = build_market_conditions(
+        book=_book(),
+        liquidity=None,
+        config=cfg,
+        portfolio_xrp_equiv=100.0,
+        ta=None,
+        brackets=[],
+        log_dir=logs,
+        balance_xrp=50.0,
+    )
+    assert mc["dca"]["source"] == "lifetime_buys"
+    assert mc["dca"]["avg_entry_rlusd_per_xrp"] == 1.05
+    assert mc["dca"]["total_xrp"] == 50.0
+
+
 def test_count_filled_trades_from_csv(tmp_path: Path) -> None:
     header = (
         "timestamp_utc,event_type,taxable,network,side,xrp_amount,rlusd_amount,"
