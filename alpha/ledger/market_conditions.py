@@ -39,7 +39,10 @@ def _recommended_cap(
     min_size = config.min_order_size_xrp
     if depth_xrp < min_size or mid <= 0:
         return 0.0
-    capital_xrp = config.effective_risk_capital_xrp(mid)
+    capital_xrp = config.effective_risk_capital_xrp(
+        mid,
+        portfolio_xrp_equiv=portfolio_xrp_equiv,
+    )
     leg_cap = capital_xrp * config.max_leg_size_pct_of_capital
     risk_cap = 0.0
     if portfolio_xrp_equiv > 0 and config.alpha_risk_per_trade_pct > 0:

@@ -56,6 +56,8 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "dry_run",
     "trading_enabled",
     "inventory_target_xrp_ratio",
+    "risk_capital_xrp",
+    "alpha_risk_capital_sync_portfolio",
     "alpha_risk_per_trade_pct",
     "alpha_min_edge_threshold_pct",
     "alpha_buy_limit_offset_pct",
@@ -118,6 +120,7 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
 
 OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "inventory_target_xrp_ratio": {"min": 0.01, "max": 0.99, "step": 0.01},
+    "risk_capital_xrp": {"min": 50.0, "max": 50000.0, "step": 50.0},
     "alpha_risk_per_trade_pct": {"min": 0.1, "max": 5.0, "step": 0.1},
     "alpha_min_edge_threshold_pct": {"min": 0.0, "max": 1.0, "step": 0.01},
     "alpha_buy_limit_offset_pct": {"min": 0.05, "max": 1.0, "step": 0.01},

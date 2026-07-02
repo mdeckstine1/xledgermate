@@ -38,7 +38,7 @@ _COOLDOWN_GUARD_KEYS = (
 )
 
 _DEFAULT_GUARDRAILS: Dict[str, Any] = {
-    "alpha_risk_per_trade_pct": {"min": 0.1, "max": 2.0},
+    "alpha_risk_per_trade_pct": {"min": 0.1, "max": 5.0},
     "inventory_target_xrp_pct": {"min": 50.0, "max": 92.0},
     "alpha_ta_weight": {"min": 0.0, "max": 1.0},
     "alpha_reentry_tp_cooldown_cycles": {"min": 0, "max": 30},

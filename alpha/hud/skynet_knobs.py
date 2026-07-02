@@ -8,6 +8,8 @@ from alpha.operator.runtime import OPERATOR_TUNABLE_KEYS
 
 # Friendly / HUD short names → canonical override keys (Apply accepts either).
 KNOB_ALIASES: Dict[str, str] = {
+    "risk_capital_xrp": "risk_capital_xrp",
+    "risk_capital_sync_portfolio": "alpha_risk_capital_sync_portfolio",
     "risk_per_trade_pct": "alpha_risk_per_trade_pct",
     "min_edge_threshold_pct": "alpha_min_edge_threshold_pct",
     "buy_limit_offset_pct": "alpha_buy_limit_offset_pct",
@@ -78,6 +80,8 @@ _KNOB_HINTS: Dict[str, str] = {
     "alpha_operator_phase": "SKYNET strategy bias: trust | scale | aggressive",
     "alpha_operator_market_regime": "SKYNET tape bias: bull | neutral | bear",
     "inventory_target_xrp_ratio": "Target XRP share of portfolio (0–1, not %)",
+    "risk_capital_xrp": "Narrative risk capital (XRP-equiv); leg_cap = effective × 12%",
+    "alpha_risk_capital_sync_portfolio": "When true, effective risk capital = max(configured, live portfolio)",
     "alpha_risk_per_trade_pct": "Max XRP per entry as % of portfolio",
     "alpha_weakness_deviation": "RLUSD deploy when this far below XRP target",
     "alpha_bull_run_max_deviation": "Bull-run/momentum bids allowed until this far above XRP target",

@@ -375,6 +375,8 @@
             <div class="mc-item"><div class="mc-label">Bid depth (1% of mid)</div><div id="mcBidDepth" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Max buy size</div><div id="mcMaxBuy" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Max sell size</div><div id="mcMaxSell" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Risk capital</div><div id="mcRiskCapital" class="mc-val">—</div></div>
+            <div class="mc-item"><div class="mc-label">Size cap binder</div><div id="mcSizeBinder" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">DCA avg entry</div><div id="mcDcaEntry" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">DCA vs mid</div><div id="mcDcaVsMid" class="mc-val">—</div></div>
             <div class="mc-item"><div class="mc-label">Purchase orders</div><div id="mcPurchaseOrders" class="mc-val">—</div></div>
@@ -408,7 +410,10 @@
           <div class="ctrl-row"><label data-knob="inventory_target_xrp_ratio" title="Target XRP share of portfolio. Buys deploy RLUSD when below target; sells trim when above.">target_xrp_pct</label><input type="range" id="slTargetXrp" min="0" max="100" step="1"><input type="number" id="numTargetXrp" min="0" max="100" step="1"><span id="valTargetXrp" class="muted">%</span></div>
           <div class="ctrl-row"><label data-knob="alpha_weakness_deviation" title="How far below target XRP ratio before weakness triggers RLUSD deployment buys.">weakness_deviation</label><input type="range" id="slWeakness" min="0.005" max="0.15" step="0.005"><input type="number" id="numWeakness" step="0.005"><span id="valWeakness" class="muted"></span></div>
           <div class="ctrl-row"><label data-knob="alpha_strength_deviation" title="How far above target XRP ratio before strength sells trim the bag.">strength_deviation</label><input type="range" id="slStrength" min="0.01" max="0.25" step="0.01"><input type="number" id="numStrength" step="0.01"><span id="valStrength" class="muted"></span></div>
-          <div class="ctrl-row"><label data-knob="alpha_risk_per_trade_pct" title="Percent of risk capital allocated per buy bracket.">risk_per_trade_pct</label><input type="range" id="slRisk" min="0.1" max="5" step="0.1"><input type="number" id="numRisk" step="0.1"><span id="valRisk" class="muted"></span></div>
+          <div class="ctrl-row"><label data-knob="alpha_risk_per_trade_pct" title="Percent of portfolio allocated per buy bracket (main clip size cap).">risk_per_trade_pct</label><input type="range" id="slRisk" min="0.1" max="5" step="0.1"><input type="number" id="numRisk" step="0.1"><span id="valRisk" class="muted"></span></div>
+          <div class="ctrl-row"><label data-knob="risk_capital_xrp" title="Narrative risk capital for leg_cap sizing. With sync on, effective = max(this, live portfolio).">risk_capital_xrp</label><input type="range" id="slRiskCap" min="50" max="2000" step="50"><input type="number" id="numRiskCap" step="50"><span id="valRiskCap" class="muted">XRP-equiv</span></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_risk_capital_sync_portfolio" title="When on, effective risk capital tracks live portfolio (recommended)."><input type="checkbox" id="riskCapSyncPortfolio" checked> sync risk capital to portfolio</label></div>
+          <div class="ctrl-row" style="grid-template-columns:1fr auto"><span id="riskCapHint" class="muted" style="font-size:.72rem"></span><button type="button" id="btnSyncRiskCapital" class="secondary" style="flex:0">Sync to portfolio</button></div>
           <div class="ctrl-row"><label data-knob="alpha_min_edge_threshold_pct" title="Minimum expected edge (spread capture) required before placing a bid.">min_edge_threshold_pct</label><input type="range" id="slEdge" min="0" max="1" step="0.01"><input type="number" id="numEdge" step="0.01"><span id="valEdge" class="muted"></span></div>
           <div class="ctrl-row"><label data-knob="alpha_buy_limit_offset_pct" title="Bid limit sits this % below mid — deeper = more patient fills.">buy_limit_offset_pct</label><input type="range" id="slOffset" min="0.05" max="1" step="0.01"><input type="number" id="numOffset" step="0.01"><span id="valOffset" class="muted"></span></div>
           <div class="ctrl-row"><label data-knob="alpha_sell_limit_offset_pct" title="Ask limit sits this % above mid for strength sells.">sell_limit_offset_pct</label><input type="range" id="slSellOffset" min="0.05" max="1" step="0.01"><input type="number" id="numSellOffset" step="0.01"><span id="valSellOffset" class="muted"></span></div>
@@ -1052,6 +1057,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       return sync;
     }
     const syncRisk = linkSlider('slRisk', 'numRisk', 'valRisk');
+    const syncRiskCap = linkSlider('slRiskCap', 'numRiskCap', 'valRiskCap');
     const syncEdge = linkSlider('slEdge', 'numEdge', 'valEdge');
     const syncOffset = linkSlider('slOffset', 'numOffset', 'valOffset');
     const syncSellOffset = linkSlider('slSellOffset', 'numSellOffset', 'valSellOffset');
@@ -1106,6 +1112,11 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       syncWeakness(c.alpha_weakness_deviation ?? 0.02);
       syncStrength(c.alpha_strength_deviation ?? 0.04);
       syncRisk(c.alpha_risk_per_trade_pct ?? 0.5);
+      const rc = c.risk_capital_xrp ?? 600;
+      syncRiskCap(rc);
+      if ($('riskCapSyncPortfolio')) {
+        $('riskCapSyncPortfolio').checked = c.alpha_risk_capital_sync_portfolio !== false;
+      }
       syncEdge(c.alpha_min_edge_threshold_pct ?? 0.08);
       syncOffset(c.alpha_buy_limit_offset_pct ?? 0.15);
       syncSellOffset(c.alpha_sell_limit_offset_pct ?? 0.15);
@@ -1226,6 +1237,8 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         alpha_weakness_deviation: parseFloat($('numWeakness').value),
         alpha_strength_deviation: parseFloat($('numStrength').value),
         alpha_risk_per_trade_pct: parseFloat($('numRisk').value),
+        risk_capital_xrp: parseFloat($('numRiskCap').value),
+        alpha_risk_capital_sync_portfolio: $('riskCapSyncPortfolio').checked,
         alpha_min_edge_threshold_pct: parseFloat($('numEdge').value),
         alpha_buy_limit_offset_pct: parseFloat($('numOffset').value),
         alpha_sell_limit_offset_pct: parseFloat($('numSellOffset').value),
@@ -1240,6 +1253,20 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       }});
       if (d?.ok) { toast('Risk & entry updated'); operatorConfig = d; poll(); }
     };
+    $('btnSyncRiskCapital')?.addEventListener('click', async () => {
+      const port = hudState?.portfolio_xrp_equiv ?? hudState?.risk_capital?.portfolio_xrp_equiv;
+      if (!port || port <= 0) { toast('Portfolio not loaded yet', true); return; }
+      const d = await patchJson('/operator/config', { overrides: {
+        risk_capital_xrp: Math.round(port * 10) / 10,
+        alpha_risk_capital_sync_portfolio: true,
+      }});
+      if (d?.ok) {
+        toast('Risk capital synced to portfolio ' + Number(port).toFixed(1) + ' XRP-equiv');
+        operatorConfig = d;
+        fillControlsFromConfig(operatorConfig);
+        poll();
+      }
+    });
     $('btnApplyReentry').onclick = async () => {
       const d = await patchJson('/operator/config', { overrides: {
         alpha_reentry_enabled: $('reentryEnabled').checked,
@@ -2057,6 +2084,38 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         ? Number(mc.recommended_max_buy_xrp).toFixed(2) + ' XRP' : '—';
       $('mcMaxSell').textContent = mc.recommended_max_sell_xrp > 0
         ? Number(mc.recommended_max_sell_xrp).toFixed(2) + ' XRP' : '—';
+      const rc = s.risk_capital || {};
+      const mcRc = $('mcRiskCapital');
+      if (mcRc) {
+        if (rc.effective_xrp != null) {
+          const syncNote = rc.sync_portfolio ? ' · sync on' : ' · fixed';
+          mcRc.textContent = Number(rc.effective_xrp).toFixed(0) + ' XRP-equiv'
+            + (rc.configured_xrp != null && rc.configured_xrp !== rc.effective_xrp
+              ? ' (cfg ' + Number(rc.configured_xrp).toFixed(0) + ')' : '')
+            + syncNote;
+          mcRc.className = 'mc-val ' + (rc.needs_sync ? 'mc-grade-yellow' : 'mc-grade-green');
+        } else {
+          mcRc.textContent = '—';
+          mcRc.className = 'mc-val';
+        }
+      }
+      const mcBinder = $('mcSizeBinder');
+      if (mcBinder && rc.binding_cap) {
+        const detail = rc.binding_cap === 'risk_per_trade_pct'
+          ? ('risk ' + Number(rc.risk_cap_xrp || 0).toFixed(1) + ' XRP @ ' + rc.risk_per_trade_pct + '%')
+          : ('leg ' + Number(rc.leg_cap_xrp || 0).toFixed(1) + ' XRP');
+        mcBinder.textContent = rc.binding_cap + ' · ' + detail;
+        mcBinder.className = 'mc-val';
+      }
+      if ($('riskCapHint') && rc.portfolio_xrp_equiv) {
+        $('riskCapHint').textContent = 'Portfolio ' + Number(rc.portfolio_xrp_equiv).toFixed(1)
+          + ' · clip ~' + Number(rc.risk_cap_xrp || 0).toFixed(1) + ' XRP';
+      }
+      if ($('slRiskCap') && rc.portfolio_xrp_equiv) {
+        const maxSl = Math.max(2000, Math.ceil(rc.portfolio_xrp_equiv * 2));
+        $('slRiskCap').max = maxSl;
+        $('numRiskCap').max = maxSl;
+      }
       const dca = mc.dca || {};
       const dcaEntry = $('mcDcaEntry');
       if (dca.avg_entry_rlusd_per_xrp != null && dca.total_xrp > 0) {

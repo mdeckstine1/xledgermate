@@ -588,7 +588,10 @@ class DecisionEngine:
         skip_inventory_cap: bool = False,
     ) -> float:
         min_size = self._config.min_order_size_xrp
-        capital_xrp = self._config.effective_risk_capital_xrp(mid)
+        capital_xrp = self._config.effective_risk_capital_xrp(
+            mid,
+            portfolio_xrp_equiv=portfolio_xrp_equiv,
+        )
         leg_cap = capital_xrp * self._config.max_leg_size_pct_of_capital
         risk_cap = 0.0
         pct = risk_per_trade_pct if risk_per_trade_pct is not None else self._config.alpha_risk_per_trade_pct

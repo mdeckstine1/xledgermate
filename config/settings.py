@@ -158,6 +158,8 @@ class BotConfig:
     risk_capital_xrp: float = 11254.0
     risk_capital_rlusd: float = 0.0  # used when risk_capital_unit is rlusd
     risk_capital_unit: str = "xrp"  # "xrp" | "rlusd" — GUI entry denomination
+    # Alpha operator: size leg_cap from max(configured, live portfolio) so yaml drift does not under-size.
+    alpha_risk_capital_sync_portfolio: bool = True
     bot_account_address: str = ""          # ← Fill this in (your Bot Account)
     bot_secret_key: str = ""               # ← NEVER commit this to git!
 
@@ -425,14 +427,27 @@ class BotConfig:
         unit = (getattr(self, "risk_capital_unit", None) or "xrp").strip().lower()
         return "rlusd" if unit in ("rlusd", "usd") else "xrp"
 
-    def effective_risk_capital_xrp(self, mid_rlusd_per_xrp: Optional[float] = None) -> float:
+    def effective_risk_capital_xrp(
+        self,
+        mid_rlusd_per_xrp: Optional[float] = None,
+        *,
+        portfolio_xrp_equiv: Optional[float] = None,
+    ) -> float:
         """Quote-size cap in XRP equivalent (converts RLUSD capital when mid is known)."""
         if self.risk_capital_unit_normalized() == "rlusd":
             rlusd = float(getattr(self, "risk_capital_rlusd", 0) or 0)
             if mid_rlusd_per_xrp and float(mid_rlusd_per_xrp) > 0:
-                return rlusd / float(mid_rlusd_per_xrp)
-            return float(self.risk_capital_xrp)
-        return float(self.risk_capital_xrp)
+                base = rlusd / float(mid_rlusd_per_xrp)
+            else:
+                base = float(self.risk_capital_xrp)
+        else:
+            base = float(self.risk_capital_xrp)
+        if bool(getattr(self, "alpha_risk_capital_sync_portfolio", True)):
+            if portfolio_xrp_equiv is not None:
+                live = float(portfolio_xrp_equiv)
+                if live > 0:
+                    return max(base, live)
+        return base
 
     def sync_risk_capital_pair(self, mid_rlusd_per_xrp: Optional[float]) -> None:
         """Keep XRP and RLUSD risk capital fields aligned when mid is available."""

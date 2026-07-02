@@ -35,6 +35,7 @@ from alpha.decision.harvest_watch import (
 )
 from alpha.decision.reload_regime import build_reload_context_block
 from alpha.reporting.bag_growth import format_bag_growth_context_block
+from utils.risk_capital_sync import format_risk_capital_context_block
 from config.settings import BotConfig
 from utils.env_secrets import resolve_grok_key
 
@@ -367,6 +368,8 @@ def build_skynet_context(
         build_swing_playbook_context_block(),
         "",
         format_bag_growth_context_block(hud_state.get("bag_growth") or {}),
+        "",
+        format_risk_capital_context_block(hud_state.get("risk_capital") or {}),
         "",
         build_reload_context_block(hud_state.get("reload_regime") or {}),
         "",

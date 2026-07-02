@@ -28,6 +28,7 @@ from alpha.operator.controls import OperatorControls
 from alpha.operator.runtime import derive_posture, effective_config_snapshot
 from alpha.pro.circuit_breaker import defensive_status_snapshot
 from alpha.pro.treasury import treasury_placeholder_status
+from utils.risk_capital_sync import build_risk_capital_snapshot
 from alpha.reporting.bag_growth import build_bag_growth_snapshot
 from alpha.reporting.realized_pnl import build_realized_pnl_snapshot
 from alpha.orders.types import BracketRecord
@@ -529,6 +530,11 @@ def build_hud_state(
         log_dir=runtime_state_path.parent,
         balance_xrp=snap.balances.xrp,
     )
+    risk_capital = build_risk_capital_snapshot(
+        effective,
+        portfolio_xrp_equiv=snap.balances.portfolio_xrp_equiv,
+        mid_rlusd_per_xrp=snap.balances.mid_rlusd_per_xrp,
+    )
 
     realized_pnl_24h = build_realized_pnl_snapshot(
         logs_dir=runtime_state_path.parent,
@@ -641,6 +647,7 @@ def build_hud_state(
         "market_metrics": market_metrics,
         "book": _book_payload(book if isinstance(book, OrderBookSnapshot) else None),
         "market_conditions": market_conditions,
+        "risk_capital": risk_capital,
         "recent_activity": activity[-40:],
         "recent_events": list(recent_events),
         "report_text": report_text,
