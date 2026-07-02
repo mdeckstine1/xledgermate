@@ -355,6 +355,7 @@ ws_hud_enabled: true                # Production HUD :8765
 ws_hud_metrics_enabled: true        # Metrics tab grades (off = lighter HUD)
 ws_hud_grok_enabled: true           # HUD Grok /analyze_competitor
 telegram_hourly_report_enabled: true   # Hourly Telegram soak summary
+telegram_weekly_report_enabled: true   # Weekly Alpha bag-growth Telegram (Mon 09:00 UTC)
 telegram_kill_alerts_enabled: true    # Telegram on drawdown kill
 
 testnet: true

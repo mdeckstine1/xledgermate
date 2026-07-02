@@ -84,6 +84,32 @@ def register_operator_routes(app: Any) -> None:
         _runtime().queue_command({"type": "config_reload"})
         return JSONResponse({"ok": True, "queued": "config_reload"})
 
+    @app.post("/operator/walkaway")
+    async def post_walkaway_preset() -> JSONResponse:
+        """Apply walk-away bundle: trust-phase knobs + Agent Smith (not full SKYNET)."""
+        from alpha.hud.skynet_agent import agent_status_payload, merge_agent_patch
+        from alpha.hud.walkaway_preset import apply_walkaway_preset, walkaway_preset_payload
+
+        base = _base_config()
+        store = _runtime()
+        merged, _agent, errors = apply_walkaway_preset(
+            patch_overrides=lambda ov, base=base: store.patch_overrides(ov, base=base),
+            merge_agent_patch=merge_agent_patch,
+            base_config=base,
+        )
+        if errors:
+            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
+        effective = apply_overrides(base, merged)
+        return JSONResponse(
+            {
+                "ok": True,
+                "message": walkaway_preset_payload()["description"],
+                "operator_overrides": merged,
+                "config_effective": effective_config_snapshot(effective, merged),
+                "agent": agent_status_payload(),
+            }
+        )
+
     @app.post("/operator/dry-run")
     async def post_dry_run(body: Dict[str, Any] = Body(...)) -> JSONResponse:
         dry_run = body.get("dry_run")

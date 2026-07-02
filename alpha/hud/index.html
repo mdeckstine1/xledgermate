@@ -260,6 +260,14 @@
       <div class="row"><div class="label">Total (RLUSD eq)</div><div id="port" class="value">—</div></div>
       <div class="row"><div class="label">Inventory</div><div id="inv" class="value">—</div></div>
       <div class="row"><div class="label">Drawdown</div><div id="dd" class="value">—</div></div>
+      <div class="sidebar-bag-growth" style="margin-top:10px;padding-top:10px;border-top:1px solid #334155">
+        <div class="label" style="margin-bottom:6px;font-weight:600">Bag growth</div>
+        <div class="row"><div class="label">Since baseline</div><div id="bagSinceBaseline" class="value">—</div></div>
+        <div id="bagBaselineMeta" class="muted pnl-meta">holdings + price vs session start</div>
+        <div class="row"><div class="label">This week</div><div id="bagWeek" class="value">—</div></div>
+        <div class="row"><div class="label">Trading edge 7d</div><div id="bagEdge7d" class="value">—</div></div>
+        <div id="bagEdgeMeta" class="muted pnl-meta">TP/SL from tax CSV</div>
+      </div>
       <div class="row">
         <div class="label">Session P&amp;L <span class="muted" style="font-size:.65rem">(MTM)</span></div>
         <div id="pnlXrp" class="value">—</div>
@@ -757,6 +765,7 @@
             <label><input type="checkbox" id="skynetAgentEnabled"> Enable Agent Smith Mode</label>
             <button type="button" id="btnSkynetSaveAgent" class="secondary">Save guardrails</button>
             <button type="button" id="btnSkynetAgentTrigger" class="secondary">Run Agent Smith now</button>
+            <button type="button" id="btnWalkawayPreset" class="warn" title="Trust-phase knobs + Agent Smith ON (not full SKYNET)">Walk-away preset</button>
           </div>
           <div class="skynet-agent-meta" id="skynetAgentMeta">Agent Smith idle</div>
           <details open>
@@ -1422,6 +1431,50 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if (f.tone) {
         xrpEl.classList.add(f.tone);
         if (f.rlusd !== '—') rlusdEl.classList.add(f.tone);
+      }
+    }
+
+    function renderBagGrowth(s, mid) {
+      const b = s.bag_growth;
+      const sinceEl = $('bagSinceBaseline');
+      const weekEl = $('bagWeek');
+      const edgeEl = $('bagEdge7d');
+      const baseMeta = $('bagBaselineMeta');
+      const edgeMeta = $('bagEdgeMeta');
+      if (!b || !b.available) {
+        sinceEl.textContent = '—';
+        weekEl.textContent = '—';
+        edgeEl.textContent = '—';
+        sinceEl.classList.remove('pnl-pos', 'pnl-neg');
+        weekEl.classList.remove('pnl-pos', 'pnl-neg');
+        edgeEl.classList.remove('pnl-pos', 'pnl-neg');
+        baseMeta.textContent = 'waiting for baseline + mid';
+        edgeMeta.textContent = 'TP/SL from tax CSV';
+        return;
+      }
+      const sinceFmt = fmtSignedPnl(b.since_baseline_xrp, mid);
+      sinceEl.textContent = sinceFmt.xrp + (b.since_baseline_pct != null ? ' (' + (b.since_baseline_pct >= 0 ? '+' : '') + b.since_baseline_pct.toFixed(1) + '%)' : '');
+      sinceEl.classList.remove('pnl-pos', 'pnl-neg');
+      if (sinceFmt.tone) sinceEl.classList.add(sinceFmt.tone);
+      const baseDate = (b.baseline_utc || '').slice(0, 10) || '?';
+      baseMeta.textContent = 'since ' + baseDate + ' · holdings + price';
+
+      const weekFmt = fmtSignedPnl(b.week_delta_xrp, mid);
+      weekEl.textContent = weekFmt.xrp + (b.week_delta_pct != null ? ' (' + (b.week_delta_pct >= 0 ? '+' : '') + b.week_delta_pct.toFixed(1) + '%)' : '');
+      weekEl.classList.remove('pnl-pos', 'pnl-neg');
+      if (weekFmt.tone) weekEl.classList.add(weekFmt.tone);
+
+      const edge = b.trading_edge_7d || {};
+      if (edge.available) {
+        const edgeFmt = fmtSignedPnl(edge.realized_profit_xrp_equiv, mid);
+        edgeEl.textContent = edgeFmt.xrp;
+        edgeEl.classList.remove('pnl-pos', 'pnl-neg');
+        if (edgeFmt.tone) edgeEl.classList.add(edgeFmt.tone);
+        edgeMeta.textContent = (edge.tp_exits || 0) + ' TP · ' + (edge.sl_exits || 0) + ' SL · 7d tax CSV';
+      } else {
+        edgeEl.textContent = '—';
+        edgeEl.classList.remove('pnl-pos', 'pnl-neg');
+        edgeMeta.textContent = 'no closed brackets in 7d';
       }
     }
 
@@ -2387,6 +2440,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       $('dd').textContent = fmt(s.risk?.drawdown_pct, 2) + '% / ' + fmt(s.risk?.max_drawdown_pct, 2) + '%';
       const pnlMid = bal.mid;
       applyPnlDual($('pnlXrp'), $('pnlRlusd'), s.risk?.session_pnl_xrp, pnlMid);
+      renderBagGrowth(s, pnlMid);
       renderRealizedPnl24h(s, pnlMid);
       $('btnPause').style.display = s.operator_paused ? 'none' : 'inline-block';
       $('btnResume').style.display = s.operator_paused ? 'inline-block' : 'none';
@@ -3097,6 +3151,19 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         else toast('Agent Smith proposal ready');
       }
       loadSkynetAgent();
+    };
+
+    $('btnWalkawayPreset').onclick = async () => {
+      if (!confirm('Apply walk-away preset?\n\nTrust-phase knobs (patient buys, anti-churn), Agent Smith ON, full SKYNET stays OFF.')) return;
+      const d = await postJson('/operator/walkaway', {});
+      if (!d?.ok) {
+        toast((d?.errors || [d?.message || 'Walk-away failed']).join('; '), true);
+        return;
+      }
+      toast(d.message || 'Walk-away preset applied');
+      loadOperatorConfig();
+      loadSkynetAgent();
+      poll();
     };
 
     $('btnSkynetApplySafe').onclick = async () => {

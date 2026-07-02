@@ -236,6 +236,34 @@ Full guide: **[Tuning SKYNET](ALPHA_TRADERS_MANUAL.md#tuning-skynet-ask-agent-sm
 
 ---
 
+## Bag growth vs trading edge
+
+The sidebar **Bag growth** block answers: *“Is my stack bigger?”* vs *“Is the bot winning trades?”*
+
+| Metric | Meaning |
+|--------|---------|
+| **Since baseline** | Portfolio (XRP + RLUSD at mid) vs `logs/alpha_session.json` anchor — includes price moves and RLUSD→XRP deployment |
+| **This week** | Same portfolio measure since Monday 00:00 UTC (`logs/alpha_bag_week.json`) |
+| **Trading edge 7d** | Sum of realized bracket P&L from tax CSV (TP/SL only) — true trading bleed/win |
+| **Session P&L** | Mark-to-market since baseline — can diverge from bag growth and from realized |
+
+**Telegram:** Hourly digest includes a compact bag-growth line. Weekly report (`scripts/weekly_telegram_report.py`) sends a fuller rollup every **Monday 09:00 UTC** when `telegram_weekly_report_enabled: true`. Install timer: `bash scripts/install_weekly_telegram_timer.sh`.
+
+---
+
+## Walk-away preset
+
+SKYNET tab → **Walk-away preset** (or `POST /operator/walkaway`) applies:
+
+- **Operator phase:** `trust` — patient entries, anti-churn
+- **Knobs:** e.g. buy offset 0.18, max pending 2, higher min sell score, longer SL cooldown
+- **Agent Smith:** ON with default guardrails
+- **Full SKYNET:** stays OFF (no auto-apply without explicit `ENABLE_FULL_SKYNET`)
+
+Use when you want hands-off monitoring without aggressive churn or full autonomy.
+
+---
+
 ## VPS (Cursor workflow)
 
 1. Push `alpha` branch

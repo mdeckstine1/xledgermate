@@ -28,6 +28,7 @@ from alpha.operator.controls import OperatorControls
 from alpha.operator.runtime import derive_posture, effective_config_snapshot
 from alpha.pro.circuit_breaker import defensive_status_snapshot
 from alpha.pro.treasury import treasury_placeholder_status
+from alpha.reporting.bag_growth import build_bag_growth_snapshot
 from alpha.reporting.realized_pnl import build_realized_pnl_snapshot
 from alpha.orders.types import BracketRecord
 from alpha.runtime.executor import EntryExecutionResult
@@ -536,6 +537,14 @@ def build_hud_state(
         max_recent_exits=5,
     )
 
+    bag_growth = build_bag_growth_snapshot(
+        xrp=snap.balances.xrp,
+        rlusd=snap.balances.rlusd,
+        mid_rlusd_per_xrp=snap.balances.mid_rlusd_per_xrp,
+        logs_dir=runtime_state_path.parent,
+        persist_week=True,
+    )
+
     from alpha.reporting.tax_ledger import tax_periods_payload
 
     tax_log = tax_periods_payload(runtime_state_path.parent)
@@ -588,6 +597,7 @@ def build_hud_state(
             "alerts": list(snap.risk.alerts),
         },
         "realized_pnl_24h": realized_pnl_24h,
+        "bag_growth": bag_growth,
         "decision": {
             "action": decision.action.value,
             "reason": decision.reason,

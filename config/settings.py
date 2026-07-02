@@ -379,6 +379,7 @@ class BotConfig:
     ws_hud_metrics_enabled: bool = True        # G3/G6 grade panel (CSV walk; throttled in HUD)
     ws_hud_grok_enabled: bool = True           # HUD /analyze_competitor Grok calls
     telegram_hourly_report_enabled: bool = True  # Hourly soak script + timer
+    telegram_weekly_report_enabled: bool = True  # Weekly Alpha bag-growth Telegram
     telegram_kill_alerts_enabled: bool = True    # Immediate Telegram on drawdown kill
 
     # === OTHER ===

@@ -214,9 +214,9 @@ The ticker and left rail update every **~1 second**. They are your pulse when yo
 **See also:** [Accumulation / opportunity](#accumulation--opportunity-watch-card) · [RLUSD reload](#rlusd-reload-card) · [Appendix P](#appendix-p--kill-switch-drawdown-or-pause)
 #### Portfolio, inventory & P&L
 
-**What it is:** Sidebar: mid, XRP/RLUSD balances, XRP %, deviation label, drawdown, session P&L, realized 24h.
+**What it is:** Sidebar: mid, XRP/RLUSD balances, XRP %, deviation label, drawdown, **bag growth** (since baseline, this week, trading edge 7d), session P&L, realized 24h.
 
-**How to use it:** **Session P&L** is mark-to-market (can lie after deposits). **Realized 24h** is tax-CSV truth for bleed.
+**How to use it:** **Bag growth** = portfolio size (holdings + price). **Trading edge 7d** = tax-CSV TP/SL truth. **Session P&L** is mark-to-market (can lie after deposits or on mid rip). **Realized 24h** is the short-window bleed check.
 
 | Regime | Operator stance |
 |--------|-----------------|

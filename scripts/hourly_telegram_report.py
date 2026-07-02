@@ -302,6 +302,18 @@ def build_alpha_report(
     kill_active = bool(kill.get("active")) or bool(risk.get("kill_switch_active"))
     kill_reason = str(kill.get("reason") or risk.get("kill_switch_reason") or "").strip()
 
+    from alpha.reporting.bag_growth import build_bag_growth_snapshot, format_bag_growth_telegram_block
+
+    bag = build_bag_growth_snapshot(
+        xrp=float(state.get("xrp") or 0),
+        rlusd=float(state.get("rlusd") or 0),
+        mid_rlusd_per_xrp=state.get("mid"),
+        logs_dir=logs,
+        now=now,
+        persist_week=False,
+    )
+    bag_block = format_bag_growth_telegram_block(bag)
+
     lines = [
         "XLedgerMate Alpha hourly",
         f"{now.strftime('%Y-%m-%d %H:%M')} UTC",
@@ -319,6 +331,8 @@ def build_alpha_report(
         f"Brackets: pending={brackets.get('pending_buys', 0)} fixed={brackets.get('active_fixed', 0)} "
         f"sl_trail={brackets.get('active_sl_trailing', 0)} breakout={brackets.get('active_breakout_trailing', 0)}",
         f"Open offers: {int(state.get('open_offers_count') or 0)}",
+        "",
+        bag_block,
     ]
     if kill_active:
         lines.append(f"KILL: {kill_reason[:200] if kill_reason else 'active'}")
