@@ -923,7 +923,10 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       $(el.dataset.tab).classList.add('active');
       skynetTabActive = el.dataset.tab === 'skynet';
       arbTabActive = el.dataset.tab === 'arb';
-      if (el.dataset.tab === 'live' && !operatorConfig) loadOperatorConfig();
+      if (el.dataset.tab === 'live') {
+        if (!operatorConfig) loadOperatorConfig();
+        scheduleChartRelayout();
+      }
       if (el.dataset.tab === 'ta' && !operatorConfig) loadOperatorConfig();
       if (el.dataset.tab === 'config') loadAccountConfig();
       if (el.dataset.tab === 'pro') loadProReplay();
@@ -1705,6 +1708,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     }
 
     let lastChartState = null;
+    let chartNeedsRelayout = false;
     const CHART_INTERVAL_STORAGE_KEY = 'alpha_hud_chart_interval_sec';
     const CHART_MAX_CANDLES = 96;
     const CHART_BODY_PX = 4;
@@ -1715,6 +1719,19 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const s = parseInt(sec, 10);
       if (s < 3600) return (s / 60) + 'm';
       return (s / 3600) + 'h';
+    }
+
+    function isLiveTabActive() {
+      return document.getElementById('live')?.classList.contains('active') ?? false;
+    }
+
+    function scheduleChartRelayout() {
+      if (!lastChartState) return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (lastChartState && isLiveTabActive()) renderChart(lastChartState);
+        });
+      });
     }
 
     function loadChartIntervalSec(chart) {
@@ -1831,7 +1848,9 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const liveBid = live?.best_bid != null ? Number(live.best_bid) : null;
       const liveAsk = live?.best_ask != null ? Number(live.best_ask) : null;
       const wrap = canvas.parentElement;
-      const w = Math.max(320, Math.floor(wrap?.clientWidth || 800) - 16);
+      const rawW = wrap?.clientWidth || 0;
+      if (rawW < 8) return;
+      const w = Math.max(320, Math.floor(rawW) - 16);
       const h = 250;
       const marginLeft = 58;
       const marginRight = 10;
@@ -2120,11 +2139,21 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
 
     function renderChart(s) {
       lastChartState = s;
+      if (!isLiveTabActive()) {
+        chartNeedsRelayout = true;
+        return;
+      }
+      chartNeedsRelayout = false;
       const raw = s.chart || {};
       loadChartIntervalSec(raw);
       const built = chartViewForRender(raw);
       const wrap = $('priceChart')?.parentElement;
-      const plotW = Math.max(320, Math.floor(wrap?.clientWidth || 800) - 16) - 58 - 10;
+      if ((wrap?.clientWidth || 0) < 8) {
+        chartNeedsRelayout = true;
+        scheduleChartRelayout();
+        return;
+      }
+      const plotW = Math.max(320, Math.floor(wrap.clientWidth) - 16) - 58 - 10;
       const displayCandles = chartCandlesForPlot(built.candles || [], plotW);
       const chart = { ...built, candles: displayCandles, _candle_total: (built.candles || []).length };
       renderIndicatorList(chart);
@@ -2138,10 +2167,12 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
 
     if (typeof ResizeObserver !== 'undefined') {
       const chartObs = new ResizeObserver(() => {
-        if (lastChartState) renderChart(lastChartState);
+        if (lastChartState && isLiveTabActive()) renderChart(lastChartState);
       });
       const wrap = document.querySelector('.chart-canvas-wrap');
+      const livePanel = document.getElementById('live');
       if (wrap) chartObs.observe(wrap);
+      if (livePanel) chartObs.observe(livePanel);
     }
 
     function openReportInNewTab(reportId, params = {}) {
