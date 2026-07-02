@@ -205,11 +205,13 @@ class EntryExecutor:
                 size_xrp=size,
             )
 
-        purpose = (
-            "reload_funding"
-            if "reload_funding" in (decision.reason or "")
-            else "strength"
-        )
+        reason = decision.reason or ""
+        if "reload_funding" in reason:
+            purpose = "reload_funding"
+        elif "harvest_trim" in reason:
+            purpose = "harvest_trim"
+        else:
+            purpose = "strength"
         if seq is not None:
             self._orders.register_strength_sell(
                 sequence=seq,

@@ -266,6 +266,25 @@ class BotConfig:
     alpha_accumulation_chase_tighten_step_pct: float = 0.02  # Tighten offset per mid_passed cancel
     alpha_accumulation_chase_min_offset_pct: float = 0.03  # Floor when chasing rips
     alpha_accumulation_missed_move_pct: float = 0.30  # Flag if mid rises this % while never executing
+    # Swing harvest — trim extended legs; bracketed re-entry on dip (accumulation overlay)
+    alpha_accumulation_harvest_watch_enabled: bool = True
+    alpha_accumulation_harvest_execute_enabled: bool = True
+    alpha_accumulation_harvest_move_hours: float = 24.0
+    alpha_accumulation_harvest_move_24h_watch_pct: float = 5.0
+    alpha_accumulation_harvest_move_24h_arm_pct: float = 0.0  # 0 = use watch threshold
+    alpha_accumulation_harvest_pullback_arm_pct: float = 1.0
+    alpha_accumulation_harvest_pullback_release_pct: float = 0.3
+    alpha_accumulation_harvest_release_cycles: int = 2
+    alpha_accumulation_harvest_trim_risk_pct: float = 1.5
+    alpha_accumulation_harvest_sell_offset_pct: float = 0.10
+    alpha_accumulation_harvest_max_sell_xrp: float = 0.0  # 0 = risk% only
+    alpha_accumulation_harvest_max_tranches_per_window: int = 2
+    alpha_accumulation_harvest_window_hours: float = 8.0
+    alpha_accumulation_harvest_max_pending_sells: int = 1
+    alpha_accumulation_harvest_pause_accumulation_bids: bool = True
+    alpha_accumulation_harvest_bypass_ta_bullish_defer: bool = True
+    alpha_accumulation_harvest_reentry_enabled: bool = True
+    alpha_accumulation_harvest_reentry_buy_offset_pct: float = 0.18
     # RLUSD reload — sell XRP in post-run chop to fund accumulation deploy floor
     alpha_reload_regime_enabled: bool = True
     alpha_reload_min_rlusd_deploy_xrp_equiv: float = 45.0  # Min RLUSD dry powder (XRP-equiv)

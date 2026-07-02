@@ -93,12 +93,16 @@ class OrderManager:
         self._accumulation_knobs: object | None = None
         self._accumulation_session: AccumulationSessionTracker | None = None
         self._reload_session: object | None = None
+        self._harvest_session: object | None = None
 
     def set_accumulation_session(self, session: AccumulationSessionTracker | None) -> None:
         self._accumulation_session = session
 
     def set_reload_session(self, session: object | None) -> None:
         self._reload_session = session
+
+    def set_harvest_session(self, session: object | None) -> None:
+        self._harvest_session = session
 
     def set_accumulation_knobs(self, knobs: object | None) -> None:
         self._accumulation_knobs = knobs
@@ -125,6 +129,19 @@ class OrderManager:
                 continue
             seq = int(offer.get("sequence") or 0)
             if seq > 0 and seq not in leg_seqs:
+                count += 1
+        return count
+
+    def count_harvest_sells(self, open_offers: List[dict[str, Any]]) -> int:
+        """Open harvest_trim asks still on the ledger."""
+        open_seqs = {
+            int(o.get("sequence") or 0)
+            for o in open_offers
+            if o.get("side") == "ask" and int(o.get("sequence") or 0) > 0
+        }
+        count = 0
+        for rec in self._strength_sells.iter_tracked():
+            if rec.purpose == "harvest_trim" and rec.sequence in open_seqs:
                 count += 1
         return count
 
@@ -193,7 +210,7 @@ class OrderManager:
         if seq <= 0 or size_xrp <= 0 or price_rlusd_per_xrp <= 0:
             return
         kind = str(purpose or "strength").strip().lower()
-        if kind not in ("strength", "reload_funding"):
+        if kind not in ("strength", "reload_funding", "harvest_trim"):
             kind = "strength"
         self._strength_sells.register(
             StrengthSellRecord(
@@ -1711,6 +1728,25 @@ class OrderManager:
             mid=mid,
         )
 
+    def _record_harvest_trim_fill(
+        self,
+        *,
+        size_xrp: float,
+        price_rlusd_per_xrp: float,
+    ) -> None:
+        if self._harvest_session is None or size_xrp <= 0 or price_rlusd_per_xrp <= 0:
+            return
+        set_pending = getattr(self._harvest_session, "set_pending_reentry", None)
+        if callable(set_pending) and getattr(
+            self._config, "alpha_accumulation_harvest_reentry_enabled", True
+        ):
+            set_pending(enabled=True)
+            logger.info(
+                "harvest_session | trim_fill | size=%.4f | price=%.6f | reentry_queued",
+                size_xrp,
+                price_rlusd_per_xrp,
+            )
+
     async def _reconcile_strength_sell_fills(
         self,
         open_map: Dict[int, dict[str, Any]],
@@ -1747,6 +1783,11 @@ class OrderManager:
                     size_xrp=rec.size_xrp,
                     price_rlusd_per_xrp=rec.price_rlusd_per_xrp,
                     mid=mid,
+                )
+            elif rec.purpose == "harvest_trim":
+                self._record_harvest_trim_fill(
+                    size_xrp=rec.size_xrp,
+                    price_rlusd_per_xrp=rec.price_rlusd_per_xrp,
                 )
             self._strength_sells.remove(rec.sequence)
             logger.info(

@@ -32,6 +32,7 @@ from alpha.decision.reload_regime import (
     evaluate_reload_regime,
     reload_knobs_from_snapshot,
 )
+from alpha.decision.harvest_watch import HarvestSessionTracker, harvest_knobs_from_snapshot
 from alpha.decision.engine import DecisionEngine, DecisionResult
 from alpha.dry_run import DryRunGuard
 from alpha.inventory.manager import InventoryManager
@@ -109,6 +110,9 @@ class AlphaApplication:
         self._reload_session = ReloadSessionTracker(
             path=self._state_dir / "reload_session.json",
         )
+        self._harvest_session = HarvestSessionTracker(
+            path=self._state_dir / "harvest_session.json",
+        )
         self._last_accumulation_knobs = None
         self._last_reload_knobs = None
         self._orders = OrderManager(
@@ -121,6 +125,7 @@ class AlphaApplication:
         )
         self._orders.set_accumulation_session(self._accumulation_session)
         self._orders.set_reload_session(self._reload_session)
+        self._orders.set_harvest_session(self._harvest_session)
         self._decision = DecisionEngine(
             config,
             inventory=self._inventory,
@@ -408,6 +413,8 @@ class AlphaApplication:
             pending_buys=self._orders.pending_buy_count(),
             rlusd_balance=balances.rlusd,
             session=self._accumulation_session,
+            harvest_session=self._harvest_session,
+            pending_harvest_sells=self._orders.count_harvest_sells(orders.open_offers),
         )
         acc_knobs = accumulation_knobs_from_snapshot(
             acc_snap,
@@ -417,6 +424,17 @@ class AlphaApplication:
         self._last_accumulation_knobs = acc_knobs
         self._decision.set_accumulation(acc_snap, acc_knobs)
         self._orders.set_accumulation_knobs(acc_knobs)
+        harvest_snap = acc_snap.harvest_watch
+        harvest_knobs = (
+            harvest_knobs_from_snapshot(harvest_snap, self.config)
+            if harvest_snap is not None
+            else None
+        )
+        self._decision.set_harvest(
+            harvest_snap,
+            harvest_knobs,
+            reentry_pending=self._harvest_session.pending_reentry(),
+        )
 
         pending_sells = self._orders.count_strength_sells(orders.open_offers)
         reload_snap = evaluate_reload_regime(
@@ -637,6 +655,8 @@ class AlphaApplication:
             execution = await self._executor.execute(decision, risk=snap.risk)
             if execution.executed and execution.action == "place_bid":
                 self._reentry.clear(reason="buy_executed")
+                if "harvest_reentry" in (decision.reason or ""):
+                    self._harvest_session.set_pending_reentry(enabled=False)
                 knobs = self._last_accumulation_knobs
                 if (
                     knobs is not None
@@ -657,6 +677,8 @@ class AlphaApplication:
                         mid=mid,
                         config=self.config,
                     )
+                elif "harvest_trim" in (decision.reason or ""):
+                    self._harvest_session.record_trim_placed()
         else:
             logger.info("trading_cycle_skipped | risk_trading_not_allowed")
 

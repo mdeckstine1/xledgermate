@@ -21,6 +21,7 @@ from alpha.types import utc_now
 from config.settings import BotConfig
 
 if TYPE_CHECKING:
+    from alpha.decision.harvest_watch import HarvestWatchSnapshot
     from alpha.decision.structure import MarketStructureSnapshot
     from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
     from alpha.types import InventorySnapshot
@@ -65,6 +66,7 @@ class AccumulationRegimeSnapshot:
     rlusd_remaining_rlusd: float = 0.0
     skynet_nudge: str = ""
     scorecard: Dict[str, Any] | None = None
+    harvest_watch: "HarvestWatchSnapshot | None" = None
 
     def to_dict(self) -> Dict[str, Any]:
         out = {
@@ -85,6 +87,8 @@ class AccumulationRegimeSnapshot:
         }
         if self.scorecard:
             out["scorecard"] = self.scorecard
+        if self.harvest_watch is not None:
+            out["harvest_watch"] = self.harvest_watch.to_dict()
         return out
 
 
@@ -345,6 +349,8 @@ def evaluate_accumulation_regime(
     decision_action: str = "hold",
     rlusd_balance: float = 0.0,
     session: Optional[AccumulationSessionTracker] = None,
+    harvest_session: Optional["HarvestSessionTracker"] = None,
+    pending_harvest_sells: int = 0,
 ) -> AccumulationRegimeSnapshot:
     """Compute accumulation mode phase and whether RLUSD deployment is the job."""
     disabled = AccumulationRegimeSnapshot(
@@ -464,9 +470,49 @@ def evaluate_accumulation_regime(
             scorecard=scorecard,
         )
 
+    def _with_harvest(snap: AccumulationRegimeSnapshot) -> AccumulationRegimeSnapshot:
+        from alpha.decision.harvest_watch import HarvestSessionTracker, evaluate_harvest_watch
+
+        hw = evaluate_harvest_watch(
+            config,
+            inventory=inventory,
+            mid=mid,
+            structure=structure,
+            ta=ta,
+            momentum_active=momentum.active,
+            early_arm=early_arm,
+            accumulation_armed=armed,
+            accumulation_executing=pending_buys > 0 or (decision_action or "").lower() == "place_bid",
+            pending_harvest_sells=pending_harvest_sells,
+            decision_action=decision_action,
+            session=harvest_session or HarvestSessionTracker(),
+            tape_active=tape.active,
+        )
+        return AccumulationRegimeSnapshot(
+            enabled=snap.enabled,
+            active=snap.active,
+            armed=snap.armed,
+            phase=snap.phase,
+            headline=snap.headline,
+            detail=snap.detail,
+            entry_allowed=snap.entry_allowed,
+            reason=snap.reason,
+            signals=snap.signals,
+            blockers=snap.blockers,
+            rlusd_budget_rlusd=snap.rlusd_budget_rlusd,
+            rlusd_committed_rlusd=snap.rlusd_committed_rlusd,
+            rlusd_remaining_rlusd=snap.rlusd_remaining_rlusd,
+            skynet_nudge=snap.skynet_nudge,
+            scorecard=snap.scorecard,
+            harvest_watch=hw,
+        )
+
+    def _finish(snap: AccumulationRegimeSnapshot) -> AccumulationRegimeSnapshot:
+        return _with_harvest(_with_scorecard(snap))
+
     action = (decision_action or "hold").lower()
     if pending_buys > 0 or action == "place_bid":
-        return _with_scorecard(
+        return _finish(
             AccumulationRegimeSnapshot(
             enabled=True,
             active=True,
@@ -489,7 +535,7 @@ def evaluate_accumulation_regime(
         )
 
     if blockers and (momentum.active or tape.active or early_arm):
-        return _with_scorecard(
+        return _finish(
             AccumulationRegimeSnapshot(
             enabled=True,
             active=active,
@@ -515,7 +561,7 @@ def evaluate_accumulation_regime(
         detail = momentum.reason or (
             "early_arm tape+slope" if early_arm else (tape.reason or "Bull tape")
         )
-        return _with_scorecard(
+        return _finish(
             AccumulationRegimeSnapshot(
                 enabled=True,
                 active=True,
@@ -538,7 +584,7 @@ def evaluate_accumulation_regime(
         )
 
     if primed or (active and tape.active):
-        return _with_scorecard(
+        return _finish(
             AccumulationRegimeSnapshot(
             enabled=True,
             active=True,
@@ -556,7 +602,7 @@ def evaluate_accumulation_regime(
             ),
         )
 
-    return _with_scorecard(
+    return _finish(
         AccumulationRegimeSnapshot(
         enabled=True,
         active=False,

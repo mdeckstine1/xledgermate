@@ -21,6 +21,7 @@ from config.settings import BotConfig
 
 if TYPE_CHECKING:
     from alpha.decision.accumulation_regime import AccumulationKnobs, AccumulationRegimeSnapshot
+    from alpha.decision.harvest_watch import HarvestKnobs, HarvestWatchSnapshot
     from alpha.decision.reload_regime import ReloadKnobs, ReloadRegimeSnapshot
     from alpha.decision.structure import MarketStructureSnapshot
     from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
@@ -71,6 +72,9 @@ class DecisionEngine:
         self._accumulation_knobs: Optional["AccumulationKnobs"] = None
         self._reload: Optional["ReloadRegimeSnapshot"] = None
         self._reload_knobs: Optional["ReloadKnobs"] = None
+        self._harvest: Optional["HarvestWatchSnapshot"] = None
+        self._harvest_knobs: Optional["HarvestKnobs"] = None
+        self._harvest_reentry_pending: bool = False
 
     def set_accumulation(
         self,
@@ -87,6 +91,17 @@ class DecisionEngine:
     ) -> None:
         self._reload = snapshot
         self._reload_knobs = knobs
+
+    def set_harvest(
+        self,
+        snapshot: Optional["HarvestWatchSnapshot"],
+        knobs: Optional["HarvestKnobs"],
+        *,
+        reentry_pending: bool = False,
+    ) -> None:
+        self._harvest = snapshot
+        self._harvest_knobs = knobs
+        self._harvest_reentry_pending = reentry_pending
 
     def evaluate(
         self,
@@ -134,6 +149,42 @@ class DecisionEngine:
             )
 
         reload_blocks = self._reload_blocks_accumulation(bal, book, pending_sell_count)
+
+        reentry_reason = self._harvest_reentry_allowed(
+            inventory=inventory,
+            book=book,
+            pending_buy_count=pending_buy_count,
+        )
+        if reentry_reason is not None:
+            return self._build_bid(
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_buy_count=pending_buy_count,
+                balances=balances or (operator.balances if operator else None),
+                ta=ta,
+                structure=structure,
+                entry_mode="harvest_reentry",
+                entry_reason=reentry_reason,
+            )
+
+        harvest_reason = self._harvest_trim_allowed(
+            inventory=inventory,
+            pending_sell_count=pending_sell_count,
+        )
+        if harvest_reason is not None:
+            return self._build_ask(
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_sell_count=pending_sell_count,
+                balances=bal,
+                ta=ta,
+                entry_mode="harvest_trim",
+                entry_reason=harvest_reason,
+            )
 
         if self._inventory is not None and self._inventory.allows_buy(inventory):
             return self._build_bid(
@@ -297,6 +348,8 @@ class DecisionEngine:
             structure=structure,
             ta=ta,
         )
+        if snap.active and self._harvest_pause_bids():
+            return None
         return snap.reason if snap.active else None
 
     def _reload_blocks_accumulation(
@@ -343,6 +396,54 @@ class DecisionEngine:
         logger.info("reload_regime | entry | %s", reason)
         return reason
 
+    def _harvest_pause_bids(self) -> bool:
+        knobs = self._harvest_knobs
+        return knobs is not None and knobs.pause_accumulation_bids
+
+    def _harvest_trim_allowed(
+        self,
+        *,
+        inventory: InventorySnapshot,
+        pending_sell_count: int,
+    ) -> Optional[str]:
+        snap = self._harvest
+        knobs = self._harvest_knobs
+        if snap is None or knobs is None or not knobs.execute or not knobs.armed:
+            return None
+        if snap.phase not in ("armed", "executing") or not snap.entry_allowed:
+            return None
+        if inventory.pause_asks:
+            return None
+        if pending_sell_count >= knobs.max_pending_sells:
+            return None
+        reason = snap.reason or snap.detail or "harvest_armed"
+        if snap.signals:
+            reason = f"harvest_trim {'+'.join(snap.signals[:3])} | {reason}"
+        logger.info("harvest_watch | entry | %s", reason)
+        return reason
+
+    def _harvest_reentry_allowed(
+        self,
+        *,
+        inventory: InventorySnapshot,
+        book: OrderBookSnapshot,
+        pending_buy_count: int,
+    ) -> Optional[str]:
+        knobs = self._harvest_knobs
+        if not self._harvest_reentry_pending or knobs is None or not knobs.reentry_enabled:
+            return None
+        if inventory.pause_bids or inventory.buy_blocked_imbalance:
+            return None
+        max_pending = int(self._config.alpha_max_pending_buys)
+        if pending_buy_count >= max_pending:
+            return None
+        mid = book.mid
+        if mid is None or mid <= 0:
+            return None
+        reason = "harvest_reentry bracketed buy after trim fill"
+        logger.info("harvest_watch | reentry | %s", reason)
+        return reason
+
     def _accumulation_entry_allowed(
         self,
         *,
@@ -354,6 +455,8 @@ class DecisionEngine:
         snap = self._accumulation
         knobs = self._accumulation_knobs
         if snap is None or knobs is None or not snap.entry_allowed or not knobs.armed:
+            return None
+        if self._harvest_pause_bids():
             return None
         if inventory.pause_bids or inventory.buy_blocked_imbalance:
             return None
@@ -383,6 +486,8 @@ class DecisionEngine:
             offset_pct = bull_run_buy_offset_pct(self._config)
         elif entry_mode == "accumulation" and self._accumulation_knobs is not None:
             offset_pct = self._accumulation_knobs.buy_offset_pct
+        elif entry_mode == "harvest_reentry" and self._harvest_knobs is not None:
+            offset_pct = self._harvest_knobs.reentry_buy_offset_pct
         else:
             offset_pct = self._effective_buy_offset_pct()
         dec = price_decimals(self._config)
@@ -416,6 +521,7 @@ class DecisionEngine:
         inventory: InventorySnapshot,
         balances: Optional[BalanceSnapshot],
         risk_per_trade_pct: float | None = None,
+        skip_inventory_cap: bool = False,
     ) -> float:
         min_size = self._config.min_order_size_xrp
         capital_xrp = self._config.effective_risk_capital_xrp(mid)
@@ -429,7 +535,7 @@ class DecisionEngine:
             caps.append(risk_cap)
         capped = min(c for c in caps if c > 0) if any(c > 0 for c in caps) else 0.0
 
-        if self._inventory is not None and balances is not None:
+        if self._inventory is not None and balances is not None and not skip_inventory_cap:
             capped = self._inventory.cap_entry_size_xrp(
                 side=side,
                 size_xrp=capped,
@@ -503,6 +609,12 @@ class DecisionEngine:
         *,
         entry_mode: str = "strength",
     ) -> Optional[str]:
+        if (
+            entry_mode == "harvest_trim"
+            and self._harvest_knobs is not None
+            and self._harvest_knobs.bypass_ta_bullish_defer
+        ):
+            return None
         cfg = self._config.alpha_technical_analysis
         weight = getattr(self._config, "alpha_ta_weight", 1.0)
         if not cfg.enabled or weight <= 0:
@@ -537,6 +649,8 @@ class DecisionEngine:
             return None
         if entry_mode == "reload_funding" and self._reload_knobs is not None:
             offset_pct = self._reload_knobs.sell_offset_pct
+        elif entry_mode == "harvest_trim" and self._harvest_knobs is not None:
+            offset_pct = self._harvest_knobs.sell_offset_pct
         else:
             offset_pct = self._effective_sell_offset_pct()
         dec = price_decimals(self._config)
@@ -583,7 +697,7 @@ class DecisionEngine:
                 ta=ta,
                 structure=structure,
                 momentum_chase=(entry_mode == "bull_run"),
-                accumulation_chase=(entry_mode == "accumulation"),
+                accumulation_chase=entry_mode in ("accumulation", "harvest_reentry"),
             )
             if blocked:
                 return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
@@ -601,6 +715,8 @@ class DecisionEngine:
         min_edge = self._config.alpha_min_edge_threshold_pct
         if entry_mode == "accumulation" and knobs is not None and knobs.armed:
             min_edge = min(min_edge, knobs.min_edge_pct)
+        elif entry_mode == "harvest_reentry" and self._accumulation_knobs is not None:
+            min_edge = min(min_edge, self._accumulation_knobs.min_edge_pct)
         if self._risk is not None:
             ok, msg = self._risk.validate_entry(risk, edge_pct=edge)
             if not ok:
@@ -638,6 +754,7 @@ class DecisionEngine:
             inventory=inventory,
             balances=balances,
             risk_per_trade_pct=risk_pct,
+            skip_inventory_cap=(entry_mode == "harvest_reentry"),
         )
         if size <= 0:
             return DecisionResult(
@@ -683,11 +800,13 @@ class DecisionEngine:
         entry_reason: str = "",
     ) -> DecisionResult:
         rknobs = self._reload_knobs
-        max_pending = (
-            rknobs.max_pending_sells
-            if entry_mode == "reload_funding" and rknobs is not None and rknobs.armed
-            else self._config.alpha_max_pending_sells
-        )
+        hknobs = self._harvest_knobs
+        if entry_mode == "reload_funding" and rknobs is not None and rknobs.armed:
+            max_pending = rknobs.max_pending_sells
+        elif entry_mode == "harvest_trim" and hknobs is not None:
+            max_pending = hknobs.max_pending_sells
+        else:
+            max_pending = self._config.alpha_max_pending_sells
         if pending_sell_count >= max_pending:
             return DecisionResult(
                 action=DecisionAction.HOLD,
@@ -738,6 +857,14 @@ class DecisionEngine:
                 shortfall_xrp_equiv=self._reload.shortfall_xrp_equiv,
                 balances=balances,
                 inventory=inventory,
+            )
+        elif entry_mode == "harvest_trim" and hknobs is not None:
+            from alpha.decision.harvest_watch import compute_harvest_trim_size_xrp
+
+            desired = compute_harvest_trim_size_xrp(
+                self._config,
+                portfolio_xrp_equiv=portfolio,
+                trim_risk_pct=hknobs.trim_risk_pct,
             )
         else:
             desired = self._config.alpha_base_order_size_xrp * (1.0 + abs(inventory.deviation) * 2.0)
