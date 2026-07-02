@@ -120,6 +120,23 @@ def test_config_reload_queues(client):
     assert r.json()["queued"] == "config_reload"
 
 
+def test_bracket_edge_cleanup_preset(client):
+    r = client.post("/operator/bracket-edge-cleanup")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["config_effective"]["alpha_max_pending_buys"] == 1
+    assert data["config_effective"]["take_profit_pct"] == 0.025
+
+
+def test_operator_presets_catalog(client):
+    r = client.get("/operator/presets")
+    assert r.status_code == 200
+    ids = [p["id"] for p in r.json()["presets"]]
+    assert "walkaway" in ids
+    assert "bracket_edge_cleanup" in ids
+
+
 @pytest.fixture
 def mock_command_runner(monkeypatch):
     monkeypatch.setattr(

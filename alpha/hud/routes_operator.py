@@ -110,6 +110,60 @@ def register_operator_routes(app: Any) -> None:
             }
         )
 
+    @app.post("/operator/bracket-edge-cleanup")
+    async def post_bracket_edge_cleanup() -> JSONResponse:
+        """Apply bracket edge cleanup bundle (trust + closer TP / anti-churn)."""
+        from alpha.hud.bracket_edge_preset import (
+            apply_bracket_edge_preset,
+            bracket_edge_preset_payload,
+        )
+
+        base = _base_config()
+        store = _runtime()
+        merged, errors = apply_bracket_edge_preset(
+            patch_overrides=lambda ov, base=base: store.patch_overrides(ov, base=base),
+            base_config=base,
+        )
+        if errors:
+            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
+        effective = apply_overrides(base, merged)
+        payload = bracket_edge_preset_payload()
+        return JSONResponse(
+            {
+                "ok": True,
+                "message": payload["description"],
+                "keys_applied": payload["keys_applied"],
+                "operator_overrides": merged,
+                "config_effective": effective_config_snapshot(effective, merged),
+            }
+        )
+
+    @app.get("/operator/presets")
+    async def get_operator_presets() -> JSONResponse:
+        """Describe one-click operator preset bundles."""
+        from alpha.hud.bracket_edge_preset import bracket_edge_preset_payload
+        from alpha.hud.walkaway_preset import walkaway_preset_payload
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "presets": [
+                    {
+                        "id": "walkaway",
+                        "endpoint": "/operator/walkaway",
+                        "method": "POST",
+                        **walkaway_preset_payload(),
+                    },
+                    {
+                        "id": "bracket_edge_cleanup",
+                        "endpoint": "/operator/bracket-edge-cleanup",
+                        "method": "POST",
+                        **bracket_edge_preset_payload(),
+                    },
+                ],
+            }
+        )
+
     @app.post("/operator/dry-run")
     async def post_dry_run(body: Dict[str, Any] = Body(...)) -> JSONResponse:
         dry_run = body.get("dry_run")

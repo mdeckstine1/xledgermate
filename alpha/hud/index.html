@@ -782,11 +782,13 @@
         <div class="card skynet-agent-card">
           <h2 style="margin:0 0 8px;font-size:1rem;color:var(--accent)">Agent Smith — Phase 2</h2>
           <p class="muted" style="margin:0 0 10px;font-size:.78rem">Agent Smith suggests knob changes within guardrails every 3–5 engine cycles (or on significant events). Phase 2: review and apply manually.</p>
+          <p class="muted" style="margin:0 0 10px;font-size:.75rem;line-height:1.45"><strong>Quick presets</strong> apply operator knobs immediately (no LLM). <strong>Walk-away</strong> = trust + Agent Smith ON. <strong>Bracket edge cleanup</strong> = anti-churn entries + closer TP — use when SL-heavy / zero TP.</p>
           <div class="ctrl-row">
             <label><input type="checkbox" id="skynetAgentEnabled"> Enable Agent Smith Mode</label>
             <button type="button" id="btnSkynetSaveAgent" class="secondary">Save guardrails</button>
             <button type="button" id="btnSkynetAgentTrigger" class="secondary">Run Agent Smith now</button>
             <button type="button" id="btnWalkawayPreset" class="warn" title="Trust-phase knobs + Agent Smith ON (not full SKYNET)">Walk-away preset</button>
+            <button type="button" id="btnBracketEdgePreset" class="warn" title="Trust + closer TP / wider SL — fixes SL-heavy chop">Bracket edge cleanup</button>
           </div>
           <div class="skynet-agent-meta" id="skynetAgentMeta">Agent Smith idle</div>
           <details open>
@@ -869,6 +871,7 @@ Deliver in plain English:
 4) What NOT to do — no aggression into chop, no offset chase if reload blocks accumulation, no session MTM bleed panic.
 
 Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. Output suggested_changes only when clearly warranted; empty array OK if HOLD is correct.">Neutral — analysis &amp; recs</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Bracket edge cleanup preset was applied (or should be). Review effective knobs vs 0 TP / SL-heavy bleed. Confirm: trust phase, max_pending_buys 1, min_buy 3, TP ~2.5%, SL ~2.5%, re-entry SL cooldown 45 cycles. What should I watch in PRO replay over 48h?">Bracket edge — 48h watch</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Neutral / chop regime: we had SL churn overnight. Recommend anti-churn knobs only — max_pending 1–2, buy_offset ≥ 0.18, weakness ≥ 0.05, wider stale drift before offset↓. Use realized_bracket_pnl not session MTM. Plain English, a little personality.">Neutral — anti-churn review</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Bear / defensive regime: downtrend or SL streak. Risk down, max_pending 1, buy_offset up, sl_cooldown up, ta_min_buy up. Suggest trust phase if we're bleeding. Be blunt and conversational.">Bear — defensive review</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Bull regime: constructive dips, RLUSD-heavy, TA supportive. Patient accumulation only — max_pending before offset↓. Explain in plain English with personality.">Bull — dip buy review</button>
@@ -3318,6 +3321,18 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       toast(d.message || 'Walk-away preset applied');
       loadOperatorConfig();
       loadSkynetAgent();
+      poll();
+    };
+
+    $('btnBracketEdgePreset').onclick = async () => {
+      if (!confirm('Apply bracket edge cleanup?\n\nTrust phase, 1 pending buy, closer TP (~2.5%), wider SL (~2.5%), longer re-entry after SL. Does not enable full SKYNET.')) return;
+      const d = await postJson('/operator/bracket-edge-cleanup', {});
+      if (!d?.ok) {
+        toast((d?.errors || [d?.message || 'Preset failed']).join('; '), true);
+        return;
+      }
+      toast('Bracket edge cleanup applied (' + (d.keys_applied || '?') + ' knobs)');
+      loadOperatorConfig();
       poll();
     };
 

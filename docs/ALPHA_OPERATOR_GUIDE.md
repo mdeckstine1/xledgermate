@@ -264,6 +264,14 @@ SKYNET tab → **Walk-away preset** (or `POST /operator/walkaway`) applies:
 
 Use when you want hands-off monitoring without aggressive churn or full autonomy.
 
+**Bracket edge cleanup** (SKYNET tab → **Bracket edge cleanup** or `POST /operator/bracket-edge-cleanup`) applies anti-churn knobs when realized TP/SL is SL-heavy / zero TP:
+
+- **Trust phase**, `max_pending_buys` 1, higher `min_buy` TA, patient buy offset
+- **Closer TP** (~2.5%) and **SL** (~2.5%), RR 1.5, deferred SL buffer
+- Longer re-entry after SL — does **not** enable Agent Smith or full SKYNET
+
+Pair with **Walk-away** if you also want Agent Smith ON. Use SKYNET quick button **Bracket edge — 48h watch** after applying.
+
 ---
 
 ## VPS (Cursor workflow)
