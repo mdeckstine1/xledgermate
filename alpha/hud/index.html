@@ -262,9 +262,12 @@
       <div class="row"><div class="label">Drawdown</div><div id="dd" class="value">—</div></div>
       <div class="sidebar-bag-growth" style="margin-top:10px;padding-top:10px;border-top:1px solid #334155">
         <div class="label" style="margin-bottom:6px;font-weight:600">Bag growth</div>
-        <div class="row"><div class="label">Since baseline</div><div id="bagSinceBaseline" class="value">—</div></div>
-        <div id="bagBaselineMeta" class="muted pnl-meta">holdings + price vs session start</div>
+        <div class="row"><div class="label">Value Δ</div><div id="bagSinceBaseline" class="value">—</div></div>
+        <div id="bagBaselineMeta" class="muted pnl-meta">value (XRP-equiv) · moves with price</div>
+        <div class="row"><div class="label">XRP stack Δ</div><div id="bagXrpStack" class="value">—</div></div>
+        <div id="bagXrpStackMeta" class="muted pnl-meta">coin count · bot-adjusted</div>
         <div class="row"><div class="label">This week</div><div id="bagWeek" class="value">—</div></div>
+        <div id="bagWeekMeta" class="muted pnl-meta">value (XRP-equiv)</div>
         <div class="row"><div class="label">Trading edge 7d</div><div id="bagEdge7d" class="value">—</div></div>
         <div id="bagEdgeMeta" class="muted pnl-meta">TP/SL from tax CSV</div>
       </div>
@@ -1456,17 +1459,24 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const b = s.bag_growth;
       const sinceEl = $('bagSinceBaseline');
       const weekEl = $('bagWeek');
+      const stackEl = $('bagXrpStack');
       const edgeEl = $('bagEdge7d');
       const baseMeta = $('bagBaselineMeta');
+      const stackMeta = $('bagXrpStackMeta');
+      const weekMeta = $('bagWeekMeta');
       const edgeMeta = $('bagEdgeMeta');
       if (!b || !b.available) {
         sinceEl.textContent = '—';
         weekEl.textContent = '—';
+        if (stackEl) stackEl.textContent = '—';
         edgeEl.textContent = '—';
         sinceEl.classList.remove('pnl-pos', 'pnl-neg');
         weekEl.classList.remove('pnl-pos', 'pnl-neg');
+        if (stackEl) stackEl.classList.remove('pnl-pos', 'pnl-neg');
         edgeEl.classList.remove('pnl-pos', 'pnl-neg');
         baseMeta.textContent = 'waiting for baseline + mid';
+        if (stackMeta) stackMeta.textContent = 'coin count · bot-adjusted';
+        if (weekMeta) weekMeta.textContent = 'value (XRP-equiv)';
         edgeMeta.textContent = 'TP/SL from tax CSV';
         return;
       }
@@ -1479,15 +1489,46 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       sinceEl.classList.remove('pnl-pos', 'pnl-neg');
       if (sinceFmt.tone) sinceEl.classList.add(sinceFmt.tone);
       const baseDate = (b.baseline_utc || '').slice(0, 10) || '?';
-      const dep = Number(b.operator_deposits_xrp_equiv || 0);
-      baseMeta.textContent = dep > 0
-        ? 'since ' + baseDate + ' · bot growth (net ' + dep.toFixed(1) + ' XRP deposits)'
-        : 'since ' + baseDate + ' · holdings + price';
+      const depVal = Number(b.operator_deposits_xrp_equiv || 0);
+      baseMeta.textContent = depVal > 0
+        ? 'since ' + baseDate + ' · value · net ' + depVal.toFixed(1) + ' XRP-equiv deposits'
+        : 'since ' + baseDate + ' · value (XRP-equiv) · moves with price';
+
+      if (stackEl) {
+        const stackBot = b.xrp_stack_delta_bot;
+        const stackRaw = b.xrp_stack_delta_raw;
+        const stackVal = stackBot != null ? stackBot : stackRaw;
+        if (stackVal != null) {
+          const sign = stackVal >= 0 ? '+' : '';
+          stackEl.textContent = sign + Number(stackVal).toFixed(2) + ' XRP';
+          stackEl.classList.remove('pnl-pos', 'pnl-neg');
+          if (stackVal > 0) stackEl.classList.add('pnl-pos');
+          else if (stackVal < 0) stackEl.classList.add('pnl-neg');
+          const baseX = b.baseline_xrp != null ? Number(b.baseline_xrp).toFixed(1) : '?';
+          const nowX = b.xrp != null ? Number(b.xrp).toFixed(1) : '?';
+          let sm = 'now ' + nowX + ' XRP · baseline ' + baseX;
+          if (b.stack_baseline_source === 'tax_csv') sm += ' (tax CSV)';
+          if (Number(b.operator_deposits_xrp || 0) > 0) {
+            sm += ' · net ' + Number(b.operator_deposits_xrp).toFixed(1) + ' XRP deposited';
+          }
+          if (stackMeta) stackMeta.textContent = sm;
+        } else {
+          stackEl.textContent = '—';
+          stackEl.classList.remove('pnl-pos', 'pnl-neg');
+          if (stackMeta) stackMeta.textContent = 'coin count · baseline unknown';
+        }
+      }
 
       const weekFmt = fmtSignedPnl(b.week_delta_xrp, mid);
       weekEl.textContent = weekFmt.xrp + (b.week_delta_pct != null ? ' (' + (b.week_delta_pct >= 0 ? '+' : '') + b.week_delta_pct.toFixed(1) + '%)' : '');
       weekEl.classList.remove('pnl-pos', 'pnl-neg');
       if (weekFmt.tone) weekEl.classList.add(weekFmt.tone);
+      if (weekMeta) {
+        const wx = b.week_xrp_delta;
+        weekMeta.textContent = wx != null
+          ? 'value · coins ' + (wx >= 0 ? '+' : '') + Number(wx).toFixed(2) + ' XRP this week'
+          : 'value (XRP-equiv)';
+      }
 
       const edge = b.trading_edge_7d || {};
       if (edge.available) {
@@ -2812,6 +2853,8 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         note: $('depNote').value.trim(),
         reset_session_baseline: $('depResetBaseline').checked,
         mid_rlusd_per_xrp: mid,
+        current_xrp: hudState?.xrp,
+        current_rlusd: hudState?.rlusd,
       });
       if (d?.ok) {
         $('depResult').textContent = 'Recorded ' + (d.deposit?.xrp_equiv || '?') + ' XRP-equiv';

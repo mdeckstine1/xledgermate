@@ -7,11 +7,63 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from alpha.reporting.operator_deposits import total_deposits_xrp_equiv
+from alpha.reporting.operator_deposits import (
+    total_deposited_rlusd,
+    total_deposited_xrp,
+    total_deposits_xrp_equiv,
+)
 from alpha.reporting.realized_pnl import build_realized_pnl_snapshot
 from risk.drawdown import portfolio_value_xrp
 
 _WEEK_PATH = Path("logs/alpha_bag_week.json")
+
+
+def _parse_ts(raw: str) -> Optional[datetime]:
+    if not raw:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts
+    except ValueError:
+        return None
+
+
+def _stack_baseline_from_tax_csv(
+    logs: Path,
+    baseline_utc: str,
+) -> tuple[Optional[float], Optional[float]]:
+    """Best-effort XRP/RLUSD balances at session baseline from tax CSV snapshots."""
+    target = _parse_ts(baseline_utc)
+    if target is None:
+        return None, None
+    best: Optional[datetime] = None
+    best_xrp: Optional[float] = None
+    best_rlusd: Optional[float] = None
+    if not logs.is_dir():
+        return None, None
+    for path in sorted(logs.glob("trades_*.csv")):
+        try:
+            import csv
+
+            with path.open(encoding="utf-8", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    ts = _parse_ts(str(row.get("timestamp_utc") or ""))
+                    if ts is None or ts > target:
+                        continue
+                    try:
+                        bx = float(row.get("balance_xrp_after") or 0)
+                        br = float(row.get("balance_rlusd_after") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if best is None or ts > best:
+                        best = ts
+                        best_xrp = bx
+                        best_rlusd = br
+        except (OSError, csv.Error):
+            continue
+    return best_xrp, best_rlusd
 
 
 def _utc_now() -> datetime:
@@ -119,12 +171,37 @@ def build_bag_growth_snapshot(
         since_baseline_pct = (since_baseline_xrp / baseline_portfolio) * 100.0
 
     operator_deposits_xrp_equiv = total_deposits_xrp_equiv(logs)
+    operator_deposits_xrp = total_deposited_xrp(logs)
+    operator_deposits_rlusd = total_deposited_rlusd(logs)
     since_baseline_bot_xrp = None
     since_baseline_bot_pct = None
     if since_baseline_xrp is not None:
         since_baseline_bot_xrp = since_baseline_xrp - operator_deposits_xrp_equiv
         if baseline_portfolio > 0:
             since_baseline_bot_pct = (since_baseline_bot_xrp / baseline_portfolio) * 100.0
+
+    baseline_xrp = float(sess_data.get("baseline_xrp") or 0.0)
+    baseline_rlusd = float(sess_data.get("baseline_rlusd") or 0.0)
+    stack_baseline_source = "session" if baseline_xrp > 0 or baseline_rlusd > 0 else None
+    if stack_baseline_source is None and baseline_utc:
+        tax_xrp, tax_rlusd = _stack_baseline_from_tax_csv(logs, baseline_utc)
+        if tax_xrp is not None and tax_xrp > 0:
+            baseline_xrp = tax_xrp
+            baseline_rlusd = float(tax_rlusd or 0.0)
+            stack_baseline_source = "tax_csv"
+
+    xrp_stack_delta_raw = None
+    xrp_stack_delta_bot = None
+    rlusd_stack_delta_raw = None
+    if stack_baseline_source is not None:
+        xrp_stack_delta_raw = xrp - baseline_xrp
+        xrp_stack_delta_bot = xrp_stack_delta_raw - operator_deposits_xrp
+        rlusd_stack_delta_raw = rlusd - baseline_rlusd
+
+    week_start_xrp = float(week_state.get("week_start_xrp") or 0.0)
+    week_xrp_delta = None
+    if week_start_xrp > 0:
+        week_xrp_delta = xrp - week_start_xrp
 
     week_start_portfolio = float(week_state.get("week_start_portfolio_xrp") or 0.0)
     week_delta_xrp = None
@@ -153,12 +230,27 @@ def build_bag_growth_snapshot(
         "since_baseline_xrp": round(since_baseline_xrp, 4) if since_baseline_xrp is not None else None,
         "since_baseline_pct": round(since_baseline_pct, 2) if since_baseline_pct is not None else None,
         "operator_deposits_xrp_equiv": round(operator_deposits_xrp_equiv, 4),
+        "operator_deposits_xrp": round(operator_deposits_xrp, 4),
+        "operator_deposits_rlusd": round(operator_deposits_rlusd, 4),
         "since_baseline_bot_xrp": (
             round(since_baseline_bot_xrp, 4) if since_baseline_bot_xrp is not None else None
         ),
         "since_baseline_bot_pct": (
             round(since_baseline_bot_pct, 2) if since_baseline_bot_pct is not None else None
         ),
+        "baseline_xrp": round(baseline_xrp, 4) if baseline_xrp > 0 else None,
+        "baseline_rlusd": round(baseline_rlusd, 4) if baseline_rlusd > 0 else None,
+        "stack_baseline_source": stack_baseline_source,
+        "xrp_stack_delta_raw": (
+            round(xrp_stack_delta_raw, 4) if xrp_stack_delta_raw is not None else None
+        ),
+        "xrp_stack_delta_bot": (
+            round(xrp_stack_delta_bot, 4) if xrp_stack_delta_bot is not None else None
+        ),
+        "rlusd_stack_delta_raw": (
+            round(rlusd_stack_delta_raw, 4) if rlusd_stack_delta_raw is not None else None
+        ),
+        "week_xrp_delta": round(week_xrp_delta, 4) if week_xrp_delta is not None else None,
         "week_start_utc": week_state.get("week_start_utc"),
         "week_start_portfolio_xrp": round(week_start_portfolio, 4) if week_start_portfolio > 0 else None,
         "week_delta_xrp": round(week_delta_xrp, 4) if week_delta_xrp is not None else None,
@@ -171,8 +263,8 @@ def build_bag_growth_snapshot(
             "window_hours": realized_7d.get("window_hours"),
         },
         "explain": (
-            "Bag growth = portfolio size vs session baseline (price + holdings). "
-            "Bot-adjusted growth subtracts operator deposits. "
+            "Value Δ = XRP-equiv (coins + RLUSD at mid — moves with price). "
+            "XRP stack Δ = coin count only. Bot-adjusted subtracts operator deposits. "
             "Trading edge = realized bracket P&L from tax CSV (TP/SL only)."
         ),
     }
@@ -202,8 +294,16 @@ def format_bag_growth_telegram_block(snap: Dict[str, Any]) -> str:
         lines.append(f"{label} ({base_date}): {display_since:+.2f} XRP{pct_s}")
         if deposits > 0 and since is not None:
             lines.append(
-                f"  (raw {since:+.2f} XRP incl. {deposits:.2f} XRP operator deposits)"
+                f"  (raw {since:+.2f} XRP-equiv incl. {deposits:.2f} XRP-equiv deposits)"
             )
+
+    stack_bot = snap.get("xrp_stack_delta_bot")
+    stack_raw = snap.get("xrp_stack_delta_raw")
+    stack_val = stack_bot if stack_bot is not None else stack_raw
+    if stack_val is not None:
+        src = snap.get("stack_baseline_source") or "session"
+        lines.append(f"XRP stack Δ ({src}): {float(stack_val):+.2f} XRP coins")
+        lines.append(f"  (now {snap.get('xrp', 0):.1f} XRP · baseline {snap.get('baseline_xrp', 0):.1f})")
 
     week = snap.get("week_delta_xrp")
     if week is not None:
@@ -220,5 +320,5 @@ def format_bag_growth_telegram_block(snap: Dict[str, Any]) -> str:
     else:
         lines.append("Trading edge 7d: no closed brackets in window")
 
-    lines.append("(Bag ≠ edge: price moves and RLUSD deploy can grow the book while TP/SL bleeds.)")
+    lines.append("(Value moves with price; XRP stack Δ is coin count only.)")
     return "\n".join(lines)

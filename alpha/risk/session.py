@@ -22,6 +22,10 @@ class SessionPnlState:
     baseline_utc: str
     last_portfolio_xrp: float = 0.0
     last_updated_utc: str = ""
+    baseline_xrp: float = 0.0
+    baseline_rlusd: float = 0.0
+    last_xrp: float = 0.0
+    last_rlusd: float = 0.0
 
     @property
     def session_pnl_xrp(self) -> float:
@@ -46,6 +50,10 @@ class SessionPnlTracker:
                 baseline_utc=str(data.get("baseline_utc", "")),
                 last_portfolio_xrp=float(data.get("last_portfolio_xrp", 0.0)),
                 last_updated_utc=str(data.get("last_updated_utc", "")),
+                baseline_xrp=float(data.get("baseline_xrp", 0.0)),
+                baseline_rlusd=float(data.get("baseline_rlusd", 0.0)),
+                last_xrp=float(data.get("last_xrp", 0.0)),
+                last_rlusd=float(data.get("last_rlusd", 0.0)),
             )
         except (json.JSONDecodeError, OSError, TypeError, ValueError):
             return SessionPnlState(baseline_portfolio_xrp=0.0, baseline_utc="")
@@ -56,6 +64,10 @@ class SessionPnlTracker:
             "baseline_utc": self._state.baseline_utc,
             "last_portfolio_xrp": self._state.last_portfolio_xrp,
             "last_updated_utc": self._state.last_updated_utc,
+            "baseline_xrp": self._state.baseline_xrp,
+            "baseline_rlusd": self._state.baseline_rlusd,
+            "last_xrp": self._state.last_xrp,
+            "last_rlusd": self._state.last_rlusd,
         }
         self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -76,20 +88,45 @@ class SessionPnlTracker:
         if self._state.baseline_portfolio_xrp <= 0:
             self._state.baseline_portfolio_xrp = portfolio
             self._state.baseline_utc = now
-            logger.info("alpha_session_baseline | portfolio_xrp=%.4f", portfolio)
+            self._state.baseline_xrp = xrp
+            self._state.baseline_rlusd = rlusd
+            logger.info(
+                "alpha_session_baseline | portfolio_xrp=%.4f | xrp=%.4f | rlusd=%.4f",
+                portfolio,
+                xrp,
+                rlusd,
+            )
 
         self._state.last_portfolio_xrp = portfolio
+        self._state.last_xrp = xrp
+        self._state.last_rlusd = rlusd
         self._state.last_updated_utc = now
         self._save()
         pnl = self._state.session_pnl_xrp
         logger.info("alpha_session_pnl | pnl_xrp=%+.4f | portfolio=%.4f", pnl, portfolio)
         return pnl
 
-    def reset_baseline(self, portfolio_xrp: Optional[float] = None) -> None:
+    def reset_baseline(
+        self,
+        portfolio_xrp: Optional[float] = None,
+        *,
+        xrp: Optional[float] = None,
+        rlusd: Optional[float] = None,
+    ) -> None:
         baseline = portfolio_xrp if portfolio_xrp is not None else self._state.last_portfolio_xrp
         if baseline <= 0:
             return
         self._state.baseline_portfolio_xrp = baseline
         self._state.baseline_utc = datetime.now(tz=timezone.utc).isoformat()
+        stack_xrp = xrp if xrp is not None else self._state.last_xrp
+        stack_rlusd = rlusd if rlusd is not None else self._state.last_rlusd
+        if stack_xrp > 0 or stack_rlusd > 0:
+            self._state.baseline_xrp = stack_xrp
+            self._state.baseline_rlusd = stack_rlusd
         self._save()
-        logger.info("alpha_session_reset | baseline=%.4f", baseline)
+        logger.info(
+            "alpha_session_reset | baseline=%.4f | xrp=%.4f | rlusd=%.4f",
+            baseline,
+            self._state.baseline_xrp,
+            self._state.baseline_rlusd,
+        )

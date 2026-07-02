@@ -49,6 +49,14 @@ def total_deposits_xrp_equiv(logs_dir: str | Path = "logs") -> float:
     return sum(float(d.get("xrp_equiv") or 0.0) for d in list_deposits(logs_dir))
 
 
+def total_deposited_xrp(logs_dir: str | Path = "logs") -> float:
+    return sum(float(d.get("xrp") or 0.0) for d in list_deposits(logs_dir))
+
+
+def total_deposited_rlusd(logs_dir: str | Path = "logs") -> float:
+    return sum(float(d.get("rlusd") or 0.0) for d in list_deposits(logs_dir))
+
+
 def deposits_snapshot(logs_dir: str | Path = "logs") -> Dict[str, Any]:
     rows = list_deposits(logs_dir)
     total_xrp = sum(float(d.get("xrp") or 0.0) for d in rows)
@@ -71,6 +79,8 @@ def record_deposit(
     note: str = "",
     logs_dir: str | Path = "logs",
     reset_session_baseline: bool = False,
+    current_xrp: Optional[float] = None,
+    current_rlusd: Optional[float] = None,
 ) -> Tuple[Dict[str, Any], List[str]]:
     """
     Log an operator inbound transfer. ``xrp_equiv`` is frozen at record time using ``mid``.
@@ -118,7 +128,11 @@ def record_deposit(
             except (json.JSONDecodeError, OSError, TypeError, ValueError):
                 last_portfolio = 0.0
         if last_portfolio > 0:
-            tracker.reset_baseline(last_portfolio)
+            tracker.reset_baseline(
+                last_portfolio,
+                xrp=current_xrp if current_xrp is not None else None,
+                rlusd=current_rlusd if current_rlusd is not None else None,
+            )
             baseline_reset = True
         else:
             errors.append(

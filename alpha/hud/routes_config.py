@@ -95,6 +95,8 @@ def register_config_routes(app: Any) -> None:
             mid_rlusd_per_xrp=mid,
             note=str(body.get("note") or ""),
             reset_session_baseline=bool(body.get("reset_session_baseline")),
+            current_xrp=float(body["current_xrp"]) if body.get("current_xrp") is not None else None,
+            current_rlusd=float(body["current_rlusd"]) if body.get("current_rlusd") is not None else None,
         )
         if not entry:
             return JSONResponse({"ok": False, "errors": errors}, status_code=400)

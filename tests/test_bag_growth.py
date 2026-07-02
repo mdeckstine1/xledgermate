@@ -85,3 +85,29 @@ def test_bag_growth_rolls_week_on_monday(tmp_path: Path) -> None:
     week_data = json.loads((logs / "alpha_bag_week.json").read_text(encoding="utf-8"))
     assert week_data["week_start_portfolio_xrp"] == 120.0
     assert snap["week_delta_xrp"] == 0.0
+
+
+def test_bag_growth_xrp_stack_delta(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "alpha_session.json").write_text(
+        json.dumps(
+            {
+                "baseline_portfolio_xrp": 400.0,
+                "baseline_utc": "2026-06-22T00:00:00+00:00",
+                "baseline_xrp": 350.0,
+                "baseline_rlusd": 50.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snap = build_bag_growth_snapshot(
+        xrp=380.0,
+        rlusd=40.0,
+        mid_rlusd_per_xrp=1.0,
+        logs_dir=logs,
+        persist_week=False,
+    )
+    assert snap["xrp_stack_delta_raw"] == 30.0
+    assert snap["xrp_stack_delta_bot"] == 30.0
