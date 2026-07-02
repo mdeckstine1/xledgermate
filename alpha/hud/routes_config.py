@@ -53,6 +53,64 @@ def register_config_routes(app: Any) -> None:
     async def get_transfers() -> JSONResponse:
         return JSONResponse({"ok": True, "transfers": read_recent_transfers()})
 
+    @app.get("/operator/deposits")
+    async def get_deposits() -> JSONResponse:
+        from alpha.reporting.operator_deposits import deposits_snapshot
+
+        return JSONResponse({"ok": True, **deposits_snapshot()})
+
+    @app.post("/operator/deposits")
+    async def post_deposit(body: Dict[str, Any] = Body(...)) -> JSONResponse:
+        from alpha.reporting.operator_deposits import deposits_snapshot, record_deposit
+
+        try:
+            xrp = float(body.get("xrp") or 0)
+        except (TypeError, ValueError):
+            xrp = 0.0
+        try:
+            rlusd = float(body.get("rlusd") or 0)
+        except (TypeError, ValueError):
+            rlusd = 0.0
+        mid_raw = body.get("mid_rlusd_per_xrp")
+        if mid_raw is None:
+            import json as _json
+            from pathlib import Path as _Path
+
+            runtime = _Path("logs/alpha_runtime_state.json")
+            mid_raw = 0.0
+            if runtime.is_file():
+                try:
+                    st = _json.loads(runtime.read_text(encoding="utf-8"))
+                    mid_raw = float(st.get("mid") or 0)
+                except (OSError, _json.JSONDecodeError, TypeError, ValueError):
+                    mid_raw = 0.0
+        try:
+            mid = float(mid_raw or 0)
+        except (TypeError, ValueError):
+            mid = 0.0
+
+        entry, errors = record_deposit(
+            xrp=xrp,
+            rlusd=rlusd,
+            mid_rlusd_per_xrp=mid,
+            note=str(body.get("note") or ""),
+            reset_session_baseline=bool(body.get("reset_session_baseline")),
+        )
+        if not entry:
+            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
+        payload: Dict[str, Any] = {"ok": True, "deposit": entry, **deposits_snapshot()}
+        if errors:
+            payload["warnings"] = errors
+        return JSONResponse(payload)
+
+    @app.delete("/operator/deposits/{deposit_id}")
+    async def delete_deposit_route(deposit_id: str) -> JSONResponse:
+        from alpha.reporting.operator_deposits import delete_deposit, deposits_snapshot
+
+        if not delete_deposit(deposit_id):
+            return JSONResponse({"ok": False, "message": "deposit not found"}, status_code=404)
+        return JSONResponse({"ok": True, **deposits_snapshot()})
+
     @app.post("/operator/send-funds")
     async def post_send_funds(body: Dict[str, Any] = Body(...)) -> JSONResponse:
         destination = str(body.get("destination") or "").strip()

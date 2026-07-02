@@ -95,6 +95,23 @@ def test_get_account_config(client):
     assert "account_config" in r.json()
 
 
+def test_deposits_api(client) -> None:
+    r = client.get("/operator/deposits")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert "deposits" in data
+
+    r2 = client.post(
+        "/operator/deposits",
+        json={"xrp": 25.0, "rlusd": 0.0, "mid_rlusd_per_xrp": 1.0, "note": "test"},
+    )
+    assert r2.status_code == 200
+    body = r2.json()
+    assert body["ok"] is True
+    assert body["count"] >= 1
+
+
 def test_get_transfers(client):
     r = client.get("/operator/transfers")
     assert r.status_code == 200

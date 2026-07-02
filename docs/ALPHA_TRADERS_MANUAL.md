@@ -996,7 +996,7 @@ If wallet is **~11k XRP-equiv** but `risk_capital_xrp` is still **~250**, you ge
 | **XRP** | **XRP-heavy** vs 75% target → fewer buys until deviation; **strength sells** possible later | Wider `weakness_deviation` or wait for RLUSD from TPs; don’t crank buys until ratio drops |
 | **Mix** | Match tranche preset to **dominant** side after transfer | Re-check **Inventory** label on HUD |
 
-Inbound deposits appear in balances next cycle; they are **not** a separate HUD “deposit” button.
+Inbound deposits appear in balances next cycle; they are **not** auto-detected. After each inbound transfer, open **Config → Operator deposits** and record the XRP/RLUSD amount so bag growth excludes your funding (stored in `logs/operator_deposits.json`).
 
 ### Tranche map (recommended)
 

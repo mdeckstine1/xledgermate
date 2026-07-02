@@ -649,6 +649,24 @@
           <h3>Recent transfers</h3>
           <div id="transferLog" class="transfer-log muted">Loading…</div>
         </div>
+        <div class="card controls-section config-form">
+          <h2>Operator deposits (inbound funding)</h2>
+          <p class="muted" style="margin:0 0 10px">
+            Log XRP or RLUSD you send <strong>to</strong> the bot wallet so bag growth excludes your transfers.
+            Stored in <code>logs/operator_deposits.json</code>. Trading edge (TP/SL) is unchanged — that is always bot-only.
+          </p>
+          <div id="depositSummary" class="muted" style="margin-bottom:10px;font-size:.85rem">Loading…</div>
+          <div class="ctrl-row"><label>XRP deposited</label><input type="number" id="depXrp" step="any" min="0" placeholder="0"></div>
+          <div class="ctrl-row"><label>RLUSD deposited</label><input type="number" id="depRlusd" step="any" min="0" placeholder="0"></div>
+          <div class="ctrl-row"><label>Note</label><input type="text" id="depNote" placeholder="e.g. tranche 2 funding"></div>
+          <div class="ctrl-row toggle"><label><input type="checkbox" id="depResetBaseline" checked> Reset session baseline (fresh Session P&amp;L)</label></div>
+          <button type="button" id="btnRecordDeposit" class="secondary">Record deposit</button>
+          <span id="depResult" class="muted" style="margin-left:8px"></span>
+        </div>
+        <div class="card">
+          <h3>Deposit history</h3>
+          <div id="depositLog" class="transfer-log muted">Loading…</div>
+        </div>
       </section>
       <section id="arb" class="panel">
         <div class="card arb-banner">
@@ -1452,12 +1470,19 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         edgeMeta.textContent = 'TP/SL from tax CSV';
         return;
       }
-      const sinceFmt = fmtSignedPnl(b.since_baseline_xrp, mid);
-      sinceEl.textContent = sinceFmt.xrp + (b.since_baseline_pct != null ? ' (' + (b.since_baseline_pct >= 0 ? '+' : '') + b.since_baseline_pct.toFixed(1) + '%)' : '');
+      const sinceFmt = fmtSignedPnl(
+        b.since_baseline_bot_xrp != null ? b.since_baseline_bot_xrp : b.since_baseline_xrp,
+        mid
+      );
+      const sincePct = b.since_baseline_bot_pct != null ? b.since_baseline_bot_pct : b.since_baseline_pct;
+      sinceEl.textContent = sinceFmt.xrp + (sincePct != null ? ' (' + (sincePct >= 0 ? '+' : '') + sincePct.toFixed(1) + '%)' : '');
       sinceEl.classList.remove('pnl-pos', 'pnl-neg');
       if (sinceFmt.tone) sinceEl.classList.add(sinceFmt.tone);
       const baseDate = (b.baseline_utc || '').slice(0, 10) || '?';
-      baseMeta.textContent = 'since ' + baseDate + ' · holdings + price';
+      const dep = Number(b.operator_deposits_xrp_equiv || 0);
+      baseMeta.textContent = dep > 0
+        ? 'since ' + baseDate + ' · bot growth (net ' + dep.toFixed(1) + ' XRP deposits)'
+        : 'since ' + baseDate + ' · holdings + price';
 
       const weekFmt = fmtSignedPnl(b.week_delta_xrp, mid);
       weekEl.textContent = weekFmt.xrp + (b.week_delta_pct != null ? ' (' + (b.week_delta_pct >= 0 ? '+' : '') + b.week_delta_pct.toFixed(1) + '%)' : '');
@@ -2642,6 +2667,60 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         </tr>`).join('') + '</tbody></table>';
     }
 
+    function renderDepositLog(data) {
+      const sumEl = $('depositSummary');
+      const logEl = $('depositLog');
+      if (!sumEl || !logEl) return;
+      const total = Number(data?.total_xrp_equiv || 0);
+      const bag = hudState?.bag_growth || {};
+      const bot = bag.since_baseline_bot_xrp;
+      const raw = bag.since_baseline_xrp;
+      let sum = `Recorded deposits: <strong>${total.toFixed(2)} XRP-equiv</strong> (${data?.count || 0} entries)`;
+      if (bot != null && raw != null && total > 0) {
+        sum += ` · Bot bag growth now <strong>${bot >= 0 ? '+' : ''}${bot.toFixed(2)} XRP</strong> (raw ${raw >= 0 ? '+' : ''}${raw.toFixed(2)} incl. deposits)`;
+      }
+      sumEl.innerHTML = sum;
+      const rows = data?.deposits || [];
+      if (!rows.length) {
+        logEl.innerHTML = '<div class="muted">No deposits recorded yet.</div>';
+        return;
+      }
+      logEl.innerHTML = '<table><thead><tr><th>Time</th><th>XRP</th><th>RLUSD</th><th>XRP-equiv</th><th>Note</th><th></th></tr></thead><tbody>' +
+        rows.map(d => `<tr>
+          <td>${(d.recorded_utc||'').slice(0,19)}</td>
+          <td>${d.xrp != null ? Number(d.xrp).toFixed(2) : '—'}</td>
+          <td>${d.rlusd != null ? Number(d.rlusd).toFixed(2) : '—'}</td>
+          <td>${d.xrp_equiv != null ? Number(d.xrp_equiv).toFixed(2) : '—'}</td>
+          <td style="font-size:.75rem">${d.note || '—'}</td>
+          <td><button type="button" class="secondary dep-del-btn" data-id="${d.id}" style="font-size:.7rem;padding:2px 6px">Remove</button></td>
+        </tr>`).join('') + '</tbody></table>';
+      logEl.querySelectorAll('.dep-del-btn').forEach(btn => {
+        btn.onclick = async () => {
+          if (!confirm('Remove this deposit record? Bag growth will include it again.')) return;
+          const r = await fetch('/operator/deposits/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' });
+          const j = await r.json();
+          if (j?.ok) {
+            toast('Deposit removed');
+            renderDepositLog(j);
+            poll();
+          } else {
+            toast(j?.message || 'Remove failed', true);
+          }
+        };
+      });
+    }
+
+    async function loadDeposits() {
+      try {
+        const r = await fetch('/operator/deposits');
+        if (r.status === 401) return;
+        const d = await r.json();
+        if (d.ok) renderDepositLog(d);
+      } catch (e) {
+        if ($('depositSummary')) $('depositSummary').textContent = 'Deposit load failed';
+      }
+    }
+
     async function loadAccountConfig() {
       try {
         const r = await fetch('/operator/account-config');
@@ -2671,6 +2750,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         const tr = await fetch('/operator/transfers');
         const td = await tr.json();
         if (td.ok) renderTransferLog(td.transfers);
+        await loadDeposits();
       } catch (e) {
         toast('Config load failed: ' + e, true);
       }
@@ -2714,6 +2794,38 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         $('cfgTelegramToken').value = '';
         $('cfgHudPass').value = '';
         loadAccountConfig();
+      }
+    };
+
+    $('btnRecordDeposit').onclick = async () => {
+      const xrp = parseFloat($('depXrp').value) || 0;
+      const rlusd = parseFloat($('depRlusd').value) || 0;
+      if (xrp <= 0 && rlusd <= 0) { toast('Enter XRP and/or RLUSD amount', true); return; }
+      const mid = hudState?.mid;
+      const parts = [];
+      if (xrp > 0) parts.push(xrp + ' XRP');
+      if (rlusd > 0) parts.push(rlusd + ' RLUSD');
+      if (!confirm('Record deposit: ' + parts.join(' + ') + '?')) return;
+      const d = await postJson('/operator/deposits', {
+        xrp,
+        rlusd,
+        note: $('depNote').value.trim(),
+        reset_session_baseline: $('depResetBaseline').checked,
+        mid_rlusd_per_xrp: mid,
+      });
+      if (d?.ok) {
+        $('depResult').textContent = 'Recorded ' + (d.deposit?.xrp_equiv || '?') + ' XRP-equiv';
+        $('depXrp').value = '';
+        $('depRlusd').value = '';
+        $('depNote').value = '';
+        renderDepositLog(d);
+        poll();
+        toast(d.warnings?.length ? 'Recorded with warnings' : 'Deposit recorded');
+        if (d.warnings?.length) toast(d.warnings.join('; '), true);
+      } else {
+        const err = (d?.errors || [d?.message || 'Record failed']).join('; ');
+        $('depResult').textContent = err;
+        toast(err, true);
       }
     };
 

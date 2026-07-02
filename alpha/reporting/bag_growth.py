@@ -7,6 +7,7 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from alpha.reporting.operator_deposits import total_deposits_xrp_equiv
 from alpha.reporting.realized_pnl import build_realized_pnl_snapshot
 from risk.drawdown import portfolio_value_xrp
 
@@ -117,6 +118,14 @@ def build_bag_growth_snapshot(
     if since_baseline_xrp is not None and baseline_portfolio > 0:
         since_baseline_pct = (since_baseline_xrp / baseline_portfolio) * 100.0
 
+    operator_deposits_xrp_equiv = total_deposits_xrp_equiv(logs)
+    since_baseline_bot_xrp = None
+    since_baseline_bot_pct = None
+    if since_baseline_xrp is not None:
+        since_baseline_bot_xrp = since_baseline_xrp - operator_deposits_xrp_equiv
+        if baseline_portfolio > 0:
+            since_baseline_bot_pct = (since_baseline_bot_xrp / baseline_portfolio) * 100.0
+
     week_start_portfolio = float(week_state.get("week_start_portfolio_xrp") or 0.0)
     week_delta_xrp = None
     week_delta_pct = None
@@ -143,6 +152,13 @@ def build_bag_growth_snapshot(
         "baseline_utc": baseline_utc or None,
         "since_baseline_xrp": round(since_baseline_xrp, 4) if since_baseline_xrp is not None else None,
         "since_baseline_pct": round(since_baseline_pct, 2) if since_baseline_pct is not None else None,
+        "operator_deposits_xrp_equiv": round(operator_deposits_xrp_equiv, 4),
+        "since_baseline_bot_xrp": (
+            round(since_baseline_bot_xrp, 4) if since_baseline_bot_xrp is not None else None
+        ),
+        "since_baseline_bot_pct": (
+            round(since_baseline_bot_pct, 2) if since_baseline_bot_pct is not None else None
+        ),
         "week_start_utc": week_state.get("week_start_utc"),
         "week_start_portfolio_xrp": round(week_start_portfolio, 4) if week_start_portfolio > 0 else None,
         "week_delta_xrp": round(week_delta_xrp, 4) if week_delta_xrp is not None else None,
@@ -156,6 +172,7 @@ def build_bag_growth_snapshot(
         },
         "explain": (
             "Bag growth = portfolio size vs session baseline (price + holdings). "
+            "Bot-adjusted growth subtracts operator deposits. "
             "Trading edge = realized bracket P&L from tax CSV (TP/SL only)."
         ),
     }
@@ -171,12 +188,22 @@ def format_bag_growth_telegram_block(snap: Dict[str, Any]) -> str:
         f"Now: {snap.get('portfolio_xrp_equiv', 0):.2f} XRP equiv "
         f"({snap.get('xrp', 0):.1f} XRP + {snap.get('rlusd', 0):.1f} RLUSD)",
     ]
+    deposits = float(snap.get("operator_deposits_xrp_equiv") or 0.0)
+    bot_since = snap.get("since_baseline_bot_xrp")
     since = snap.get("since_baseline_xrp")
-    if since is not None:
-        pct = snap.get("since_baseline_pct")
+    display_since = bot_since if bot_since is not None else since
+    if display_since is not None:
+        pct = snap.get("since_baseline_bot_pct")
+        if pct is None:
+            pct = snap.get("since_baseline_pct")
         pct_s = f" ({pct:+.1f}%)" if pct is not None else ""
         base_date = (snap.get("baseline_utc") or "")[:10] or "?"
-        lines.append(f"Since baseline ({base_date}): {since:+.2f} XRP{pct_s}")
+        label = "Bot bag growth" if deposits > 0 else "Since baseline"
+        lines.append(f"{label} ({base_date}): {display_since:+.2f} XRP{pct_s}")
+        if deposits > 0 and since is not None:
+            lines.append(
+                f"  (raw {since:+.2f} XRP incl. {deposits:.2f} XRP operator deposits)"
+            )
 
     week = snap.get("week_delta_xrp")
     if week is not None:

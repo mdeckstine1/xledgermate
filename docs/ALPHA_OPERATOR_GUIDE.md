@@ -184,6 +184,7 @@ Re-entry cooldown reasons in logs and Decision: `post_tp_cooldown`, `post_sl_coo
 | `logs/alpha_activity.jsonl` | Cycle decisions, executions |
 | `logs/alpha_brackets.json` | Bracket state persistence |
 | `logs/alpha_session.json` | Session P&L baseline |
+| `logs/operator_deposits.json` | Operator inbound funding (bag growth adjustment) |
 | `logs/kill_switch.json` | Kill switch state |
 | `logs/alpha_controls.json` | GUI pause/resume |
 | `logs/alpha_overrides.json` | Runtime config overrides (HUD Controls tab) |
@@ -243,6 +244,7 @@ The sidebar **Bag growth** block answers: *“Is my stack bigger?”* vs *“Is 
 | Metric | Meaning |
 |--------|---------|
 | **Since baseline** | Portfolio (XRP + RLUSD at mid) vs `logs/alpha_session.json` anchor — includes price moves and RLUSD→XRP deployment |
+| **Bot-adjusted growth** | Since baseline minus operator deposits (`logs/operator_deposits.json`) — record inbound funding on **Config** tab |
 | **This week** | Same portfolio measure since Monday 00:00 UTC (`logs/alpha_bag_week.json`) |
 | **Trading edge 7d** | Sum of realized bracket P&L from tax CSV (TP/SL only) — true trading bleed/win |
 | **Session P&L** | Mark-to-market since baseline — can diverge from bag growth and from realized |
