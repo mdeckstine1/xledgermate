@@ -388,11 +388,7 @@ class WsPureTradingEngine:
         state, bb, ba, mid = await self._refresh_book_state()
         if not is_trustworthy_rlusd_mid(mid, best_bid=bb, best_ask=ba):
             self.decision_log.add("book", "WS book not trustworthy — skip cycle.")
-            if (
-                config.trading_enabled
-                and not config.dry_run
-                and (config.bot_secret_key or "").strip()
-            ):
+            if self._can_manage_live_offers(config):
                 await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
             return
         self._last_valid_mid = mid
@@ -442,11 +438,7 @@ class WsPureTradingEngine:
         )
         if not preflight.ready:
             self.decision_log.add("preflight", preflight.summary)
-            if (
-                config.trading_enabled
-                and not config.dry_run
-                and (config.bot_secret_key or "").strip()
-            ):
+            if self._can_manage_live_offers(config):
                 await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
             return
 
@@ -458,11 +450,7 @@ class WsPureTradingEngine:
         state, bb, ba, mid = await self._refresh_book_state()
         if not is_trustworthy_rlusd_mid(mid, best_bid=bb, best_ask=ba):
             self.decision_log.add("book", "WS book not trustworthy before quote — skip cycle.")
-            if (
-                config.trading_enabled
-                and not config.dry_run
-                and (config.bot_secret_key or "").strip()
-            ):
+            if self._can_manage_live_offers(config):
                 await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
             return
         self._last_valid_mid = mid
@@ -523,23 +511,16 @@ class WsPureTradingEngine:
         would_sync = len(intents) if would_quote else 0
         placed = 0
         cancelled = 0
-        if (
-            config.trading_enabled
-            and not self.kill_switch.is_active()
-            and not config.dry_run
-            and (config.bot_secret_key or "").strip()
-        ):
-            sync_intents = intents if would_quote else []
-            placed, cancelled = await self._sync_offers(
-                sync_intents,
-                mid=mid,
-                best_bid=bb,
-                best_ask=ba,
-                peer_lane_empty=is_peer_lane_empty(comp_intel),
-                solo_acquisition=bool(engine_dec.get("g7_solo_acquisition")),
-                bid_allowed=bool(engine_dec.get("qd_bid_allowed")),
-                ask_allowed=bool(engine_dec.get("qd_ask_allowed")),
-            )
+        placed, cancelled = await self._sync_cycle_offers(
+            config,
+            intents,
+            would_quote=would_quote,
+            mid=mid,
+            best_bid=bb,
+            best_ask=ba,
+            comp_intel=comp_intel,
+            engine_dec=engine_dec,
+        )
 
         await self._detect_fills(
             config,
@@ -575,6 +556,36 @@ class WsPureTradingEngine:
         await self._persist_cycle(
             config, mid, bb, ba, balance_xrp, balance_rlusd, portfolio, intents, offers_last,
             execution, engine_dec=engine_dec, hud_ladder_intents=hud_ladder,
+        )
+
+    async def _sync_cycle_offers(
+        self,
+        config: BotConfig,
+        intents: List[QuoteIntent],
+        *,
+        would_quote: bool,
+        mid: Optional[float],
+        best_bid: Optional[float],
+        best_ask: Optional[float],
+        comp_intel: Optional[Dict[str, Any]],
+        engine_dec: Dict[str, Any],
+    ) -> tuple[int, int]:
+        if self.kill_switch.is_active() or not self._can_manage_live_offers(config):
+            return 0, 0
+        sync_intents = intents if (config.trading_enabled and would_quote) else []
+        return await self._sync_offers(
+            sync_intents,
+            mid=mid,
+            best_bid=best_bid,
+            best_ask=best_ask,
+            peer_lane_empty=is_peer_lane_empty(comp_intel),
+            solo_acquisition=bool(engine_dec.get("g7_solo_acquisition")),
+            bid_allowed=(
+                bool(engine_dec.get("qd_bid_allowed")) if config.trading_enabled else False
+            ),
+            ask_allowed=(
+                bool(engine_dec.get("qd_ask_allowed")) if config.trading_enabled else False
+            ),
         )
 
     async def _sync_offers(
@@ -726,6 +737,10 @@ class WsPureTradingEngine:
         if intents and mid and (placed or cancelled or plan.kept_count):
             self._last_sync_mid = mid
         return placed, cancelled
+
+    @staticmethod
+    def _can_manage_live_offers(config: BotConfig) -> bool:
+        return (not config.dry_run) and bool((config.bot_secret_key or "").strip())
 
     def _cancel_per_fill_ratio(self) -> float:
         if self._session_fills <= 0:
@@ -898,6 +913,8 @@ class WsPureTradingEngine:
                 return f"Dry-run: would sync {would_sync} pure A-S quote(s)."
             return "Dry-run: no quotes (would_quote=false or empty intents)."
         if not config.trading_enabled:
+            if cancelled:
+                return f"Trading disabled: pulled {cancelled} offer(s)."
             return "Trading disabled."
         if cancelled and not placed:
             return f"Live WS pure: pulled {cancelled} offer(s) — A-S protected (no quote)."

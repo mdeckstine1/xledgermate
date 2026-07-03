@@ -25,9 +25,12 @@ def test_plan_order_sync_empty_intents_cancels_all() -> None:
 def test_execution_summary_pull_when_blocked() -> None:
     from config.settings import BotConfig
 
-    eng = WsPureTradingEngine(BotConfig.load())
+    config = BotConfig()
+    config.dry_run = False
+    config.trading_enabled = True
+    eng = WsPureTradingEngine(config)
     msg = eng._execution_summary(
-        eng.config, 0, cancelled=2, would_sync=0, would_quote=False
+        config, 0, cancelled=2, would_sync=0, would_quote=False
     )
     assert "pulled 2" in msg
 
@@ -179,3 +182,74 @@ def test_stale_quote_merged_into_sync_cancel_plan() -> None:
     )
     merged = list(plan.cancel_sequences) + [s for s in stale if s not in plan.cancel_sequences]
     assert merged == [2]
+
+
+def test_disabled_live_trading_pulls_existing_offers() -> None:
+    import asyncio
+
+    from config.settings import BotConfig
+    from core.runtime_state import QuoteIntent
+
+    class FakeConnector:
+        def __init__(self) -> None:
+            self.open_offers = [
+                OpenOffer(sequence=10, side="bid", price=1.2750, size_xrp=10.0),
+                OpenOffer(sequence=11, side="ask", price=1.2760, size_xrp=10.0),
+            ]
+            self.cancelled: list[int] = []
+            self.placed: list[object] = []
+
+        async def get_open_offers(self):
+            return list(self.open_offers)
+
+        async def cancel_offer(self, sequence: int) -> None:
+            self.cancelled.append(sequence)
+            self.open_offers = [
+                offer for offer in self.open_offers if offer.sequence != sequence
+            ]
+
+        async def place_quote(self, intent: object) -> None:
+            self.placed.append(intent)
+
+    async def run() -> None:
+        config = BotConfig()
+        config.dry_run = False
+        config.trading_enabled = False
+        config.bot_secret_key = "test-secret"
+        eng = WsPureTradingEngine(config)
+        fake = FakeConnector()
+        eng.connector = fake  # type: ignore[assignment]
+
+        assert eng._can_manage_live_offers(config) is True
+        placed, cancelled = await eng._sync_cycle_offers(
+            config,
+            [QuoteIntent(level=1, side="bid", price=1.2750, size_xrp=10.0)],
+            would_quote=True,
+            mid=1.2755,
+            best_bid=1.2750,
+            best_ask=1.2760,
+            comp_intel={"peer_lane_empty": True},
+            engine_dec={
+                "g7_solo_acquisition": True,
+                "qd_bid_allowed": True,
+                "qd_ask_allowed": True,
+            },
+        )
+
+        assert placed == 0
+        assert cancelled == 2
+        assert fake.cancelled == [10, 11]
+        assert fake.placed == []
+
+    asyncio.run(run())
+
+
+def test_execution_summary_reports_disabled_trading_cancels() -> None:
+    from config.settings import BotConfig
+
+    config = BotConfig()
+    config.dry_run = False
+    config.trading_enabled = False
+    eng = WsPureTradingEngine(config)
+
+    assert "pulled 2" in eng._execution_summary(config, 0, cancelled=2)
