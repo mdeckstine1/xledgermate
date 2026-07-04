@@ -23,6 +23,7 @@ from alpha.hud.operator_market_regime import (
 from alpha.hud.skynet_knobs import build_skynet_knob_catalog, normalize_suggestion_key
 from alpha.reporting.realized_pnl import build_realized_pnl_snapshot, format_realized_pnl_context_block
 from alpha.hud.skynet_scenarios import (
+    build_regime_preset_tactics_block,
     build_scenario_playbook,
     build_skynet_user_message,
     infer_scenario_hints,
@@ -404,6 +405,8 @@ def build_skynet_context(
         "",
         "=== Scenario hints (auto from state — reference only, may not match operator intent) ===",
         f"likely_scenarios={scenario_hints or ['none']}",
+        "",
+        build_regime_preset_tactics_block(),
         "",
         build_scenario_playbook(),
         "",

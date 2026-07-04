@@ -51,6 +51,16 @@ def test_skynet_status_context_ready(skynet_client: TestClient):
     assert data.get("context_ready") is True
 
 
+def test_skynet_analysis_prompt_endpoint(skynet_client: TestClient):
+    r = skynet_client.get("/operator/skynet/analysis-prompt")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert "Regime preset fit" in data["prompt"]
+    assert "Walk-away" in data["prompt"]
+    assert "Long build" in data["prompt"]
+
+
 def test_skynet_ask_with_accumulation_context(skynet_client: TestClient):
     parsed = {
         "reasoning": "Tape is chop.",

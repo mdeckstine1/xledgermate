@@ -102,6 +102,13 @@ def register_skynet_routes(app: Any) -> None:
                 status_code=400,
             )
 
+    @app.get("/operator/skynet/analysis-prompt")
+    async def get_skynet_analysis_prompt() -> JSONResponse:
+        """Primary prompt for HUD Analysis quick button (single source of truth)."""
+        from alpha.hud.skynet_scenarios import BAG_GROWTH_ANALYSIS_PROMPT
+
+        return JSONResponse({"ok": True, "prompt": BAG_GROWTH_ANALYSIS_PROMPT})
+
     @app.get("/operator/skynet/agent")
     async def get_skynet_agent() -> JSONResponse:
         return JSONResponse({"ok": True, **agent_status_payload()})

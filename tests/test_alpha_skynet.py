@@ -165,6 +165,9 @@ def test_build_skynet_context_includes_decision():
     assert "heavy_rlusd" in ctx
     assert "Scenario playbook" in ctx
     assert "likely_scenarios=" in ctx
+    assert "Regime preset tactics" in ctx
+    assert "Walk-away" in ctx
+    assert "Long build" in ctx
     assert "phase=trust" in ctx
     assert "Operator knob allowlist" in ctx
     assert "Operator phase scenarios (S–U)" in ctx
@@ -216,6 +219,8 @@ def test_bag_growth_analysis_quick_prompt_intent():
         context="=== snapshot ===",
     )
     assert "BAG GROWTH ANALYSIS intent" in msg
+    assert "regime preset fit" in msg.lower()
+    assert "Walk-away" in BAG_GROWTH_ANALYSIS_PROMPT or "Walk-away" in msg
     assert "everything is well-aligned" in msg
     assert BAG_GROWTH_ANALYSIS_PROMPT in msg
     assert msg.index(BAG_GROWTH_ANALYSIS_PROMPT) < msg.index("=== snapshot ===")

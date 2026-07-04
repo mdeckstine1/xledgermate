@@ -129,11 +129,22 @@ def test_bracket_edge_cleanup_preset(client):
     assert data["config_effective"]["take_profit_pct"] == 0.025
 
 
+def test_long_build_preset(client):
+    r = client.post("/operator/long-build")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["config_effective"]["alpha_operator_phase"] == "scale"
+    assert data["config_effective"]["inventory_target_xrp_ratio"] == 0.80
+    assert data["walkaway_comparison"]["different_operator_keys"]["alpha_operator_phase"]["long_build"] == "scale"
+
+
 def test_operator_presets_catalog(client):
     r = client.get("/operator/presets")
     assert r.status_code == 200
     ids = [p["id"] for p in r.json()["presets"]]
     assert "walkaway" in ids
+    assert "long_build" in ids
     assert "bracket_edge_cleanup" in ids
 
 
