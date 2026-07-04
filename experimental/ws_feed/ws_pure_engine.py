@@ -732,6 +732,30 @@ class WsPureTradingEngine:
             return float(self._offers_cancelled)
         return self._offers_cancelled / self._session_fills
 
+    async def _forget_offer_age_if_fill_closed(
+        self,
+        connector: XRPLConnector,
+        *,
+        tracker_side: str,
+        offer_sequence: Optional[int],
+    ) -> None:
+        """Drop fill-age tracking only after the filled offer is gone from AccountOffers."""
+        try:
+            if offer_sequence is not None:
+                open_sequences = set(await connector.get_open_offer_sequences())
+                if int(offer_sequence) not in open_sequences:
+                    self._offer_age.forget_sequence(offer_sequence)
+                return
+
+            open_offers = await connector.get_open_offers()
+            if not any((offer.side or "").strip().lower() == tracker_side for offer in open_offers):
+                self._offer_age.clear_side(tracker_side)
+        except Exception as exc:
+            self.decision_log.add(
+                "fill",
+                f"Offer-age cleanup skipped after fill; open-offer refresh failed: {exc}",
+            )
+
     async def _detect_fills(
         self,
         config: BotConfig,
@@ -865,10 +889,11 @@ class WsPureTradingEngine:
         else:
             self.csv_logger.log_buy(**common)
         if tracker_side:
-            if offer_sequence is not None:
-                self._offer_age.forget_sequence(offer_sequence)
-            else:
-                self._offer_age.clear_side(tracker_side)
+            await self._forget_offer_age_if_fill_closed(
+                connector,
+                tracker_side=tracker_side,
+                offer_sequence=offer_sequence,
+            )
 
     async def _cancel_if_live(
         self, connector: XRPLConnector, config: BotConfig, reason: str
