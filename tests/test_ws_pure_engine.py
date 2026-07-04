@@ -1,5 +1,8 @@
 """Tests for WS pure production engine helpers."""
 
+import asyncio
+from types import SimpleNamespace
+
 from connectors.xrpl_connector import OpenOffer
 from engine.order_sync import plan_order_sync
 from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
@@ -135,6 +138,89 @@ def test_engine_offer_age_tracker_on_fill() -> None:
     detected = placed + timedelta(seconds=3.0)
     age = eng._offer_age.effective_quote_age_at_fill_seconds("bid", fill_detected_utc=detected)
     assert age == 3.0
+
+
+def test_detect_fills_keeps_offer_age_when_sequence_still_open(monkeypatch) -> None:
+    from config.settings import BotConfig
+    from datetime import datetime, timedelta, timezone
+
+    class Connector:
+        async def get_open_offer_sequences(self):
+            return [123]
+
+        async def get_open_offers(self):
+            raise AssertionError("sequence refresh should be used when sequence is known")
+
+    monkeypatch.setattr(
+        "experimental.ws_feed.ws_pure_engine.append_fill_quote_age_record",
+        lambda record: record,
+    )
+    eng = WsPureTradingEngine(BotConfig())
+    eng.csv_logger = SimpleNamespace(log_buy=lambda **kwargs: None, log_sell=lambda **kwargs: None)
+    placed = datetime(2026, 7, 4, 11, 0, 0, tzinfo=timezone.utc)
+    eng._offer_age.record_place("bid", placed_utc=placed, sequence=123)
+    eng._prev_balances = (100.0, 100.0)
+
+    asyncio.run(
+        eng._detect_fills(
+            BotConfig(),
+            Connector(),
+            balance_xrp=101.0,
+            balance_rlusd=98.95,
+            mid=1.05,
+            best_bid=1.04,
+            best_ask=1.06,
+        )
+    )
+
+    assert eng._session_fills == 1
+    assert eng._offer_age.last_sequence_for_side("bid") == 123
+    age = eng._offer_age.age_seconds_at(
+        "bid",
+        sequence=123,
+        detected_utc=placed + timedelta(seconds=45),
+    )
+    assert age == 45.0
+
+
+def test_detect_fills_forgets_offer_age_when_sequence_consumed(monkeypatch) -> None:
+    from config.settings import BotConfig
+    from datetime import datetime, timezone
+
+    class Connector:
+        async def get_open_offer_sequences(self):
+            return []
+
+        async def get_open_offers(self):
+            raise AssertionError("sequence refresh should be used when sequence is known")
+
+    monkeypatch.setattr(
+        "experimental.ws_feed.ws_pure_engine.append_fill_quote_age_record",
+        lambda record: record,
+    )
+    eng = WsPureTradingEngine(BotConfig())
+    eng.csv_logger = SimpleNamespace(log_buy=lambda **kwargs: None, log_sell=lambda **kwargs: None)
+    eng._offer_age.record_place(
+        "bid",
+        placed_utc=datetime(2026, 7, 4, 11, 0, 0, tzinfo=timezone.utc),
+        sequence=123,
+    )
+    eng._prev_balances = (100.0, 100.0)
+
+    asyncio.run(
+        eng._detect_fills(
+            BotConfig(),
+            Connector(),
+            balance_xrp=101.0,
+            balance_rlusd=98.95,
+            mid=1.05,
+            best_bid=1.04,
+            best_ask=1.06,
+        )
+    )
+
+    assert eng._session_fills == 1
+    assert eng._offer_age.last_sequence_for_side("bid") is None
 
 
 def test_engine_analysis_bundle_starts_empty() -> None:
