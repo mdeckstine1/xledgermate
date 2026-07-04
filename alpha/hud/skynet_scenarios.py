@@ -17,6 +17,21 @@ from alpha.hud.operator_market_regime import (
 )
 from alpha.hud.skynet_knobs import KNOB_ALIASES  # noqa: F401 — re-export for tests/docs
 
+# SKYNET quick-prompt: bot posture vs market tape (HUD Analysis button — keep in sync).
+BAG_GROWTH_ANALYSIS_PROMPT = """Bot vs market — bag growth analysis (PRIMARY prompt):
+
+Compare what the MARKET is doing right now vs what the BOT is doing.
+
+Read from context: decision (+ reason), inventory, structure, technical_analysis, opportunity_watch, accumulation_regime (incl harvest_watch, dip_deploy_watch), reload_regime, bag_growth, risk_capital, realized_bracket_pnl / realized_pnl_24h, open_offers, brackets, operator phase, market_regime.
+
+Deliver in plain English:
+1) Market read — tape (grind / rip / chop / dip), structure trend/breakout, TA bias and scores, 24h leg if harvest/dip relevant.
+2) Bot read — current action and why; active path (weakness / strength / accumulation / harvest / reload / HOLD); inventory gates (buy_block, sell_block, pause); any mismatch with what the market is doing.
+3) Bag growth — is posture aligned for long-term XRP stack growth? Use bag_growth (bot-adjusted stack delta, trading_edge_7d) and risk_capital sizing — NOT session MTM alone.
+4) Verdict — either say clearly that everything is well-aligned and no changes are needed, OR give 1–3 specific optimizations (operator knobs and/or operational guidance).
+
+Judge bleed from realized bracket P&L (tp_exits / sl_exits), not session P&L. Output suggested_changes only when clearly warranted; empty array is OK if posture is perfect. Be direct and conversational."""
+
 
 def build_scenario_playbook() -> str:
     """Compact operator playbook for SKYNET (keep under ~4k chars)."""
@@ -168,6 +183,11 @@ def classify_prompt_intent(prompt: str) -> Dict[str, Any]:
         tags.append("defensive")
     if re.search(r"\b(full\s+summary|summarize|overview|state\s+of\s+the\s+bot)\b", p):
         tags.append("summary_request")
+    if re.search(
+        r"\b(bot\s+vs\s+market|bag\s+growth\s+analysis|optimize\s+bag\s+growth|everything\s+is\s+well[- ]aligned)\b",
+        p,
+    ):
+        tags.append("bag_growth_analysis")
     if re.search(r"\b(ladder|clutter|stale|cancel.*bid|pending\s+buy)\b", p):
         tags.append("ladder_management")
     settings_cues = bool(
@@ -224,6 +244,15 @@ def build_skynet_user_message(
     elif "summary_request" in tags:
         lines.append(
             "4. SUMMARY intent: structured state overview first; suggested_changes only if clearly warranted."
+        )
+    elif "bag_growth_analysis" in tags:
+        lines.extend(
+            [
+                "4. BAG GROWTH ANALYSIS intent: compare market tape vs bot posture first (not ladder clutter by default).",
+                "   End with an explicit verdict: either (a) everything is well-aligned — no changes needed, with brief why, "
+                "or (b) 1–3 concrete optimizations for bag growth (knobs and/or operator actions).",
+                "   Use bag_growth, risk_capital, harvest/dip/reload blocks; judge bleed from realized bracket P&L only.",
+            ]
         )
 
     if intent.get("has_settings_request"):

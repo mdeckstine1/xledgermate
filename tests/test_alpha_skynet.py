@@ -201,6 +201,26 @@ def test_build_skynet_user_message_bullish_buy_intent():
     assert msg.index(prompt) < msg.index("=== snapshot ===")
 
 
+def test_bag_growth_analysis_quick_prompt_intent():
+    from alpha.hud.skynet_scenarios import (
+        BAG_GROWTH_ANALYSIS_PROMPT,
+        build_skynet_user_message,
+        classify_prompt_intent,
+    )
+
+    tags = classify_prompt_intent(BAG_GROWTH_ANALYSIS_PROMPT)["tags"]
+    assert "bag_growth_analysis" in tags
+
+    msg = build_skynet_user_message(
+        user_prompt=BAG_GROWTH_ANALYSIS_PROMPT,
+        context="=== snapshot ===",
+    )
+    assert "BAG GROWTH ANALYSIS intent" in msg
+    assert "everything is well-aligned" in msg
+    assert BAG_GROWTH_ANALYSIS_PROMPT in msg
+    assert msg.index(BAG_GROWTH_ANALYSIS_PROMPT) < msg.index("=== snapshot ===")
+
+
 def test_infer_scenario_hints_accumulation_regime_kwarg():
     from alpha.hud.skynet_scenarios import infer_scenario_hints
 

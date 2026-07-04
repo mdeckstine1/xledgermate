@@ -883,6 +883,19 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Trust phase: RLUSD-heavy, bullish consolidation. Recommend only patient accumulation knobs — max_pending if cap blocks, keep offset at or above effective, weakness 0.05. Do not tighten drift. Explain HOLD vs session MTM vs realized bracket P&amp;L in plain talk.">Trust phase review</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Scale phase check: I earned trust — suggest modest accumulation (max_pending 2, offset 0.15–0.20) one knob at a time. Compare to effective config.">Scale phase knobs</button>
               <button type="button" class="secondary skynet-quick-btn" data-prompt="Give a full structured summary of current bot state: portfolio, decision, TA, brackets, open offers, and top priority. Address my market view in the prompt above if I added one — do not default to ladder-clutter advice unless that is the actual problem.">Full summary</button>
+              <button type="button" class="secondary skynet-quick-btn" data-prompt="Bot vs market — bag growth analysis (PRIMARY prompt):
+
+Compare what the MARKET is doing right now vs what the BOT is doing.
+
+Read from context: decision (+ reason), inventory, structure, technical_analysis, opportunity_watch, accumulation_regime (incl harvest_watch, dip_deploy_watch), reload_regime, bag_growth, risk_capital, realized_bracket_pnl / realized_pnl_24h, open_offers, brackets, operator phase, market_regime.
+
+Deliver in plain English:
+1) Market read — tape (grind / rip / chop / dip), structure trend/breakout, TA bias and scores, 24h leg if harvest/dip relevant.
+2) Bot read — current action and why; active path (weakness / strength / accumulation / harvest / reload / HOLD); inventory gates (buy_block, sell_block, pause); any mismatch with what the market is doing.
+3) Bag growth — is posture aligned for long-term XRP stack growth? Use bag_growth (bot-adjusted stack delta, trading_edge_7d) and risk_capital sizing — NOT session MTM alone.
+4) Verdict — either say clearly that everything is well-aligned and no changes are needed, OR give 1–3 specific optimizations (operator knobs and/or operational guidance).
+
+Judge bleed from realized bracket P&L (tp_exits / sl_exits), not session P&L. Output suggested_changes only when clearly warranted; empty array is OK if posture is perfect. Be direct and conversational.">Analysis</button>
             </div>
             <div class="skynet-actions">
               <button type="button" id="btnSkynetSend">Ask SKYNET</button>
