@@ -144,8 +144,19 @@ def test_operator_presets_catalog(client):
     assert r.status_code == 200
     ids = [p["id"] for p in r.json()["presets"]]
     assert "walkaway" in ids
+    assert "stack_growth" in ids
     assert "long_build" in ids
     assert "bracket_edge_cleanup" in ids
+
+
+def test_stack_growth_preset_route(client):
+    r = client.post("/operator/stack-growth")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["config_effective"]["inventory_target_xrp_ratio"] == 0.88
+    assert data["config_effective"]["alpha_strength_deviation"] == 0.11
+    assert data["config_effective"]["alpha_ta_min_sell_score"] == 4.0
 
 
 @pytest.fixture
