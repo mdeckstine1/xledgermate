@@ -201,6 +201,33 @@ def test_g4_peer_lane_in_quote_path() -> None:
     asyncio.run(run())
 
 
+def test_qd_peer_lane_count_survives_disabled_g4() -> None:
+    """Disabling G4 sizing must not make QD treat peer-present lanes as solo."""
+    path = PureQuotePath(gamma=0.35, kappa=3.5, configured_l1_xrp=150.0, balance_fraction_k=0.07)
+
+    async def run() -> None:
+        d = await path.compute_decision(
+            mid=1.120508,
+            best_bid=1.1198083175159341,
+            best_ask=1.1212070418817652,
+            xrp_bal=650.0,
+            rlusd_bal=500.0,
+            competitor_intel={
+                "peer_lane_count": 2,
+                "peer_lane_empty": False,
+                "peer_pressure_score": 0.2,
+                "peer_observed_spread_pct": 0.11,
+            },
+            g4_enabled=False,
+        )
+        assert d.g4_active is False
+        assert d.g4_peer_lane_count == 2
+        assert "book=sparse" in d.qd_layer_summary
+        assert d.qd_intent == "two_sided_skim"
+
+    asyncio.run(run())
+
+
 def test_v220_xrp_heavy_solo_no_deadlock() -> None:
     """Regression v2.1.40: inv pause_bids + ask brake → both off; QD allows bid at edge."""
     path = PureQuotePath(gamma=0.35, kappa=3.5, configured_l1_xrp=150.0)
