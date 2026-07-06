@@ -27,7 +27,13 @@ from experimental.ws_feed.pure_inventory_policy import (
     count_active_l1_quotes,
 )
 from experimental.ws_feed.ws_book_age_modulator import apply_ws_book_age_modulator
-from experimental.ws_feed.peer_lane_quoting import G4Adjustments, compute_g4_adjustments, is_peer_lane_empty, prepare_quoting_intel
+from experimental.ws_feed.peer_lane_quoting import (
+    G4Adjustments,
+    compute_g4_adjustments,
+    is_peer_lane_empty,
+    observe_peer_lane,
+    prepare_quoting_intel,
+)
 from experimental.ws_feed.spread_quality_scaler import (
     G2Adjustments,
     compute_g2_adjustments,
@@ -431,7 +437,7 @@ class PureQuotePath:
             )
             pressure_size_mult *= g4.size_mult
         else:
-            g4 = G4Adjustments()
+            g4 = observe_peer_lane(quoting_intel)
 
         ai_rationale = ""
         ai_edge = 0.0

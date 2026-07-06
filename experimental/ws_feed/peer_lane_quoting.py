@@ -89,6 +89,32 @@ class G4Adjustments:
     peer_pressure: Optional[float] = None
 
 
+def observe_peer_lane(intel: Optional[Mapping[str, Any]]) -> G4Adjustments:
+    """
+    Return neutral G4-shaped metadata for callers that need peer-lane posture
+    even when G4 sizing nudges are disabled.
+    """
+    if not intel:
+        return G4Adjustments()
+
+    if "peer_lane_count" not in intel and "peer_lane_empty" not in intel:
+        return G4Adjustments()
+
+    peer_count = _safe_int(intel.get("peer_lane_count"))
+    peer_empty = bool(intel.get("peer_lane_empty")) or peer_count <= 0
+    if peer_empty:
+        return G4Adjustments(peer_lane_count=0, peer_pressure=0.5)
+
+    peer_p = _safe_float(
+        intel.get("peer_pressure_score") or intel.get("competitor_pressure"),
+        0.5,
+    )
+    return G4Adjustments(
+        peer_lane_count=peer_count,
+        peer_pressure=round(peer_p, 3),
+    )
+
+
 def compute_g4_adjustments(
     intel: Optional[Mapping[str, Any]],
     *,
