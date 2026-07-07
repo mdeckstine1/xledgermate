@@ -299,6 +299,18 @@ class WsPureTradingEngine:
         mid = (bb + ba) / 2.0 if bb and ba else None
         return state, bb, ba, mid
 
+    async def _refresh_account_snapshot(
+        self,
+        connector: XRPLConnector,
+        mid: Optional[float],
+    ) -> tuple[float, float, Any, float]:
+        """Fetch balances together so quote decisions use one current wallet view."""
+        balance_xrp = await connector.get_xrp_balance()
+        balance_rlusd = await connector.get_rlusd_balance()
+        trust = await connector.get_rlusd_trust_line()
+        portfolio = portfolio_value_xrp(balance_xrp, balance_rlusd, mid or 0.0)
+        return balance_xrp, balance_rlusd, trust, portfolio
+
     async def _maybe_refresh_competitor_intel(self, config: BotConfig) -> Optional[Dict[str, Any]]:
         """Periodic on-chain peer-lane scrape for G4 quoting (cached ~15s)."""
         flags = WsFeatureFlags.from_config(config)
@@ -399,10 +411,9 @@ class WsPureTradingEngine:
         if mid and flags.fill_quality:
             self._fill_quality.note_mid(mid)
 
-        balance_xrp = await connector.get_xrp_balance()
-        balance_rlusd = await connector.get_rlusd_balance()
-        trust = await connector.get_rlusd_trust_line()
-        portfolio = portfolio_value_xrp(balance_xrp, balance_rlusd, mid or 0.0)
+        balance_xrp, balance_rlusd, trust, portfolio = await self._refresh_account_snapshot(
+            connector, mid
+        )
 
         if self.kill_switch.is_active():
             await self._cancel_if_live(connector, config, "Kill switch active")
@@ -469,6 +480,41 @@ class WsPureTradingEngine:
         if mid and flags.fill_quality:
             self._fill_quality.note_mid(mid)
         self._last_ws_book_age_s = state.age_seconds()
+        balance_xrp, balance_rlusd, trust, portfolio = await self._refresh_account_snapshot(
+            connector, mid
+        )
+        preflight = evaluate_preflight(
+            config=config,
+            xrp_balance=balance_xrp,
+            rlusd_balance=balance_rlusd,
+            trust_line_limit=trust.limit if trust.exists else None,
+            has_trust_line=trust.exists,
+            trust_line_no_ripple=trust.no_ripple if trust.exists else None,
+            mid_price=mid,
+            kill_switch_active=False,
+            xrp_reserve=config.xrp_reserve,
+            min_order_xrp=config.min_order_size_xrp,
+        )
+        if not preflight.ready:
+            self.decision_log.add("preflight", preflight.summary)
+            if (
+                config.trading_enabled
+                and not config.dry_run
+                and (config.bot_secret_key or "").strip()
+            ):
+                await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
+            await self._detect_fills(
+                config,
+                connector,
+                balance_xrp,
+                balance_rlusd,
+                mid,
+                best_bid=bb,
+                best_ask=ba,
+                engine_dec=None,
+                competitor_intel=comp_intel,
+            )
+            return
 
         engine_dec = await self._adapter.compute_pure_as_decision(
             mid=mid or 0.0,

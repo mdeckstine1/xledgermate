@@ -1,5 +1,9 @@
 """Tests for WS pure production engine helpers."""
 
+import asyncio
+
+from config.settings import BotConfig
+from connectors.xrpl_connector import TrustLineInfo
 from connectors.xrpl_connector import OpenOffer
 from engine.order_sync import plan_order_sync
 from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
@@ -25,7 +29,7 @@ def test_plan_order_sync_empty_intents_cancels_all() -> None:
 def test_execution_summary_pull_when_blocked() -> None:
     from config.settings import BotConfig
 
-    eng = WsPureTradingEngine(BotConfig.load())
+    eng = WsPureTradingEngine(BotConfig(dry_run=False, trading_enabled=True))
     msg = eng._execution_summary(
         eng.config, 0, cancelled=2, would_sync=0, would_quote=False
     )
@@ -179,3 +183,91 @@ def test_stale_quote_merged_into_sync_cancel_plan() -> None:
     )
     merged = list(plan.cancel_sequences) + [s for s in stale if s not in plan.cancel_sequences]
     assert merged == [2]
+
+
+def test_run_cycle_refreshes_balances_after_intel_scrape(monkeypatch) -> None:
+    """A fill during the slow intel scrape must affect the quote decision immediately."""
+    from experimental.ws_feed import ws_pure_engine as wpe
+
+    class DummyState:
+        def best_prices(self) -> tuple[float, float]:
+            return 1.099, 1.101
+
+        def age_seconds(self) -> float:
+            return 0.0
+
+    class DummyFeed:
+        state = DummyState()
+
+        async def refresh_if_stale(self, _stale_after_s: float) -> None:
+            return None
+
+    class DummyConnector:
+        def __init__(self) -> None:
+            self.xrp_balances = [100.0, 90.0]
+            self.rlusd_balances = [100.0, 111.0]
+
+        async def get_xrp_balance(self) -> float:
+            if len(self.xrp_balances) > 1:
+                return self.xrp_balances.pop(0)
+            return self.xrp_balances[0]
+
+        async def get_rlusd_balance(self) -> float:
+            if len(self.rlusd_balances) > 1:
+                return self.rlusd_balances.pop(0)
+            return self.rlusd_balances[0]
+
+        async def get_rlusd_trust_line(self) -> TrustLineInfo:
+            return TrustLineInfo(exists=True, balance=0.0, limit=1_000.0, no_ripple=True)
+
+        async def get_open_offers(self) -> list[OpenOffer]:
+            return []
+
+    class DummyAdapter:
+        def __init__(self) -> None:
+            self.seen_balances: tuple[float, float] | None = None
+
+        async def compute_pure_as_decision(self, **kwargs):
+            self.seen_balances = (kwargs["xrp_bal"], kwargs["rlusd_bal"])
+            return {
+                "would_quote": False,
+                "quote_intents": [],
+                "quote_decision_summary": "off",
+                "qd_bid_allowed": False,
+                "qd_ask_allowed": False,
+            }
+
+    config = BotConfig(
+        bot_account_address="rTest",
+        dry_run=True,
+        trading_enabled=True,
+        fund_with_xrp_only=False,
+        order_sizes=[10.0],
+        min_order_size_xrp=1.0,
+        xrp_reserve=12.0,
+    )
+    monkeypatch.setattr(wpe.BotConfig, "load", classmethod(lambda cls: config))
+
+    engine = WsPureTradingEngine(config)
+    connector = DummyConnector()
+    adapter = DummyAdapter()
+    engine.connector = connector
+    engine._ws_feed = DummyFeed()
+    engine._adapter = adapter
+    engine.balance_logger.log_snapshot = lambda **_kwargs: None
+    engine._append_decision_file = lambda **_kwargs: None
+
+    async def no_persist(*_args, **_kwargs) -> None:
+        return None
+
+    async def cached_intel(_config) -> dict:
+        return {"peer_lane_empty": True, "peer_lane_count": 0}
+
+    async def run() -> None:
+        engine._persist_cycle = no_persist
+        engine._maybe_refresh_competitor_intel = cached_intel
+        await engine._run_cycle()
+
+    asyncio.run(run())
+
+    assert adapter.seen_balances == (90.0, 111.0)
