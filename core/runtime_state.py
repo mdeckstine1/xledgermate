@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -194,8 +196,42 @@ class RuntimeStateStore:
 
     def save(self, state: RuntimeState) -> None:
         state.touch()
-        payload = state.to_dict()
-        self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        payload = json.dumps(state.to_dict(), indent=2)
+        self._write_text_atomic(payload)
+
+    def _write_text_atomic(self, text: str) -> None:
+        tmp_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                dir=self.path.parent,
+                prefix=f".{self.path.name}.",
+                suffix=".tmp",
+                encoding="utf-8",
+                delete=False,
+            ) as tmp:
+                tmp.write(text)
+                tmp.flush()
+                os.fsync(tmp.fileno())
+                tmp_path = Path(tmp.name)
+            os.replace(tmp_path, self.path)
+            self._fsync_parent_dir()
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+
+    def _fsync_parent_dir(self) -> None:
+        try:
+            dir_fd = os.open(self.path.parent, os.O_RDONLY)
+        except OSError:
+            return
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
 
     def load(self) -> Optional[RuntimeState]:
         if not self.path.exists():
