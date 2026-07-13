@@ -1,10 +1,13 @@
 """Tests for WS pure production engine helpers."""
 
+import asyncio
+
 from connectors.xrpl_connector import OpenOffer
 from engine.order_sync import plan_order_sync
 from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
 from experimental.ws_feed.stale_quote_guard import stale_quote_sequences_to_cancel
 from experimental.ws_feed.ws_pure_engine import (
+    COMP_INTEL_MAX_STALE_S,
     WsPureTradingEngine,
     fill_side_to_offer_age_side,
     pure_intents_to_quote_intents,
@@ -25,7 +28,9 @@ def test_plan_order_sync_empty_intents_cancels_all() -> None:
 def test_execution_summary_pull_when_blocked() -> None:
     from config.settings import BotConfig
 
-    eng = WsPureTradingEngine(BotConfig.load())
+    config = BotConfig.load()
+    config.dry_run = False
+    eng = WsPureTradingEngine(config)
     msg = eng._execution_summary(
         eng.config, 0, cancelled=2, would_sync=0, would_quote=False
     )
@@ -142,6 +147,65 @@ def test_engine_analysis_bundle_starts_empty() -> None:
 
     eng = WsPureTradingEngine(BotConfig.load())
     assert eng._analysis_bundle["sample_history"] == []
+
+
+def test_competitor_intel_failure_drops_stale_positive_peer_cache(monkeypatch) -> None:
+    """A failed scrape must not keep stale crowded-lane intel active indefinitely."""
+    from config.settings import BotConfig
+    import experimental.ws_feed.ws_pure_engine as ws_engine_mod
+
+    now = 1000.0
+    config = BotConfig.load()
+    config.ws_intel_log_enabled = False
+    eng = WsPureTradingEngine(config)
+    eng._comp_provider = object()
+    eng._ws_feed = object()
+    eng._comp_intel_cache = {
+        "peer_lane_count": 4,
+        "peer_lane_empty": False,
+        "peer_pressure_score": 0.2,
+    }
+    eng._last_comp_scrape = now - COMP_INTEL_MAX_STALE_S - 0.1
+
+    async def failed_scrape(*args, **kwargs):
+        return {"competitor_error": "rpc failed"}
+
+    monkeypatch.setattr(ws_engine_mod.time, "monotonic", lambda: now)
+    monkeypatch.setattr(ws_engine_mod, "fetch_competitor_quoting_intel", failed_scrape)
+
+    result = asyncio.run(eng._maybe_refresh_competitor_intel(config))
+
+    assert result is None
+
+
+def test_competitor_intel_failure_reuses_fresh_cache(monkeypatch) -> None:
+    """Transient scrape failures may reuse cache while it is still within max age."""
+    from config.settings import BotConfig
+    import experimental.ws_feed.ws_pure_engine as ws_engine_mod
+
+    now = 1000.0
+    config = BotConfig.load()
+    config.ws_intel_log_enabled = False
+    eng = WsPureTradingEngine(config)
+    eng._comp_provider = object()
+    eng._ws_feed = object()
+    cache = {
+        "peer_lane_count": 4,
+        "peer_lane_empty": False,
+        "peer_pressure_score": 0.2,
+    }
+    eng._comp_intel_cache = cache
+    eng._last_comp_scrape = now - COMP_INTEL_MAX_STALE_S + 1.0
+
+    async def failed_scrape(*args, **kwargs):
+        return {"competitor_error": "rpc failed"}
+
+    monkeypatch.setattr(ws_engine_mod.time, "monotonic", lambda: now)
+    monkeypatch.setattr(ws_engine_mod, "fetch_competitor_quoting_intel", failed_scrape)
+
+    result = asyncio.run(eng._maybe_refresh_competitor_intel(config))
+
+    assert result is cache
 
 
 def test_stale_quote_merged_into_sync_cancel_plan() -> None:

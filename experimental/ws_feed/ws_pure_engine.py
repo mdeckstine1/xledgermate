@@ -77,6 +77,7 @@ def _execution_brakes_summary_with_queue(summary: str, quote_visibility_summary:
         return f"{summary} | {queue_part}"
     return summary or queue_part
 COMP_SCRAPE_INTERVAL_S = 15.0
+COMP_INTEL_MAX_STALE_S = COMP_SCRAPE_INTERVAL_S * 2.0
 WS_MID_MOVE_REFRESH_BPS = 8.0
 WS_TOXIC_PRESERVE_OFF_RATIO = 0.35
 
@@ -299,6 +300,21 @@ class WsPureTradingEngine:
         mid = (bb + ba) / 2.0 if bb and ba else None
         return state, bb, ba, mid
 
+    def _usable_comp_intel_cache(self, *, now: float) -> Optional[Dict[str, Any]]:
+        """Return cached competitor intel only while peer-lane data is still fresh."""
+        if not self._comp_intel_cache or self._last_comp_scrape <= 0:
+            return None
+        if now - self._last_comp_scrape <= COMP_INTEL_MAX_STALE_S:
+            return self._comp_intel_cache
+        self.decision_log.add(
+            "intel",
+            (
+                "G4 competitor scrape stale "
+                f"({now - self._last_comp_scrape:.1f}s) - ignoring cached peer lane"
+            ),
+        )
+        return None
+
     async def _maybe_refresh_competitor_intel(self, config: BotConfig) -> Optional[Dict[str, Any]]:
         """Periodic on-chain peer-lane scrape for G4 quoting (cached ~15s)."""
         flags = WsFeatureFlags.from_config(config)
@@ -324,7 +340,7 @@ class WsPureTradingEngine:
                 fallback_l1_xrp=fallback_l1,
             )
             if fields.get("competitor_error"):
-                return self._comp_intel_cache or None
+                return self._usable_comp_intel_cache(now=now)
             self._comp_intel_cache = fields
             self._last_comp_scrape = now
             if flags.intel_log:
@@ -336,7 +352,7 @@ class WsPureTradingEngine:
             return fields
         except Exception:
             logger.warning("G4 competitor scrape failed", exc_info=True)
-            return self._comp_intel_cache or None
+            return self._usable_comp_intel_cache(now=now)
 
     async def run(self, *, sample_interval_s: float = DEFAULT_SAMPLE_INTERVAL_S) -> None:
         self._running = True
