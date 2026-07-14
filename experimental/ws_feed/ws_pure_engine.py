@@ -69,6 +69,19 @@ WS_STALE_REFRESH_S = 12.0
 DEFAULT_SAMPLE_INTERVAL_S = 5.0
 
 
+def ws_book_fresh_enough_for_quotes(
+    age_s: Optional[float],
+    *,
+    max_age_s: float = WS_STALE_REFRESH_S,
+) -> bool:
+    """Quotes may only be computed from a book that refreshed successfully."""
+    try:
+        age = float(age_s) if age_s is not None else float("inf")
+    except (TypeError, ValueError):
+        return False
+    return 0.0 <= age <= float(max_age_s)
+
+
 def _execution_brakes_summary_with_queue(summary: str, quote_visibility_summary: str) -> str:
     if not quote_visibility_summary:
         return summary
@@ -386,6 +399,23 @@ class WsPureTradingEngine:
         assert connector is not None
 
         state, bb, ba, mid = await self._refresh_book_state()
+        book_age_s = state.age_seconds()
+        self._last_ws_book_age_s = book_age_s
+        if not ws_book_fresh_enough_for_quotes(book_age_s):
+            self.decision_log.add(
+                "book",
+                (
+                    f"WS book stale after refresh ({book_age_s:.1f}s) — "
+                    "skip quote cycle."
+                ),
+            )
+            if (
+                config.trading_enabled
+                and not config.dry_run
+                and (config.bot_secret_key or "").strip()
+            ):
+                await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
+            return
         if not is_trustworthy_rlusd_mid(mid, best_bid=bb, best_ask=ba):
             self.decision_log.add("book", "WS book not trustworthy — skip cycle.")
             if (
@@ -456,6 +486,23 @@ class WsPureTradingEngine:
 
         # Intel scrape + ledger RPC can take 30s+; refresh book again before quoting.
         state, bb, ba, mid = await self._refresh_book_state()
+        book_age_s = state.age_seconds()
+        self._last_ws_book_age_s = book_age_s
+        if not ws_book_fresh_enough_for_quotes(book_age_s):
+            self.decision_log.add(
+                "book",
+                (
+                    f"WS book stale before quote ({book_age_s:.1f}s) — "
+                    "skip quote cycle."
+                ),
+            )
+            if (
+                config.trading_enabled
+                and not config.dry_run
+                and (config.bot_secret_key or "").strip()
+            ):
+                await self._sync_offers([], mid=mid, best_bid=bb, best_ask=ba)
+            return
         if not is_trustworthy_rlusd_mid(mid, best_bid=bb, best_ask=ba):
             self.decision_log.add("book", "WS book not trustworthy before quote — skip cycle.")
             if (
@@ -468,7 +515,6 @@ class WsPureTradingEngine:
         self._last_valid_mid = mid
         if mid and flags.fill_quality:
             self._fill_quality.note_mid(mid)
-        self._last_ws_book_age_s = state.age_seconds()
 
         engine_dec = await self._adapter.compute_pure_as_decision(
             mid=mid or 0.0,
@@ -477,7 +523,7 @@ class WsPureTradingEngine:
             xrp_bal=balance_xrp,
             rlusd_bal=balance_rlusd,
             target_ratio=config.inventory_target_xrp_ratio,
-            ws_book_age_s=state.age_seconds(),
+            ws_book_age_s=book_age_s,
             fill_quality=fill_state,
             inventory_max_deviation=float(config.inventory_max_deviation),
             inventory_mode=str(config.inventory_mode or "market_make"),

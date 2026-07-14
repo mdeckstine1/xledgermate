@@ -9,6 +9,7 @@ from experimental.ws_feed.ws_pure_engine import (
     fill_side_to_offer_age_side,
     pure_intents_to_quote_intents,
     resolve_ws_sync_tolerances,
+    ws_book_fresh_enough_for_quotes,
 )
 
 
@@ -48,6 +49,18 @@ def test_pure_intents_empty_when_blocked() -> None:
         {"level": 1, "side": "bid", "price": 1.1, "size_xrp": 12.0, "active": True},
     ]
     assert pure_intents_to_quote_intents(ladder, would_quote=False) == []
+
+
+def test_ws_book_fresh_enough_for_quotes_threshold() -> None:
+    assert ws_book_fresh_enough_for_quotes(0.0, max_age_s=12.0)
+    assert ws_book_fresh_enough_for_quotes(12.0, max_age_s=12.0)
+    assert not ws_book_fresh_enough_for_quotes(12.01, max_age_s=12.0)
+
+
+def test_ws_book_fresh_enough_rejects_unknown_or_invalid_age() -> None:
+    assert not ws_book_fresh_enough_for_quotes(None)
+    assert not ws_book_fresh_enough_for_quotes("not-a-number")  # type: ignore[arg-type]
+    assert not ws_book_fresh_enough_for_quotes(-1.0)
 
 
 def test_resolve_ws_sync_tolerances_small_mid_move_keeps_queue() -> None:
