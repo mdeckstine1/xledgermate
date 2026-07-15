@@ -188,11 +188,11 @@ class WsPureTradingEngine:
     def __init__(self, config: BotConfig) -> None:
         self.config = config
         self.kill_switch = KillSwitch()
+        self.state_store = RuntimeStateStore()
         self.drawdown_monitor = DrawdownMonitor(
             max_drawdown_percent=config.max_daily_drawdown_percent
         )
         self.decision_log = DecisionLog(max_entries=150)
-        self.state_store = RuntimeStateStore()
         self.csv_logger = CSVLogger()
         self.balance_logger = BalanceLogger()
         self.alerts = TelegramAlerts(
@@ -237,9 +237,24 @@ class WsPureTradingEngine:
         self._reservation_crossed_after_ws_sample = False
         self._session_boot_utc = datetime.now(tz=timezone.utc).isoformat()
         self._analysis_bundle: Dict[str, Any] = {"sample_history": []}
+        self._restore_drawdown_monitor()
 
     def stop(self) -> None:
         self._running = False
+
+    def _restore_drawdown_monitor(self) -> None:
+        """Continue same-day drawdown enforcement across WS engine restarts."""
+        try:
+            prior = self.state_store.load()
+            if prior is None:
+                return
+            self.drawdown_monitor.restore_daily_baseline(
+                daily_start_value=prior.drawdown_daily_start_xrp,
+                daily_start_time_utc=prior.drawdown_daily_start_utc,
+                current_value=prior.portfolio_value_xrp,
+            )
+        except (json.JSONDecodeError, OSError, TypeError, ValueError, AttributeError) as exc:
+            logger.debug("Could not restore drawdown baseline: %s", exc)
 
     async def _build_connector(self) -> XRPLConnector:
         config = self.config
@@ -1096,6 +1111,8 @@ class WsPureTradingEngine:
             preflight_ready=True,
             portfolio_value_xrp=portfolio,
             drawdown_pct=drawdown_pct,
+            drawdown_daily_start_xrp=self.drawdown_monitor.daily_start_value,
+            drawdown_daily_start_utc=self.drawdown_monitor.daily_start_time_utc(),
             active_profile="ws_pure",
             mid_price=mid,
             best_bid_rlusd_per_xrp=bb,
