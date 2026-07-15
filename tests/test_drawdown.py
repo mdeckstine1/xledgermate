@@ -1,5 +1,7 @@
 """Drawdown monitor tests."""
 
+from datetime import datetime, timezone
+
 from pytest import approx
 
 from risk.drawdown import (
@@ -62,3 +64,18 @@ def test_invalid_mid_before_first_mark_does_not_set_baseline() -> None:
     assert not ok
     assert mon.daily_start_value is None
     assert not mon.is_kill_switch_triggered()
+
+
+def test_restore_daily_baseline_preserves_restart_drawdown() -> None:
+    mon = DrawdownMonitor(max_drawdown_percent=10.0)
+    restored = mon.restore_daily_baseline(
+        daily_start_value=100.0,
+        daily_start_time_utc=datetime.now(timezone.utc).isoformat(),
+        current_value=95.0,
+    )
+    assert restored
+    assert mon.get_drawdown_percent() == approx(5.0)
+
+    mon.update_portfolio(89.0, 0.0, 1.0)
+    assert mon.get_drawdown_percent() == approx(11.0)
+    assert mon.is_kill_switch_triggered()

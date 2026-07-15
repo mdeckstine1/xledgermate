@@ -76,10 +76,10 @@ class TradingEngine:
         self.connector: Optional[XRPLConnector] = None
         self.strategy = AvellanedaStrategy(config)
         self.order_manager = OrderManager(config)
+        self.state_store = RuntimeStateStore()
         self.drawdown_monitor = DrawdownMonitor(max_drawdown_percent=config.max_daily_drawdown_percent)
         self.kill_switch = KillSwitch()
         self.decision_log = DecisionLog(max_entries=150)
-        self.state_store = RuntimeStateStore()
         self.alerts = TelegramAlerts(
             token=config.telegram_token,
             chat_id=config.telegram_chat_id,
@@ -126,6 +126,7 @@ class TradingEngine:
         self._last_valid_mid: Optional[float] = None
         self._last_best_bid: Optional[float] = None
         self._last_best_ask: Optional[float] = None
+        self._restore_drawdown_monitor()
 
     def _trustworthy_mid(
         self,
@@ -154,6 +155,20 @@ class TradingEngine:
         except (json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
             logger.debug("Could not restore price history: %s", exc)
         return []
+
+    def _restore_drawdown_monitor(self) -> None:
+        """Continue same-day drawdown enforcement across engine restarts."""
+        try:
+            prior = self.state_store.load()
+            if prior is None:
+                return
+            self.drawdown_monitor.restore_daily_baseline(
+                daily_start_value=prior.drawdown_daily_start_xrp,
+                daily_start_time_utc=prior.drawdown_daily_start_utc,
+                current_value=prior.portfolio_value_xrp,
+            )
+        except (json.JSONDecodeError, OSError, TypeError, ValueError, AttributeError) as exc:
+            logger.debug("Could not restore drawdown baseline: %s", exc)
 
     async def run(self) -> None:
         self._running = True
@@ -1514,6 +1529,8 @@ class TradingEngine:
             preflight_warnings=list(pf.warnings) if pf else [],
             portfolio_value_xrp=portfolio_value,
             drawdown_pct=drawdown_pct,
+            drawdown_daily_start_xrp=self.drawdown_monitor.daily_start_value,
+            drawdown_daily_start_utc=self.drawdown_monitor.daily_start_time_utc(),
             active_profile=perception.active_profile.name,
             mid_price=mid if mid > 0 else perception.mid_price,
             best_bid_rlusd_per_xrp=best_bid,

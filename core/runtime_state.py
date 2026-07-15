@@ -30,6 +30,8 @@ class RuntimeState:
     preflight_warnings: List[str] = field(default_factory=list)
     portfolio_value_xrp: float = 0.0
     drawdown_pct: float = 0.0
+    drawdown_daily_start_xrp: Optional[float] = None
+    drawdown_daily_start_utc: Optional[str] = None
     active_profile: str = "safe"
     mid_price: Optional[float] = None
     best_bid_rlusd_per_xrp: Optional[float] = None
@@ -216,6 +218,8 @@ class RuntimeStateStore:
             preflight_warnings=list(data.get("preflight_warnings", [])),
             portfolio_value_xrp=float(data.get("portfolio_value_xrp", 0.0)),
             drawdown_pct=float(data.get("drawdown_pct", 0.0)),
+            drawdown_daily_start_xrp=data.get("drawdown_daily_start_xrp"),
+            drawdown_daily_start_utc=data.get("drawdown_daily_start_utc"),
             active_profile=data.get("active_profile", "safe"),
             mid_price=data.get("mid_price"),
             best_bid_rlusd_per_xrp=data.get("best_bid_rlusd_per_xrp"),

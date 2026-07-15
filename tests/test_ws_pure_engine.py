@@ -1,6 +1,9 @@
 """Tests for WS pure production engine helpers."""
 
+from datetime import datetime, timezone
+
 from connectors.xrpl_connector import OpenOffer
+from core.runtime_state import RuntimeState, RuntimeStateStore
 from engine.order_sync import plan_order_sync
 from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
 from experimental.ws_feed.stale_quote_guard import stale_quote_sequences_to_cancel
@@ -25,7 +28,9 @@ def test_plan_order_sync_empty_intents_cancels_all() -> None:
 def test_execution_summary_pull_when_blocked() -> None:
     from config.settings import BotConfig
 
-    eng = WsPureTradingEngine(BotConfig.load())
+    config = BotConfig()
+    config.dry_run = False
+    eng = WsPureTradingEngine(config)
     msg = eng._execution_summary(
         eng.config, 0, cancelled=2, would_sync=0, would_quote=False
     )
@@ -142,6 +147,27 @@ def test_engine_analysis_bundle_starts_empty() -> None:
 
     eng = WsPureTradingEngine(BotConfig.load())
     assert eng._analysis_bundle["sample_history"] == []
+
+
+def test_engine_restores_drawdown_baseline(tmp_path, monkeypatch) -> None:
+    from config.settings import BotConfig
+
+    monkeypatch.chdir(tmp_path)
+    store = RuntimeStateStore()
+    store.save(
+        RuntimeState(
+            portfolio_value_xrp=95.0,
+            drawdown_daily_start_xrp=100.0,
+            drawdown_daily_start_utc=datetime.now(timezone.utc).isoformat(),
+        )
+    )
+
+    eng = WsPureTradingEngine(BotConfig())
+
+    assert eng.drawdown_monitor.daily_start_value == 100.0
+    assert eng.drawdown_monitor.current_value == 95.0
+    eng.drawdown_monitor.update_portfolio(89.0, 0.0, 1.0)
+    assert eng.drawdown_monitor.is_kill_switch_triggered()
 
 
 def test_stale_quote_merged_into_sync_cancel_plan() -> None:

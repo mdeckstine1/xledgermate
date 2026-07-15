@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 import logging
 
@@ -88,6 +88,41 @@ class DrawdownMonitor:
         self.daily_start_value = baseline
         self.daily_start_time = datetime.utcnow()
         logger.info("Drawdown baseline reset: %.4f XRP equiv.", baseline)
+
+    def restore_daily_baseline(
+        self,
+        *,
+        daily_start_value: Optional[float],
+        daily_start_time_utc: Optional[str],
+        current_value: Optional[float] = None,
+    ) -> bool:
+        """Restore the persisted daily baseline after an engine restart."""
+        if daily_start_value is None or not daily_start_time_utc:
+            return False
+        try:
+            baseline = float(daily_start_value)
+            if baseline <= 0:
+                return False
+            start = datetime.fromisoformat(
+                str(daily_start_time_utc).replace("Z", "+00:00")
+            )
+            if start.tzinfo is not None:
+                start = start.astimezone(timezone.utc).replace(tzinfo=None)
+            value = float(current_value) if current_value is not None else None
+        except (TypeError, ValueError):
+            return False
+
+        self.daily_start_value = baseline
+        self.daily_start_time = start
+        if value is not None and value > 0:
+            self.current_value = value
+        logger.info("Restored daily portfolio baseline: %.4f XRP equiv.", baseline)
+        return True
+
+    def daily_start_time_utc(self) -> Optional[str]:
+        if self.daily_start_value is None:
+            return None
+        return self.daily_start_time.isoformat()
 
     def get_drawdown_percent(self) -> float:
         if self.daily_start_value is None or self.current_value is None:
