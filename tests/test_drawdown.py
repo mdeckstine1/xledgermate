@@ -1,6 +1,6 @@
 """Drawdown monitor tests."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pytest import approx
 
@@ -70,7 +70,7 @@ def test_restore_daily_baseline_preserves_restart_drawdown() -> None:
     mon = DrawdownMonitor(max_drawdown_percent=10.0)
     restored = mon.restore_daily_baseline(
         daily_start_value=100.0,
-        daily_start_time_utc=datetime.utcnow().isoformat(),
+        daily_start_time_utc=datetime.now(timezone.utc).isoformat(),
         current_value=95.0,
     )
     assert restored

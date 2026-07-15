@@ -1,6 +1,6 @@
 """Tests for WS pure production engine helpers."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from connectors.xrpl_connector import OpenOffer
 from core.runtime_state import RuntimeState, RuntimeStateStore
@@ -28,7 +28,9 @@ def test_plan_order_sync_empty_intents_cancels_all() -> None:
 def test_execution_summary_pull_when_blocked() -> None:
     from config.settings import BotConfig
 
-    eng = WsPureTradingEngine(BotConfig.load())
+    config = BotConfig()
+    config.dry_run = False
+    eng = WsPureTradingEngine(config)
     msg = eng._execution_summary(
         eng.config, 0, cancelled=2, would_sync=0, would_quote=False
     )
@@ -156,7 +158,7 @@ def test_engine_restores_drawdown_baseline(tmp_path, monkeypatch) -> None:
         RuntimeState(
             portfolio_value_xrp=95.0,
             drawdown_daily_start_xrp=100.0,
-            drawdown_daily_start_utc=datetime.utcnow().isoformat(),
+            drawdown_daily_start_utc=datetime.now(timezone.utc).isoformat(),
         )
     )
 
