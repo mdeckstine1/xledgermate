@@ -55,6 +55,50 @@ def test_xrp_heavy_pauses_bids() -> None:
     assert result.ask_size_xrp > 0.0
 
 
+def test_qd_mode_rlusd_heavy_bid_cap_stops_at_target() -> None:
+    result = apply_pure_inventory_policy(
+        bid_size_xrp=100.0,
+        ask_size_xrp=100.0,
+        xrp_balance=40.0,
+        rlusd_balance=160.0,
+        mid_price=1.0,
+        target_xrp_ratio=0.55,
+        inventory_max_deviation=0.12,
+        inventory_mode="market_make",
+        xrp_reserve=12.0,
+        inventory_overshoot_slack=0.03,
+        min_order_size_xrp=1.0,
+        bid_size_mult=1.0,
+        ask_size_mult=1.0,
+        apply_side_pauses=False,
+    )
+    assert result.pause_asks is True
+    assert result.pause_bids is False
+    assert result.bid_size_xrp == 70.0
+
+
+def test_qd_mode_xrp_heavy_ask_cap_stops_at_target() -> None:
+    result = apply_pure_inventory_policy(
+        bid_size_xrp=100.0,
+        ask_size_xrp=100.0,
+        xrp_balance=160.0,
+        rlusd_balance=40.0,
+        mid_price=1.0,
+        target_xrp_ratio=0.55,
+        inventory_max_deviation=0.12,
+        inventory_mode="market_make",
+        xrp_reserve=12.0,
+        inventory_overshoot_slack=0.03,
+        min_order_size_xrp=1.0,
+        bid_size_mult=1.0,
+        ask_size_mult=1.0,
+        apply_side_pauses=False,
+    )
+    assert result.pause_bids is True
+    assert result.pause_asks is False
+    assert result.ask_size_xrp == 50.0
+
+
 def test_pause_to_ladder_deactivates_ask_l1() -> None:
     ladder = [
         {"level": 1, "side": "bid", "price": 1.1, "size_xrp": 5.0, "active": True, "planned": False},
