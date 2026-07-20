@@ -126,6 +126,7 @@ class TradingEngine:
         self._last_valid_mid: Optional[float] = None
         self._last_best_bid: Optional[float] = None
         self._last_best_ask: Optional[float] = None
+        self._restore_session_state()
 
     def _trustworthy_mid(
         self,
@@ -154,6 +155,30 @@ class TradingEngine:
         except (json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
             logger.debug("Could not restore price history: %s", exc)
         return []
+
+    def _restore_session_state(self) -> None:
+        """Keep session-loss kill inputs intact across process restarts."""
+        try:
+            prior = self.state_store.load()
+            if prior is None:
+                return
+            if prior.session_baseline_xrp is None or prior.session_baseline_rlusd is None:
+                return
+            self._session_baseline_xrp = float(prior.session_baseline_xrp)
+            self._session_baseline_rlusd = float(prior.session_baseline_rlusd)
+            self._session_baseline_mid = (
+                float(prior.session_baseline_mid)
+                if prior.session_baseline_mid is not None
+                else None
+            )
+            self._session_baseline_portfolio_xrp = (
+                float(prior.session_baseline_portfolio_xrp)
+                if prior.session_baseline_portfolio_xrp is not None
+                else None
+            )
+            self._session_fills = max(0, int(prior.fills_session))
+        except (json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
+            logger.debug("Could not restore session state: %s", exc)
 
     async def run(self) -> None:
         self._running = True
