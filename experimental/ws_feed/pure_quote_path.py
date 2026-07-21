@@ -568,9 +568,11 @@ class PureQuotePath:
             recent_fills=recent_fill_records,
             reservation_allows_bid=allow_bid,
             reservation_allows_ask=allow_ask,
+            inventory_allows_bid=not inv_policy.pause_bids,
+            inventory_allows_ask=not inv_policy.pause_asks,
         )
 
-        # v2.2.0 — Layer 5 is sole authority on side permissions (no inv/gate pause merge).
+        # Layer 5 is sole authority on side permissions, including hard inventory blocks.
         quote_bid = qd.bid.allowed
         quote_ask = qd.ask.allowed
         quote_posture = _quote_posture_label(

@@ -182,3 +182,5 @@ class CycleQuoteInputs:
     recent_sells: tuple[Dict[str, Any], ...] = field(default_factory=tuple)
     reservation_allows_bid: bool = True
     reservation_allows_ask: bool = True
+    inventory_allows_bid: bool = True
+    inventory_allows_ask: bool = True

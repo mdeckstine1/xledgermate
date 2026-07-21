@@ -108,6 +108,61 @@ def test_crowded_two_sided_when_both_edges_viable() -> None:
     assert qd.ask.allowed is True
 
 
+def test_hard_inventory_bailout_blocks_rlusd_heavy_ask_on_crowded_book() -> None:
+    inp = CycleQuoteInputs(
+        mid=1.10,
+        best_bid=1.099,
+        best_ask=1.101,
+        l1_bid_price=1.098,
+        l1_ask_price=1.102,
+        xrp_ratio=0.35,
+        target_xrp_ratio=0.55,
+        inventory_label="rlusd_heavy",
+        peer_lane_empty=False,
+        peer_lane_count=4,
+        toxic_ratio_30s=0.05,
+        inventory_allows_bid=True,
+        inventory_allows_ask=False,
+    )
+    qd = run_quote_decision_pipeline(inp)
+    assert qd.intent == QuoteIntent.TWO_SIDED_SKIM
+    assert qd.bid.allowed is True
+    assert qd.ask.allowed is False
+    assert qd.ask.block_reason == "inventory_bailout_blocks_side"
+
+
+def test_hard_inventory_bailout_blocks_xrp_heavy_bid_on_crowded_book() -> None:
+    inp = CycleQuoteInputs(
+        mid=1.10,
+        best_bid=1.099,
+        best_ask=1.101,
+        l1_bid_price=1.098,
+        l1_ask_price=1.102,
+        xrp_ratio=0.75,
+        target_xrp_ratio=0.55,
+        inventory_label="xrp_heavy",
+        peer_lane_empty=False,
+        peer_lane_count=4,
+        toxic_ratio_30s=0.05,
+        inventory_allows_bid=False,
+        inventory_allows_ask=True,
+    )
+    qd = run_quote_decision_pipeline(inp)
+    assert qd.intent == QuoteIntent.TWO_SIDED_SKIM
+    assert qd.bid.allowed is False
+    assert qd.bid.block_reason == "inventory_bailout_blocks_side"
+    assert qd.ask.allowed is True
+
+
+def test_hard_inventory_bailout_does_not_block_solo_accumulation() -> None:
+    inp = _solo_inputs(xrp_ratio=0.75, label="xrp_heavy")
+    inp.inventory_allows_bid = False
+    qd = run_quote_decision_pipeline(inp)
+    assert qd.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
+    assert qd.bid.allowed is True
+    assert qd.ask.allowed is False
+
+
 def test_layer1_drift_bands_wide() -> None:
     posture = build_posture_snapshot(_solo_inputs(xrp_ratio=0.64))
     assert posture.inventory.band == DriftBand.MILD_XRP
