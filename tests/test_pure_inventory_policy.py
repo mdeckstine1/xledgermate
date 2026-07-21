@@ -88,3 +88,59 @@ def test_pure_quote_path_rlusd_heavy_bid_only_intents() -> None:
         assert dec.bid_size >= 1.0
 
     asyncio.run(run())
+
+
+def test_pure_quote_path_peer_present_rlusd_heavy_blocks_ask() -> None:
+    async def run() -> None:
+        path = PureQuotePath(
+            gamma=0.35,
+            kappa=3.5,
+            configured_l1_xrp=15.0,
+            min_order_size_xrp=1.0,
+        )
+        dec = await path.compute_decision(
+            mid=1.28,
+            best_bid=1.279,
+            best_ask=1.281,
+            xrp_bal=50.0,
+            rlusd_bal=230.0,
+            target_ratio=0.55,
+            inventory_max_deviation=0.12,
+            competitor_intel={"peer_lane_count": 4, "peer_lane_empty": False},
+        )
+        assert dec.qd_bid_allowed is True
+        assert dec.qd_ask_allowed is False
+        assert dec.qd_ask_block_reason == "inventory_bailout_blocks_side"
+        assert dec.suggested_bid is not None
+        assert dec.suggested_ask is None
+        assert dec.ask_size == 0.0
+
+    asyncio.run(run())
+
+
+def test_pure_quote_path_peer_present_xrp_heavy_blocks_bid() -> None:
+    async def run() -> None:
+        path = PureQuotePath(
+            gamma=0.35,
+            kappa=3.5,
+            configured_l1_xrp=15.0,
+            min_order_size_xrp=1.0,
+        )
+        dec = await path.compute_decision(
+            mid=1.10,
+            best_bid=1.099,
+            best_ask=1.101,
+            xrp_bal=200.0,
+            rlusd_bal=80.0,
+            target_ratio=0.55,
+            inventory_max_deviation=0.12,
+            competitor_intel={"peer_lane_count": 4, "peer_lane_empty": False},
+        )
+        assert dec.qd_bid_allowed is False
+        assert dec.qd_bid_block_reason == "inventory_bailout_blocks_side"
+        assert dec.qd_ask_allowed is True
+        assert dec.suggested_bid is None
+        assert dec.suggested_ask is not None
+        assert dec.bid_size == 0.0
+
+    asyncio.run(run())

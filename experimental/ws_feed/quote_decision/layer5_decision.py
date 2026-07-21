@@ -2,7 +2,7 @@
 Layer 5 — Final quoting decision.
 
 Sole authority on bid/ask allowed + size_mult. Combines intent, edge filter,
-bleed protection, and reservation posture. No inventory pause_bids/pause_asks.
+bleed protection, reservation posture, and hard inventory side blocks.
 """
 
 from __future__ import annotations
@@ -57,7 +57,15 @@ def _base_permission(
     edge: EdgeViability,
     posture: PostureSnapshot,
     reservation_ok: bool,
+    inventory_ok: bool,
 ) -> SidePermission:
+    if not inventory_ok:
+        return SidePermission(
+            allowed=False,
+            size_mult=0.0,
+            implied_edge_bps=edge.implied_edge_bps,
+            block_reason="inventory_bailout_blocks_side",
+        )
     if not reservation_ok:
         return SidePermission(
             allowed=False,
@@ -117,6 +125,7 @@ def build_final_quoting_decision(
         edge=bid_edge,
         posture=posture,
         reservation_ok=inputs.reservation_allows_bid,
+        inventory_ok=inputs.inventory_allows_bid,
     )
     ask = _base_permission(
         side="ask",
@@ -124,6 +133,7 @@ def build_final_quoting_decision(
         edge=ask_edge,
         posture=posture,
         reservation_ok=inputs.reservation_allows_ask,
+        inventory_ok=inputs.inventory_allows_ask,
     )
 
     bid = merge_bleed_into_permission(
