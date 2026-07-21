@@ -14,6 +14,7 @@ from experimental.ws_feed.quote_decision.layer4_bleed import (
     merge_bleed_into_permission,
 )
 from experimental.ws_feed.quote_decision.types import (
+    BookMode,
     CycleQuoteInputs,
     EdgeViability,
     LayerTrace,
@@ -59,7 +60,7 @@ def _base_permission(
     reservation_ok: bool,
     inventory_ok: bool,
 ) -> SidePermission:
-    if not inventory_ok:
+    if not inventory_ok and posture.book.mode != BookMode.SOLO:
         return SidePermission(
             allowed=False,
             size_mult=0.0,

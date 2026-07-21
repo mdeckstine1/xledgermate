@@ -154,6 +154,15 @@ def test_hard_inventory_bailout_blocks_xrp_heavy_bid_on_crowded_book() -> None:
     assert qd.ask.allowed is True
 
 
+def test_hard_inventory_bailout_does_not_block_solo_accumulation() -> None:
+    inp = _solo_inputs(xrp_ratio=0.75, label="xrp_heavy")
+    inp.inventory_allows_bid = False
+    qd = run_quote_decision_pipeline(inp)
+    assert qd.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
+    assert qd.bid.allowed is True
+    assert qd.ask.allowed is False
+
+
 def test_layer1_drift_bands_wide() -> None:
     posture = build_posture_snapshot(_solo_inputs(xrp_ratio=0.64))
     assert posture.inventory.band == DriftBand.MILD_XRP
