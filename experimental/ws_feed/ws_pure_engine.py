@@ -221,7 +221,7 @@ class WsPureTradingEngine:
         self._would_quote_cycles = 0
         self._fill_quality = FillQualityTracker()
         self._fill_quality.set_toxic_threshold_pct(0.06)
-        self._price_history: list[float] = []
+        self._price_history: List[Dict[str, Any]] = []
         self._sample_interval_s = DEFAULT_SAMPLE_INTERVAL_S
         self._last_sync_mid: Optional[float] = None
         self._comp_provider: Any = None
@@ -987,7 +987,14 @@ class WsPureTradingEngine:
             book_bids = list(depth.get("bids") or [])
             book_asks = list(depth.get("asks") or [])
         if mid and mid > 0:
-            self._price_history.append(float(mid))
+            self._price_history.append(
+                {
+                    "ts_utc": datetime.now(tz=timezone.utc).isoformat(),
+                    "mid": float(mid),
+                    "bid": bb,
+                    "ask": ba,
+                }
+            )
             if len(self._price_history) > 200:
                 self._price_history = self._price_history[-200:]
         decisions = [

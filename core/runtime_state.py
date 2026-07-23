@@ -187,6 +187,47 @@ def _load_session_pnl_mtm(data: Dict[str, Any]) -> float:
     return float(data.get("session_pnl_xrp_estimate", 0.0))
 
 
+def _float_or_none(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_price_history(history: Any) -> List[Dict[str, Any]]:
+    """Return runtime price history as tick dictionaries.
+
+    WS engine builds before v2.2.5 wrote bare floats. Keep those usable for
+    momentum/chart readers instead of letting mixed runtime_state files crash.
+    """
+    if not isinstance(history, list):
+        return []
+
+    out: List[Dict[str, Any]] = []
+    for item in history:
+        if isinstance(item, dict):
+            mid = _float_or_none(item.get("mid"))
+            if mid is None or mid <= 0:
+                continue
+            tick = dict(item)
+            tick["mid"] = mid
+            bid = _float_or_none(tick.get("bid"))
+            ask = _float_or_none(tick.get("ask"))
+            if bid is not None:
+                tick["bid"] = bid
+            if ask is not None:
+                tick["ask"] = ask
+            out.append(tick)
+            continue
+
+        mid = _float_or_none(item)
+        if mid is not None and mid > 0:
+            out.append({"mid": mid})
+    return out
+
+
 class RuntimeStateStore:
     def __init__(self, path: str = "logs/runtime_state.json") -> None:
         self.path = Path(path)
@@ -251,7 +292,7 @@ class RuntimeStateStore:
             quote_intents=intents,
             engine_pid=data.get("engine_pid"),
             price_source=str(data.get("price_source", "xrpl_book_offers")),
-            price_history=list(data.get("price_history", [])),
+            price_history=normalize_price_history(data.get("price_history", [])),
             market_condition=str(data.get("market_condition", "neutral")),
             market_condition_label=str(data.get("market_condition_label", "Neutral")),
             volatility_level=str(data.get("volatility_level", "moderate")),

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from core.toxicity import effective_toxic_ratio, gates_apply_for_fill_count
 from core.dynamic_quoting_policy import (
@@ -83,15 +83,25 @@ class InventoryState:
     ask_anchor_shift_pct: float
 
 
+def _history_mid(item: Any) -> Optional[float]:
+    value = item.get("mid") if isinstance(item, Mapping) else item
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def compute_mid_momentum_pct(price_history: list, lookback: int = 5) -> float:
     """Positive = mid rising (RLUSD per XRP up), negative = falling."""
     if len(price_history) < lookback + 1:
         return 0.0
-    recent = price_history[-1].get("mid")
-    older = price_history[-1 - lookback].get("mid")
-    if recent is None or older is None or float(older) <= 0:
+    recent = _history_mid(price_history[-1])
+    older = _history_mid(price_history[-1 - lookback])
+    if recent is None or older is None or older <= 0:
         return 0.0
-    return ((float(recent) - float(older)) / float(older)) * 100.0
+    return ((recent - older) / older) * 100.0
 
 
 def assess_inventory(

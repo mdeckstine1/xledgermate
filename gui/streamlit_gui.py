@@ -26,7 +26,7 @@ from core.market_conditions import assess_market_conditions, compute_book_spread
 from utils.profile_recommendation import normalize_profile_recommendation
 from core.perception import BUILT_IN_PROFILES
 from utils import gui_profile_presets as gui_profile_presets_module
-from core.runtime_state import QuoteIntent
+from core.runtime_state import QuoteIntent, normalize_price_history
 from utils.book_visibility import quote_visibility
 from utils.gui_errors import format_ledger_sync_error
 from utils.gui_runtime_sync import patch_runtime_state_file
@@ -2911,10 +2911,13 @@ def _paint_logs_content(runtime: dict, config: BotConfig) -> None:
     )
 
     st.markdown("### Price history")
-    history = runtime.get("price_history") or []
+    history = normalize_price_history(runtime.get("price_history") or [])
     if len(history) >= 2:
         hist_df = pd.DataFrame(history)
-        hist_df["time"] = pd.to_datetime(hist_df["ts_utc"], utc=True)
+        if "ts_utc" in hist_df.columns:
+            hist_df["time"] = pd.to_datetime(hist_df["ts_utc"], utc=True)
+        else:
+            hist_df["time"] = pd.RangeIndex(start=0, stop=len(hist_df), step=1)
         mid_series = pd.to_numeric(hist_df["mid"], errors="coerce").dropna()
         if len(mid_series) >= 2:
             first_mid = float(mid_series.iloc[0])
