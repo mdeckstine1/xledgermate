@@ -8,39 +8,40 @@ from alpha.hud.long_build_preset import LONG_BUILD_OPERATOR_OVERRIDES
 from alpha.hud.operator_market_regime import OPERATOR_MARKET_REGIME_KEY
 from alpha.hud.operator_phase import OPERATOR_PHASE_KEY
 
-# Scale phase: high XRP target, RLUSD→XRP deploy, strength sells only when very heavy.
+# Scale phase v2: higher XRP target, aggressive RLUSD deploy, strength sells only when very heavy.
 STACK_GROWTH_OPERATOR_OVERRIDES: Dict[str, Any] = {
     OPERATOR_PHASE_KEY: "scale",
     OPERATOR_MARKET_REGIME_KEY: "bull",
     "trading_enabled": True,
-    "inventory_target_xrp_ratio": 0.88,
+    "inventory_target_xrp_ratio": 0.90,
     "alpha_risk_capital_sync_portfolio": True,
-    "alpha_risk_per_trade_pct": 3.0,
-    "alpha_buy_limit_offset_pct": 0.20,
+    "alpha_risk_per_trade_pct": 3.5,
+    "alpha_buy_limit_offset_pct": 0.17,
     "alpha_sell_limit_offset_pct": 0.14,
     "alpha_min_edge_threshold_pct": 0.08,
-    "alpha_weakness_deviation": 0.04,
-    "alpha_strength_deviation": 0.11,
+    "alpha_weakness_deviation": 0.03,
+    "alpha_strength_deviation": 0.14,
     "alpha_bull_run_max_deviation": 0.12,
     "alpha_accumulation_max_deviation": 0.12,
-    "alpha_max_pending_buys": 2,
+    "alpha_max_pending_buys": 3,
     "alpha_max_pending_sells": 1,
     "alpha_stale_pending_buy_enabled": True,
     "alpha_stale_pending_buy_max_drift_pct": 0.38,
     "alpha_stale_pending_buy_max_age_seconds": 0,
     "alpha_ta_weight": 0.65,
     "alpha_ta_min_buy_score": 2.5,
-    "alpha_ta_min_sell_score": 4.0,
+    "alpha_ta_min_sell_score": 4.5,
     "alpha_ta_candle_interval_seconds": 7200,
     "alpha_reentry_sl_cooldown_cycles": 45,
     "alpha_reentry_sl_cooldown_minutes": 90.0,
+    "alpha_reentry_scratch_sl_cooldown_cycles": 10,
     "alpha_reentry_tp_cooldown_cycles": 15,
     "alpha_reentry_tp_dip_pct": 0.08,
-    "initial_stop_loss_pct": 0.03,
+    "initial_stop_loss_pct": 0.035,
     "take_profit_pct": 0.03,
-    "take_profit_rr": 2.0,
+    "take_profit_rr": 2.5,
     "bracket_trailing_enabled": True,
-    "trailing_step_pct": 2.0,
+    "trailing_step_pct": 2.5,
     "alpha_deferred_sl_enabled": True,
     "alpha_deferred_sl_arm_buffer_pct": 0.20,
     # Harvest only on extended legs — not routine rebalance-down.
@@ -49,7 +50,7 @@ STACK_GROWTH_OPERATOR_OVERRIDES: Dict[str, Any] = {
     "alpha_accumulation_harvest_trim_risk_pct": 1.5,
     "alpha_accumulation_dip_move_24h_arm_pct": 5.0,
     "alpha_accumulation_dip_bounce_arm_pct": 0.30,
-    "alpha_accumulation_dip_buy_offset_pct": 0.22,
+    "alpha_accumulation_dip_buy_offset_pct": 0.17,
 }
 
 STACK_GROWTH_AGENT_PATCH: Dict[str, Any] = {
@@ -60,10 +61,10 @@ STACK_GROWTH_AGENT_PATCH: Dict[str, Any] = {
 }
 
 STACK_GROWTH_DESCRIPTION = (
-    "Stack growth: scale + bull, 88% XRP target, 3% clips, weakness bids from RLUSD "
-    "(offset 0.20 / drift 0.38), strength trims deferred until dev≥0.11 + ta_min_sell 4.0, "
-    "max 1 pending sell / 2 buys, wider brackets (SL 3% / TP ~6%), harvest on extended legs only. "
-    "Optimize for rising XRP coin count — not rebalance-down on rips."
+    "Stack growth v2: scale + bull, 90% XRP target, 3.5% clips, aggressive RLUSD deploy "
+    "(offset 0.17 / weakness dev 0.03), strength trims deferred until dev≥0.14 + ta_min_sell 4.5, "
+    "max 1 pending sell / 3 buys, wider brackets (SL 3.5% / TP ~8.75% RR 2.5), scratch redeploy 10cy, "
+    "harvest on extended legs only. Optimize for rising XRP coin count — not rebalance-down on rips."
 )
 
 
@@ -89,7 +90,7 @@ def compare_stack_growth_to_long_build() -> Dict[str, Any]:
         "different_operator_keys": different,
         "summary": (
             f"{len(different)} knob(s) differ from long-build — "
-            "mainly higher XRP target (88%), higher strength_dev (0.11), "
+            "mainly higher XRP target (90%), higher strength_dev (0.14), "
             "fewer pending sells, harder TA sell gate, earlier weakness buys."
         ),
     }

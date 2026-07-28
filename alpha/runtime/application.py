@@ -32,6 +32,11 @@ from alpha.decision.reload_regime import (
     evaluate_reload_regime,
     reload_knobs_from_snapshot,
 )
+from alpha.decision.drawdown_reload import (
+    DrawdownReloadSessionTracker,
+    drawdown_reload_knobs_from_snapshot,
+    evaluate_drawdown_reload,
+)
 from alpha.decision.harvest_watch import HarvestSessionTracker, dip_deploy_knobs_from_snapshot, harvest_knobs_from_snapshot
 from alpha.decision.engine import DecisionEngine, DecisionResult
 from alpha.dry_run import DryRunGuard
@@ -110,11 +115,15 @@ class AlphaApplication:
         self._reload_session = ReloadSessionTracker(
             path=self._state_dir / "reload_session.json",
         )
+        self._drawdown_session = DrawdownReloadSessionTracker(
+            path=self._state_dir / "drawdown_reload_session.json",
+        )
         self._harvest_session = HarvestSessionTracker(
             path=self._state_dir / "harvest_session.json",
         )
         self._last_accumulation_knobs = None
         self._last_reload_knobs = None
+        self._last_drawdown_knobs = None
         self._orders = OrderManager(
             self._ledger,
             self._dry_run_guard,
@@ -125,6 +134,7 @@ class AlphaApplication:
         )
         self._orders.set_accumulation_session(self._accumulation_session)
         self._orders.set_reload_session(self._reload_session)
+        self._orders.set_drawdown_session(self._drawdown_session)
         self._orders.set_harvest_session(self._harvest_session)
         self._decision = DecisionEngine(
             config,
@@ -459,6 +469,21 @@ class AlphaApplication:
         self._last_reload_knobs = reload_knobs
         self._decision.set_reload(reload_snap, reload_knobs)
 
+        pending_drawdown = self._orders.count_purpose_sells(
+            orders.open_offers, purpose="drawdown_reload"
+        )
+        drawdown_snap = evaluate_drawdown_reload(
+            self.config,
+            inventory=inventory,
+            mid=ref_mid,
+            balances=balances,
+            pending_drawdown_sells=pending_drawdown,
+            session=self._drawdown_session,
+        )
+        drawdown_knobs = drawdown_reload_knobs_from_snapshot(drawdown_snap, self.config)
+        self._last_drawdown_knobs = drawdown_knobs
+        self._decision.set_drawdown_reload(drawdown_snap, drawdown_knobs)
+
         self._reentry.tick_cycle()
 
         snap = OperatorSnapshot(
@@ -681,6 +706,18 @@ class AlphaApplication:
                     mid = float(snap.balances.mid_rlusd_per_xrp or 0.0)
                     self._reload_session.record_sell_placed(
                         size_xrp=float(decision.size_xrp or 0.0),
+                        mid=mid,
+                        config=self.config,
+                    )
+                elif "drawdown_reload" in (decision.reason or ""):
+                    mid = float(snap.balances.mid_rlusd_per_xrp or 0.0)
+                    stage = 1
+                    dknobs = self._last_drawdown_knobs
+                    if dknobs is not None and getattr(dknobs, "stage", 0):
+                        stage = int(dknobs.stage)
+                    self._drawdown_session.record_sell_placed(
+                        size_xrp=float(decision.size_xrp or 0.0),
+                        stage=stage,
                         mid=mid,
                         config=self.config,
                     )

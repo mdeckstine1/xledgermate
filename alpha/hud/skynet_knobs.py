@@ -71,6 +71,11 @@ KNOB_ALIASES: Dict[str, str] = {
     "alpha_accumulation_dip_move_24h_arm_pct": "alpha_accumulation_dip_move_24h_arm_pct",
     "alpha_accumulation_dip_bounce_arm_pct": "alpha_accumulation_dip_bounce_arm_pct",
     "alpha_accumulation_dip_buy_offset_pct": "alpha_accumulation_dip_buy_offset_pct",
+    "alpha_drawdown_reload_stage1_arm_pct": "alpha_drawdown_reload_stage1_arm_pct",
+    "alpha_drawdown_reload_stage2_arm_pct": "alpha_drawdown_reload_stage2_arm_pct",
+    "alpha_drawdown_reload_total_bag_pct": "alpha_drawdown_reload_total_bag_pct",
+    "alpha_drawdown_reload_stage1_bag_pct": "alpha_drawdown_reload_stage1_bag_pct",
+    "alpha_drawdown_reload_stage2_bag_pct": "alpha_drawdown_reload_stage2_bag_pct",
     "operator_phase": "alpha_operator_phase",
     "market_regime": "alpha_operator_market_regime",
     "trading_enabled": "trading_enabled",
@@ -98,6 +103,11 @@ _KNOB_HINTS: Dict[str, str] = {
     "alpha_accumulation_dip_move_24h_arm_pct": "Min −24h move % (+ bounce) to ARM dip deploy bid",
     "alpha_accumulation_dip_bounce_arm_pct": "Bounce off 24h low % required before dip bid",
     "alpha_accumulation_dip_buy_offset_pct": "Wider bid offset for dip deploy entries",
+    "alpha_drawdown_reload_stage1_arm_pct": "24h drop % to arm stage-1 sell-off funding",
+    "alpha_drawdown_reload_stage2_arm_pct": "24h drop % to arm stage-2 funding tranche",
+    "alpha_drawdown_reload_total_bag_pct": "Max % of portfolio recycled per drawdown window",
+    "alpha_drawdown_reload_stage1_bag_pct": "% portfolio sold at stage 1",
+    "alpha_drawdown_reload_stage2_bag_pct": "% portfolio sold at stage 2",
     "dry_run": "BLOCKED from SKYNET Apply — HUD only",
 }
 

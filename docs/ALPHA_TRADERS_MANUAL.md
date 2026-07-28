@@ -68,6 +68,7 @@ For install, VPS, dry-run cutover, and the **Config** tab (credentials + withdra
 | **Accumulation regime** | First-class **bull/breakout deploy** when tape arms — not only dip-only `weakness_deviation`. Tighter offset, chase stale drift, up to 3 pending buys, re-entry bypass on rips. HUD **Accumulation / opportunity** card + scorecard. |
 | **Opportunity watch** | Header **ready** badge + Live card: `idle` → `watching` → `armed` → `executing` / `blocked`. SKYNET scenario **V**. |
 | **RLUSD reload** | **Post-run chop** funding sells to refill deploy floor (~45 XRP-equiv RLUSD default). **Fund then bid** — accumulation blocked until floor met. HUD **RLUSD reload** card. SKYNET scenario **W** (reload). |
+| **Drawdown reload** | **Confirmed 24h drop** sell-off funding (~2%+2% bag, cap ~4%, 48h). Distinct from W (chop near highs). HUD **Drawdown reload** card. SKYNET scenario **X**. |
 | **Tape participation** | Waives lagging **bearish TA** on closed 5m bars when live tape is up (inside buy path). |
 | **Re-entry** | Scratch/breakeven SL tier, cluster guard, recovery early release, post-clear bid spacing — all tunable in **Live → Re-entry → SL mitigations**. |
 | **PRO / defensive** | Alpha Replay, auto-defensive circuit (recent-window gate, manual release suppress), treasury placeholder. |
@@ -367,6 +368,19 @@ The command center. Decision + Market Conditions + three control decks (**Risk &
 **Narrative:** RLUSD 28 XRP-equiv, floor 45, accumulation **blocked** — bot will fund in chop, not chase the rip with empty wallet.
 
 **See also:** [Appendix Y](#appendix-y--rlusd-reload-post-run-chop-funding) · SKYNET playbook **W**
+#### Drawdown reload card
+
+**What it is:** Live card for **sell-off acquisition funding** on a confirmed 24h mid drop — phase, drop %, stage (1/2), XRP sold vs bag cap, window remaining.
+
+**How to use it:** Distinct from **RLUSD reload** (chop near highs). When mid is already down ~2%+ and reload stays idle, this lane stages ~2%+2% bag sells (cap ~4%, 48h) to fund dip/accumulate bids.
+
+| Regime | Operator stance |
+|--------|-----------------|
+| **Watching** | Drop ≥ watch % — wait for stage arm thresholds. |
+| **Armed / executing** | Expect `drawdown_reload` asks; then existing buy lanes spend the RLUSD. |
+| **Capped** | Window budget used — patience until window rolls or reclaim. |
+
+**See also:** [Drawdown reload](#drawdown-reload-sell-off-acquisition-funding) · SKYNET playbook **X**
 #### Mid price chart
 
 **What it is:** Candle history (lagging) + live bid/ask/mid lines (1s poll). Timeframe buttons: 5m–2h.
@@ -1774,6 +1788,7 @@ Lettered recipes — not gospel. Change **one knob**, watch Decision **10–20 c
 | **W** | [SL-heavy night / defensive circuit (PRO)](#appendix-w--sl-heavy-night-defensive-circuit-pro) | Auto bear posture after bleed |
 | **X** | [Accumulation regime](#appendix-x--accumulation-regime-chart-rips-balanced-hold) | Chart rips, `balanced dev`, missed move |
 | **Y** | [RLUSD reload](#appendix-y--rlusd-reload-post-run-chop-funding) | Fund dry powder in chop; blocks bids |
+| — | [Drawdown reload (SKYNET **X**)](#drawdown-reload-sell-off-acquisition-funding) | Confirmed 24h drop → staged sell-off funding |
 
 ---
 
@@ -2095,6 +2110,41 @@ alpha_reload_sell_offset_pct                = tight  (~0.06% above mid)
 **Manual alternative:** Deposit RLUSD from Tangem → **Config → Reload** → accumulation unblocks when floor met.
 
 **Coupling:** [Appendix X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) · [Deploy RLUSD to XRP](#deploy-rlusd-to-xrp-get-xrp-heavy) · [Appendix O](#appendix-o--xrp-heavy-want-strength-sells)
+
+---
+
+### Drawdown reload (sell-off acquisition funding)
+
+**SKYNET playbook letter: X** *(not the same as [Appendix X](#appendix-x--accumulation-regime-chart-rips-balanced-hold) accumulation regime).*
+
+**Symptoms:** Mid already down ~2%+ on 24h lookback; wallet still XRP-heavy / thin RLUSD; **RLUSD reload** stays idle because structure is not “post-run chop near highs”; you want dry powder for dip/accumulate buys.
+
+**What’s happening:** **Drawdown reload** is a separate set-and-forget lane. It watches confirmed **price drop** (not TA-only), arms stage 1 ~**−2.5%** and stage 2 ~**−4%**, and recycles staged **~2% + 2%** of portfolio (hard cap **~4%**, 48h window) into RLUSD. Sells are fast; reclaim buys stay patient via existing accumulate/dip paths. **Not Martingale** — hard caps only.
+
+| Concept | Drawdown reload (X) | Post-run reload (W / App. Y) |
+|---------|---------------------|------------------------------|
+| Trigger | Confirmed 24h mid drop | Chop near highs after run |
+| Staging | Watch −2% → arm −2.5% / −4% | Stall + deploy-floor shortfall |
+| Size | ~2%+2% bag, total ≤ ~4% | Capped shortfall fill |
+| Window | Multi-day (~48h) | Shorter (~8h) |
+
+**Default knobs:**
+
+```text
+alpha_drawdown_reload_enabled              = true
+alpha_drawdown_reload_watch_pct            = 2.0
+alpha_drawdown_reload_stage1_arm_pct       = 2.5
+alpha_drawdown_reload_stage2_arm_pct       = 4.0
+alpha_drawdown_reload_stage1_bag_pct       = 2.0
+alpha_drawdown_reload_stage2_bag_pct       = 2.0
+alpha_drawdown_reload_total_bag_pct        = 4.0
+alpha_drawdown_reload_window_hours         = 48
+alpha_drawdown_reload_max_sells_per_window = 2
+```
+
+**Operator checklist:** HUD **Drawdown reload** card phase `watching`/`armed`/`capped`; Decision reason may include `drawdown_reload`; session `logs/drawdown_reload_session.json`. SKYNET playbook **X** or card Ask SKYNET.
+
+**Do not:** confuse with panic unload or Appendix P kill/drawdown %. Cap total bag % if you want quieter recycling.
 
 ---
 

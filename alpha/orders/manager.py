@@ -93,6 +93,7 @@ class OrderManager:
         self._accumulation_knobs: object | None = None
         self._accumulation_session: AccumulationSessionTracker | None = None
         self._reload_session: object | None = None
+        self._drawdown_session: object | None = None
         self._harvest_session: object | None = None
 
     def set_accumulation_session(self, session: AccumulationSessionTracker | None) -> None:
@@ -100,6 +101,9 @@ class OrderManager:
 
     def set_reload_session(self, session: object | None) -> None:
         self._reload_session = session
+
+    def set_drawdown_session(self, session: object | None) -> None:
+        self._drawdown_session = session
 
     def set_harvest_session(self, session: object | None) -> None:
         self._harvest_session = session
@@ -134,14 +138,19 @@ class OrderManager:
 
     def count_harvest_sells(self, open_offers: List[dict[str, Any]]) -> int:
         """Open harvest_trim asks still on the ledger."""
+        return self.count_purpose_sells(open_offers, purpose="harvest_trim")
+
+    def count_purpose_sells(self, open_offers: List[dict[str, Any]], *, purpose: str) -> int:
+        """Open asks tracked with a given strength-sell purpose."""
         open_seqs = {
             int(o.get("sequence") or 0)
             for o in open_offers
             if o.get("side") == "ask" and int(o.get("sequence") or 0) > 0
         }
+        want = str(purpose or "").strip().lower()
         count = 0
         for rec in self._strength_sells.iter_tracked():
-            if rec.purpose == "harvest_trim" and rec.sequence in open_seqs:
+            if rec.purpose == want and rec.sequence in open_seqs:
                 count += 1
         return count
 
@@ -210,7 +219,7 @@ class OrderManager:
         if seq <= 0 or size_xrp <= 0 or price_rlusd_per_xrp <= 0:
             return
         kind = str(purpose or "strength").strip().lower()
-        if kind not in ("strength", "reload_funding", "harvest_trim"):
+        if kind not in ("strength", "reload_funding", "harvest_trim", "drawdown_reload"):
             kind = "strength"
         self._strength_sells.register(
             StrengthSellRecord(
@@ -247,6 +256,37 @@ class OrderManager:
         mid: Optional[float] = None,
     ) -> None:
         self._record_reload_funding_fill(
+            size_xrp=size_xrp,
+            price_rlusd_per_xrp=price_rlusd_per_xrp,
+            mid=mid,
+        )
+
+    def _record_drawdown_reload_fill(
+        self,
+        *,
+        size_xrp: float,
+        price_rlusd_per_xrp: float,
+        mid: Optional[float],
+    ) -> None:
+        if self._drawdown_session is None or size_xrp <= 0 or price_rlusd_per_xrp <= 0:
+            return
+        record_fill = getattr(self._drawdown_session, "record_fill", None)
+        if not callable(record_fill):
+            return
+        ref_mid = float(mid or 0.0)
+        if ref_mid <= 0:
+            ref_mid = float(price_rlusd_per_xrp)
+        rlusd_xrp_equiv = (size_xrp * price_rlusd_per_xrp) / ref_mid
+        record_fill(rlusd_xrp_equiv=rlusd_xrp_equiv)
+
+    def record_drawdown_reload_fill(
+        self,
+        *,
+        size_xrp: float,
+        price_rlusd_per_xrp: float,
+        mid: Optional[float] = None,
+    ) -> None:
+        self._record_drawdown_reload_fill(
             size_xrp=size_xrp,
             price_rlusd_per_xrp=price_rlusd_per_xrp,
             mid=mid,
@@ -1780,6 +1820,12 @@ class OrderManager:
             )
             if rec.purpose == "reload_funding":
                 self._record_reload_funding_fill(
+                    size_xrp=rec.size_xrp,
+                    price_rlusd_per_xrp=rec.price_rlusd_per_xrp,
+                    mid=mid,
+                )
+            elif rec.purpose == "drawdown_reload":
+                self._record_drawdown_reload_fill(
                     size_xrp=rec.size_xrp,
                     price_rlusd_per_xrp=rec.price_rlusd_per_xrp,
                     mid=mid,

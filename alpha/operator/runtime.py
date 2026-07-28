@@ -116,6 +116,11 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_accumulation_dip_move_24h_arm_pct",
     "alpha_accumulation_dip_bounce_arm_pct",
     "alpha_accumulation_dip_buy_offset_pct",
+    "alpha_drawdown_reload_stage1_arm_pct",
+    "alpha_drawdown_reload_stage2_arm_pct",
+    "alpha_drawdown_reload_total_bag_pct",
+    "alpha_drawdown_reload_stage1_bag_pct",
+    "alpha_drawdown_reload_stage2_bag_pct",
 )
 
 OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
@@ -166,6 +171,11 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "alpha_accumulation_dip_move_24h_arm_pct": {"min": 2.0, "max": 15.0, "step": 0.5},
     "alpha_accumulation_dip_bounce_arm_pct": {"min": 0.05, "max": 2.0, "step": 0.05},
     "alpha_accumulation_dip_buy_offset_pct": {"min": 0.05, "max": 1.0, "step": 0.01},
+    "alpha_drawdown_reload_stage1_arm_pct": {"min": 1.0, "max": 10.0, "step": 0.25},
+    "alpha_drawdown_reload_stage2_arm_pct": {"min": 2.0, "max": 15.0, "step": 0.25},
+    "alpha_drawdown_reload_total_bag_pct": {"min": 1.0, "max": 10.0, "step": 0.5},
+    "alpha_drawdown_reload_stage1_bag_pct": {"min": 0.5, "max": 5.0, "step": 0.25},
+    "alpha_drawdown_reload_stage2_bag_pct": {"min": 0.5, "max": 5.0, "step": 0.25},
 }
 
 

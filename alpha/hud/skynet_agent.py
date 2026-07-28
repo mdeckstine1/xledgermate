@@ -45,6 +45,11 @@ _DEFAULT_GUARDRAILS: Dict[str, Any] = {
     "alpha_reentry_tp_cooldown_minutes": {"min": 0.0, "max": 180.0},
     "alpha_reentry_sl_cooldown_cycles": {"min": 0, "max": 60},
     "alpha_reentry_sl_cooldown_minutes": {"min": 0.0, "max": 480.0},
+    "alpha_drawdown_reload_stage1_arm_pct": {"min": 1.0, "max": 8.0},
+    "alpha_drawdown_reload_stage2_arm_pct": {"min": 2.0, "max": 12.0},
+    "alpha_drawdown_reload_total_bag_pct": {"min": 1.0, "max": 8.0},
+    "alpha_drawdown_reload_stage1_bag_pct": {"min": 0.5, "max": 5.0},
+    "alpha_drawdown_reload_stage2_bag_pct": {"min": 0.5, "max": 5.0},
     "max_changes_per_cycle": 3,
 }
 
@@ -532,6 +537,8 @@ def _event_snapshot(hud_state: Dict[str, Any]) -> Dict[str, Any]:
         "accumulation_missed": (hud_state.get("accumulation_regime") or {}).get("scorecard", {}).get("missed_opportunity"),
         "reload_phase": (hud_state.get("reload_regime") or {}).get("phase"),
         "reload_blocks_accumulation": (hud_state.get("reload_regime") or {}).get("blocks_accumulation"),
+        "drawdown_phase": (hud_state.get("drawdown_reload") or {}).get("phase"),
+        "drawdown_armed": (hud_state.get("drawdown_reload") or {}).get("armed"),
     }
 
 
@@ -576,6 +583,10 @@ def detect_significant_events(
         reasons.append("reload_blocks_accumulation")
     if snap.get("reload_phase") == "armed" and last_snapshot.get("reload_phase") != "armed":
         reasons.append("reload_armed")
+    if snap.get("drawdown_armed") and not last_snapshot.get("drawdown_armed"):
+        reasons.append("drawdown_armed")
+    if snap.get("drawdown_phase") == "armed" and last_snapshot.get("drawdown_phase") != "armed":
+        reasons.append("drawdown_phase_armed")
     return bool(reasons), reasons
 
 

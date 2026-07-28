@@ -35,6 +35,7 @@ from alpha.decision.harvest_watch import (
     build_swing_playbook_context_block,
 )
 from alpha.decision.reload_regime import build_reload_context_block
+from alpha.decision.drawdown_reload import build_drawdown_reload_context_block
 from alpha.reporting.bag_growth import format_bag_growth_context_block
 from utils.risk_capital_sync import format_risk_capital_context_block
 from config.settings import BotConfig
@@ -74,7 +75,7 @@ Rules for suggested_changes:
 - inventory_target_xrp_ratio is 0.0-1.0 (not percent). The HUD also accepts target_xrp_pct as alias — prefer inventory_target_xrp_ratio.
 - Do NOT suggest dry_run changes — the operator must toggle LIVE/dry-run manually.
 - Prefer small, incremental knob adjustments aligned with bag growth and risk.
-- Read `bag_growth`, swing_playbook, harvest_watch, and dip_deploy_watch blocks — they define the three-mode bag strategy (accumulate / harvest / dip deploy).
+- Read `bag_growth`, swing_playbook, harvest_watch, dip_deploy_watch, and drawdown_reload blocks — bag strategy (accumulate / harvest / dip deploy / sell-off funding).
 - Never recommend harvest trims on negative 24h legs; recommend dip deploy or weakness buys instead.
 - If no changes are warranted, return an empty suggested_changes array.
 - session_pnl_xrp is mark-to-market portfolio drift — NOT realized trading profit. Use bracket TP/SL outcomes and bag_growth.trading_edge when judging bleed.
@@ -319,6 +320,7 @@ def build_skynet_context(
         opportunity_watch=hud_state.get("opportunity_watch") if isinstance(hud_state.get("opportunity_watch"), dict) else {},
         accumulation_regime=hud_state.get("accumulation_regime") if isinstance(hud_state.get("accumulation_regime"), dict) else {},
         reload_regime=hud_state.get("reload_regime") if isinstance(hud_state.get("reload_regime"), dict) else {},
+        drawdown_reload=hud_state.get("drawdown_reload") if isinstance(hud_state.get("drawdown_reload"), dict) else {},
     )
     operator_phase = normalize_operator_phase(cfg.get(OPERATOR_PHASE_KEY))
     market_regime = normalize_market_regime(cfg.get(OPERATOR_MARKET_REGIME_KEY))
@@ -373,6 +375,8 @@ def build_skynet_context(
         format_risk_capital_context_block(hud_state.get("risk_capital") or {}),
         "",
         build_reload_context_block(hud_state.get("reload_regime") or {}),
+        "",
+        build_drawdown_reload_context_block(hud_state.get("drawdown_reload") or {}),
         "",
         "=== Momentum / tape (engine sub-signals) ===",
         json.dumps(

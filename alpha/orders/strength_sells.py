@@ -16,7 +16,7 @@ class StrengthSellRecord:
     sequence: int
     size_xrp: float
     price_rlusd_per_xrp: float
-    purpose: str = "strength"  # strength | reload_funding | harvest_trim
+    purpose: str = "strength"  # strength | reload_funding | harvest_trim | drawdown_reload
 
     @classmethod
     def from_dict(cls, data: object) -> Optional["StrengthSellRecord"]:
@@ -27,7 +27,7 @@ class StrengthSellRecord:
             if seq <= 0:
                 return None
             purpose = str(data.get("purpose") or "strength").strip().lower()
-            if purpose not in ("strength", "reload_funding", "harvest_trim"):
+            if purpose not in ("strength", "reload_funding", "harvest_trim", "drawdown_reload"):
                 purpose = "strength"
             return cls(
                 sequence=seq,

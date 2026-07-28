@@ -16,9 +16,13 @@ if errors or aerr:
     raise SystemExit(f"errors={errors} agent={aerr}")
 eff = apply_overrides(base, merged)
 print(
-    "stack_growth_applied",
+    "stack_growth_v2_applied",
     f"target={eff.inventory_target_xrp_ratio}",
     f"strength_dev={eff.alpha_strength_deviation}",
+    f"weakness_dev={eff.alpha_weakness_deviation}",
+    f"risk_pct={eff.alpha_risk_per_trade_pct}",
     f"ta_min_sell={eff.alpha_technical_analysis.min_sell_score}",
+    f"sl={eff.initial_stop_loss_pct}",
+    f"tp_rr={eff.take_profit_rr}",
 )
 PY

@@ -148,6 +148,24 @@ alpha_reload_max_sells_per_window: 1
 alpha_reload_window_hours: 8.0
 alpha_reload_bypass_ta_bullish_defer: true
 alpha_reload_block_accumulation_until_funded: true
+# Drawdown reload — sell-off funding on confirmed 24h drop (distinct from post-run chop W)
+alpha_drawdown_reload_enabled: true
+alpha_drawdown_reload_hours: 24.0
+alpha_drawdown_reload_watch_pct: 2.0
+alpha_drawdown_reload_stage1_arm_pct: 2.5
+alpha_drawdown_reload_stage2_arm_pct: 4.0
+alpha_drawdown_reload_stage1_bag_pct: 2.0
+alpha_drawdown_reload_stage2_bag_pct: 2.0
+alpha_drawdown_reload_total_bag_pct: 4.0
+alpha_drawdown_reload_max_sell_xrp: 0.0
+alpha_drawdown_reload_min_deviation: 0.0
+alpha_drawdown_reload_min_xrp_ratio: 0.65
+alpha_drawdown_reload_sell_offset_pct: 0.08
+alpha_drawdown_reload_min_edge_pct: 0.05
+alpha_drawdown_reload_max_pending_sells: 1
+alpha_drawdown_reload_max_sells_per_window: 2
+alpha_drawdown_reload_window_hours: 48.0
+alpha_drawdown_reload_bypass_ta_bullish_defer: true
 
 # Bracket legs after buy fill (application-level OCO — not XRPL native)
 initial_stop_loss_pct: 0.015

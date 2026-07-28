@@ -506,6 +506,17 @@ def build_hud_state(
         decision_action=decision.action.value,
     ).to_dict()
 
+    from alpha.decision.drawdown_reload import evaluate_drawdown_reload
+
+    drawdown_reload = evaluate_drawdown_reload(
+        effective,
+        inventory=snap.inventory,
+        mid=ref_mid,
+        balances=snap.balances,
+        pending_drawdown_sells=0,
+        decision_action=decision.action.value,
+    ).to_dict()
+
     opportunity_watch = evaluate_opportunity_watch(
         effective,
         inventory=snap.inventory,
@@ -642,6 +653,7 @@ def build_hud_state(
         "momentum_entry": momentum_entry,
         "accumulation_regime": accumulation_regime,
         "reload_regime": reload_regime,
+        "drawdown_reload": drawdown_reload,
         "opportunity_watch": opportunity_watch,
         "ohlc_cache": ohlc_cache,
         "market_metrics": market_metrics,

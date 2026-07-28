@@ -312,6 +312,24 @@ class BotConfig:
     alpha_reload_window_hours: float = 8.0
     alpha_reload_bypass_ta_bullish_defer: bool = True  # Funding sell, not bag dump
     alpha_reload_block_accumulation_until_funded: bool = True  # Policy 4: fund then bid
+    # Drawdown reload — sell-off lane: staged XRP→RLUSD on confirmed drops (acquisition ammo)
+    alpha_drawdown_reload_enabled: bool = True
+    alpha_drawdown_reload_hours: float = 24.0  # Rolling lookback for drop %
+    alpha_drawdown_reload_watch_pct: float = 2.0  # Start watching at −2%
+    alpha_drawdown_reload_stage1_arm_pct: float = 2.5  # First funding tranche
+    alpha_drawdown_reload_stage2_arm_pct: float = 4.0  # Second tranche if drop extends
+    alpha_drawdown_reload_stage1_bag_pct: float = 2.0  # % portfolio XRP-equiv per stage 1
+    alpha_drawdown_reload_stage2_bag_pct: float = 2.0  # % portfolio for stage 2
+    alpha_drawdown_reload_total_bag_pct: float = 4.0  # Hard event cap (% portfolio)
+    alpha_drawdown_reload_max_sell_xrp: float = 0.0  # 0 = bag % only
+    alpha_drawdown_reload_min_deviation: float = 0.0  # Prefer at/above XRP target
+    alpha_drawdown_reload_min_xrp_ratio: float = 0.65  # Don't fund when already RLUSD-heavy
+    alpha_drawdown_reload_sell_offset_pct: float = 0.08
+    alpha_drawdown_reload_min_edge_pct: float = 0.05
+    alpha_drawdown_reload_max_pending_sells: int = 1
+    alpha_drawdown_reload_max_sells_per_window: int = 2
+    alpha_drawdown_reload_window_hours: float = 48.0  # Multi-day reclaim window
+    alpha_drawdown_reload_bypass_ta_bullish_defer: bool = True
     # Post-exit re-entry (Aggressive Bag Growth — wait for dip after TP, stabilization after SL)
     alpha_reentry_enabled: bool = True
     alpha_reentry_tp_dip_pct: float = 0.08  # Re-buy after TP only when mid dips this % below TP exit

@@ -208,6 +208,8 @@ class EntryExecutor:
         reason = decision.reason or ""
         if "reload_funding" in reason:
             purpose = "reload_funding"
+        elif "drawdown_reload" in reason:
+            purpose = "drawdown_reload"
         elif "harvest_trim" in reason:
             purpose = "harvest_trim"
         else:
@@ -224,6 +226,12 @@ class EntryExecutor:
 
             if purpose == "reload_funding":
                 self._orders.record_reload_funding_fill(
+                    size_xrp=size,
+                    price_rlusd_per_xrp=price,
+                    mid=price,
+                )
+            elif purpose == "drawdown_reload":
+                self._orders.record_drawdown_reload_fill(
                     size_xrp=size,
                     price_rlusd_per_xrp=price,
                     mid=price,

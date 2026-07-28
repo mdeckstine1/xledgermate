@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from alpha.decision.accumulation_regime import AccumulationKnobs, AccumulationRegimeSnapshot
     from alpha.decision.harvest_watch import HarvestKnobs, HarvestWatchSnapshot, DipDeployKnobs, DipDeploySnapshot
     from alpha.decision.reload_regime import ReloadKnobs, ReloadRegimeSnapshot
+    from alpha.decision.drawdown_reload import DrawdownReloadKnobs, DrawdownReloadSnapshot
     from alpha.decision.structure import MarketStructureSnapshot
     from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
     from alpha.inventory.manager import InventoryManager
@@ -77,6 +78,8 @@ class DecisionEngine:
         self._harvest_reentry_pending: bool = False
         self._dip: Optional["DipDeploySnapshot"] = None
         self._dip_knobs: Optional["DipDeployKnobs"] = None
+        self._drawdown: Optional["DrawdownReloadSnapshot"] = None
+        self._drawdown_knobs: Optional["DrawdownReloadKnobs"] = None
 
     def set_accumulation(
         self,
@@ -112,6 +115,14 @@ class DecisionEngine:
     ) -> None:
         self._dip = snapshot
         self._dip_knobs = knobs
+
+    def set_drawdown_reload(
+        self,
+        snapshot: Optional["DrawdownReloadSnapshot"],
+        knobs: Optional["DrawdownReloadKnobs"],
+    ) -> None:
+        self._drawdown = snapshot
+        self._drawdown_knobs = knobs
 
     def evaluate(
         self,
@@ -156,6 +167,25 @@ class DecisionEngine:
                 ta=ta,
                 entry_mode="reload_funding",
                 entry_reason=reload_reason,
+            )
+
+        drawdown_reason = self._drawdown_reload_allowed(
+            inventory=inventory,
+            book=book,
+            balances=bal,
+            pending_sell_count=pending_sell_count,
+        )
+        if drawdown_reason is not None:
+            return self._build_ask(
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_sell_count=pending_sell_count,
+                balances=bal,
+                ta=ta,
+                entry_mode="drawdown_reload",
+                entry_reason=drawdown_reason,
             )
 
         reload_blocks = self._reload_blocks_accumulation(bal, book, pending_sell_count)
@@ -424,6 +454,32 @@ class DecisionEngine:
         if snap.signals:
             reason = f"reload_funding {'+'.join(snap.signals[:3])} | {reason}"
         logger.info("reload_regime | entry | %s", reason)
+        return reason
+
+    def _drawdown_reload_allowed(
+        self,
+        *,
+        inventory: InventorySnapshot,
+        book: OrderBookSnapshot,
+        balances: Optional[BalanceSnapshot],
+        pending_sell_count: int,
+    ) -> Optional[str]:
+        snap = self._drawdown
+        knobs = self._drawdown_knobs
+        if snap is None or knobs is None or not snap.entry_allowed or not knobs.armed:
+            return None
+        if inventory.pause_asks:
+            return None
+        if pending_sell_count >= knobs.max_pending_sells:
+            return None
+        if balances is None or book.mid is None or book.mid <= 0:
+            return None
+        if knobs.target_sell_xrp < self._config.min_order_size_xrp * 0.5:
+            return None
+        reason = snap.reason or snap.detail or "drawdown_armed"
+        if snap.signals:
+            reason = f"drawdown_reload {'+'.join(snap.signals[:3])} | {reason}"
+        logger.info("drawdown_reload | entry | %s", reason)
         return reason
 
     def _harvest_pause_bids(self) -> bool:
@@ -702,6 +758,16 @@ class DecisionEngine:
                 self._config, "alpha_reload_bypass_ta_bullish_defer", True
             ):
                 return None
+            if entry_mode == "drawdown_reload" and getattr(
+                self._config, "alpha_drawdown_reload_bypass_ta_bullish_defer", True
+            ):
+                return None
+            if (
+                entry_mode == "harvest_trim"
+                and self._harvest_knobs is not None
+                and self._harvest_knobs.bypass_ta_bullish_defer
+            ):
+                return None
             return (
                 f"ta_sell_deferred bullish bias={ta.bias} "
                 f"buy={ta.buy_score:.2f}>={effective_min:.2f} — hold XRP strength"
@@ -719,6 +785,8 @@ class DecisionEngine:
             return None
         if entry_mode == "reload_funding" and self._reload_knobs is not None:
             offset_pct = self._reload_knobs.sell_offset_pct
+        elif entry_mode == "drawdown_reload" and self._drawdown_knobs is not None:
+            offset_pct = self._drawdown_knobs.sell_offset_pct
         elif entry_mode == "harvest_trim" and self._harvest_knobs is not None:
             offset_pct = self._harvest_knobs.sell_offset_pct
         else:
@@ -875,8 +943,11 @@ class DecisionEngine:
     ) -> DecisionResult:
         rknobs = self._reload_knobs
         hknobs = self._harvest_knobs
+        dknobs = self._drawdown_knobs
         if entry_mode == "reload_funding" and rknobs is not None and rknobs.armed:
             max_pending = rknobs.max_pending_sells
+        elif entry_mode == "drawdown_reload" and dknobs is not None and dknobs.armed:
+            max_pending = dknobs.max_pending_sells
         elif entry_mode == "harvest_trim" and hknobs is not None:
             max_pending = hknobs.max_pending_sells
         else:
@@ -899,6 +970,8 @@ class DecisionEngine:
         min_edge = self._config.alpha_min_edge_threshold_pct
         if entry_mode == "reload_funding" and rknobs is not None and rknobs.armed:
             min_edge = min(min_edge, rknobs.min_edge_pct)
+        elif entry_mode == "drawdown_reload" and dknobs is not None and dknobs.armed:
+            min_edge = min(min_edge, dknobs.min_edge_pct)
         if self._risk is not None:
             ok, msg = self._risk.validate_entry(risk, edge_pct=edge)
             if not ok:
@@ -932,6 +1005,8 @@ class DecisionEngine:
                 balances=balances,
                 inventory=inventory,
             )
+        elif entry_mode == "drawdown_reload" and balances is not None and dknobs is not None:
+            desired = float(dknobs.target_sell_xrp)
         elif entry_mode == "harvest_trim" and hknobs is not None:
             from alpha.decision.harvest_watch import compute_harvest_trim_size_xrp
 

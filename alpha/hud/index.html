@@ -340,6 +340,15 @@
           <div id="reloadWatchDetail" class="muted" style="font-size:.78rem;line-height:1.45"></div>
           <div id="reloadWatchFloor" class="acc-budget" style="margin-top:6px"></div>
         </div>
+        <div class="card opp-watch-card" id="drawdownWatchCard">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:6px">
+            <h3 style="margin:0">Drawdown reload</h3>
+            <span id="drawdownWatchState" class="muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em">—</span>
+          </div>
+          <div id="drawdownWatchHeadline" class="opp-watch-headline">—</div>
+          <div id="drawdownWatchDetail" class="muted" style="font-size:.78rem;line-height:1.45"></div>
+          <div id="drawdownWatchFloor" class="acc-budget" style="margin-top:6px"></div>
+        </div>
         </div>
         <div class="live-charts-row">
         <div class="card chart-card">
@@ -2531,6 +2540,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const ow = s.opportunity_watch || {};
       const acc = s.accumulation_regime || {};
       const rel = s.reload_regime || {};
+      const dd = s.drawdown_reload || {};
       const rs = ow.state || s.ready_state || acc.phase || 'idle';
       const rb = $('readyBadge');
       if (rb) {
@@ -2601,6 +2611,24 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
             + (rel.blocks_accumulation ? ' · accumulation blocked' : ''))
           : '';
         $('reloadWatchFloor').style.color = rel.blocks_accumulation ? '#fcd34d' : '#93c5fd';
+      }
+      if ($('drawdownWatchState')) $('drawdownWatchState').textContent = dd.phase || 'off';
+      if ($('drawdownWatchHeadline')) {
+        $('drawdownWatchHeadline').textContent = dd.headline || 'DRAWDOWN IDLE';
+        const dph = dd.phase || 'idle';
+        $('drawdownWatchHeadline').className = 'opp-watch-headline opp-watch-' + (dph === 'watching' || dph === 'armed' || dph === 'executing' ? (dph === 'executing' ? 'armed' : dph) : 'idle');
+      }
+      if ($('drawdownWatchDetail')) $('drawdownWatchDetail').textContent = dd.detail || '';
+      if ($('drawdownWatchFloor')) {
+        const mv = dd.move_pct;
+        $('drawdownWatchFloor').textContent = (mv != null)
+          ? ('24h ' + (mv >= 0 ? '+' : '') + Number(mv).toFixed(2) + '%'
+            + (dd.stage ? ' · stage ' + dd.stage : '')
+            + (dd.target_sell_xrp > 0 ? ' · sell ~' + Number(dd.target_sell_xrp).toFixed(1) + ' XRP' : '')
+            + (dd.xrp_sold_in_window > 0 ? ' · sold ' + Number(dd.xrp_sold_in_window).toFixed(1) : '')
+            + (dd.bag_pct_cap ? ' · cap ' + dd.bag_pct_cap + '% bag' : ''))
+          : '';
+        $('drawdownWatchFloor').style.color = dd.armed ? '#fdba74' : '#93c5fd';
       }
       $('pauseBadge').style.display = s.operator_paused ? 'inline' : 'none';
       $('killBadge').style.display = s.risk?.kill_switch_active ? 'inline' : 'none';
@@ -3439,7 +3467,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     };
 
     $('btnStackGrowthPreset').onclick = async () => {
-      if (!confirm('Apply stack-growth preset?\n\n88% XRP target, 3% clips, deploy RLUSD on weakness (offset 0.20), strength trims deferred until dev≥0.11 + ta_min_sell 4.0, max 1 pending sell / 2 buys. Optimized for rising XRP coin count.')) return;
+      if (!confirm('Apply stack-growth v2 preset?\n\n90% XRP target, 3.5% clips, aggressive RLUSD deploy (offset 0.17 / weakness dev 0.03), strength trims deferred until dev≥0.14 + ta_min_sell 4.5, max 1 pending sell / 3 buys, SL 3.5% / TP RR 2.5. Optimized for rising XRP coin count.')) return;
       const d = await postJson('/operator/stack-growth', {});
       if (!d?.ok) {
         toast((d?.errors || [d?.message || 'Stack growth failed']).join('; '), true);

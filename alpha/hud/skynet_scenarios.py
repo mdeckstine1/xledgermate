@@ -79,6 +79,7 @@ M — balanced dev=: lower weakness to buy OR rely on bull_run/momentum (see opp
 U — Bull run / breakout missed: TA bullish + balanced dev — accumulation_regime should be PRIMED/ARMED; enable accumulation (default on), SKYNET regime Bull, check re-entry blockers; do NOT silently HOLD without explaining watch state.
 V — Accumulation regime ARMED/EXECUTING: alpha_accumulation_buy_offset_pct ~0.06, alpha_accumulation_stale_drift_pct ~0.08 (chase), alpha_accumulation_max_pending_buys 2–3, alpha_accumulation_risk_boost 1.5, alpha_accumulation_bypass_reentry true. Do NOT tighten to dip-only or max_pending=1 unless operator asks defense.
 W — RLUSD reload (post-run CHOP): alpha_reload_min_rlusd_deploy_xrp_equiv ~45, alpha_reload_sell_offset_pct ~0.06, sell in consolidation not rip. blocks_accumulation until floor met — fund then bid. Do NOT strength-sell into active breakout; wait for reload WATCHING→ARMED.
+X — Drawdown reload (sell-off acquisition funding): when 24h mid already down (~−2.5% stage1 / −4% stage2), recycle staged ~2%+2% of bag (cap ~4%) into RLUSD for dip/accumulate buys. Multi-day reclaim OK. NOT Martingale — hard caps. Distinct from W (chop near highs). Set-and-forget; AI only tunes knobs.
 Y — Swing harvest (UP-leg turn): alpha_accumulation_harvest_move_24h_watch_pct ~5, pullback_arm ~1%, trim ~1.5% portfolio, pause acc bids, bracketed re-entry. ONLY on positive 24h legs + pullback — never on red 24h.
 Z — Dip deploy (DOWN-leg buy): alpha_accumulation_dip_move_24h_arm_pct ~5, bounce_arm ~0.25% off 24h low, wider buy offset ~0.22. Deploy RLUSD when XRP-heavy after sharp drop stabilizes — inverse of harvest. Not knife-catching: needs bounce confirm.
 N — Pending bid no fill: passive limit; lower offset or wait for ask to hit bid.
@@ -109,6 +110,7 @@ def infer_scenario_hints(
     opportunity_watch: Optional[Dict[str, Any]] = None,
     accumulation_regime: Optional[Dict[str, Any]] = None,
     reload_regime: Optional[Dict[str, Any]] = None,
+    drawdown_reload: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     """Heuristic scenario letters for SKYNET (non-exhaustive)."""
     reason = (decision_reason or "").lower()
@@ -117,6 +119,7 @@ def infer_scenario_hints(
     ow = opportunity_watch or {}
     acc = accumulation_regime or {}
     rel = reload_regime or {}
+    dd = drawdown_reload or {}
     hw = acc.get("harvest_watch") if isinstance(acc.get("harvest_watch"), dict) else {}
     dip = acc.get("dip_deploy_watch") if isinstance(acc.get("dip_deploy_watch"), dict) else {}
     dev = inv.get("deviation")
@@ -142,6 +145,10 @@ def infer_scenario_hints(
         hints.append("W")
     if rel.get("blocks_accumulation"):
         hints.append("W")
+    if dd.get("armed") or dd.get("phase") in ("watching", "armed", "executing", "capped"):
+        hints.append("X")
+    if "drawdown_reload" in reason:
+        hints.append("X")
     if hw.get("phase") in ("watching", "armed", "executing"):
         hints.append("Y")
     if dip.get("phase") in ("watching", "armed"):
