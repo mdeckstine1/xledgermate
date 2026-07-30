@@ -1,247 +1,255 @@
 # Foolproof onboarding — Open Desk (v1)
 
 **Audience:** brand-new subscribers who should never need a terminal, YAML, or “what is a trustline” lecture.  
+**Funding philosophy:** **Fund with RLUSD.** The bot’s job is bag growth / XRP–RLUSD work — users should not micro-manage inventory.  
 **Stack we push (happy path):**
 
 | Role | Tool | Why |
 |------|------|-----|
 | **Cold / self-custody** | [Xaman](https://xaman.app/) | Best-in-class XRPL wallet UX; RLUSD trustline is one flow |
-| **Exchange + fiat on-ramp** | [Kraken](https://www.kraken.com/) | Deposit cash, buy XRP / RLUSD, withdraw to XRPL |
+| **Exchange + fiat on-ramp** | [Kraken](https://www.kraken.com/) | Deposit cash → buy **RLUSD** → withdraw XRPL |
 | **Trading bot wallet** | Fresh XRPL account used **only** by the desk | Risk capital isolation (never the cold wallet seed) |
 
-**Affiliate / referral intent:** deep-link users through **your** Kraken referral/affiliate link and **your** preferred Xaman entry where allowed, so you get “a little sumptin sumptin” when they sign up and fund. Config lives in platform settings (not hard-coded secrets in the client).
+**Affiliate / referral intent:** deep-link users through **your** Kraken referral/affiliate link and preferred Xaman entry where allowed. Config lives in platform settings (not hard-coded secrets in the client).
 
 ---
 
-## One picture (what we teach)
+## Funding model (locked)
+
+| What user sends to the **bot** | Why |
+|--------------------------------|-----|
+| **RLUSD (primary)** | Risk capital. Desk trades / rebalances from here. “Let the bot do its job.” |
+| **XRP (gas only)** | XRPL base reserve + trustline + fees. Small one-time top-up — **not** the investment thesis. |
+
+**Do not teach:** “Buy a pile of XRP and RLUSD and balance them yourself.”  
+**Do teach:** “Load **RLUSD** as your stake. Keep a little **XRP** so the account can live on-ledger. The desk handles the rest.”
 
 ```text
-  COLD (sleep well)              HOT (desk only)              EXCHANGE (fiat door)
-  ─────────────────              ───────────────              ────────────────────
-  Xaman                          Bot account                  Kraken
-  long-term XRP/RLUSD            only what you risk           buy / sell / cash in
-         │                              ▲                            │
-         │  optional top-up             │  withdraw XRP + RLUSD      │
-         └──────────────────────────────┴────────────────────────────┘
-                         never put bot seed in Xaman “main” stash
-                         never put cold seed into LedgerMate
+  CASH (fiat)          RLUSD STAKE              BOT DOES THE WORK
+  ───────────          ───────────              ─────────────────
+  Bank → Kraken   →    withdraw RLUSD      →    bot wallet (hot)
+                       (+ small XRP gas)        strategy / bag growth
+                              │                        │
+                              │                        ▼
+                         Xaman cold ◄──────── optional profit / sleep money
 ```
 
 **Rules of thumb (repeat on every screen):**
 
-1. **Cold stays cold** — Xaman is for savings. Do not paste that seed into Open Desk.  
-2. **Bot is disposable capital** — only fund the bot with money you’re willing to trade.  
-3. **Kraken is the on-ramp** — cash → crypto → withdraw to bot (and optionally cold).  
-4. **RLUSD needs a trustline** on any XRPL account that will hold it (bot + cold).  
-5. **Green checks only** — no “live” until checklist is complete.
+1. **Fund the desk with RLUSD** — that’s your risk capital.  
+2. **XRP is gas** — enough reserve/fees only (we show the number).  
+3. **Cold stays cold** — Xaman is the vault; never paste that seed into Open Desk.  
+4. **Bot is disposable capital** — only what you’re willing to put at risk.  
+5. **Kraken is the on-ramp** — cash → RLUSD → bot address on **XRP Ledger**.  
+6. **RLUSD needs a trustline** on the bot (and on cold if you store RLUSD there).  
+7. **Green checks only** — no live until checklist is complete.
 
 ---
 
 ## End-to-end happy path (timeboxed)
 
-Target: **under 30 minutes** for a motivated user (KYC may add time).
+Target: **under 30 minutes** (KYC may add time).
 
 | Step | Where | User does | We show | Done when |
 |------|--------|-----------|---------|-----------|
 | **0** | Open Desk | Sign up (email + password) | Plan picker (Trial / Pro) | Account created |
 | **1** | Kraken | Sign up via **your referral link** + KYC | “Get cash in the door” | Deposit ready |
-| **2** | Kraken | Buy **XRP** (and **RLUSD** if listed for their region) | Short video / 3 bullets | Balances > 0 |
-| **3** | Xaman | Install app, create **cold** wallet, backup phrase **offline** | “This is NOT the bot” | Phrase secured (self-attested) |
-| **4** | Xaman | Add **RLUSD** token / Setup TrustLine | Link to Xaman help + in-app steps | RLUSD visible |
-| **5** | Open Desk | **Create bot wallet** (we generate) or import advanced | Address + QR + reserve note | Bot address known |
-| **6** | Bot (Xaman xApp or our deep link) | Enable **RLUSD trustline** on **bot** address | One-slide “Slide to accept” | Trustline live |
-| **7** | Kraken | Withdraw **XRP** + **RLUSD** to **bot** address (XRPL network) | Copy address / network warning | First deposit seen |
+| **2** | Kraken | Buy **RLUSD** (main). Optional tiny XRP only if we need gas offline | “RLUSD is your stake” | RLUSD balance > 0 |
+| **3** | Xaman | Install, create **cold** wallet, backup phrase offline | “This is NOT the bot” | Phrase secured (self-attested) |
+| **4** | Xaman | Add **RLUSD** on cold (optional but recommended for withdrawals later) | Xaman RLUSD help | Cold can receive RLUSD |
+| **5** | Open Desk | **Create bot wallet** (we generate) | Address + QR | Bot address known |
+| **6** | Bot | Enable **RLUSD trustline** on **bot** | One-slide accept | Trustline live |
+| **7a** | Kraken → bot | Withdraw **small XRP** for gas/reserve (once) | Exact min amount we calculate | Reserve OK |
+| **7b** | Kraken → bot | Withdraw **RLUSD** (stake) to **bot** on XRPL | Big primary CTA | RLUSD deposit detected |
 | **8** | Open Desk | Optional: Telegram + Grok | Skip allowed on Trial | Preferences saved |
-| **9** | Open Desk | Dry-run or Go live | Plain-English status | Desk running |
+| **9** | Open Desk | Dry-run → Go live | “Desk is working your RLUSD” | Desk running |
 
-**Optional later:** move profits bot → Xaman cold (withdraw from desk / manual send with clear “to cold” destination).
+**Optional later:** take profit bot → Xaman cold as **RLUSD** (and/or XRP if the bot earned it — user doesn’t need to plan that).
 
 ---
 
-## Screen-by-screen UX (retard-proof)
+## Screen-by-screen UX (foolproof)
 
 ### Global UI patterns
 
 - **Progress bar:** `Setup 3 of 9` always visible.  
-- **Primary button only one** per screen (“Continue”). Secondary = “I’m stuck / help”.  
-- **No jargon without a tooltip.** Trustline = “permission for this account to hold RLUSD.”  
-- **Copy buttons** on every address; wrong-network warnings in red.  
-- **Self-attest checkboxes** for “I wrote down my Xaman phrase” — we never see the phrase.  
-- **Recommended path locked as default.** Advanced (other exchange / import seed) behind “I know what I’m doing.”
+- **One primary button** per screen. Secondary = “I’m stuck / help”.  
+- **Trustline** tooltip: “permission for this account to hold RLUSD.”  
+- **Copy buttons** on every address; **XRPL only** in red if they pick the wrong network.  
+- Self-attest: “I wrote down my Xaman phrase” — we never see the phrase.  
+- **Recommended path locked.** Advanced collapsed.
 
-### Step 1–2 — Kraken (on-ramp)
+### Step 1–2 — Kraken (on-ramp = RLUSD)
 
-**Copy angle:** “Buy crypto the boring way. We use Kraken so you can deposit dollars/euros and withdraw to the XRP Ledger.”
+**Copy angle:** “Turn cash into **RLUSD**. That’s what funds the desk. The bot handles XRP.”
 
 Buttons:
 
 1. **Open Kraken with our link** → your referral/affiliate URL  
-2. Checklist: Verify → Deposit cash → Buy XRP → (Buy RLUSD if available)  
-3. **I’ve funded Kraken** → continue  
+2. Checklist: Verify → Deposit cash → **Buy RLUSD**  
+3. (Helper only if needed) “Also buy ~N XRP for network gas — not for trading”  
+4. **I’ve got RLUSD on Kraken** → continue  
+
+**Region matrix (config):** if Kraken entity cannot withdraw RLUSD on XRPL, show **blocked with alternative** (don’t silently switch the product story to “fund with XRP”). Prefer: waitlist / different venue for RLUSD XRPL / guided workaround labeled Advanced.
 
 **Referral plumbing:**
 
 | Program | Use |
 |---------|-----|
-| [Kraken Referrals](https://www.kraken.com/referrals) | Friends/family style bonuses when they sign up + trade via your invite |
-| [Kraken Affiliate](https://www.kraken.com/affiliate) | Longer-term revenue share (apply; better if you market at scale) |
+| [Kraken Referrals](https://www.kraken.com/referrals) | Invite bonuses |
+| [Kraken Affiliate](https://www.kraken.com/affiliate) | Ongoing cut at scale |
 
-Store in platform config: `referral.kraken_url`, `referral_kraken_code`, `referral_label`.  
-Track: `user_id`, `clicked_at`, `self_reported_funded_at` (and later webhook if Kraken provides partner APIs).
-
-**Compliance note:** disclose “We may earn a referral fee if you sign up via our link” in small print.
+Store: `referral.kraken_url`, disclosure copy.  
+Disclose: “We may earn a referral fee if you sign up via our link.”
 
 ### Step 3–4 — Xaman (cold)
 
-**Copy angle:** “Xaman is your vault. We never ask for this seed.”
+**Copy angle:** “Xaman is your vault. We never ask for this seed. Park profits here later — preferably as RLUSD.”
 
-1. **Get Xaman** (App Store / Play / official site links only).  
-2. Create wallet → **backup** → checkbox “Phrase is offline and not screenshotted.”  
-3. **Add RLUSD** → follow [Xaman RLUSD trustline help](https://help.xaman.app/app/getting-started-with-xaman/how-to-create-a-rlusd-trust-line) (embed screenshots in product).  
-4. Optional: deposit a little XRP to cold for reserve/fees.
-
-**Referral:** Xaman/xApps rarely pay like exchanges; still **recommend Xaman exclusively** for cold (product quality + fewer support tickets). If an official partner program appears later, plug it the same way as Kraken.
+1. Get Xaman (official links only).  
+2. Create + backup + checkbox.  
+3. Add RLUSD trustline on cold ([Xaman help](https://help.xaman.app/app/getting-started-with-xaman/how-to-create-a-rlusd-trust-line)).  
+4. Optional small XRP on cold for fees only.
 
 ### Step 5–6 — Bot wallet (hot)
 
-**Default: we generate a new bot account** (encrypted secret server-side or user-held export — product decision Phase 0).
+**Default: generate bot account.**
 
 Show:
 
 - Bot address (r…)  
-- “This is the only address Kraken should withdraw to for trading.”  
-- Minimum XRP for reserve + trustline (live-calculated or static safe floor, e.g. “keep ≥ 12 XRP free after trustline”).  
-- **Enable RLUSD on bot** — Xaman can manage a second account / or deep-link TrustSet for that address (implementation detail).
+- “Send **RLUSD** here. This is trading capital.”  
+- “Also send **~N XRP once** so the account can pay fees / reserves — gas, not your stake.”  
+- Enable RLUSD trustline on bot (required before RLUSD withdraw).
 
-**Advanced:** import existing bot secret — scary path, extra warnings.
+### Step 7 — Fund bot (RLUSD-first)
 
-### Step 7 — First fund (Kraken → bot)
+**Order matters:**
 
-Checklist with exact field labels:
+1. **Gas first (if empty):** Kraken → Withdraw **XRP** → XRPL → bot → amount = our **gas target** (e.g. enough for reserve + trustline + buffer).  
+2. **Trustline** if not already done.  
+3. **Stake:** Kraken → Withdraw **RLUSD** → XRPL → bot → user’s risk amount.  
+4. Open Desk detects **RLUSD** on bot → green check / confetti.  
 
-1. Kraken → Withdraw → Asset **XRP** → Network **XRP Ledger** → Address **[bot]** → Amount  
-2. Same for **RLUSD** on XRPL (if their Kraken entity supports RLUSD XRPL withdraw; else buy XRP only and swap later — **region matrix** in config)  
-3. Open Desk **detects deposit** (poll account) → confetti / green check  
+**Primary success metric:** `bot_rlusd_balance >= min_stake` (config).  
+XRP only needs `>= gas_floor`.
 
-**Fail states (pre-written help):**
+**Fail cards:**
 
-| Symptom | Likely cause | Fix card |
-|---------|--------------|----------|
-| Withdraw pending forever | Kraken review / destination tag | Wait / support Kraken |
-| RLUSD withdraw fails | No trustline on bot | Re-run step 6 |
-| “Insufficient reserve” | Spent all XRP on trustline | Send more XRP |
-| Wrong chain | User picked ERC-20 | Big red “XRPL only” |
+| Symptom | Cause | Fix |
+|---------|--------|-----|
+| RLUSD withdraw fails | No bot trustline | Step 6 |
+| RLUSD on wrong chain | ERC-20 etc. | “Must be XRP Ledger” |
+| Account can’t do anything | No XRP reserve | Send gas XRP (7a) |
+| Pending forever | Kraken review | Wait / Kraken support |
 
 ### Step 8 — Alerts & AI (optional)
 
-- Telegram: BotFather 4 steps with screenshots.  
-- Grok: paste key + “Test” button.  
-- Trial can skip both.
+Telegram + Grok; skip on Trial OK.
 
 ### Step 9 — Go live
 
-- Default: **Dry-run 24h** recommended.  
-- Live requires: bot funded, RLUSD trustline (if strategy needs RLUSD), not halted, plan allows live.  
-- One sentence status: “Desk is live — only risking bot wallet balance.”
+- Recommend **dry-run** until first RLUSD is seen and strategy would trade.  
+- Live copy: **“Desk is live — working your RLUSD stake. XRP inventory is the bot’s job.”**  
+- Live requires: RLUSD trustline, RLUSD ≥ min (or explicit override), XRP ≥ gas floor, plan allows live.
 
 ---
 
-## Recommended vs advanced (keep the happy path narrow)
+## Recommended vs advanced
 
-| Topic | Recommended | Advanced (collapsed) |
-|-------|-------------|----------------------|
-| Cold wallet | Xaman only | Other XRPL wallets |
-| Exchange / fiat | Kraken only | Coinbase, Bitstamp, etc. |
-| Bot key | Generated by Open Desk | Import secret |
-| RLUSD | Official issuer + Xaman “Add RLUSD” | Manual issuer paste |
-| Funding | Kraken → bot | DEX-only, P2P |
-
-Support cost drops when 95% of users never open Advanced.
+| Topic | Recommended | Advanced |
+|-------|-------------|----------|
+| Stake asset | **RLUSD only** | Manual XRP+RLUSD inventory |
+| Cold | Xaman | Other wallets |
+| Exchange | Kraken | Other ramps |
+| Bot key | Generated | Import secret |
+| Gas XRP | One small withdraw we specify | User guesses |
 
 ---
 
-## Affiliate / “sumptin sumptin” design
+## Affiliate / “sumptin sumptin”
 
-### Principles
+Same as before: Kraken link primary; disclose; don’t block existing Kraken users.
 
-1. **Disclose** referral relationships.  
-2. **Never block** onboarding if user already has Kraken/Xaman without your link (don’t punish existing accounts).  
-3. **Primary CTA** still uses your link for new users.  
-4. **Track clicks** even if conversion is self-reported at first.  
-5. Separate **your personal referral codes** (config) from **user’s own** future codes (if you add a user-referral program later).
-
-### Config keys (platform)
+### Config keys
 
 ```yaml
 onboarding:
+  funding_mode: rlusd_primary   # locked product story
   recommended:
     cold_wallet: xaman
     exchange: kraken
   links:
-    kraken_signup: "https://www.kraken.com/..."   # your referral/affiliate URL
+    kraken_signup: "https://www.kraken.com/..."  # your referral URL
     xaman_download: "https://xaman.app/"
     xaman_rlusd_help: "https://help.xaman.app/.../how-to-create-a-rlusd-trust-line"
   copy:
     kraken_disclosure: "We may receive a referral reward if you open Kraken via our link."
+    stake_headline: "Fund with RLUSD. Let the bot do its job."
   minimums:
-    bot_xrp_reserve_buffer: 12   # tune from live reserve rules
-    suggest_first_xrp: 50
-    suggest_first_rlusd: 100
+    bot_xrp_gas_floor: 12       # reserve + fees buffer (tune live)
+    bot_rlusd_min_stake: 50     # below this = “add more stake”
+    suggest_first_rlusd: 100    # soft suggestion in UI
+  region:
+    kraken_rlusd_xrpl_withdraw: true   # set false → show blocked path, not XRP-stake story
 ```
 
-### Your action items (ops, not code)
+### Your ops checklist
 
-- [ ] Grab **Kraken invite link** from [Referrals](https://www.kraken.com/referrals) and/or apply to [Affiliate](https://www.kraken.com/affiliate) for higher long-term cut.  
-- [ ] Confirm **your region**: can you withdraw **RLUSD on XRPL** from Kraken, or only XRP? Document both paths.  
-- [ ] Confirm **RLUSD issuer** we hardcode for trustline (mainnet) matches Xaman’s listed RLUSD.  
-- [ ] Decide custody: we store encrypted bot secret vs user exports only.  
-- [ ] Record short **3 screen recordings**: Kraken buy, Xaman trustline, Kraken withdraw to bot.
+- [ ] Kraken referral/affiliate URL in config  
+- [ ] Confirm **RLUSD withdraw on XRPL** from your Kraken entity  
+- [ ] Confirm RLUSD issuer matches Xaman  
+- [ ] Bot key custody decision  
+- [ ] Three clips: buy RLUSD, bot trustline, withdraw RLUSD to bot  
+- [ ] Gas XRP amount tested on mainnet once  
 
 ---
 
 ## Go-live checklist (product gates)
 
-| Gate | Required for Trial dry-run | Required for Live |
-|------|----------------------------|-------------------|
+| Gate | Trial dry-run | Live |
+|------|---------------|------|
 | Open Desk account | ✓ | ✓ |
-| Bot address exists | ✓ | ✓ |
-| Bot has XRP reserve | recommended | ✓ |
-| Bot RLUSD trustline | if strategy needs RLUSD | ✓ if trading RLUSD |
-| First deposit detected | optional | ✓ |
-| Kraken/Xaman | encouraged | encouraged |
-| Telegram | optional | optional (recommended) |
-| Grok | optional | optional |
-| Plan paid / trial valid | ✓ | ✓ live entitlement |
+| Bot address | ✓ | ✓ |
+| Bot RLUSD trustline | ✓ | ✓ |
+| Bot XRP ≥ gas floor | recommended | ✓ |
+| **Bot RLUSD ≥ min stake** | optional | **✓** |
+| Kraken / Xaman | encouraged | encouraged |
+| Telegram / Grok | optional | optional |
+| Plan / entitlement | ✓ | ✓ live |
 
 ---
 
-## Support scripts (copy-paste)
+## Support scripts
+
+**“Do I need to buy XRP to trade?”**  
+→ Only a little for **network gas**. Your **stake is RLUSD**. The bot manages XRP as part of its job.
+
+**“How much RLUSD?”**  
+→ Start with what you can risk. We suggest $N; minimum to go live is $M.
 
 **“I already have Kraken.”**  
-→ Skip signup link; jump to “Buy XRP / withdraw to bot.” No referral for us; still fine.
+→ Skip referral signup; buy RLUSD → withdraw to bot.
 
-**“I already have Xaman.”**  
-→ Use it as cold; still create a **separate** bot account for the desk.
+**“Can I just send XRP?”**  
+→ Advanced only. Happy path is RLUSD. (If they send XRP anyway, desk can still run — don’t brick them — but UI keeps RLUSD-first messaging.)
 
-**“Can I trade from Xaman directly?”**  
-→ No. Desk signs with the **bot** key only. Cold stays offline.
+**“Can I trade from Xaman?”**  
+→ No. Cold vault only. Bot key signs trades.
 
-**“Is this a fund?”**  
-→ No. Self-directed software; you control wallets and risk capital.
-
-**“Where do I put my seed?”**  
-→ **Nowhere in Open Desk for cold.** Bot key is generated or imported once under scary Advanced.
+**“Where does my seed go?”**  
+→ Cold seed: nowhere in Open Desk. Bot key: generated or Advanced import.
 
 ---
 
-## Implementation order (after this plan is approved)
+## Implementation order
 
-1. **Static setup wizard** in HUD (checklist UI + links + copy buttons) — even before multi-tenant.  
-2. Platform config for Kraken/Xaman URLs + disclosure.  
-3. Deposit detector on bot address (poll balances).  
-4. Multi-user accounts (Phase 1) wrapping the same wizard.  
-5. Affiliate click analytics.  
-6. Region matrix for RLUSD-on-Kraken.
+1. Wizard UI with **RLUSD-first** copy + gas XRP helper  
+2. Platform links (Kraken/Xaman) + disclosure  
+3. Deposit detector: prioritize **RLUSD balance** green check  
+4. Multi-user accounts  
+5. Affiliate click tracking  
+6. Region flag for RLUSD XRPL withdraw  
 
 ---
 
@@ -249,22 +257,22 @@ onboarding:
 
 | Metric | Target (first 90 days) |
 |--------|------------------------|
-| Signup → bot created | > 70% |
-| Bot created → first XRPL deposit | > 40% |
-| Deposit → dry-run or live within 7d | > 50% |
-| Support tickets per funded user | trending down |
-| Kraken link CTR | track; optimize CTA |
+| Signup → bot + trustline | > 70% |
+| Trustline → **first RLUSD deposit** | > 40% |
+| RLUSD funded → dry-run/live in 7d | > 50% |
+| Support: “how much XRP do I need?” | should fall after gas helper ships |
+| Kraken CTA CTR | track |
 
 ---
 
 ## BLUF
 
-**One path:** Kraken for money in → Xaman for cold vault → dedicated bot wallet for Open Desk → RLUSD trustline on bot → withdraw from Kraken to bot → dry-run → live.  
+**Fund with RLUSD. Gas with a little XRP. Let the bot do its job.**  
 
-**Your upside:** official recommended stack + Kraken referral/affiliate links.  
+Path: Kraken cash → **RLUSD** → bot (after trustline) → desk works the bag → optional profits to Xaman cold.  
 
-**Their safety:** cold never touches the bot; only risk capital on the desk.
+Xaman = cold. Kraken = ramp (+ your referral). Bot = hot risk capital in RLUSD.
 
 ---
 
-*Branch: `open-desk` · Companion to `docs/COMMERCIAL_LAUNCH.md`*
+*Branch: `open-desk` · Companion to `docs/COMMERCIAL_LAUNCH.md` · Funding mode: `rlusd_primary`*
