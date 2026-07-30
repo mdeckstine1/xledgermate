@@ -48,6 +48,8 @@ Browser → Auth → tenant_id
 - Plan matrix (Trial / Pro / Live)
 - Admin vs subscriber HUD map
 - Legal one-pager (self-custody software; not a fund)
+- **Foolproof onboarding** — see [`ONBOARDING_FOOLPROOF.md`](./ONBOARDING_FOOLPROOF.md)  
+  (Xaman cold · Kraken on-ramp · bot wallet · RLUSD trustline · referral links)
 
 ### Phase 1 — Real accounts
 - Users table, signup/login (email + password)
