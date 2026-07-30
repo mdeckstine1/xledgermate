@@ -2975,7 +2975,10 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if (hp) updates.hud_auth_password = hp;
       const d = await patchJson('/operator/account-config', { updates });
       if (d?.ok) {
-        toast('Account config saved');
+        const authNote = d.hud_auth_reloaded
+          ? ' Login credentials updated — use them next time you sign in.'
+          : '';
+        toast('Account config saved.' + authNote);
         $('cfgBotSecret').value = '';
         $('cfgTelegramToken').value = '';
         $('cfgHudPass').value = '';

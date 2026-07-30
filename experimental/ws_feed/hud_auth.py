@@ -72,6 +72,14 @@ def _clean(s: str) -> str:
     return (s or "").strip()
 
 
+class HudAuthRuntime:
+    """Mutable auth holder so Config-tab password changes apply without full HUD restart."""
+
+    def __init__(self, settings: Optional[HudAuthSettings] = None, *, bind_host: str = "127.0.0.1") -> None:
+        self.settings = settings
+        self.bind_host = bind_host
+
+
 def resolve_hud_auth(config: Any, *, bind_host: str = "127.0.0.1") -> Optional[HudAuthSettings]:
     """Build auth settings from BotConfig + env. Enabled when creds set and HUD is public."""
     from utils.env_secrets import load_dotenv_local
@@ -101,6 +109,17 @@ def resolve_hud_auth(config: Any, *, bind_host: str = "127.0.0.1") -> Optional[H
         session_secret=session_secret,
         rp_id=rp_id,
     )
+
+
+def reload_hud_auth(runtime: Optional[HudAuthRuntime], config: Any = None) -> Optional[HudAuthSettings]:
+    """Re-read config/env into a live runtime (Config tab save)."""
+    if runtime is None:
+        return None
+    from config.settings import BotConfig
+
+    cfg = config if config is not None else BotConfig.load()
+    runtime.settings = resolve_hud_auth(cfg, bind_host=runtime.bind_host)
+    return runtime.settings
 
 
 def verify_password(settings: HudAuthSettings, username: str, password: str) -> bool:
@@ -368,17 +387,39 @@ def _passkey_setup_html() -> str:
 </html>"""
 
 
-def attach_hud_auth(app: FastAPI, settings: Optional[HudAuthSettings]) -> None:
-    """Register login routes and HTTP middleware when auth is enabled."""
-    if not settings or not settings.enabled:
-        return
+def attach_hud_auth(
+    app: FastAPI,
+    settings: Optional[HudAuthSettings],
+    *,
+    bind_host: str = "127.0.0.1",
+    runtime: Optional[HudAuthRuntime] = None,
+) -> Optional[HudAuthRuntime]:
+    """Register login routes and HTTP middleware when auth is enabled.
 
-    passkeys = _load_passkeys(settings.passkeys_path)
-    has_passkeys = bool(passkeys)
+    Returns a HudAuthRuntime that Config-tab saves can update via reload_hud_auth().
+    """
+    auth_rt = runtime or HudAuthRuntime(settings, bind_host=bind_host)
+    if settings is not None:
+        auth_rt.settings = settings
+    auth_rt.bind_host = bind_host
+    app.state.hud_auth_runtime = auth_rt
+
+    if not auth_rt.settings or not auth_rt.settings.enabled:
+        return auth_rt
+
+    def _s() -> HudAuthSettings:
+        cur = auth_rt.settings
+        if cur is None or not cur.enabled:
+            # Should not happen when middleware registered with auth; fall back safely.
+            return HudAuthSettings(enabled=False, username="", password="", session_secret=b"\x00" * 32)
+        return cur
 
     @app.middleware("http")
     async def hud_auth_middleware(request: Request, call_next):
         path = request.url.path
+        settings = _s()
+        if not settings.enabled:
+            return await call_next(request)
         if any(path == p or path.startswith(p + "/") for p in _PUBLIC_PREFIXES):
             return await call_next(request)
         if is_authenticated(settings, request):
@@ -398,9 +439,12 @@ def attach_hud_auth(app: FastAPI, settings: Optional[HudAuthSettings]) -> None:
 
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request, error: str = ""):
-        if is_authenticated(settings, request):
+        settings = _s()
+        if settings.enabled and is_authenticated(settings, request):
             return RedirectResponse("/", status_code=302)
         secure = (request.headers.get("x-forwarded-proto") or request.url.scheme) == "https"
+        passkeys = _load_passkeys(settings.passkeys_path) if settings.enabled else {}
+        has_passkeys = bool(passkeys)
         return HTMLResponse(
             _login_html(
                 passkey_available=HAS_WEBAUTHN and has_passkeys and secure,
@@ -411,14 +455,16 @@ def attach_hud_auth(app: FastAPI, settings: Optional[HudAuthSettings]) -> None:
 
     @app.post("/login")
     async def login_submit(request: Request):
+        settings = _s()
         form = await request.form()
         username = str(form.get("username") or "")
         password = str(form.get("password") or "")
         next_url = str(form.get("next") or "/")
-        if not verify_password(settings, username, password):
+        if not settings.enabled or not verify_password(settings, username, password):
+            passkeys = _load_passkeys(settings.passkeys_path) if settings.enabled else {}
             return HTMLResponse(
                 _login_html(
-                    passkey_available=HAS_WEBAUTHN and has_passkeys,
+                    passkey_available=HAS_WEBAUTHN and bool(passkeys),
                     secure_context_hint=False,
                     error="Invalid username or password.",
                 ),
@@ -428,7 +474,8 @@ def attach_hud_auth(app: FastAPI, settings: Optional[HudAuthSettings]) -> None:
 
     @app.get("/login/passkey-setup", response_class=HTMLResponse)
     async def passkey_setup_page(request: Request):
-        if not is_authenticated(settings, request):
+        settings = _s()
+        if not settings.enabled or not is_authenticated(settings, request):
             return RedirectResponse("/login?next=/login/passkey-setup", status_code=302)
         if not HAS_WEBAUTHN:
             return HTMLResponse("<p>Install webauthn package on the server.</p>", status_code=503)
@@ -441,14 +488,14 @@ def attach_hud_auth(app: FastAPI, settings: Optional[HudAuthSettings]) -> None:
         return HTMLResponse(_passkey_setup_html())
 
     if not HAS_WEBAUTHN:
-        return
+        return auth_rt
 
     @app.post("/auth/passkey/register/options")
     async def passkey_register_options(request: Request):
-        if not is_authenticated(settings, request):
+        settings = _s()
+        if not settings.enabled or not is_authenticated(settings, request):
             return _unauthorized_json()
         rp_id = _rp_id_for_request(request, settings)
-        origin = _origin_for_request(request)
         user_id = hashlib.sha256(settings.username.encode()).digest()[:32]
         options = generate_registration_options(
             rp_id=rp_id,
@@ -468,7 +515,8 @@ def attach_hud_auth(app: FastAPI, settings: Optional[HudAuthSettings]) -> None:
 
     @app.post("/auth/passkey/register/verify")
     async def passkey_register_verify(request: Request):
-        if not is_authenticated(settings, request):
+        settings = _s()
+        if not settings.enabled or not is_authenticated(settings, request):
             return _unauthorized_json()
         data = await request.json()
         challenge = str(data.get("challenge") or "")
@@ -510,16 +558,14 @@ def attach_hud_auth(app: FastAPI, settings: Optional[HudAuthSettings]) -> None:
             }
         )
         _save_passkeys(settings.passkeys_path, stored)
-        nonlocal has_passkeys
-        has_passkeys = True
-        resp = JSONResponse({"ok": True})
-        return resp
+        return JSONResponse({"ok": True})
 
     @app.post("/auth/passkey/login/options")
     async def passkey_login_options(request: Request):
+        settings = _s()
         data = await request.json()
         username = _clean(str(data.get("username") or ""))
-        if username != settings.username:
+        if not settings.enabled or username != settings.username:
             return JSONResponse({"ok": False, "error": "Unknown user."}, status_code=404)
         stored = _load_passkeys(settings.passkeys_path)
         if not stored:
@@ -541,10 +587,11 @@ def attach_hud_auth(app: FastAPI, settings: Optional[HudAuthSettings]) -> None:
 
     @app.post("/auth/passkey/login/verify")
     async def passkey_login_verify(request: Request):
+        settings = _s()
         data = await request.json()
         username = _clean(str(data.get("username") or ""))
         challenge = str(data.get("challenge") or "")
-        if username != settings.username:
+        if not settings.enabled or username != settings.username:
             return JSONResponse({"ok": False, "error": "Unknown user."}, status_code=404)
         if not _pop_challenge(challenge, "login", settings.username):
             return JSONResponse({"ok": False, "error": "Challenge expired."}, status_code=400)
@@ -598,3 +645,5 @@ def attach_hud_auth(app: FastAPI, settings: Optional[HudAuthSettings]) -> None:
             path="/",
         )
         return resp
+
+    return auth_rt

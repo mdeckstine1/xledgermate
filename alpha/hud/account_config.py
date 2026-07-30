@@ -40,10 +40,16 @@ def _mask_secret(value: str) -> str:
 
 
 def account_config_snapshot(config: BotConfig | None = None) -> Dict[str, Any]:
+    import os
+
+    from utils.env_secrets import load_dotenv_local
+
+    load_dotenv_local()
     cfg = config or BotConfig.load()
     secret = (cfg.bot_secret_key or "").strip()
     tg_token = (cfg.telegram_token or "").strip()
-    hud_pw = (cfg.hud_auth_password or "").strip()
+    hud_user = (cfg.hud_auth_username or "").strip() or (os.environ.get("XLG_HUD_USERNAME") or "").strip()
+    hud_pw = (cfg.hud_auth_password or "").strip() or (os.environ.get("XLG_HUD_PASSWORD") or "").strip()
     return {
         "bot_account_address": (cfg.bot_account_address or "").strip(),
         "has_bot_secret": bool(secret),
@@ -60,7 +66,7 @@ def account_config_snapshot(config: BotConfig | None = None) -> Dict[str, Any]:
         "telegram_token_masked": _mask_secret(tg_token),
         "telegram_chat_id": (cfg.telegram_chat_id or "").strip(),
         "telegram_hud_url": (cfg.telegram_hud_url or "").strip(),
-        "hud_auth_username": (cfg.hud_auth_username or "").strip(),
+        "hud_auth_username": hud_user,
         "has_hud_auth_password": bool(hud_pw),
         "private_node_url": (cfg.private_node_url or "").strip(),
         "credentials_sidecar": "config/credentials.local.yaml",
@@ -134,7 +140,55 @@ def apply_account_config_updates(updates: Dict[str, Any]) -> Tuple[Dict[str, Any
         "private_node_url",
     )
     patch_config_file({k: getattr(cfg, k) for k in non_secret if k in allowed})
+    # Keep .env in sync so process restarts still resolve login (env is fallback).
+    if "hud_auth_username" in updates or "hud_auth_password" in updates:
+        _sync_hud_auth_env(
+            username=(cfg.hud_auth_username or "").strip(),
+            password=(cfg.hud_auth_password or "").strip(),
+        )
     return account_config_snapshot(cfg), []
+
+
+def _sync_hud_auth_env(*, username: str, password: str) -> None:
+    """Update XLG_HUD_* in repo .env when Config tab changes login (best-effort)."""
+    import os
+    from pathlib import Path
+
+    root = Path(os.environ.get("XLEDGERMATE_ROOT") or Path(__file__).resolve().parents[2])
+    env_path = root / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    except OSError:
+        return
+    keys = {}
+    if username:
+        keys["XLG_HUD_USERNAME"] = username
+    if password:
+        keys["XLG_HUD_PASSWORD"] = password
+    if not keys:
+        return
+    out: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        stripped = line.strip()
+        wrote = False
+        for key, val in keys.items():
+            if stripped.startswith(key + "=") or stripped.startswith(key + " ="):
+                out.append(f"{key}={val}\n")
+                seen.add(key)
+                wrote = True
+                break
+        if not wrote:
+            out.append(line if line.endswith("\n") else line + "\n")
+    for key, val in keys.items():
+        if key not in seen:
+            out.append(f"{key}={val}\n")
+    try:
+        env_path.write_text("".join(out), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def read_recent_transfers(*, limit: int = 25) -> List[Dict[str, str]]:

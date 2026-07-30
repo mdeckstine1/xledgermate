@@ -291,7 +291,7 @@ def run_alpha_hud(*, host: str = "127.0.0.1", port: int = 8765, background: bool
     bind_host = (host or "127.0.0.1").strip()
     auth = resolve_hud_auth(config, bind_host=bind_host)
     _require_auth_for_public_bind(bind_host, auth)
-    attach_hud_auth(app, auth)
+    attach_hud_auth(app, auth, bind_host=bind_host)
     if auth and auth.enabled:
         logger.info("alpha_hud_auth | enabled | user=%s | bind=%s", auth.username, bind_host)
     elif bind_host in ("127.0.0.1", "localhost", "::1"):

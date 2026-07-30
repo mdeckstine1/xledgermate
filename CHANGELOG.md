@@ -5,6 +5,17 @@ Version numbers follow [Semantic Versioning](https://semver.org/) where practica
 
 ---
 
+## [2.4.0] — 2026-07-30 (`open-desk` · Commercial launch)
+
+**Open Desk — commercial SaaS branch kickoff. Bring your keys; we run the desk.**
+
+- **Branch `open-desk`** — dedicated line for multi-tenant subscription product (accounts, per-user integrations, billing, subscriber HUD).
+- **Plan** — `docs/COMMERCIAL_LAUNCH.md` (phases 0–6, architecture, build order).
+- **VERSION → 2.4.0** — product version tick for commercial track (Alpha strategy line remains separate where tagged).
+- **HUD auth** — Config-tab username/password **write + live reload** (no full restart required); password in credentials sidecar; `.env` sync for restarts; HTTPS login at `xledgermate.com`.
+
+---
+
 ## [1.0.1] — 2026-06-22 (`samurai-v1.0.1` · Trading Bot Alpha)
 
 **First pinned Alpha release on mainnet soak — live brackets, TA-driven entries, operator HUD.**

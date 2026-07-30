@@ -41,11 +41,27 @@ def register_config_routes(app: Any) -> None:
         if errors:
             return JSONResponse({"ok": False, "errors": errors}, status_code=400)
         _runtime().queue_command({"type": "config_reload"})
+        auth_reloaded = False
+        auth_user = ""
+        if any(k in updates for k in ("hud_auth_username", "hud_auth_password")):
+            try:
+                from experimental.ws_feed.hud_auth import reload_hud_auth
+
+                runtime = getattr(app.state, "hud_auth_runtime", None)
+                new_auth = reload_hud_auth(runtime)
+                auth_reloaded = True
+                if new_auth and new_auth.enabled:
+                    auth_user = new_auth.username
+                    logger.info("hud_auth_reloaded | user=%s", auth_user)
+            except Exception:
+                logger.exception("hud_auth_reload_failed")
         return JSONResponse(
             {
                 "ok": True,
                 "account_config": snap,
                 "queued": "config_reload",
+                "hud_auth_reloaded": auth_reloaded,
+                "hud_auth_username": auth_user,
             }
         )
 
