@@ -378,14 +378,82 @@ class DecisionEngine:
                 ta=ta,
             )
 
+        # Stranded bag: overweight XRP + RLUSD below deploy floor must never look "balanced".
+        # Force funding/strength asks so harvest-maximize loop can rebuild powder.
+        stranded = self._stranded_powder_reason(
+            inventory=inventory,
+            book=book,
+            balances=bal,
+            pending_sell_count=pending_sell_count,
+        )
+        if stranded is not None:
+            if stranded.startswith("stranded_await"):
+                return DecisionResult(action=DecisionAction.HOLD, reason=stranded)
+            return self._build_ask(
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_sell_count=pending_sell_count,
+                balances=bal,
+                ta=ta,
+                entry_mode="reload_funding",
+                entry_reason=stranded,
+            )
+
         logger.info(
             "decision_engine | action=HOLD | dev=%+.3f | label=%s",
             inventory.deviation,
             inventory.label,
         )
+        # Honest label: only call balanced when not powder-starved and not heavily long.
+        reason = f"balanced dev={inventory.deviation:+.3f}"
+        if inventory.deviation >= self._config.alpha_strength_deviation * 0.5:
+            reason = f"hold_heavy dev={inventory.deviation:+.3f}"
         return DecisionResult(
             action=DecisionAction.HOLD,
-            reason=f"balanced dev={inventory.deviation:+.3f}",
+            reason=reason,
+        )
+
+    def _stranded_powder_reason(
+        self,
+        *,
+        inventory: InventorySnapshot,
+        book: OrderBookSnapshot,
+        balances: Optional[BalanceSnapshot],
+        pending_sell_count: int,
+    ) -> Optional[str]:
+        """
+        Overweight XRP with RLUSD under deploy floor → recover powder (never silent hold).
+
+        Returns entry_reason for an ask, or stranded_await_* hold reason, or None if not stranded.
+        """
+        if balances is None or book.mid is None or book.mid <= 0:
+            return None
+        if inventory.pause_asks or inventory.sell_blocked_imbalance:
+            return None
+        # Only when at/above target (bag growth long, not RLUSD-heavy recovery buys).
+        if inventory.deviation < 0:
+            return None
+        from alpha.decision.reload_regime import (
+            deploy_floor_xrp_equiv,
+            rlusd_deploy_xrp_equiv,
+        )
+
+        rlusd_xeq = rlusd_deploy_xrp_equiv(balances.rlusd, book.mid)
+        floor = deploy_floor_xrp_equiv(self._config)
+        if floor <= 0 or rlusd_xeq + 1e-9 >= floor:
+            return None
+        max_sells = max(1, int(self._config.alpha_max_pending_sells))
+        shortfall = floor - rlusd_xeq
+        if pending_sell_count >= max_sells:
+            return (
+                f"stranded_await_sell_fill rlusd_xeq={rlusd_xeq:.1f}<floor={floor:.0f} "
+                f"pending_sells={pending_sell_count}"
+            )
+        return (
+            f"stranded_powder rlusd_xeq={rlusd_xeq:.1f}<floor={floor:.0f} "
+            f"shortfall={shortfall:.1f} dev={inventory.deviation:+.3f}"
         )
 
     def _bull_run_entry_allowed(
@@ -418,6 +486,9 @@ class DecisionEngine:
         book: OrderBookSnapshot,
         pending_sell_count: int,
     ) -> bool:
+        # Explicit off switch wins over snapshot hard-blocks (Maximize / Unassed).
+        if not getattr(self._config, "alpha_reload_block_accumulation_until_funded", True):
+            return False
         snap = self._reload
         if snap is not None and snap.blocks_accumulation:
             return True

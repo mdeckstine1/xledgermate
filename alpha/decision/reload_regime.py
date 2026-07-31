@@ -357,11 +357,16 @@ def evaluate_reload_regime(
             entry_allowed=True,
             reason="executing",
             signals=tuple(signals),
-            blocks_accumulation=True,
+            # Honor alpha_reload_block_accumulation_until_funded (do not hard-block when off).
+            blocks_accumulation=blocks_acc,
             rlusd_xrp_equiv=rlusd_xeq,
             deploy_floor_xrp_equiv=floor,
             shortfall_xrp_equiv=shortfall,
-            skynet_nudge="Funding sell pending — accumulation blocked until fill (policy 4).",
+            skynet_nudge=(
+                "Funding sell pending — accumulation blocked until fill (policy 4)."
+                if blocks_acc
+                else "Funding sell pending — residual RLUSD may still bid when tape arms."
+            ),
         )
 
     if not chop_ok and shortfall > 0:
@@ -399,13 +404,17 @@ def evaluate_reload_regime(
             entry_allowed=True,
             reason="armed",
             signals=tuple(signals),
-            blocks_accumulation=True,
+            blocks_accumulation=blocks_acc,
             rlusd_xrp_equiv=rlusd_xeq,
             deploy_floor_xrp_equiv=floor,
             shortfall_xrp_equiv=shortfall,
             skynet_nudge=(
                 f"Post-run chop — place funding ask for ~{shortfall:.1f} XRP-equiv to floor {floor:.1f}. "
-                "Accumulation bids blocked until funded."
+                + (
+                    "Accumulation bids blocked until funded."
+                    if blocks_acc
+                    else "Residual RLUSD may bid while funding completes."
+                )
             ),
         )
 

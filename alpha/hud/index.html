@@ -796,11 +796,12 @@
         <div class="card skynet-agent-card">
           <h2 style="margin:0 0 8px;font-size:1rem;color:var(--accent)">Agent Smith — Phase 2</h2>
           <p class="muted" style="margin:0 0 10px;font-size:.78rem">Agent Smith suggests knob changes within guardrails every 3–5 engine cycles (or on significant events). Phase 2: review and apply manually.</p>
-          <p class="muted" style="margin:0 0 10px;font-size:.75rem;line-height:1.45"><strong>Quick presets</strong> apply operator knobs immediately (no LLM). <strong>Unassed</strong> = unbrick stranded bag (powder + dead zone + wide SL). <strong>Stack growth</strong> = 90% XRP target, deploy RLUSD, defer strength trims (coin count). <strong>Long build</strong> = 80% target + swing harvest. <strong>Walk-away</strong> = trust soak. <strong>Bracket edge</strong> = anti-churn TP.</p>
+          <p class="muted" style="margin:0 0 10px;font-size:.75rem;line-height:1.45"><strong>Quick presets</strong> apply operator knobs immediately (no LLM). <strong>Maximize</strong> = harvest loop (powder floor 40, core bag no SL, redeploy dips, scale clips). <strong>Unassed</strong> = unbrick stranded bag. <strong>Stack growth</strong> = 90% XRP coin bias. <strong>Long build</strong> = swing harvest. <strong>Walk-away</strong> = trust soak. <strong>Bracket edge</strong> = anti-churn TP.</p>
           <div class="ctrl-row">
             <label><input type="checkbox" id="skynetAgentEnabled"> Enable Agent Smith Mode</label>
             <button type="button" id="btnSkynetSaveAgent" class="secondary">Save guardrails</button>
             <button type="button" id="btnSkynetAgentTrigger" class="secondary">Run Agent Smith now</button>
+            <button type="button" id="btnMaximizePreset" class="warn" title="Harvest maximize: target 85%, powder 40, brackets OFF, earlier harvest/dip, 3.5% clips">Maximize</button>
             <button type="button" id="btnUnassedPreset" class="warn" title="Unbrick: lower strength gate, reload floor 18, wide SL / no trail, unlock accumulation">Unassed</button>
             <button type="button" id="btnWalkawayPreset" class="warn" title="Trust-phase knobs + Agent Smith ON (not full SKYNET)">Walk-away preset</button>
             <button type="button" id="btnStackGrowthPreset" class="warn" title="90% XRP target: deploy RLUSD, defer strength sells, grow coin count">Stack growth preset</button>
@@ -3455,6 +3456,19 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         else toast('Agent Smith proposal ready');
       }
       loadSkynetAgent();
+    };
+
+    $('btnMaximizePreset').onclick = async () => {
+      if (!confirm('Apply Maximize preset?\n\nHarvest-loop bag growth:\n• target 85% XRP · strength trim at +5% dev\n• powder floor 40 XRP-eq (bids not hard-blocked)\n• harvest ~3.5% legs · dip redeploy ~3.5%\n• 3.5% portfolio clips (scale with bag)\n• CORE BAG BRACKETS OFF (no SL factory)\n\nIncludes code-path stranded-powder recovery on the server.')) return;
+      const d = await postJson('/operator/maximize', {});
+      if (!d?.ok) {
+        toast((d?.errors || [d?.message || 'Maximize failed']).join('; '), true);
+        return;
+      }
+      toast(d.message || 'Maximize preset applied');
+      loadOperatorConfig();
+      loadSkynetAgent();
+      poll();
     };
 
     $('btnUnassedPreset').onclick = async () => {

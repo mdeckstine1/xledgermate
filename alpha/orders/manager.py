@@ -1359,6 +1359,23 @@ class OrderManager:
         size_xrp: float,
         reason: str,
     ) -> None:
+        # Core-bag mode: keep filled XRP without TP/SL (harvest / strength sell the stack).
+        if not getattr(self._config, "alpha_brackets_enabled", True):
+            record.filled_xrp = max(record.filled_xrp, size_xrp)
+            record.bracketed_xrp = 0.0
+            record.tp_leg = None
+            record.sl_leg = None
+            record.state = BracketLifecycleState.CANCELLED
+            record.touch()
+            self._store.touch_persist()
+            logger.info(
+                "bracket_skip_core_bag | id=%s | filled=%.4f | reason=%s | brackets_disabled",
+                record.bracket_id,
+                record.filled_xrp,
+                reason,
+            )
+            return
+
         if self._last_risk is not None and self._risk_engine is not None:
             from alpha.risk.engine import RiskEngine
 
