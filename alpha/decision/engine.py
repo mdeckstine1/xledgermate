@@ -276,6 +276,19 @@ class DecisionEngine:
                 entry_mode="weakness",
             )
 
+        # P0: while heavy, trim/harvest before chase buys (bull_run / accum on a full bag).
+        heavy_trim = self._try_strength_trim(
+            inventory=inventory,
+            risk=risk,
+            book=book,
+            liquidity=liquidity,
+            pending_sell_count=pending_sell_count,
+            balances=bal,
+            ta=ta,
+        )
+        if heavy_trim is not None:
+            return heavy_trim
+
         accumulation_reason = None if reload_blocks else self._accumulation_entry_allowed(
             inventory=inventory,
             book=book,
@@ -283,7 +296,7 @@ class DecisionEngine:
             structure=structure,
         )
         if accumulation_reason is not None:
-            return self._build_bid(
+            bid = self._build_bid(
                 inventory=inventory,
                 risk=risk,
                 book=book,
@@ -295,6 +308,18 @@ class DecisionEngine:
                 entry_mode="accumulation",
                 entry_reason=accumulation_reason,
             )
+            resolved = self._resolve_failed_bid(
+                bid,
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_sell_count=pending_sell_count,
+                balances=bal,
+                ta=ta,
+            )
+            if resolved is not None:
+                return resolved
 
         bull_run = None if reload_blocks else self._bull_run_entry_allowed(
             inventory=inventory,
@@ -303,7 +328,7 @@ class DecisionEngine:
             structure=structure,
         )
         if bull_run is not None:
-            return self._build_bid(
+            bid = self._build_bid(
                 inventory=inventory,
                 risk=risk,
                 book=book,
@@ -315,6 +340,18 @@ class DecisionEngine:
                 entry_mode="bull_run",
                 entry_reason=bull_run,
             )
+            resolved = self._resolve_failed_bid(
+                bid,
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_sell_count=pending_sell_count,
+                balances=bal,
+                ta=ta,
+            )
+            if resolved is not None:
+                return resolved
 
         if reload_blocks and self._accumulation is not None and self._accumulation.armed:
             return DecisionResult(
@@ -414,6 +451,100 @@ class DecisionEngine:
             action=DecisionAction.HOLD,
             reason=reason,
         )
+
+    def _is_inventory_heavy(self, inventory: InventorySnapshot) -> bool:
+        return inventory.deviation >= self._config.alpha_strength_deviation
+
+    def _try_strength_trim(
+        self,
+        *,
+        inventory: InventorySnapshot,
+        risk: RiskSnapshot,
+        book: OrderBookSnapshot,
+        liquidity: Optional[LiquidityDepth],
+        pending_sell_count: int,
+        balances: Optional[BalanceSnapshot],
+        ta: Optional["TechnicalAnalysisSnapshot"],
+    ) -> Optional[DecisionResult]:
+        """When overweight, place strength asks before bull_run/accum chase buys."""
+        if not self._is_inventory_heavy(inventory):
+            return None
+        if inventory.pause_asks or inventory.sell_blocked_imbalance:
+            return None
+        allows = False
+        if self._inventory is not None:
+            allows = self._inventory.allows_sell(inventory)
+        else:
+            allows = inventory.deviation >= self._config.alpha_strength_deviation
+        if not allows:
+            return None
+        return self._build_ask(
+            inventory=inventory,
+            risk=risk,
+            book=book,
+            liquidity=liquidity,
+            pending_sell_count=pending_sell_count,
+            balances=balances,
+            ta=ta,
+            entry_mode="strength",
+            entry_reason=f"heavy_prefer_trim dev={inventory.deviation:+.3f}",
+        )
+
+    def _resolve_failed_bid(
+        self,
+        bid: DecisionResult,
+        *,
+        inventory: InventorySnapshot,
+        risk: RiskSnapshot,
+        book: OrderBookSnapshot,
+        liquidity: Optional[LiquidityDepth],
+        pending_sell_count: int,
+        balances: Optional[BalanceSnapshot],
+        ta: Optional["TechnicalAnalysisSnapshot"],
+    ) -> DecisionResult:
+        """
+        If a bid was built successfully, return it.
+        If size/caps kill the bid while heavy, fall through to strength trim or honest hold.
+        """
+        if bid.action == DecisionAction.PLACE_BID:
+            return bid
+        reason = bid.reason or ""
+        size_fail = reason in (
+            "bid_size_below_min_after_caps",
+            "insufficient_ask_depth",
+        ) or reason.startswith("bid_size_below_min")
+        if size_fail and self._is_inventory_heavy(inventory):
+            trim = self._try_strength_trim(
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_sell_count=pending_sell_count,
+                balances=balances,
+                ta=ta,
+            )
+            if trim is not None and trim.action == DecisionAction.PLACE_ASK:
+                trim_reason = (
+                    f"heavy_no_bid_room→trim | was={reason} | "
+                    f"dev={inventory.deviation:+.3f}"
+                )
+                return DecisionResult(
+                    action=trim.action,
+                    reason=trim_reason if not trim.reason else f"{trim_reason} | {trim.reason}",
+                    side=trim.side,
+                    size_xrp=trim.size_xrp,
+                    price_rlusd_per_xrp=trim.price_rlusd_per_xrp,
+                    edge_pct=trim.edge_pct,
+                )
+            return DecisionResult(
+                action=DecisionAction.HOLD,
+                reason=(
+                    f"heavy_no_bid_room dev={inventory.deviation:+.3f} "
+                    f"bid_blocked={reason}"
+                ),
+                edge_pct=bid.edge_pct,
+            )
+        return bid
 
     def _stranded_powder_reason(
         self,

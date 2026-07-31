@@ -132,7 +132,9 @@ class AccumulationSessionTracker:
             self._state = {
                 "window_start_utc": now.isoformat(),
                 "committed_rlusd": 0.0,
+                "open_committed_rlusd": 0.0,
                 "filled_rlusd": 0.0,
+                "released_rlusd": 0.0,
                 "bids_placed": 0,
                 "fills_count": 0,
                 "chase_cancels": 0,
@@ -157,46 +159,131 @@ class AccumulationSessionTracker:
         return rlusd_balance * (pct / 100.0)
 
     def committed_rlusd(self) -> float:
+        """Legacy total bid notional (scorecard). Prefer open_committed for budget."""
         return float(self._state.get("committed_rlusd", 0.0))
 
+    def open_committed_rlusd(self) -> float:
+        return max(0.0, float(self._state.get("open_committed_rlusd", 0.0)))
+
+    def filled_rlusd(self) -> float:
+        return max(0.0, float(self._state.get("filled_rlusd", 0.0)))
+
     def remaining_rlusd(self, config: BotConfig, *, rlusd_balance: float) -> float:
+        """
+        Headroom for new bids = % of *current* RLUSD wallet − open live bids.
+
+        Filled spends already reduced the wallet balance, so we do not subtract
+        filled again (that caused permanent budget_exhausted after successful
+        deploys). Ghost cancelled commits are healed out of open_committed.
+        """
         budget = self.budget_rlusd(config, rlusd_balance=rlusd_balance)
-        return max(0.0, budget - self.committed_rlusd())
+        self._heal_open_committed(rlusd_balance=rlusd_balance)
+        return max(0.0, budget - self.open_committed_rlusd())
+
+    def _heal_open_committed(self, *, rlusd_balance: float) -> None:
+        """
+        Repair poisoned sessions where cancelled bids inflated committed forever.
+
+        open_committed cannot exceed wallet RLUSD (plus tiny slack). If legacy
+        committed ≫ filled and open was never tracked, drop ghost opens to 0.
+        """
+        open_c = float(self._state.get("open_committed_rlusd", -1.0))
+        filled = self.filled_rlusd()
+        legacy = self.committed_rlusd()
+        dirty = False
+        if open_c < 0:
+            # Migrate: if many chase cancels or legacy open is absurd, start clean.
+            chase = int(self._state.get("chase_cancels", 0))
+            ghost = max(0.0, legacy - filled)
+            if chase > 0 or ghost > max(rlusd_balance * 1.25, filled + 1.0):
+                open_c = 0.0
+            else:
+                open_c = ghost
+            self._state["open_committed_rlusd"] = open_c
+            dirty = True
+        if rlusd_balance >= 0 and open_c > rlusd_balance * 1.25 + 1e-6:
+            logger.warning(
+                "accumulation_session | heal_open_committed | was=%.2f rlusd=%.2f → 0",
+                open_c,
+                rlusd_balance,
+            )
+            open_c = 0.0
+            self._state["open_committed_rlusd"] = 0.0
+            dirty = True
+        if dirty:
+            self._save()
 
     def record_bid(self, *, size_xrp: float, price_rlusd_per_xrp: float) -> None:
         notional = max(0.0, size_xrp * price_rlusd_per_xrp)
         if notional <= 0:
             return
         self._state["committed_rlusd"] = self.committed_rlusd() + notional
+        self._state["open_committed_rlusd"] = self.open_committed_rlusd() + notional
         self._state["bids_placed"] = int(self._state.get("bids_placed", 0)) + 1
         self._save()
         logger.info(
-            "accumulation_session | bid_recorded | +%.2f RLUSD | committed=%.2f",
+            "accumulation_session | bid_recorded | +%.2f RLUSD | open=%.2f filled=%.2f",
             notional,
-            self.committed_rlusd(),
+            self.open_committed_rlusd(),
+            self.filled_rlusd(),
         )
 
     def record_fill(self, *, size_xrp: float, price_rlusd_per_xrp: float) -> None:
         notional = max(0.0, size_xrp * price_rlusd_per_xrp)
         if notional <= 0:
             return
-        self._state["filled_rlusd"] = float(self._state.get("filled_rlusd", 0.0)) + notional
+        self._state["filled_rlusd"] = self.filled_rlusd() + notional
+        self._state["open_committed_rlusd"] = max(0.0, self.open_committed_rlusd() - notional)
         self._state["fills_count"] = int(self._state.get("fills_count", 0)) + 1
         self._state["chase_count"] = 0
         self._state["ever_executed"] = True
         self._save()
         logger.info(
-            "accumulation_session | fill_recorded | +%.2f RLUSD | fills=%s",
+            "accumulation_session | fill_recorded | +%.2f RLUSD | fills=%s open=%.2f",
             notional,
             self._state.get("fills_count"),
+            self.open_committed_rlusd(),
+        )
+
+    def release_bid(
+        self,
+        *,
+        size_xrp: float,
+        price_rlusd_per_xrp: float,
+        reason: str = "",
+    ) -> None:
+        """Release open commitment when a pending bid is cancelled (any reason)."""
+        notional = max(0.0, size_xrp * price_rlusd_per_xrp)
+        if notional <= 0:
+            return
+        before = self.open_committed_rlusd()
+        self._state["open_committed_rlusd"] = max(0.0, before - notional)
+        self._state["released_rlusd"] = float(self._state.get("released_rlusd", 0.0)) + notional
+        self._save()
+        logger.info(
+            "accumulation_session | bid_released | -%.2f RLUSD | open=%.2f | %s",
+            notional,
+            self.open_committed_rlusd(),
+            (reason or "cancel")[:80],
         )
 
     def chase_count(self) -> int:
         return int(self._state.get("chase_count", 0))
 
-    def record_chase_cancel(self, reason: str) -> None:
-        if "mid_passed" not in (reason or "").lower():
-            return
+    def record_chase_cancel(
+        self,
+        reason: str,
+        *,
+        size_xrp: float = 0.0,
+        price_rlusd_per_xrp: float = 0.0,
+    ) -> None:
+        """On pending-bid cancel: free open budget. Always safe to call with size/price."""
+        if size_xrp > 0 and price_rlusd_per_xrp > 0:
+            self.release_bid(
+                size_xrp=size_xrp,
+                price_rlusd_per_xrp=price_rlusd_per_xrp,
+                reason=reason or "chase_cancel",
+            )
         self._state["chase_cancels"] = int(self._state.get("chase_cancels", 0)) + 1
         self._state["chase_count"] = self.chase_count() + 1
         self._save()
@@ -276,8 +363,9 @@ class AccumulationSessionTracker:
             "chase_cancels": int(self._state.get("chase_cancels", 0)),
             "chase_count": self.chase_count(),
             "fill_rate_pct": fill_rate,
-            "rlusd_filled_rlusd": round(float(self._state.get("filled_rlusd", 0.0)), 2),
-            "rlusd_committed_rlusd": round(self.committed_rlusd(), 2),
+            "rlusd_filled_rlusd": round(self.filled_rlusd(), 2),
+            "rlusd_committed_rlusd": round(self.open_committed_rlusd(), 2),
+            "rlusd_committed_legacy_total": round(self.committed_rlusd(), 2),
             "phase_minutes": {
                 "armed": round(float(self._state.get("minutes_armed", 0.0)), 1),
                 "executing": round(float(self._state.get("minutes_executing", 0.0)), 1),

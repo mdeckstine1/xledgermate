@@ -752,6 +752,12 @@ class OrderManager:
 
         if record.state == BracketLifecycleState.PENDING_BUY:
             await self._cancel_pending_buy_offer(record)
+            if self._accumulation_session is not None:
+                self._accumulation_session.release_bid(
+                    size_xrp=float(record.target_size_xrp or 0.0),
+                    price_rlusd_per_xrp=float(record.entry_price_rlusd_per_xrp or 0.0),
+                    reason="bracket_cancel",
+                )
         elif record.state in (
             BracketLifecycleState.BRACKET_ACTIVE,
             BracketLifecycleState.TRAILING_PLACEHOLDER,
@@ -1226,14 +1232,11 @@ class OrderManager:
                     self._target_buy_limit_price(mid),
                     reason,
                 )
-                knobs = self._accumulation_knobs
-                if (
-                    self._accumulation_session is not None
-                    and knobs is not None
-                    and getattr(knobs, "armed", False)
-                    and reason
-                ):
-                    self._accumulation_session.record_chase_cancel(reason)
+                # Budget release happens inside cancel_bracket; only tally chase here.
+                if self._accumulation_session is not None:
+                    self._accumulation_session.record_chase_cancel(
+                        reason or "stale_pending_buy",
+                    )
         cancelled += await self._prune_excess_pending_buys(mid)
         return cancelled
 

@@ -360,7 +360,10 @@ class BotConfig:
     fund_with_xrp_only: bool = True
 
     # === BRACKET / OCO (Alpha value-accumulation — Phase 3) ===
-    # When False: buy fills add to core bag without TP/SL legs (harvest/strength sell the bag).
+    # Core bag vs speculative sleeve:
+    # False = core-bag mode (Maximize default): buy fills add inventory without TP/SL;
+    #         exits are strength / harvest / reload only.
+    # True  = place OCO brackets after buys (legacy / optional sleeve risk).
     alpha_brackets_enabled: bool = True
     initial_stop_loss_pct: float = 0.015  # SL limit sell this % below entry (RLUSD/XRP)
     take_profit_pct: float = 0.03  # Fixed TP % above entry when take_profit_rr <= 0
