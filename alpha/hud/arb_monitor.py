@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,6 +83,22 @@ def _cost_model_payload(spread_pct: Optional[float]) -> Dict[str, Any]:
     }
 
 
+def _read_alpha_balances(logs_dir: Path) -> Dict[str, float]:
+    path = logs_dir / "alpha_runtime_state.json"
+    out = {"xrp": 0.0, "rlusd": 0.0}
+    if not path.is_file():
+        return out
+    try:
+        import json
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+        out["xrp"] = float(data.get("xrp") or data.get("balance_xrp") or 0)
+        out["rlusd"] = float(data.get("rlusd") or data.get("balance_rlusd") or 0)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return out
+    return out
+
+
 def refresh_arb_snapshot(
     *,
     logs_dir: Optional[Path] = None,
@@ -92,6 +109,7 @@ def refresh_arb_snapshot(
     Poll AMM vs CLOB mid and append JSONL (read-only).
 
     Uses Alpha runtime mid for CLOB reference — does not call the trading engine.
+    Adds paper discovery scoring (fill ladder, dwell, actionable, burst hint).
     """
     from config.settings import BotConfig
     from experimental.arb.arb_universe import refresh_arb_universe
@@ -100,6 +118,12 @@ def refresh_arb_snapshot(
         summarize_clob_amm_rows,
         tail_clob_amm_records,
     )
+    from experimental.arb.discovery import (
+        DISCOVERY_STATE_PATH,
+        attach_discovery_to_universe,
+        build_discovery_score,
+    )
+    from experimental.arb.fill_simulator import build_arb_fill_simulation_payload
 
     logs = _logs_dir(logs_dir)
     cfg = BotConfig.load()
@@ -124,15 +148,51 @@ def refresh_arb_snapshot(
         dislocation_bps=dislocation_bps,
         path=logs / "arb_universe.jsonl",
     )
+    bals = _read_alpha_balances(logs)
+    discovery = build_discovery_score(
+        row,
+        xrp=bals["xrp"],
+        rlusd=bals["rlusd"],
+        state_path=logs / DISCOVERY_STATE_PATH.name,
+    )
+    # Persist discovery summary on the primary soak row path is already written;
+    # re-append is heavy — keep discovery in cache + universe only.
+    universe = attach_discovery_to_universe(universe, discovery)
+    # Append lightweight discovery line for soak analysis
+    try:
+        disc_path = logs / "arb_discovery.jsonl"
+        disc_path.parent.mkdir(parents=True, exist_ok=True)
+        with disc_path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {
+                        "kind": "arb_discovery",
+                        "ts_utc": datetime.now(tz=timezone.utc).isoformat(),
+                        "mid_net_bps": discovery.get("mid_net_bps"),
+                        "fill_profit_bps_250": discovery.get("fill_profit_bps_250"),
+                        "fill_profit_bps_500": discovery.get("fill_profit_bps_500"),
+                        "fill_profit_bps_1000": discovery.get("fill_profit_bps_1000"),
+                        "maker_opt_bps_500": discovery.get("maker_opt_bps_500"),
+                        "flag": discovery.get("flag"),
+                        "actionable": discovery.get("actionable"),
+                        "dwell": discovery.get("dwell"),
+                        "burst": discovery.get("burst_recommended"),
+                    },
+                    separators=(",", ":"),
+                    default=str,
+                )
+                + "\n"
+            )
+    except OSError as exc:
+        logger.debug("arb_discovery log failed: %s", exc)
+
     history = tail_clob_amm_records(limit=history_limit, path=logs / "clob_amm_spread.jsonl")
     enriched = _enrich_history(history, default_clob_spread_pct=spread_pct)
     summary = summarize_clob_amm_rows(enriched, default_clob_spread_pct=spread_pct)
     cost_model = _cost_model_payload(spread_pct)
-    from experimental.arb.fill_simulator import build_arb_fill_simulation_payload
-
     fill_simulation = build_arb_fill_simulation_payload(latest=row, logs_dir=logs)
     out = {
-        "mode": "read_only",
+        "mode": "read_only_discovery",
         "updated_utc": datetime.now(tz=timezone.utc).isoformat(),
         "dislocation_threshold_bps": dislocation_bps,
         "latest": row,
@@ -141,20 +201,24 @@ def refresh_arb_snapshot(
         "cost_model": cost_model,
         "universe": universe,
         "fill_simulation": fill_simulation,
+        "discovery": discovery,
+        "poll_sleep_seconds": int(discovery.get("poll_sleep_seconds") or 60),
         "note": (
-            "Monitor only — no arb execution. Alpha engine unchanged. "
-            "Universe: RLUSD/XRP, USDC/XRP, USD/XRP, RLUSD/USDC basis."
+            "Paper discovery — no arb execution. Primary KPI = fill@500 bps + dwell; "
+            "mid net is secondary. ACTIONABLE = fill@500≥+3bps for 2+ polls & fundable."
         ),
     }
     global _ARB_CACHE
     _ARB_CACHE = out
     logger.info(
-        "arb_monitor | clob=%s amm=%s spread_bps=%s net=%s universe_net+=%s",
+        "arb_monitor | clob=%s amm=%s mid_net=%s fill500=%s flag=%s actionable=%s burst=%s",
         row.get("clob_mid_rlusd_per_xrp"),
         row.get("amm_mid_rlusd_per_xrp"),
-        row.get("spread_bps"),
-        row.get("net_edge_bps"),
-        universe.get("net_positive_count"),
+        discovery.get("mid_net_bps"),
+        discovery.get("fill_profit_bps_500"),
+        discovery.get("flag"),
+        discovery.get("actionable"),
+        discovery.get("burst_recommended"),
     )
     return out
 
@@ -181,17 +245,34 @@ def arb_snapshot_cached(
     from experimental.arb.fill_simulator import build_arb_fill_simulation_payload
 
     fill_simulation = build_arb_fill_simulation_payload(latest=latest, logs_dir=logs)
+    bals = _read_alpha_balances(logs)
+    from experimental.arb.discovery import DISCOVERY_STATE_PATH, build_discovery_score
+
+    discovery = build_discovery_score(
+        latest,
+        xrp=bals["xrp"],
+        rlusd=bals["rlusd"],
+        state_path=logs / DISCOVERY_STATE_PATH.name,
+        update_dwell=False,
+    )
+    uni = uni_rows[-1] if uni_rows else None
+    if uni:
+        from experimental.arb.discovery import attach_discovery_to_universe
+
+        uni = attach_discovery_to_universe(uni, discovery)
     return {
-        "mode": "read_only",
+        "mode": "read_only_discovery",
         "updated_utc": None,
         "dislocation_threshold_bps": _DEFAULT_DISLOCATION_BPS,
         "latest": latest,
         "history": enriched[-24:],
         "summary": summarize_clob_amm_rows(enriched, default_clob_spread_pct=spread_pct),
         "cost_model": _cost_model_payload(spread_pct),
-        "universe": uni_rows[-1] if uni_rows else None,
+        "universe": uni,
         "fill_simulation": fill_simulation,
-        "note": "Waiting for first arb poll — open Arb tab or wait ~60s.",
+        "discovery": discovery,
+        "poll_sleep_seconds": int(discovery.get("poll_sleep_seconds") or 60),
+        "note": "Waiting for first arb poll — open Arb tab or wait ~60s (burst ~12s when hot).",
     }
 
 

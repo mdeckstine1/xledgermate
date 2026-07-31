@@ -375,7 +375,7 @@ def summarize_fill_results(
     return summary
 
 
-DEFAULT_FILL_NOTIONALS_RLUSD: Tuple[float, ...] = (500.0, 1000.0, 2000.0)
+DEFAULT_FILL_NOTIONALS_RLUSD: Tuple[float, ...] = (250.0, 500.0, 1000.0, 2000.0)
 
 
 def live_fill_simulation_payload(

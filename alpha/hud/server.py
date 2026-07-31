@@ -70,11 +70,16 @@ if app is not None:
         # Stagger first poll so HUD startup is not blocked on amm_info RPC.
         time.sleep(12)
         while True:
+            sleep_s = 60
             try:
-                refresh_arb_snapshot()
+                snap = refresh_arb_snapshot()
+                # Burst ~12s when dislocation / fill+ / actionable; else ~60s.
+                sleep_s = int(snap.get("poll_sleep_seconds") or 60)
+                sleep_s = max(10, min(120, sleep_s))
             except Exception as exc:
                 logger.warning("arb_monitor_background | %s", exc)
-            time.sleep(60)
+                sleep_s = 60
+            time.sleep(sleep_s)
 
     threading.Thread(target=_arb_monitor_background, daemon=True, name="arb-monitor").start()
 

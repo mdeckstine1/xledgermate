@@ -687,15 +687,26 @@
       </section>
       <section id="arb" class="panel">
         <div class="card arb-banner">
-          <strong>Read-only monitor</strong> — CLOB vs AMM on RLUSD/XRP, USDC/XRP, legacy USD/XRP, plus RLUSD/USDC basis.
-          No trades, no engine changes. Polls every ~60s via HUD only. Live arb later = wallet B + separate service.
+          <strong>Paper discovery</strong> — CLOB vs AMM (no trades). Primary KPI = <strong>fill@500</strong> (book walk), not mid net.
+          ACTIONABLE = fill@500 ≥ +3 bps for 2+ polls + paper-fundable. Burst ~12s when hot, else ~60s.
+          Maker@500 is optimistic (CLOB@mid). Live arb later = wallet B + separate service.
+        </div>
+        <div class="card" style="margin-bottom:12px">
+          <h3 style="margin:0 0 8px">Discovery score (RLUSD/XRP)</h3>
+          <div class="grid live-grid" style="margin-bottom:8px">
+            <div class="card" style="margin:0"><h3>Mid net</h3><div id="arbDiscMid" class="big">—</div></div>
+            <div class="card" style="margin:0"><h3>Fill@500</h3><div id="arbDiscFill500" class="big">—</div></div>
+            <div class="card" style="margin:0"><h3>Maker@500</h3><div id="arbDiscMaker500" class="big">—</div></div>
+            <div class="card" style="margin:0"><h3>Flag</h3><div id="arbDiscFlag" class="big">—</div><div id="arbDiscDwell" class="muted"></div></div>
+          </div>
+          <p id="arbDiscMeta" class="muted" style="font-size:.72rem;margin:0"></p>
         </div>
         <div class="card" style="margin-bottom:12px">
           <h3 style="margin:0 0 8px">Arb universe</h3>
           <div style="overflow-x:auto">
             <table class="ta-signals" id="arbUniverseTable">
-              <thead><tr><th>Pair</th><th>CLOB / implied</th><th>AMM / direct</th><th>Gross</th><th>Net</th><th>Flag</th></tr></thead>
-              <tbody id="arbUniverseBody"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+              <thead><tr><th>Pair</th><th>CLOB / implied</th><th>AMM / direct</th><th>Gross</th><th>Mid net</th><th>Fill@500</th><th>Maker@500</th><th>Flag</th></tr></thead>
+              <tbody id="arbUniverseBody"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
             </table>
           </div>
           <p id="arbUniverseMeta" class="muted" style="font-size:.72rem;margin:8px 0 0"></p>
@@ -3745,13 +3756,57 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       return (n > 0 ? '+' : '') + n.toFixed(2) + ' bps';
     }
 
+    function renderArbDiscovery(disc) {
+      if (!disc) return;
+      const midEl = $('arbDiscMid');
+      const fillEl = $('arbDiscFill500');
+      const makerEl = $('arbDiscMaker500');
+      const flagEl = $('arbDiscFlag');
+      const dwellEl = $('arbDiscDwell');
+      const metaEl = $('arbDiscMeta');
+      if (midEl) {
+        midEl.textContent = disc.mid_net_bps != null ? fmtArbSignedBps(disc.mid_net_bps) : '—';
+        midEl.className = 'big' + (Number(disc.mid_net_bps) > 0 ? ' arb-net-pos' : '');
+      }
+      if (fillEl) {
+        const f = disc.fill_profit_bps_500;
+        fillEl.textContent = f != null ? fmtArbSignedBps(f) : '—';
+        fillEl.className = 'big' + (f != null && Number(f) > 0 ? ' arb-net-pos' : '');
+      }
+      if (makerEl) {
+        const m = disc.maker_opt_bps_500;
+        makerEl.textContent = m != null ? fmtArbSignedBps(m) : '—';
+        makerEl.className = 'big' + (m != null && Number(m) > 0 ? ' arb-net-pos' : '');
+      }
+      if (flagEl) {
+        const fl = disc.flag || '—';
+        flagEl.textContent = fl;
+        flagEl.className = 'big' + (disc.actionable || fl === 'ACTIONABLE' ? ' arb-net-pos' : (fl === 'FILL+' || fl === 'MID+' ? ' arb-disloc' : ''));
+      }
+      if (dwellEl) {
+        const d = disc.dwell || {};
+        dwellEl.textContent = `streak fill ${d.fill_pos_streak || 0}/${d.dwell_required || 2}`
+          + (d.fundable_500 ? ' · fundable' : ' · not fundable')
+          + (disc.burst_recommended ? ' · BURST' : '');
+      }
+      if (metaEl) {
+        const parts = [
+          'fill@250 ' + fmtArbSignedBps(disc.fill_profit_bps_250),
+          'fill@1000 ' + fmtArbSignedBps(disc.fill_profit_bps_1000),
+          'touch@500 ' + fmtArbSignedBps(disc.touch_bps_500),
+          'poll ' + (disc.poll_sleep_seconds || 60) + 's',
+        ];
+        metaEl.textContent = (disc.note || '') + ' · ' + parts.join(' · ');
+      }
+    }
+
     function renderArbUniverse(uni) {
       const tbody = $('arbUniverseBody');
       const meta = $('arbUniverseMeta');
       if (!tbody) return;
       const pairs = (uni && uni.pairs) || [];
       if (!pairs.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="muted">Universe loads on next poll (~60s)</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="muted">Universe loads on next poll</td></tr>';
         if (meta) meta.textContent = '';
         return;
       }
@@ -3764,17 +3819,25 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
           colA = fmtArbPrice(p.clob_mid_stable_per_xrp);
           colB = fmtArbPrice(p.amm_mid_stable_per_xrp);
         }
+        const fill500 = p.fill_profit_bps_500 != null ? fmtArbSignedBps(p.fill_profit_bps_500) : '—';
+        const maker500 = p.maker_opt_bps_500 != null ? fmtArbSignedBps(p.maker_opt_bps_500) : '—';
+        const midNet = p.net_edge_bps != null ? fmtArbSignedBps(p.net_edge_bps) : '—';
         let flag = '<span class="arb-ok">ok</span>';
-        if (p.net_positive) flag = '<span class="arb-net-pos">NET+</span>';
-        else if (p.dislocation) flag = '<span class="arb-disloc">GROSS</span>';
+        const fl = p.discovery_flag || (p.actionable ? 'ACTIONABLE' : (p.net_positive ? 'MID+' : (p.dislocation ? 'GROSS' : 'ok')));
+        if (fl === 'ACTIONABLE' || p.actionable) flag = '<span class="arb-net-pos">ACTIONABLE</span>';
+        else if (fl === 'FILL+') flag = '<span class="arb-net-pos">FILL+</span>';
+        else if (fl === 'MID+' || p.net_positive) flag = '<span class="arb-disloc">MID+</span>';
+        else if (fl === 'GROSS' || p.dislocation) flag = '<span class="arb-disloc">GROSS</span>';
         else if (p.kind === 'stable_basis' && p.peg_deviation_bps != null && Math.abs(p.peg_deviation_bps) >= 8) {
           flag = '<span class="arb-disloc">PEG</span>';
         }
-        return `<tr><td>${p.label || p.id}</td><td>${colA}</td><td>${colB}</td><td>${fmtArbBps(p.spread_bps)}</td><td>${fmtArbSignedBps(p.net_edge_bps)}</td><td>${flag}</td></tr>`;
+        return `<tr><td>${p.label || p.id}</td><td>${colA}</td><td>${colB}</td><td>${fmtArbBps(p.spread_bps)}</td>`
+          + `<td>${midNet}</td><td>${fill500}</td><td>${maker500}</td><td>${flag}</td></tr>`;
       }).join('');
       if (meta) {
         const best = uni.best_net != null ? fmtArbSignedBps(uni.best_net) : '—';
-        meta.textContent = `NET+ pairs: ${uni.net_positive_count ?? 0} · best net: ${best}`;
+        const act = uni.actionable_count != null ? uni.actionable_count : (uni.discovery?.actionable ? 1 : 0);
+        meta.textContent = `MID+ pairs: ${uni.net_positive_count ?? 0} · best mid net: ${best} · actionable: ${act}`;
       }
     }
 
@@ -3856,6 +3919,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     function renderArb(d) {
       if (!d) return;
       renderArbUniverse(d.universe);
+      renderArbDiscovery(d.discovery || d.universe?.discovery || null);
       renderArbFillSimulation(d.fill_simulation);
       const latest = d.latest || {};
       const summary = d.summary || {};
