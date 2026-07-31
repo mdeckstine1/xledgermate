@@ -121,6 +121,10 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_drawdown_reload_total_bag_pct",
     "alpha_drawdown_reload_stage1_bag_pct",
     "alpha_drawdown_reload_stage2_bag_pct",
+    # Reload / dry-powder (Unassed + funding recovery)
+    "alpha_reload_min_rlusd_deploy_xrp_equiv",
+    "alpha_reload_sell_offset_pct",
+    "alpha_reload_block_accumulation_until_funded",
 )
 
 OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
@@ -176,6 +180,8 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "alpha_drawdown_reload_total_bag_pct": {"min": 1.0, "max": 10.0, "step": 0.5},
     "alpha_drawdown_reload_stage1_bag_pct": {"min": 0.5, "max": 5.0, "step": 0.25},
     "alpha_drawdown_reload_stage2_bag_pct": {"min": 0.5, "max": 5.0, "step": 0.25},
+    "alpha_reload_min_rlusd_deploy_xrp_equiv": {"min": 5.0, "max": 500.0, "step": 1.0},
+    "alpha_reload_sell_offset_pct": {"min": 0.02, "max": 1.0, "step": 0.01},
 }
 
 
@@ -339,6 +345,7 @@ def _coerce_override(key: str, value: Any) -> Any:
         "alpha_reentry_enabled",
         "alpha_stale_pending_buy_enabled",
         "alpha_deferred_sl_enabled",
+        "alpha_reload_block_accumulation_until_funded",
     }
     if key in _BOOL_KEYS:
         if isinstance(value, bool):

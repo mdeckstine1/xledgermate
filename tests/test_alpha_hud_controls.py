@@ -146,6 +146,7 @@ def test_operator_presets_catalog(client):
     assert "walkaway" in ids
     assert "stack_growth" in ids
     assert "long_build" in ids
+    assert "unassed" in ids
     assert "bracket_edge_cleanup" in ids
 
 
@@ -157,6 +158,21 @@ def test_stack_growth_preset_route(client):
     assert data["config_effective"]["inventory_target_xrp_ratio"] == 0.90
     assert data["config_effective"]["alpha_strength_deviation"] == 0.14
     assert data["config_effective"]["alpha_ta_min_sell_score"] == 4.5
+
+
+def test_unassed_preset_route(client):
+    r = client.post("/operator/unassed")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["config_effective"]["alpha_strength_deviation"] == 0.06
+    assert data["config_effective"]["alpha_reload_min_rlusd_deploy_xrp_equiv"] == 18.0
+    assert data["config_effective"]["alpha_reload_block_accumulation_until_funded"] is False
+    assert data["config_effective"]["bracket_trailing_enabled"] is False
+    assert data["config_effective"]["initial_stop_loss_pct"] == 0.09
+    assert data["stack_growth_comparison"]["different_operator_keys"]["alpha_strength_deviation"][
+        "unassed"
+    ] == 0.06
 
 
 @pytest.fixture

@@ -194,12 +194,41 @@ def register_operator_routes(app: Any) -> None:
             }
         )
 
+    @app.post("/operator/unassed")
+    async def post_unassed_preset() -> JSONResponse:
+        """Apply Unassed bundle: unbrick stranded bag-growth (powder, dead zone, SL factory)."""
+        from alpha.hud.skynet_agent import agent_status_payload, merge_agent_patch
+        from alpha.hud.unassed_preset import apply_unassed_preset, unassed_preset_payload
+
+        base = _base_config()
+        store = _runtime()
+        merged, _agent, errors = apply_unassed_preset(
+            patch_overrides=lambda ov, base=base: store.patch_overrides(ov, base=base),
+            merge_agent_patch=merge_agent_patch,
+            base_config=base,
+        )
+        if errors:
+            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
+        effective = apply_overrides(base, merged)
+        payload = unassed_preset_payload()
+        return JSONResponse(
+            {
+                "ok": True,
+                "message": payload["description"],
+                "operator_overrides": merged,
+                "config_effective": effective_config_snapshot(effective, merged),
+                "stack_growth_comparison": payload["stack_growth_comparison"],
+                "agent": agent_status_payload(),
+            }
+        )
+
     @app.get("/operator/presets")
     async def get_operator_presets() -> JSONResponse:
         """Describe one-click operator preset bundles."""
         from alpha.hud.bracket_edge_preset import bracket_edge_preset_payload
         from alpha.hud.long_build_preset import long_build_preset_payload
         from alpha.hud.stack_growth_preset import stack_growth_preset_payload
+        from alpha.hud.unassed_preset import unassed_preset_payload
         from alpha.hud.walkaway_preset import walkaway_preset_payload
 
         return JSONResponse(
@@ -223,6 +252,12 @@ def register_operator_routes(app: Any) -> None:
                         "endpoint": "/operator/long-build",
                         "method": "POST",
                         **long_build_preset_payload(),
+                    },
+                    {
+                        "id": "unassed",
+                        "endpoint": "/operator/unassed",
+                        "method": "POST",
+                        **unassed_preset_payload(),
                     },
                     {
                         "id": "bracket_edge_cleanup",
