@@ -908,8 +908,10 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
             <textarea id="skynetResponse" class="skynet-response muted" readonly spellcheck="false" placeholder="Responses appear here…"></textarea>
             <div class="skynet-actions">
               <button type="button" id="btnSkynetApply" class="warn" disabled>Apply suggested changes</button>
+              <button type="button" id="btnSkynetFollowUp" class="secondary" disabled title="Ask another question in this thread — fresh live state is always included">Follow up</button>
               <span id="skynetApplyHint" class="muted" style="font-size:.75rem"></span>
             </div>
+            <p id="skynetThreadHint" class="muted" style="margin:6px 0 0;font-size:.72rem">New thread — each Ask includes a fresh live snapshot. Follow up keeps prior Q&amp;A in this session only.</p>
           </div>
         </div>
       </section>
@@ -3055,6 +3057,38 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     let skynetTabActive = false;
     let arbTabActive = false;
     let skynetTogglePending = false;
+    /** Session-only Ask thread: [{user, assistant}, ...] — not persisted; max 6 turns */
+    let skynetAskHistory = [];
+    const SKYNET_ASK_HISTORY_MAX = 6;
+
+    function updateSkynetThreadHint() {
+      const n = skynetAskHistory.length;
+      const hint = $('skynetThreadHint');
+      const fu = $('btnSkynetFollowUp');
+      if (fu) fu.disabled = n === 0;
+      if (!hint) return;
+      if (n === 0) {
+        hint.textContent = 'New thread — each Ask includes a fresh live snapshot. Follow up keeps prior Q&A in this session only.';
+      } else {
+        hint.textContent = `Thread: ${n} prior turn${n === 1 ? '' : 's'} this session (max ${SKYNET_ASK_HISTORY_MAX}). Follow-ups re-send live state + history. Clear chat starts a new thread.`;
+      }
+    }
+
+    function pushSkynetAskTurn(userPrompt, assistantDisplay) {
+      const u = String(userPrompt || '').trim();
+      const a = String(assistantDisplay || '').trim();
+      if (!u || !a) return;
+      skynetAskHistory.push({ user: u, assistant: a });
+      if (skynetAskHistory.length > SKYNET_ASK_HISTORY_MAX) {
+        skynetAskHistory = skynetAskHistory.slice(-SKYNET_ASK_HISTORY_MAX);
+      }
+      updateSkynetThreadHint();
+    }
+
+    function clearSkynetAskThread() {
+      skynetAskHistory = [];
+      updateSkynetThreadHint();
+    }
 
     function _knobTitleBase(el) {
       if (!el.dataset.knobTitleBase) {
@@ -3593,13 +3627,20 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const prompt = $('skynetPrompt').value.trim();
       if (!prompt) { toast('Enter a prompt', true); return; }
       $('btnSkynetSend').disabled = true;
-      setSkynetResponse('Thinking…');
+      if ($('btnSkynetFollowUp')) $('btnSkynetFollowUp').disabled = true;
+      const thinkingNote = skynetAskHistory.length
+        ? `Thinking (follow-up, ${skynetAskHistory.length} prior turn${skynetAskHistory.length === 1 ? '' : 's'})…`
+        : 'Thinking…';
+      setSkynetResponse(thinkingNote);
       $('btnSkynetApply').disabled = true;
       skynetLastApplicable = null;
       updateAskKnobHighlights([]);
       $('skynetApplyHint').textContent = '';
       try {
-        const d = await postJson('/operator/skynet/ask', { prompt });
+        const d = await postJson('/operator/skynet/ask', {
+          prompt,
+          history: skynetAskHistory,
+        });
         if (!d) {
           setSkynetResponse('SKYNET request failed — not authenticated or network error.');
           return;
@@ -3609,22 +3650,38 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
           setSkynetResponse(detail || 'SKYNET request failed (no detail — DevTools → Network → skynet/ask)');
           return;
         }
-        setSkynetResponse(d.display || d.raw_response || '(empty response)');
+        const display = d.display || d.raw_response || '(empty response)';
+        setSkynetResponse(display);
+        pushSkynetAskTurn(prompt, display);
         skynetLastApplicable = d.applicable_changes || [];
         updateAskKnobHighlights(skynetLastApplicable);
         const n = skynetLastApplicable.length;
         $('btnSkynetApply').disabled = n === 0;
         const applyList = n ? skynetLastApplicable.map(c => `${c.key} → ${c.value}`).join(', ') : '';
+        const threadNote = d.follow_up ? ' · follow-up with live snapshot' : '';
         $('skynetApplyHint').textContent = n
-          ? `${n} change(s) ready to apply: ${applyList}`
-          : (d.apply_preview_errors?.length ? d.apply_preview_errors.join('; ') : 'No auto-applicable changes — try naming settings explicitly (risk %, offset, drift, max pending)');
-        toast('SKYNET response received');
+          ? `${n} change(s) ready to apply: ${applyList}${threadNote}`
+          : ((d.apply_preview_errors?.length ? d.apply_preview_errors.join('; ') : 'No auto-applicable changes — try naming settings explicitly (risk %, offset, drift, max pending)') + threadNote);
+        toast(d.follow_up ? 'SKYNET follow-up received' : 'SKYNET response received');
       } catch (e) {
         setSkynetResponse('SKYNET request failed: ' + (e?.message || e));
         toast('SKYNET network error', true);
       } finally {
         $('btnSkynetSend').disabled = false;
+        updateSkynetThreadHint();
       }
+    };
+
+    $('btnSkynetFollowUp').onclick = () => {
+      if (!skynetAskHistory.length) {
+        toast('Ask SKYNET once first, then follow up', true);
+        return;
+      }
+      const el = $('skynetPrompt');
+      el.value = '';
+      el.placeholder = 'Follow up about current setup / posture / knobs…';
+      el.focus();
+      toast('Type your follow-up, then Ask SKYNET (live state is included again)');
     };
 
     $('btnSkynetApply').onclick = async () => {
@@ -3648,12 +3705,17 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
 
     $('btnSkynetClear').onclick = () => {
       $('skynetPrompt').value = '';
+      $('skynetPrompt').placeholder = 'Example: Set risk to 4%, stickier entry prices (drift 0.35), max pending buys 1, keep offset 0.12…';
       setSkynetResponse('');
       skynetLastApplicable = null;
       updateAskKnobHighlights([]);
       $('btnSkynetApply').disabled = true;
       $('skynetApplyHint').textContent = '';
+      clearSkynetAskThread();
+      toast('SKYNET thread cleared');
     };
+
+    updateSkynetThreadHint();
 
     $('btnSaveOperatorPhase').onclick = async () => {
       const phase = $('skynetOperatorPhase').value || 'trust';

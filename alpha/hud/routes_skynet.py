@@ -205,6 +205,8 @@ def register_skynet_routes(app: Any) -> None:
             if not prompt:
                 return JSONResponse({"ok": False, "message": "prompt required"}, status_code=400)
 
+            history = skynet_mod.normalize_skynet_history(body.get("history"))
+
             hud_state, effective, snap = _effective_context()
             base = BotConfig.load()
             try:
@@ -217,7 +219,8 @@ def register_skynet_routes(app: Any) -> None:
                 )
 
             try:
-                raw, parsed = call_skynet_advisor(
+                # Call via skynet_mod so tests can patch skynet_mod.call_skynet_advisor.
+                raw, parsed = skynet_mod.call_skynet_advisor(
                     user_prompt=prompt,
                     context=context,
                     api_key=api_key,
@@ -225,6 +228,7 @@ def register_skynet_routes(app: Any) -> None:
                     max_tokens=status.get("max_tokens", 4096),
                     operator_phase=snap.get("alpha_operator_phase"),
                     market_regime=snap.get("alpha_operator_market_regime"),
+                    history=history,
                 )
             except Exception as exc:
                 logger.warning("skynet_ask_failed | %s", exc)
@@ -234,17 +238,20 @@ def register_skynet_routes(app: Any) -> None:
                 parsed.get("suggested_changes") or [],
                 base=base,
             )
+            display = format_advisor_display(parsed)
 
             return JSONResponse(
                 {
                     "ok": True,
                     "raw_response": raw,
                     "parsed": parsed,
-                    "display": format_advisor_display(parsed),
+                    "display": display,
                     "applicable_overrides": sanitized,
                     "applicable_changes": accepted,
                     "apply_preview_errors": apply_errors,
                     "model": status["model"],
+                    "history_turns_used": len(history),
+                    "follow_up": bool(history),
                 }
             )
         except Exception as exc:

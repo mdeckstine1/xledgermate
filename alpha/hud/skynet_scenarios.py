@@ -233,6 +233,7 @@ def build_skynet_user_message(
     context: str,
     operator_phase: Optional[str] = None,
     market_regime: Optional[str] = None,
+    is_follow_up: bool = False,
 ) -> str:
     """Put operator prompt first; scenarios are reference only."""
     prompt = (user_prompt or "").strip()
@@ -248,6 +249,13 @@ def build_skynet_user_message(
         "2. Automated `likely_scenarios` and the playbook below are REFERENCE ONLY — use when they align with operator intent.",
         "3. If operator describes market structure or strategy (e.g. consolidation + bullish → buy), translate that into analysis and knobs.",
     ]
+    if is_follow_up:
+        lines.extend(
+            [
+                "6. FOLLOW-UP: prior turns are in the chat history. Continue that thread, but use the FRESH "
+                "runtime context in this message for balances, decision, powder, and knobs — not older numbers.",
+            ]
+        )
 
     if "bullish_buy" in tags or ("consolidation" in tags and "defensive" not in tags):
         lines.extend(

@@ -530,6 +530,36 @@ def filter_applicable_suggestions(
     return sanitized, final_accepted, errors
 
 
+_SKYNET_HISTORY_MAX_TURNS = 6
+_SKYNET_HISTORY_MAX_CHARS = 6000
+
+
+def normalize_skynet_history(
+    raw: Any,
+    *,
+    max_turns: int = _SKYNET_HISTORY_MAX_TURNS,
+) -> List[Dict[str, str]]:
+    """Sanitize prior operator Q&A turns for multi-turn Ask (session-only, not persisted)."""
+    if not isinstance(raw, list):
+        return []
+    out: List[Dict[str, str]] = []
+    for item in raw[-max(1, max_turns) :]:
+        if not isinstance(item, dict):
+            continue
+        user = str(item.get("user") or item.get("prompt") or "").strip()
+        assistant = str(
+            item.get("assistant") or item.get("display") or item.get("response") or ""
+        ).strip()
+        if not user or not assistant:
+            continue
+        if len(user) > _SKYNET_HISTORY_MAX_CHARS:
+            user = user[:_SKYNET_HISTORY_MAX_CHARS] + "…"
+        if len(assistant) > _SKYNET_HISTORY_MAX_CHARS:
+            assistant = assistant[:_SKYNET_HISTORY_MAX_CHARS] + "…"
+        out.append({"user": user, "assistant": assistant})
+    return out
+
+
 def call_skynet_advisor(
     *,
     user_prompt: str,
@@ -542,9 +572,19 @@ def call_skynet_advisor(
     max_tokens: int = 4096,
     operator_phase: Optional[str] = None,
     market_regime: Optional[str] = None,
+    history: Optional[List[Dict[str, str]]] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     allowed = ", ".join(OPERATOR_TUNABLE_KEYS)
     system = system_prompt or _SYSTEM_PROMPT.format(allowed_keys=allowed)
+    turns = normalize_skynet_history(history)
+    if turns:
+        system = (
+            system
+            + "\n\nThread mode: prior user/assistant messages are the same operator thread about "
+            "the *current* bot setup. The latest user message includes a FRESH runtime snapshot — "
+            "prefer those numbers over anything mentioned earlier in the thread. "
+            "This is situational Q&A, not open-ended chat; stay on bag posture, knobs, and tape."
+        )
     user_body = user_message
     if user_body is None:
         user_body = build_skynet_user_message(
@@ -552,11 +592,13 @@ def call_skynet_advisor(
             context=context,
             operator_phase=operator_phase,
             market_regime=market_regime,
+            is_follow_up=bool(turns),
         )
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user_body},
-    ]
+    messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+    for turn in turns:
+        messages.append({"role": "user", "content": turn["user"]})
+        messages.append({"role": "assistant", "content": turn["assistant"]})
+    messages.append({"role": "user", "content": user_body})
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
