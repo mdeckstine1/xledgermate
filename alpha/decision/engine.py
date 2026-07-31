@@ -486,7 +486,7 @@ class DecisionEngine:
             pending_sell_count=pending_sell_count,
             balances=balances,
             ta=ta,
-            entry_mode="strength",
+            entry_mode="inventory_trim",
             entry_reason=f"heavy_prefer_trim dev={inventory.deviation:+.3f}",
         )
 
@@ -942,6 +942,9 @@ class DecisionEngine:
             and self._harvest_knobs is not None
             and self._harvest_knobs.bypass_ta_bullish_defer
         ):
+            return None
+        # Inventory rebalance toward target must not stall forever on bullish TA.
+        if entry_mode == "inventory_trim":
             return None
         cfg = self._config.alpha_technical_analysis
         weight = getattr(self._config, "alpha_ta_weight", 1.0)
