@@ -67,6 +67,22 @@
     .sidebar-scoreboard .score-rlusd {
       font-size: .8rem; color: var(--muted); margin-top: 2px;
     }
+    .sidebar-scoreboard .score-heroes {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      margin-bottom: 10px;
+    }
+    .sidebar-scoreboard .score-heroes .score-hero {
+      margin-bottom: 0; padding: 6px 4px;
+      border-radius: 8px; background: rgba(15, 23, 42, 0.55);
+    }
+    .sidebar-scoreboard .score-heroes .score-total { font-size: 1.15rem; }
+    .sidebar-scoreboard .score-heroes .score-bot .score-total { font-size: 1.2rem; }
+    .sidebar-scoreboard .score-math {
+      font-size: .68rem; color: var(--muted); line-height: 1.4;
+      text-align: center; margin: 0 0 8px; padding: 6px 4px;
+      border: 1px dashed #334155; border-radius: 6px;
+    }
+    .sidebar-scoreboard .score-math strong { color: var(--text); font-weight: 600; }
     .sidebar-scoreboard .score-deltas {
       display: grid; gap: 5px; margin-top: 8px;
       padding-top: 8px; border-top: 1px solid #1f2937;
@@ -295,24 +311,34 @@
       <div class="row"><div class="label">Mid (RLUSD/XRP)</div><div id="mid" class="value">—</div></div>
       <div class="row"><div class="label">Quote age</div><div id="midAge" class="value muted" style="font-size:.75rem">—</div></div>
 
-      <div class="sidebar-scoreboard" id="bagScoreboard" title="Primary goal: grow TOTAL BAG (XRP-equiv of coins + powder).">
-        <div class="score-title">Bag scoreboard · grow this number</div>
-        <div class="score-hero">
-          <div class="label">Total bag</div>
-          <div id="bagTotal" class="score-total">—</div>
-          <div class="score-unit">XRP-equivalent</div>
-          <div id="bagTotalRlusd" class="score-rlusd">—</div>
+      <div class="sidebar-scoreboard" id="bagScoreboard" title="TOTAL BAG = size of the account. BOT ADDED = what the bot grew after stripping operator deposits.">
+        <div class="score-title">Bag scoreboard</div>
+        <div class="score-heroes">
+          <div class="score-hero" title="Full portfolio in XRP-equiv (coins + powder at mid). Includes deposits.">
+            <div class="label">Total bag</div>
+            <div id="bagTotal" class="score-total">—</div>
+            <div class="score-unit">XRP-eq</div>
+            <div id="bagTotalRlusd" class="score-rlusd">—</div>
+          </div>
+          <div class="score-hero score-bot" title="What the bot added since baseline: total change minus operator deposits.">
+            <div class="label">Bot added</div>
+            <div id="bagBotAdded" class="score-total">—</div>
+            <div class="score-unit">ex deposits</div>
+            <div id="bagBotAddedMeta" class="score-rlusd">—</div>
+          </div>
         </div>
+        <div id="bagMath" class="score-math">baseline + deposits + bot = total</div>
         <div class="score-deltas">
           <div class="score-row"><span class="k">Today</span><span id="bagDay" class="v">—</span></div>
           <div class="score-row"><span class="k">This week</span><span id="bagWeek" class="v">—</span></div>
           <div class="score-row"><span class="k">vs ATH</span><span id="bagAth" class="v">—</span></div>
-          <div class="score-row"><span class="k">Bot growth</span><span id="bagSinceBaseline" class="v">—</span></div>
+          <div class="score-row"><span class="k">Deposits</span><span id="bagDeposits" class="v">—</span></div>
           <div class="score-row"><span class="k">XRP stack</span><span id="bagXrpStack" class="v">—</span></div>
           <div class="score-row"><span class="k">Edge 7d</span><span id="bagEdge7d" class="v">—</span></div>
         </div>
         <div id="bagParts" class="score-parts">Waiting for portfolio…</div>
         <div id="bagBaselineMeta" class="muted pnl-meta" style="text-align:center;margin-top:4px"></div>
+        <div id="bagSinceBaseline" style="display:none"></div>
         <div id="bagXrpStackMeta" class="muted pnl-meta" style="display:none"></div>
         <div id="bagWeekMeta" class="muted pnl-meta" style="display:none"></div>
         <div id="bagEdgeMeta" class="muted pnl-meta" style="text-align:center;margin-top:2px"></div>
@@ -1585,8 +1611,11 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const bal = portfolioBalances(s);
       const totalEl = $('bagTotal');
       const totalRlusdEl = $('bagTotalRlusd');
+      const botEl = $('bagBotAdded');
+      const botMetaEl = $('bagBotAddedMeta');
+      const mathEl = $('bagMath');
+      const depEl = $('bagDeposits');
       const partsEl = $('bagParts');
-      const sinceEl = $('bagSinceBaseline');
       const weekEl = $('bagWeek');
       const dayEl = $('bagDay');
       const athEl = $('bagAth');
@@ -1601,6 +1630,14 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const totalRlusd = b.portfolio_rlusd_equiv != null ? Number(b.portfolio_rlusd_equiv)
         : (bal.rlusdEq != null ? Number(bal.rlusdEq)
           : (totalXrp != null && mid ? totalXrp * Number(mid) : null));
+      const baseline = b.baseline_portfolio_xrp != null ? Number(b.baseline_portfolio_xrp) : null;
+      const depVal = Number(b.operator_deposits_xrp_equiv || 0);
+      // What the bot actually added: Δ total since baseline, deposits stripped.
+      const botAdded = b.since_baseline_bot_xrp != null ? Number(b.since_baseline_bot_xrp)
+        : (b.since_baseline_xrp != null ? Number(b.since_baseline_xrp) : null);
+      const botPct = b.since_baseline_bot_pct != null ? Number(b.since_baseline_bot_pct)
+        : (b.since_baseline_pct != null ? Number(b.since_baseline_pct) : null);
+      const rawSince = b.since_baseline_xrp != null ? Number(b.since_baseline_xrp) : null;
 
       if (totalEl) {
         totalEl.textContent = totalXrp != null ? Number(totalXrp).toFixed(4) : '—';
@@ -1610,9 +1647,51 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       }
       if (totalRlusdEl) {
         totalRlusdEl.textContent = totalRlusd != null
-          ? ('≈ ' + Number(totalRlusd).toFixed(2) + ' RLUSD eq')
+          ? ('≈ ' + Number(totalRlusd).toFixed(2) + ' RLUSD')
           : '—';
       }
+
+      if (botEl) {
+        botEl.classList.remove('pnl-pos', 'pnl-neg');
+        if (botAdded == null || Number.isNaN(botAdded)) {
+          botEl.textContent = '—';
+        } else {
+          const sign = botAdded > 0 ? '+' : '';
+          botEl.textContent = sign + botAdded.toFixed(2);
+          if (botAdded > 0) botEl.classList.add('pnl-pos');
+          else if (botAdded < 0) botEl.classList.add('pnl-neg');
+        }
+      }
+      if (botMetaEl) {
+        if (botPct != null && !Number.isNaN(botPct)) {
+          botMetaEl.textContent = (botPct >= 0 ? '+' : '') + botPct.toFixed(2) + '% vs start';
+        } else {
+          botMetaEl.textContent = 'vs baseline · no deposits';
+        }
+      }
+
+      if (mathEl) {
+        if (baseline != null && totalXrp != null && botAdded != null) {
+          const baseS = baseline.toFixed(1);
+          const depS = depVal > 0 ? (' + ' + depVal.toFixed(1) + ' dep') : '';
+          const botS = (botAdded >= 0 ? ' + ' : ' − ') + Math.abs(botAdded).toFixed(2) + ' bot';
+          mathEl.innerHTML = '<strong>' + baseS + '</strong> start'
+            + depS + botS
+            + ' = <strong>' + Number(totalXrp).toFixed(2) + '</strong>';
+        } else {
+          mathEl.textContent = 'baseline + deposits + bot = total';
+        }
+      }
+
+      if (depEl) {
+        depEl.classList.remove('pnl-pos', 'pnl-neg');
+        if (depVal > 0) {
+          depEl.textContent = '+' + depVal.toFixed(1) + ' XRP-eq';
+        } else {
+          depEl.textContent = 'none recorded';
+        }
+      }
+
       if (partsEl) {
         const x = b.xrp != null ? b.xrp : bal.xrp;
         const r = b.rlusd != null ? b.rlusd : bal.rlusd;
@@ -1625,7 +1704,6 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if (!b || !b.available) {
         setSignedScore(dayEl, null);
         setSignedScore(weekEl, null);
-        setSignedScore(sinceEl, null);
         setSignedScore(stackEl, null);
         setSignedScore(edgeEl, null);
         if (athEl) { athEl.textContent = '—'; athEl.classList.remove('pnl-pos', 'pnl-neg'); }
@@ -1653,15 +1731,16 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         }
       }
 
-      const botSince = b.since_baseline_bot_xrp != null ? b.since_baseline_bot_xrp : b.since_baseline_xrp;
-      const botPct = b.since_baseline_bot_pct != null ? b.since_baseline_bot_pct : b.since_baseline_pct;
-      setSignedScore(sinceEl, botSince, { pct: botPct, digits: 2 });
       const baseDate = (b.baseline_utc || '').slice(0, 10) || '?';
-      const depVal = Number(b.operator_deposits_xrp_equiv || 0);
       if (baseMeta) {
-        baseMeta.textContent = depVal > 0
-          ? 'ex deposits since ' + baseDate + ' · deposits ' + depVal.toFixed(1) + ' XRP-eq'
-          : 'since ' + baseDate + ' · XRP-eq (price + trading)';
+        if (depVal > 0 && rawSince != null && botAdded != null) {
+          baseMeta.textContent = 'since ' + baseDate
+            + ' · raw Δ ' + (rawSince >= 0 ? '+' : '') + rawSince.toFixed(1)
+            + ' − dep ' + depVal.toFixed(1)
+            + ' = bot ' + (botAdded >= 0 ? '+' : '') + botAdded.toFixed(2);
+        } else {
+          baseMeta.textContent = 'bot added since ' + baseDate + ' · XRP-eq (price + trading)';
+        }
       }
 
       const stackBot = b.xrp_stack_delta_bot;
@@ -1798,6 +1877,13 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       let bagTicker = totalBag != null
         ? ('TOTAL BAG <span class="ok">' + totalBag.toFixed(4) + ' XRP-eq</span>')
         : 'TOTAL BAG —';
+      const botAdd = bg.since_baseline_bot_xrp != null ? Number(bg.since_baseline_bot_xrp)
+        : (bg.since_baseline_xrp != null ? Number(bg.since_baseline_xrp) : null);
+      if (botAdd != null) {
+        const cls = botAdd > 0 ? 'ok' : (botAdd < 0 ? 'bad' : 'info');
+        bagTicker += ' · BOT ADDED <span class="' + cls + '">'
+          + (botAdd >= 0 ? '+' : '') + botAdd.toFixed(2) + '</span>';
+      }
       if (dayD != null) {
         const cls = dayD > 0 ? 'ok' : (dayD < 0 ? 'bad' : 'info');
         bagTicker += ' · today <span class="' + cls + '">' + (dayD >= 0 ? '+' : '') + Number(dayD).toFixed(2) + '</span>';
