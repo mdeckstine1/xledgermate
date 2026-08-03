@@ -149,17 +149,24 @@ def _update_week_anchor(
         ws["week_start_portfolio_xrp"] = portfolio_xrp
         ws["week_start_xrp"] = xrp
         ws["week_start_rlusd"] = rlusd
-    if stored_day != current_day:
-        ws["day_start_utc"] = current_day
-        ws["day_start_portfolio_xrp"] = portfolio_xrp
-        ws["day_start_xrp"] = xrp
-        ws["day_start_rlusd"] = rlusd
-    elif float(ws.get("day_start_portfolio_xrp") or 0.0) <= 0:
-        # First observation after upgrade: anchor day without inventing a huge Δ.
-        ws["day_start_utc"] = current_day
-        ws["day_start_portfolio_xrp"] = portfolio_xrp
-        ws["day_start_xrp"] = xrp
-        ws["day_start_rlusd"] = rlusd
+    if stored_day != current_day or float(ws.get("day_start_portfolio_xrp") or 0.0) <= 0:
+        # New UTC day (or first seed). If today is also week-open day and we already
+        # have a week open, reuse it so Monday "today" matches "this week" open.
+        week_open = float(ws.get("week_start_portfolio_xrp") or 0.0)
+        if (
+            current_day == current_week
+            and week_open > 0
+            and str(ws.get("week_start_utc") or "") == current_week
+        ):
+            ws["day_start_utc"] = current_day
+            ws["day_start_portfolio_xrp"] = week_open
+            ws["day_start_xrp"] = float(ws.get("week_start_xrp") or xrp)
+            ws["day_start_rlusd"] = float(ws.get("week_start_rlusd") or rlusd)
+        else:
+            ws["day_start_utc"] = current_day
+            ws["day_start_portfolio_xrp"] = portfolio_xrp
+            ws["day_start_xrp"] = xrp
+            ws["day_start_rlusd"] = rlusd
 
     ws["last_portfolio_xrp"] = portfolio_xrp
     ws["last_xrp"] = xrp
