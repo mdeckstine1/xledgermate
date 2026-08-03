@@ -253,24 +253,16 @@ The sidebar **Bag growth** block answers: *“Is my stack bigger?”* vs *“Is 
 
 ---
 
-## Walk-away preset
+## Quick presets (Maximize + Unassed)
 
-SKYNET tab → **Walk-away preset** (or `POST /operator/walkaway`) applies:
+Developer HUD ships two one-click operator presets (SKYNET tab):
 
-- **Operator phase:** `trust` — patient entries, anti-churn
-- **Knobs:** e.g. buy offset 0.18, max pending 2, higher min sell score, longer SL cooldown
-- **Agent Smith:** ON with default guardrails
-- **Full SKYNET:** stays OFF (no auto-apply without explicit `ENABLE_FULL_SKYNET`)
+| Preset | When | Endpoint |
+|--------|------|----------|
+| **Maximize** | Default harvest loop — target 85% XRP, powder floor 40, brackets OFF, harvest/dip redeploy | `POST /operator/maximize` |
+| **Unassed** | Recovery only — unbrick stranded bag (lower strength gate, powder floor 18, kill SL factory) | `POST /operator/unassed` |
 
-Use when you want hands-off monitoring without aggressive churn or full autonomy.
-
-**Bracket edge cleanup** (SKYNET tab → **Bracket edge cleanup** or `POST /operator/bracket-edge-cleanup`) applies anti-churn knobs when realized TP/SL is SL-heavy / zero TP:
-
-- **Trust phase**, `max_pending_buys` 1, higher `min_buy` TA, patient buy offset
-- **Closer TP** (~2.5%) and **SL** (~2.5%), RR 1.5, deferred SL buffer
-- Longer re-entry after SL — does **not** enable Agent Smith or full SKYNET
-
-Pair with **Walk-away** if you also want Agent Smith ON. Use SKYNET quick button **Bracket edge — 48h watch** after applying.
+Apply Unassed when inventory is bricked (near-full XRP, no RLUSD, dead zone / SL churn). Switch back to **Maximize** once powder and trims look healthy. Catalog: `GET /operator/presets`.
 
 ---
 

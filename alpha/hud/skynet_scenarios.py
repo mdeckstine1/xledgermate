@@ -18,16 +18,15 @@ from alpha.hud.operator_market_regime import (
 from alpha.hud.skynet_knobs import KNOB_ALIASES  # noqa: F401 — re-export for tests/docs
 
 # SKYNET quick-prompt: bot posture vs market tape (HUD Analysis button — keep in sync).
+# Developer HUD ships two presets only: Maximize (default) + Unassed (recovery).
 REGIME_PRESET_TACTICS = """=== Regime preset tactics (HUD one-click bundles) ===
-Walk-away: trust phase, 2% clips, buy offset 0.18, stale drift 0.35 (sticky), max_pending_buys 2, Agent Smith every 4–6 cycles. Does NOT change brackets. Use when: new deploy, SL churn soak, overnight prove-behaviour, operator wants guardrailed autopilot.
-Long build: scale phase, bull regime, 80% XRP target, 3% clips, offset 0.22, drift 0.40 (stickier), max_pending 1, brackets SL 3% / TP ~6% (RR 2.0), harvest watch 4%, dip offset 0.25, Agent Smith 8–12 cycles. Use when: trust earned, multi-week bag growth, patient sniper entries + swing harvest trims — NOT rip-chase accumulation.
-Stack growth: scale + bull, 88% XRP target, 3% clips, weakness 0.04 / strength 0.11, ta_min_sell 4.0, max_pending 1 sell / 2 buys, offset 0.20 / drift 0.38. Use when: operator priority is rising XRP coin count — deploy RLUSD on weakness, defer strength trims until very heavy, track xrp_stack_delta_bot weekly.
-Bracket edge cleanup: trust phase, max_pending 1, TP ~2.5% / SL ~2.5% (RR 1.5), ta_min_buy 3, long SL re-entry cooldown. Use when: SL-heavy / zero TP realized bleed in chop. Do NOT combine with long-build wider brackets — pick one bracket philosophy.
+Maximize (default): scale + bull, 85% XRP target, strength trim ~5% dev, powder floor 40 XRP-eq, harvest/dip arms ~3.5%, 3.5% portfolio clips, core bag brackets OFF (no SL factory). Use when: healthy powder + inventory loop — grow XRP count via harvest → powder → redeploy dips.
+Unassed (recovery only): scale + bull, 88% XRP target, strength gate 0.06, softer sell TA 2.0, reload floor 18 XRP-eq (accumulation not hard-blocked), wide SL 9% / no trail / fixed TP 2.5%. Use when: stranded bag (near 99% XRP, no powder, dead zone / SL factory). Switch back to Maximize once trims + powder recover.
 Fit rules:
-- Goal = grow XRP token count consistently: Stack growth preset (not long-build 80% rebalance-down).
-- XRP-heavy + bullish rip: harvest on extended legs only; avoid strength sells until dev≥strength_dev; stack-growth defers trims.
-- RLUSD-heavy + constructive bull: stack-growth or walk-away; deploy RLUSD before offset↓.
-- Realized edge negative + many SL / zero TP: bracket edge OR walk-away first; defer long-build until churn stabilizes.
+- Normal soak / bag growth: Maximize. Do not invent legacy presets (walk-away, long-build, stack-growth, bracket-edge are removed).
+- Stranded / bricked inventory: Unassed briefly, then Maximize.
+- XRP-heavy + bullish rip: harvest on strength when dev≥strength_dev; keep powder floor.
+- RLUSD-heavy + constructive bull: deploy on weakness / dip path under Maximize.
 - Everything aligned: say so — no preset change needed."""
 
 BAG_GROWTH_ANALYSIS_PROMPT = """Bot vs market — bag growth analysis (PRIMARY prompt):
@@ -40,14 +39,14 @@ Deliver in plain English:
 1) Market read — tape (grind / rip / chop / dip), structure trend/breakout, TA bias and scores, 24h leg if harvest/dip relevant.
 2) Bot read — current action and why; active path (weakness / strength / accumulation / harvest / reload / HOLD); inventory gates (buy_block, sell_block, pause); any mismatch with what the market is doing.
 3) Bag growth — is posture aligned for long-term XRP stack growth? Use bag_growth (bot-adjusted stack delta, trading_edge_7d) and risk_capital sizing — NOT session MTM alone.
-4) Regime preset fit — compare effective knobs to Walk-away, Long build, Stack growth, and Bracket edge cleanup (see operator_preset_tactics). If operator wants rising XRP coin count, prefer Stack growth over Long build. Recommend applying a preset, staying on current posture, or manual merit — with clear when/why. Do not suggest conflicting presets (long-build vs bracket-edge brackets).
+4) Regime preset fit — compare effective knobs to Maximize (default harvest loop) or Unassed (recovery only). Recommend Maximize, Unassed, stay, or manual knobs — with clear when/why. Do not invent removed presets.
 5) Verdict — either say clearly that everything is well-aligned and no changes are needed, OR give 1–3 specific optimizations (preset name and/or operator knobs).
 
 Judge bleed from realized bracket P&L (tp_exits / sl_exits), not session P&L. Output suggested_changes only when clearly warranted; empty array is OK if posture is perfect. Be direct and conversational."""
 
 
 def build_regime_preset_tactics_block() -> str:
-    """SKYNET context — when to use walk-away / long-build / bracket-edge presets."""
+    """SKYNET context — when to use Maximize vs Unassed presets."""
     return REGIME_PRESET_TACTICS
 
 
@@ -282,11 +281,11 @@ def build_skynet_user_message(
         lines.extend(
             [
                 "4. BAG GROWTH ANALYSIS intent: compare market tape vs bot posture first (not ladder clutter by default).",
-                "   Include regime preset fit: Walk-away vs Long build vs Stack growth vs Bracket edge (operator_preset_tactics in context).",
+                "   Include regime preset fit: Maximize (default) vs Unassed (recovery) only (operator_preset_tactics in context).",
                 "   End with an explicit verdict: either (a) everything is well-aligned — no changes needed, with brief why, "
                 "or (b) 1–3 concrete optimizations (preset recommendation and/or knob changes).",
                 "   Use bag_growth, risk_capital, harvest/dip/reload blocks; judge bleed from realized bracket P&L only.",
-                "   Never recommend long-build and bracket-edge together — conflicting bracket philosophies.",
+                "   Do not invent removed presets (walk-away / long-build / stack-growth / bracket-edge).",
             ]
         )
 

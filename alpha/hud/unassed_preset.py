@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Tuple
 
 from alpha.hud.operator_market_regime import OPERATOR_MARKET_REGIME_KEY
 from alpha.hud.operator_phase import OPERATOR_PHASE_KEY
-from alpha.hud.stack_growth_preset import STACK_GROWTH_OPERATOR_OVERRIDES
 
 # Emergency recovery knobs for "99% XRP / no RLUSD / hold forever / SL factory".
 # Does not rewrite decision priority in code — only operator-tunable policy numbers.
@@ -73,7 +72,8 @@ UNASSED_DESCRIPTION = (
     "bull/accum max dev 0.15, softer sell TA (2.0), reload floor 18 XRP-eq + "
     "accumulation not hard-blocked, tighter funding asks (0.04/0.08), "
     "wide SL 9% / no trail / fixed TP 2.5% (kill SL factory). "
-    "Still scale+bull bag bias (target 88%). Knobs only — not full code rewrite."
+    "Still scale+bull bag bias (target 88%). Knobs only — not full code rewrite. "
+    "Recovery only — switch back to Maximize once powder + trims are healthy."
 )
 
 
@@ -83,23 +83,25 @@ def unassed_preset_payload() -> Dict[str, Any]:
         "description": UNASSED_DESCRIPTION,
         "operator_overrides": dict(UNASSED_OPERATOR_OVERRIDES),
         "agent_patch": dict(UNASSED_AGENT_PATCH),
-        "stack_growth_comparison": compare_unassed_to_stack_growth(),
+        "maximize_comparison": compare_unassed_to_maximize(),
     }
 
 
-def compare_unassed_to_stack_growth() -> Dict[str, Any]:
-    """Highlight deltas vs stack-growth (the preset that often bricks the bot)."""
+def compare_unassed_to_maximize() -> Dict[str, Any]:
+    """Highlight deltas vs Maximize (default harvest-loop posture). Lazy import avoids cycle."""
+    from alpha.hud.maximize_preset import MAXIMIZE_OPERATOR_OVERRIDES
+
     different: Dict[str, Dict[str, Any]] = {}
-    for key in sorted(set(STACK_GROWTH_OPERATOR_OVERRIDES) | set(UNASSED_OPERATOR_OVERRIDES)):
-        sg = STACK_GROWTH_OPERATOR_OVERRIDES.get(key)
+    for key in sorted(set(MAXIMIZE_OPERATOR_OVERRIDES) | set(UNASSED_OPERATOR_OVERRIDES)):
+        mx = MAXIMIZE_OPERATOR_OVERRIDES.get(key)
         ua = UNASSED_OPERATOR_OVERRIDES.get(key)
-        if sg != ua:
-            different[key] = {"stack_growth": sg, "unassed": ua}
+        if mx != ua:
+            different[key] = {"maximize": mx, "unassed": ua}
     return {
         "different_operator_keys": different,
         "summary": (
-            f"{len(different)} knob(s) differ from stack-growth — mainly strength gate, "
-            "momentum max dev, sell TA, reload floor/block, and wide non-trailing SL."
+            f"{len(different)} knob(s) differ from Maximize — mainly lower powder floor, "
+            "slightly higher strength gate, wider/softer recovery SL path."
         ),
     }
 

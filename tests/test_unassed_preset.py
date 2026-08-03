@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from alpha.hud.unassed_preset import (
     UNASSED_OPERATOR_OVERRIDES,
-    compare_unassed_to_stack_growth,
+    compare_unassed_to_maximize,
     unassed_preset_payload,
 )
 
@@ -26,9 +26,11 @@ def test_unassed_preset_unbricks_key_knobs() -> None:
     assert "Unassed" in payload["label"] or "unbrick" in payload["description"].lower()
 
 
-def test_unassed_vs_stack_growth() -> None:
-    cmp = compare_unassed_to_stack_growth()
+def test_unassed_vs_maximize() -> None:
+    cmp = compare_unassed_to_maximize()
     diff = cmp["different_operator_keys"]
-    assert diff["alpha_strength_deviation"]["stack_growth"] == 0.14
+    assert diff["alpha_strength_deviation"]["maximize"] == 0.05
     assert diff["alpha_strength_deviation"]["unassed"] == 0.06
+    assert diff["alpha_reload_min_rlusd_deploy_xrp_equiv"]["maximize"] == 40.0
+    assert diff["alpha_reload_min_rlusd_deploy_xrp_equiv"]["unassed"] == 18.0
     assert UNASSED_OPERATOR_OVERRIDES["alpha_reload_min_rlusd_deploy_xrp_equiv"] == 18.0

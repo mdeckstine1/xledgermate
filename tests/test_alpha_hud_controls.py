@@ -120,35 +120,11 @@ def test_config_reload_queues(client):
     assert r.json()["queued"] == "config_reload"
 
 
-def test_bracket_edge_cleanup_preset(client):
-    r = client.post("/operator/bracket-edge-cleanup")
-    assert r.status_code == 200
-    data = r.json()
-    assert data["ok"] is True
-    assert data["config_effective"]["alpha_max_pending_buys"] == 1
-    assert data["config_effective"]["take_profit_pct"] == 0.025
-
-
-def test_long_build_preset(client):
-    r = client.post("/operator/long-build")
-    assert r.status_code == 200
-    data = r.json()
-    assert data["ok"] is True
-    assert data["config_effective"]["alpha_operator_phase"] == "scale"
-    assert data["config_effective"]["inventory_target_xrp_ratio"] == 0.80
-    assert data["walkaway_comparison"]["different_operator_keys"]["alpha_operator_phase"]["long_build"] == "scale"
-
-
 def test_operator_presets_catalog(client):
     r = client.get("/operator/presets")
     assert r.status_code == 200
     ids = [p["id"] for p in r.json()["presets"]]
-    assert "maximize" in ids
-    assert "walkaway" in ids
-    assert "stack_growth" in ids
-    assert "long_build" in ids
-    assert "unassed" in ids
-    assert "bracket_edge_cleanup" in ids
+    assert ids == ["maximize", "unassed"]
 
 
 def test_maximize_preset_route(client):
@@ -161,16 +137,6 @@ def test_maximize_preset_route(client):
     assert data["config_effective"]["alpha_reload_min_rlusd_deploy_xrp_equiv"] == 40.0
 
 
-def test_stack_growth_preset_route(client):
-    r = client.post("/operator/stack-growth")
-    assert r.status_code == 200
-    data = r.json()
-    assert data["ok"] is True
-    assert data["config_effective"]["inventory_target_xrp_ratio"] == 0.90
-    assert data["config_effective"]["alpha_strength_deviation"] == 0.14
-    assert data["config_effective"]["alpha_ta_min_sell_score"] == 4.5
-
-
 def test_unassed_preset_route(client):
     r = client.post("/operator/unassed")
     assert r.status_code == 200
@@ -181,7 +147,7 @@ def test_unassed_preset_route(client):
     assert data["config_effective"]["alpha_reload_block_accumulation_until_funded"] is False
     assert data["config_effective"]["bracket_trailing_enabled"] is False
     assert data["config_effective"]["initial_stop_loss_pct"] == 0.09
-    assert data["stack_growth_comparison"]["different_operator_keys"]["alpha_strength_deviation"][
+    assert data["maximize_comparison"]["different_operator_keys"]["alpha_strength_deviation"][
         "unassed"
     ] == 0.06
 

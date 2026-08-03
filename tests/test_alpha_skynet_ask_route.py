@@ -57,8 +57,8 @@ def test_skynet_analysis_prompt_endpoint(skynet_client: TestClient):
     data = r.json()
     assert data["ok"] is True
     assert "Regime preset fit" in data["prompt"]
-    assert "Walk-away" in data["prompt"]
-    assert "Long build" in data["prompt"]
+    assert "Maximize" in data["prompt"]
+    assert "Unassed" in data["prompt"]
 
 
 def test_skynet_ask_with_accumulation_context(skynet_client: TestClient):

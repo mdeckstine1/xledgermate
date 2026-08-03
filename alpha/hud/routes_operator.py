@@ -84,116 +84,6 @@ def register_operator_routes(app: Any) -> None:
         _runtime().queue_command({"type": "config_reload"})
         return JSONResponse({"ok": True, "queued": "config_reload"})
 
-    @app.post("/operator/walkaway")
-    async def post_walkaway_preset() -> JSONResponse:
-        """Apply walk-away bundle: trust-phase knobs + Agent Smith (not full SKYNET)."""
-        from alpha.hud.skynet_agent import agent_status_payload, merge_agent_patch
-        from alpha.hud.walkaway_preset import apply_walkaway_preset, walkaway_preset_payload
-
-        base = _base_config()
-        store = _runtime()
-        merged, _agent, errors = apply_walkaway_preset(
-            patch_overrides=lambda ov, base=base: store.patch_overrides(ov, base=base),
-            merge_agent_patch=merge_agent_patch,
-            base_config=base,
-        )
-        if errors:
-            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
-        effective = apply_overrides(base, merged)
-        return JSONResponse(
-            {
-                "ok": True,
-                "message": walkaway_preset_payload()["description"],
-                "operator_overrides": merged,
-                "config_effective": effective_config_snapshot(effective, merged),
-                "agent": agent_status_payload(),
-            }
-        )
-
-    @app.post("/operator/bracket-edge-cleanup")
-    async def post_bracket_edge_cleanup() -> JSONResponse:
-        """Apply bracket edge cleanup bundle (trust + closer TP / anti-churn)."""
-        from alpha.hud.bracket_edge_preset import (
-            apply_bracket_edge_preset,
-            bracket_edge_preset_payload,
-        )
-
-        base = _base_config()
-        store = _runtime()
-        merged, errors = apply_bracket_edge_preset(
-            patch_overrides=lambda ov, base=base: store.patch_overrides(ov, base=base),
-            base_config=base,
-        )
-        if errors:
-            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
-        effective = apply_overrides(base, merged)
-        payload = bracket_edge_preset_payload()
-        return JSONResponse(
-            {
-                "ok": True,
-                "message": payload["description"],
-                "keys_applied": payload["keys_applied"],
-                "operator_overrides": merged,
-                "config_effective": effective_config_snapshot(effective, merged),
-            }
-        )
-
-    @app.post("/operator/long-build")
-    async def post_long_build_preset() -> JSONResponse:
-        """Apply long-build bundle: scale phase, patient sticky entries, wider brackets."""
-        from alpha.hud.long_build_preset import apply_long_build_preset, long_build_preset_payload
-        from alpha.hud.skynet_agent import agent_status_payload, merge_agent_patch
-
-        base = _base_config()
-        store = _runtime()
-        merged, _agent, errors = apply_long_build_preset(
-            patch_overrides=lambda ov, base=base: store.patch_overrides(ov, base=base),
-            merge_agent_patch=merge_agent_patch,
-            base_config=base,
-        )
-        if errors:
-            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
-        effective = apply_overrides(base, merged)
-        payload = long_build_preset_payload()
-        return JSONResponse(
-            {
-                "ok": True,
-                "message": payload["description"],
-                "operator_overrides": merged,
-                "config_effective": effective_config_snapshot(effective, merged),
-                "walkaway_comparison": payload["walkaway_comparison"],
-                "agent": agent_status_payload(),
-            }
-        )
-
-    @app.post("/operator/stack-growth")
-    async def post_stack_growth_preset() -> JSONResponse:
-        """Apply stack-growth bundle: high XRP target, defer strength trims, deploy RLUSD."""
-        from alpha.hud.skynet_agent import agent_status_payload, merge_agent_patch
-        from alpha.hud.stack_growth_preset import apply_stack_growth_preset, stack_growth_preset_payload
-
-        base = _base_config()
-        store = _runtime()
-        merged, _agent, errors = apply_stack_growth_preset(
-            patch_overrides=lambda ov, base=base: store.patch_overrides(ov, base=base),
-            merge_agent_patch=merge_agent_patch,
-            base_config=base,
-        )
-        if errors:
-            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
-        effective = apply_overrides(base, merged)
-        payload = stack_growth_preset_payload()
-        return JSONResponse(
-            {
-                "ok": True,
-                "message": payload["description"],
-                "operator_overrides": merged,
-                "config_effective": effective_config_snapshot(effective, merged),
-                "long_build_comparison": payload["long_build_comparison"],
-                "agent": agent_status_payload(),
-            }
-        )
-
     @app.post("/operator/unassed")
     async def post_unassed_preset() -> JSONResponse:
         """Apply Unassed bundle: unbrick stranded bag-growth (powder, dead zone, SL factory)."""
@@ -217,7 +107,7 @@ def register_operator_routes(app: Any) -> None:
                 "message": payload["description"],
                 "operator_overrides": merged,
                 "config_effective": effective_config_snapshot(effective, merged),
-                "stack_growth_comparison": payload["stack_growth_comparison"],
+                "maximize_comparison": payload["maximize_comparison"],
                 "agent": agent_status_payload(),
             }
         )
@@ -252,13 +142,9 @@ def register_operator_routes(app: Any) -> None:
 
     @app.get("/operator/presets")
     async def get_operator_presets() -> JSONResponse:
-        """Describe one-click operator preset bundles."""
-        from alpha.hud.bracket_edge_preset import bracket_edge_preset_payload
-        from alpha.hud.long_build_preset import long_build_preset_payload
+        """Describe one-click operator preset bundles (Maximize + Unassed only)."""
         from alpha.hud.maximize_preset import maximize_preset_payload
-        from alpha.hud.stack_growth_preset import stack_growth_preset_payload
         from alpha.hud.unassed_preset import unassed_preset_payload
-        from alpha.hud.walkaway_preset import walkaway_preset_payload
 
         return JSONResponse(
             {
@@ -275,30 +161,6 @@ def register_operator_routes(app: Any) -> None:
                         "endpoint": "/operator/unassed",
                         "method": "POST",
                         **unassed_preset_payload(),
-                    },
-                    {
-                        "id": "walkaway",
-                        "endpoint": "/operator/walkaway",
-                        "method": "POST",
-                        **walkaway_preset_payload(),
-                    },
-                    {
-                        "id": "stack_growth",
-                        "endpoint": "/operator/stack-growth",
-                        "method": "POST",
-                        **stack_growth_preset_payload(),
-                    },
-                    {
-                        "id": "long_build",
-                        "endpoint": "/operator/long-build",
-                        "method": "POST",
-                        **long_build_preset_payload(),
-                    },
-                    {
-                        "id": "bracket_edge_cleanup",
-                        "endpoint": "/operator/bracket-edge-cleanup",
-                        "method": "POST",
-                        **bracket_edge_preset_payload(),
                     },
                 ],
             }
