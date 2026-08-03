@@ -37,21 +37,43 @@ _COOLDOWN_GUARD_KEYS = (
     "alpha_reentry_sl_cooldown_minutes",
 )
 
+# Guardrails aligned with Maximize / bag-growth accumulation (not pure MM).
 _DEFAULT_GUARDRAILS: Dict[str, Any] = {
-    "alpha_risk_per_trade_pct": {"min": 0.1, "max": 5.0},
-    "inventory_target_xrp_pct": {"min": 50.0, "max": 92.0},
-    "alpha_ta_weight": {"min": 0.0, "max": 1.0},
+    "alpha_risk_per_trade_pct": {"min": 2.0, "max": 4.0},
+    "inventory_target_xrp_pct": {"min": 75.0, "max": 90.0},
+    "alpha_ta_weight": {"min": 0.4, "max": 0.85},
+    "alpha_strength_deviation": {"min": 0.03, "max": 0.10},
+    "alpha_weakness_deviation": {"min": 0.02, "max": 0.08},
+    "alpha_buy_limit_offset_pct": {"min": 0.08, "max": 0.25},
+    "alpha_sell_limit_offset_pct": {"min": 0.05, "max": 0.18},
+    "alpha_max_pending_buys": {"min": 1, "max": 4},
+    "alpha_max_pending_sells": {"min": 1, "max": 3},
+    "alpha_accumulation_max_deviation": {"min": 0.08, "max": 0.15},
+    "alpha_bull_run_max_deviation": {"min": 0.08, "max": 0.15},
+    "alpha_reload_min_rlusd_deploy_xrp_equiv": {"min": 25.0, "max": 80.0},
+    "alpha_ta_min_buy_score": {"min": 1.0, "max": 3.5},
+    "alpha_ta_min_sell_score": {"min": 1.0, "max": 3.5},
+    "initial_stop_loss_pct": {"min": 0.05, "max": 0.12},
     "alpha_reentry_tp_cooldown_cycles": {"min": 0, "max": 30},
     "alpha_reentry_tp_cooldown_minutes": {"min": 0.0, "max": 180.0},
     "alpha_reentry_sl_cooldown_cycles": {"min": 0, "max": 60},
     "alpha_reentry_sl_cooldown_minutes": {"min": 0.0, "max": 480.0},
-    "alpha_drawdown_reload_stage1_arm_pct": {"min": 1.0, "max": 8.0},
-    "alpha_drawdown_reload_stage2_arm_pct": {"min": 2.0, "max": 12.0},
-    "alpha_drawdown_reload_total_bag_pct": {"min": 1.0, "max": 8.0},
-    "alpha_drawdown_reload_stage1_bag_pct": {"min": 0.5, "max": 5.0},
-    "alpha_drawdown_reload_stage2_bag_pct": {"min": 0.5, "max": 5.0},
-    "max_changes_per_cycle": 3,
+    "alpha_drawdown_reload_stage1_arm_pct": {"min": 1.5, "max": 5.0},
+    "alpha_drawdown_reload_stage2_arm_pct": {"min": 3.0, "max": 8.0},
+    "alpha_drawdown_reload_total_bag_pct": {"min": 2.0, "max": 8.0},
+    "alpha_drawdown_reload_stage1_bag_pct": {"min": 1.0, "max": 4.0},
+    "alpha_drawdown_reload_stage2_bag_pct": {"min": 1.0, "max": 4.0},
+    "max_changes_per_cycle": 2,
 }
+
+# Core-bag Maximize: never re-enable SL factory via agent.
+_FORBIDDEN_TRUE_KEYS = frozenset(
+    {
+        "alpha_brackets_enabled",
+        "bracket_trailing_enabled",
+        "alpha_reload_block_accumulation_until_funded",
+    }
+)
 
 _DEFAULT_EMERGENCY_RULES: Dict[str, Any] = {
     "enabled": True,
@@ -59,14 +81,18 @@ _DEFAULT_EMERGENCY_RULES: Dict[str, Any] = {
     "session_loss_pause_xrp": 25.0,
 }
 
-_AGENT_SYSTEM_PROMPT = """You are Agent Smith (SKYNET Phase 2) for xLedgerMate Alpha — a bounded configuration advisor for an XRPL XRP/RLUSD bag-growth bot.
+_AGENT_SYSTEM_PROMPT = """You are Agent Smith (SKYNET Phase 2) for xLedgerMate Alpha — a bounded advisor for an XRPL XRP/RLUSD **accumulation / bag-growth** bot (Maximize doctrine).
+
+This is NOT pure market-making. Core loop:
+  powder floor (RLUSD) → buy dips/weakness/breakouts into core bag → hold → inventory_trim/harvest when heavy → refill powder → repeat.
+Core bag has brackets OFF (no TP/SL factory). Clip size scales with portfolio (risk_per_trade_pct).
 
 Voice: plain English, conversational, light dry humor OK — still output strict JSON only.
-You analyze runtime state and may suggest operator knob changes ONLY when they improve long-term XRP bag growth while respecting risk.
+Suggest operator knob changes ONLY when they improve long-term XRP bag growth while respecting risk and Maximize doctrine.
 
 Respond with a single JSON object (no markdown fences):
 {{
-  "reasoning": "<3-8 sentences: inventory, TA, decision/HOLD reasons, market conditions, brackets>",
+  "reasoning": "<3-8 sentences: inventory vs target, powder/reload, decision/HOLD reason, TA, harvest/dip/accum — not MM language>",
   "summary": "<one-line headline>",
   "suggested_changes": [
     {{"key": "<operator_config_key>", "value": <json_value>, "reason": "<why this knob, tied to current state>"}}
@@ -77,52 +103,53 @@ Respond with a single JSON object (no markdown fences):
 Hard rules:
 - Only keys from this allowlist: {allowed_keys}
 - NEVER suggest dry_run changes.
+- NEVER re-enable alpha_brackets_enabled or bracket_trailing_enabled (must stay false for core bag).
+- NEVER set alpha_reload_block_accumulation_until_funded to true (Maximize keeps residual bids possible).
 - NEVER exceed these guardrails (values must stay inside min/max):
 {guardrail_lines}
 - Suggest at most {max_changes} change(s) per response.
-- inventory_target_xrp_ratio is 0.0-1.0 (not percent). Prefer inventory_target_xrp_ratio over target_xrp_pct.
-- Explain each suggested knob change with reference to current effective values in context.
-- If no safe improvement is warranted, return an empty suggested_changes array and explain why in reasoning.
+- inventory_target_xrp_ratio is 0.0-1.0 (not percent). Prefer inventory_target_xrp_ratio over target_xrp_pct. Keep target roughly 80–90% bag bias (Maximize ~85%).
+- Prefer empty suggested_changes when HOLD is inventory_trim / max_pending_sells / heavy_prefer_trim waiting for fills — that is healthy rebalance, not a stuck MM.
+- When heavy (dev above strength): do NOT loosen buy offsets to chase; trims/harvest first.
+- When powder below reload floor: favor funding/sell readiness, not more bids.
+- When powder OK and light/dip-ready: modest deployment knobs (pending buys, buy offset, ta_min_buy) — scale phase, not trust panic.
+- session_pnl_xrp is MTM — not realized edge. Use bag_growth bot-adjusted and realized_bracket_pnl.
+- Pending buys are passive limit bids. Ladder clutter → drift/max_pending; entry churn → widen drift (Scenario G).
 - Small incremental adjustments only — no reckless risk increases.
-- max_pending_buys HOLD with RLUSD-heavy inventory + bullish TA → favor deployment per operator phase (trust: max_pending↑ first; scale/aggressive: I/F knobs), NOT default scenario C drift tightening unless ladder clutter (over_cap or operator asked).
-- Respect alpha_operator_phase in context. Trust phase: never lower buy_limit_offset_pct below effective without operator explicit ask.
-- session_pnl_xrp is MTM — not realized bracket profit.
-- Pending buys are passive limit bids (fill when ask hits bid, not when mid crosses). Use `pending_buy_stale` in context: ladder clutter → tighten drift + max_pending; entry churn (mid_passed_entry) → widen drift (Scenario G), max_pending=1.
-- When the operator describes desired settings in natural language, output concrete suggested_changes — use scenario playbook presets in context.
 """
 
-_AGENT_USER_PROMPT = """Autonomous agent review (Phase 2). Analyze the full runtime context below.
+_AGENT_USER_PROMPT = """Autonomous agent review (Phase 2 — Maximize accumulation soak).
 
-Decide whether bounded knob adjustments would improve bag growth without violating guardrails.
-If the bot is on HOLD, explain why and only suggest changes if they address the block constructively.
+Analyze runtime context. Only suggest knobs if they clearly help bag growth without fighting Maximize
+(target ~85%, powder floor, core bag no brackets, heavy→trim, light→dip buy).
+If HOLD is correct (waiting on sell fills, quiet near target, TA correctly blocking), return empty suggested_changes.
 
 Context:
 {context}
 """
 
-_FULL_MODE_SYSTEM_PROMPT = """You are SKYNET Full Mode — a disciplined, risk-aware meta-operator for xLedgerMate Alpha on XRPL XRP/RLUSD.
+_FULL_MODE_SYSTEM_PROMPT = """You are SKYNET Full Mode for xLedgerMate Alpha — Maximize accumulation / bag-growth on XRPL XRP/RLUSD.
 
-Your mandate: maximize long-term XRP bag growth while protecting capital. You operate under strict human guardrails. Changes you propose may be auto-applied when inside bounds.
+Mandate: long-term XRP stack growth with powder discipline. NOT pure MM. Core bag brackets OFF.
+Loop: fund RLUSD floor → buy dips into bag → hold → trim when heavy / harvest rips → refill powder.
 
 Respond with a single JSON object (no markdown fences):
 {{
-  "reasoning": "<clear 4-10 sentences: inventory deviation, TA scores, decision/HOLD reasons, market conditions, liquidity, recent performance, brackets>",
-  "summary": "<one-line headline for the operator>",
+  "reasoning": "<4-10 sentences: deviation vs target, powder/reload, decision reason, TA, harvest/dip>",
+  "summary": "<one-line headline>",
   "suggested_changes": [
-    {{"key": "<operator_config_key>", "value": <json_value>, "reason": "<why this knob, tied to current state>"}}
+    {{"key": "<operator_config_key>", "value": <json_value>, "reason": "<why>"}}
   ],
-  "warnings": ["<optional safety warnings>"]
+  "warnings": ["<optional>"]
 }}
 
-Trading discipline (non-negotiable):
-- Prioritize capital preservation after losses or elevated drawdown — be conservative, not reactive.
-- Never chase; prefer patience when TA blocks entries or inventory is already heavy XRP / light RLUSD to deploy.
-- Small incremental knob moves only. Never stack aggressive risk increases in one cycle.
-- If HOLD is correct, say so — empty suggested_changes is valid and often best.
-- ALWAYS read opportunity_watch from context when explaining HOLD during rips — tell the operator WATCHING vs ARMED vs BLOCKED and what signal is missing.
-- NEVER suggest dry_run changes. NEVER exceed guardrails below.
-- inventory_target_xrp_ratio is 0.0-1.0 (not percent). Prefer inventory_target_xrp_ratio over target_xrp_pct.
-- Explain every suggestion with reference to effective values in context.
+Discipline:
+- Capital preservation after losses — conservative, not reactive.
+- Never re-enable brackets / trailing / reload-block-until-funded.
+- Never chase buys while inventory is heavy; prefer trim path.
+- Empty suggested_changes is often correct during soak.
+- NEVER dry_run. NEVER exceed guardrails.
+- inventory_target_xrp_ratio is 0.0-1.0. Keep bag bias ~80–90%.
 
 Allowlist only: {allowed_keys}
 
@@ -130,17 +157,11 @@ Guardrails (min/max — stay inside):
 {guardrail_lines}
 
 Max {max_changes} change(s) per response.
-
-Emergency context: if drawdown is elevated or session P&L is negative, bias toward defense (lower risk, widen cooldowns, reduce TA aggression) — never the opposite without strong justification. In trust phase, treat negative realized_bracket_pnl (tax CSV) and SL streak as stronger signals than positive session MTM.
-
-Pending buy ladder: context includes `pending_buy_stale`, scenario playbook (A–R, S–U), operator phase, and `likely_scenarios` (reference only). Entry churn → widen stale drift above offset+spread (G). Ladder clutter (over_cap) → tighten drift, cap max_pending (C). RLUSD-heavy + bullish TA → deployment knobs per phase (S/T/U), not automatic C.
 """
 
-_FULL_MODE_USER_PROMPT = """Full SKYNET autonomy review (Phase 3). Analyze the complete runtime context.
-
-Decide whether bounded knob adjustments would improve bag growth without violating guardrails.
-If the bot is on HOLD, explain why and only suggest changes that constructively address the block.
-If recent performance is weak, prioritize capital protection over aggression.
+_FULL_MODE_USER_PROMPT = """Full SKYNET review (Maximize accumulation). Analyze context.
+Only suggest bounded knobs that improve bag growth without undoing Maximize posture.
+If HOLD is correct, say so and return empty suggested_changes.
 
 Context:
 {context}
@@ -155,8 +176,9 @@ def default_agent_config() -> Dict[str, Any]:
     return {
         "agent_enabled": False,
         "full_mode_enabled": False,
-        "interval_cycles_min": 3,
-        "interval_cycles_max": 5,
+        # Calmer cadence for accumulation soak (was 3–5; Maximize uses ~8–15).
+        "interval_cycles_min": 10,
+        "interval_cycles_max": 15,
         "guardrails": deepcopy(_DEFAULT_GUARDRAILS),
         "emergency_rules": deepcopy(_DEFAULT_EMERGENCY_RULES),
         "last_run_engine_cycle": 0,
@@ -378,6 +400,12 @@ def filter_guardrailed_suggestions(
 
     for item in accepted:
         key = item["key"]
+        # Maximize core-bag: reject re-enabling brackets / hard accum block.
+        if key in _FORBIDDEN_TRUE_KEYS and bool(item.get("value")):
+            msg = f"{key}: forbidden true under Maximize core-bag doctrine"
+            rejected.append({**item, "reject_reason": msg})
+            errors.append(msg)
+            continue
         ok, msg = _value_in_guardrail(key, item.get("value"), guardrails)
         if not ok:
             rejected.append({**item, "reject_reason": msg})
@@ -474,16 +502,41 @@ def format_agent_proposal_display(
 
 
 def _guardrail_prompt_lines(guardrails: Dict[str, Any]) -> str:
-    lines = []
-    for key in (
+    preferred = (
         "alpha_risk_per_trade_pct",
         "inventory_target_xrp_pct",
         "alpha_ta_weight",
+        "alpha_strength_deviation",
+        "alpha_weakness_deviation",
+        "alpha_buy_limit_offset_pct",
+        "alpha_sell_limit_offset_pct",
+        "alpha_max_pending_buys",
+        "alpha_max_pending_sells",
+        "alpha_reload_min_rlusd_deploy_xrp_equiv",
+        "alpha_ta_min_buy_score",
+        "alpha_ta_min_sell_score",
+        "alpha_accumulation_max_deviation",
+        "alpha_bull_run_max_deviation",
         *_COOLDOWN_GUARD_KEYS,
-    ):
+        "alpha_drawdown_reload_stage1_arm_pct",
+        "alpha_drawdown_reload_stage2_arm_pct",
+        "alpha_drawdown_reload_total_bag_pct",
+    )
+    lines = []
+    seen = set()
+    for key in preferred:
         bounds = guardrails.get(key)
-        if isinstance(bounds, dict):
+        if isinstance(bounds, dict) and ("min" in bounds or "max" in bounds):
             lines.append(f"- {key}: min={bounds.get('min')} max={bounds.get('max')}")
+            seen.add(key)
+    for key, bounds in guardrails.items():
+        if key in seen or key == "max_changes_per_cycle":
+            continue
+        if isinstance(bounds, dict) and ("min" in bounds or "max" in bounds):
+            lines.append(f"- {key}: min={bounds.get('min')} max={bounds.get('max')}")
+    lines.append("- alpha_brackets_enabled: must stay false (core bag)")
+    lines.append("- bracket_trailing_enabled: must stay false")
+    lines.append("- alpha_reload_block_accumulation_until_funded: must stay false")
     return "\n".join(lines)
 
 

@@ -70,8 +70,36 @@ MAXIMIZE_OPERATOR_OVERRIDES: Dict[str, Any] = {
 MAXIMIZE_AGENT_PATCH: Dict[str, Any] = {
     "agent_enabled": True,
     "full_mode_enabled": False,
-    "interval_cycles_min": 8,
-    "interval_cycles_max": 12,
+    "interval_cycles_min": 10,
+    "interval_cycles_max": 15,
+    "guardrails": {
+        "alpha_risk_per_trade_pct": {"min": 2.0, "max": 4.0},
+        "inventory_target_xrp_pct": {"min": 75.0, "max": 90.0},
+        "alpha_ta_weight": {"min": 0.4, "max": 0.85},
+        "alpha_strength_deviation": {"min": 0.03, "max": 0.10},
+        "alpha_weakness_deviation": {"min": 0.02, "max": 0.08},
+        "alpha_buy_limit_offset_pct": {"min": 0.08, "max": 0.25},
+        "alpha_sell_limit_offset_pct": {"min": 0.05, "max": 0.18},
+        "alpha_max_pending_buys": {"min": 1, "max": 4},
+        "alpha_max_pending_sells": {"min": 1, "max": 3},
+        "alpha_accumulation_max_deviation": {"min": 0.08, "max": 0.15},
+        "alpha_bull_run_max_deviation": {"min": 0.08, "max": 0.15},
+        "alpha_reload_min_rlusd_deploy_xrp_equiv": {"min": 25.0, "max": 80.0},
+        "alpha_ta_min_buy_score": {"min": 1.0, "max": 3.5},
+        "alpha_ta_min_sell_score": {"min": 1.0, "max": 3.5},
+        "initial_stop_loss_pct": {"min": 0.05, "max": 0.12},
+        "alpha_drawdown_reload_stage1_arm_pct": {"min": 1.5, "max": 5.0},
+        "alpha_drawdown_reload_stage2_arm_pct": {"min": 3.0, "max": 8.0},
+        "alpha_drawdown_reload_total_bag_pct": {"min": 2.0, "max": 8.0},
+        "alpha_drawdown_reload_stage1_bag_pct": {"min": 1.0, "max": 4.0},
+        "alpha_drawdown_reload_stage2_bag_pct": {"min": 1.0, "max": 4.0},
+        "max_changes_per_cycle": 2,
+    },
+    "emergency_rules": {
+        "enabled": True,
+        "drawdown_pause_pct": 8.0,
+        "session_loss_pause_xrp": 40.0,
+    },
 }
 
 MAXIMIZE_DESCRIPTION = (
