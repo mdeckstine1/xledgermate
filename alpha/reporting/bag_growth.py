@@ -103,6 +103,11 @@ def _week_start_utc(dt: datetime) -> datetime:
     return datetime.combine(monday, time.min, tzinfo=timezone.utc)
 
 
+def _day_start_utc(dt: datetime) -> datetime:
+    d = dt.astimezone(timezone.utc).date()
+    return datetime.combine(d, time.min, tzinfo=timezone.utc)
+
+
 def _load_week_state(path: Path = _WEEK_PATH) -> Dict[str, Any]:
     if not path.is_file():
         return {}
@@ -128,27 +133,45 @@ def _update_week_anchor(
     now: datetime,
     path: Path = _WEEK_PATH,
 ) -> Dict[str, Any]:
-    """Persist Monday-UTC week baseline; roll forward on new calendar week."""
+    """Persist week/day baselines + lifetime high-water for the bag scoreboard."""
     ws = _load_week_state(path)
     current_week = _week_start_utc(now).isoformat()
+    current_day = _day_start_utc(now).isoformat()
     stored_week = str(ws.get("week_start_utc") or "")
+    stored_day = str(ws.get("day_start_utc") or "")
+
+    # Preserve high-water across week rolls (lifetime ATH of total bag).
+    prev_high = float(ws.get("high_water_portfolio_xrp") or 0.0)
+    prev_high_utc = str(ws.get("high_water_utc") or "")
 
     if stored_week != current_week:
-        ws = {
-            "week_start_utc": current_week,
-            "week_start_portfolio_xrp": portfolio_xrp,
-            "week_start_xrp": xrp,
-            "week_start_rlusd": rlusd,
-            "last_portfolio_xrp": portfolio_xrp,
-            "last_xrp": xrp,
-            "last_rlusd": rlusd,
-            "updated_utc": now.isoformat(),
-        }
+        ws["week_start_utc"] = current_week
+        ws["week_start_portfolio_xrp"] = portfolio_xrp
+        ws["week_start_xrp"] = xrp
+        ws["week_start_rlusd"] = rlusd
+    if stored_day != current_day:
+        ws["day_start_utc"] = current_day
+        ws["day_start_portfolio_xrp"] = portfolio_xrp
+        ws["day_start_xrp"] = xrp
+        ws["day_start_rlusd"] = rlusd
+    elif float(ws.get("day_start_portfolio_xrp") or 0.0) <= 0:
+        # First observation after upgrade: anchor day without inventing a huge Δ.
+        ws["day_start_utc"] = current_day
+        ws["day_start_portfolio_xrp"] = portfolio_xrp
+        ws["day_start_xrp"] = xrp
+        ws["day_start_rlusd"] = rlusd
+
+    ws["last_portfolio_xrp"] = portfolio_xrp
+    ws["last_xrp"] = xrp
+    ws["last_rlusd"] = rlusd
+    ws["updated_utc"] = now.isoformat()
+
+    if portfolio_xrp > prev_high + 1e-9:
+        ws["high_water_portfolio_xrp"] = portfolio_xrp
+        ws["high_water_utc"] = now.isoformat()
     else:
-        ws["last_portfolio_xrp"] = portfolio_xrp
-        ws["last_xrp"] = xrp
-        ws["last_rlusd"] = rlusd
-        ws["updated_utc"] = now.isoformat()
+        ws["high_water_portfolio_xrp"] = prev_high if prev_high > 0 else portfolio_xrp
+        ws["high_water_utc"] = prev_high_utc or now.isoformat()
 
     _save_week_state(ws, path)
     return ws
@@ -244,6 +267,26 @@ def build_bag_growth_snapshot(
         week_delta_xrp = portfolio - week_start_portfolio
         week_delta_pct = (week_delta_xrp / week_start_portfolio) * 100.0
 
+    day_start_portfolio = float(week_state.get("day_start_portfolio_xrp") or 0.0)
+    day_delta_xrp = None
+    day_delta_pct = None
+    if day_start_portfolio > 0 and portfolio > 0:
+        day_delta_xrp = portfolio - day_start_portfolio
+        day_delta_pct = (day_delta_xrp / day_start_portfolio) * 100.0
+
+    high_water = float(week_state.get("high_water_portfolio_xrp") or 0.0)
+    if portfolio > 0 and high_water <= 0:
+        high_water = portfolio
+    off_high_xrp = None
+    at_high_water = None
+    if high_water > 0 and portfolio > 0:
+        off_high_xrp = portfolio - high_water
+        at_high_water = abs(off_high_xrp) < 0.05  # within 0.05 XRP-eq counts as at high
+
+    portfolio_rlusd_equiv = None
+    if portfolio > 0 and mid_rlusd_per_xrp is not None and mid_rlusd_per_xrp > 0:
+        portfolio_rlusd_equiv = portfolio * float(mid_rlusd_per_xrp)
+
     realized_7d = build_realized_pnl_snapshot(
         logs_dir=logs,
         hours=24.0 * 7,
@@ -255,7 +298,11 @@ def build_bag_growth_snapshot(
     return {
         "available": portfolio > 0 and baseline_portfolio > 0,
         "as_of_utc": end.isoformat(),
+        # Primary scoreboard number — total bag size in XRP-equiv (XRP + RLUSD/mid).
         "portfolio_xrp_equiv": round(portfolio, 4) if portfolio > 0 else None,
+        "portfolio_rlusd_equiv": (
+            round(portfolio_rlusd_equiv, 4) if portfolio_rlusd_equiv is not None else None
+        ),
         "xrp": round(xrp, 4),
         "rlusd": round(rlusd, 4),
         "mid_rlusd_per_xrp": mid_rlusd_per_xrp,
@@ -289,6 +336,14 @@ def build_bag_growth_snapshot(
         "week_start_portfolio_xrp": round(week_start_portfolio, 4) if week_start_portfolio > 0 else None,
         "week_delta_xrp": round(week_delta_xrp, 4) if week_delta_xrp is not None else None,
         "week_delta_pct": round(week_delta_pct, 2) if week_delta_pct is not None else None,
+        "day_start_utc": week_state.get("day_start_utc"),
+        "day_start_portfolio_xrp": round(day_start_portfolio, 4) if day_start_portfolio > 0 else None,
+        "day_delta_xrp": round(day_delta_xrp, 4) if day_delta_xrp is not None else None,
+        "day_delta_pct": round(day_delta_pct, 2) if day_delta_pct is not None else None,
+        "high_water_portfolio_xrp": round(high_water, 4) if high_water > 0 else None,
+        "high_water_utc": week_state.get("high_water_utc"),
+        "off_high_xrp": round(off_high_xrp, 4) if off_high_xrp is not None else None,
+        "at_high_water": at_high_water,
         "trading_edge_7d": {
             "available": realized_7d.get("available"),
             "realized_profit_xrp_equiv": realized_7d.get("realized_profit_xrp_equiv", 0.0),
@@ -297,9 +352,10 @@ def build_bag_growth_snapshot(
             "window_hours": realized_7d.get("window_hours"),
         },
         "explain": (
-            "Value Δ = XRP-equiv (coins + RLUSD at mid — moves with price). "
-            "XRP stack Δ = coin count only. Bot-adjusted subtracts operator deposits. "
-            "Trading edge = realized bracket P&L from tax CSV (TP/SL only)."
+            "TOTAL BAG = portfolio_xrp_equiv (XRP coins + RLUSD converted at mid). "
+            "This is the primary scoreboard number — bot goal is to grow it. "
+            "Day/week/ATH deltas show whether the bag is climbing. "
+            "Bot growth strips operator deposits. Trading edge = realized TP/SL only."
         ),
     }
 
@@ -309,11 +365,31 @@ def format_bag_growth_telegram_block(snap: Dict[str, Any]) -> str:
     if not snap.get("available"):
         return "Bag growth: baseline not set yet (wait for valid mid quote)."
 
+    total = float(snap.get("portfolio_xrp_equiv") or 0.0)
     lines = [
-        "Bag growth (portfolio vs baseline)",
-        f"Now: {snap.get('portfolio_xrp_equiv', 0):.2f} XRP equiv "
+        f"TOTAL BAG: {total:.4f} XRP-eq "
         f"({snap.get('xrp', 0):.1f} XRP + {snap.get('rlusd', 0):.1f} RLUSD)",
     ]
+    day = snap.get("day_delta_xrp")
+    if day is not None:
+        dp = snap.get("day_delta_pct")
+        dp_s = f" ({dp:+.2f}%)" if dp is not None else ""
+        lines.append(f"Today: {float(day):+.4f} XRP-eq{dp_s}")
+    week = snap.get("week_delta_xrp")
+    if week is not None:
+        wpct = snap.get("week_delta_pct")
+        wpct_s = f" ({wpct:+.2f}%)" if wpct is not None else ""
+        lines.append(f"This week: {float(week):+.4f} XRP-eq{wpct_s}")
+    off = snap.get("off_high_xrp")
+    if off is not None:
+        if snap.get("at_high_water"):
+            lines.append(f"ATH: {float(snap.get('high_water_portfolio_xrp') or total):.4f} (at high)")
+        else:
+            lines.append(
+                f"ATH: {float(snap.get('high_water_portfolio_xrp') or 0):.4f} "
+                f"({float(off):+.4f} off high)"
+            )
+
     deposits = float(snap.get("operator_deposits_xrp_equiv") or 0.0)
     bot_since = snap.get("since_baseline_bot_xrp")
     since = snap.get("since_baseline_xrp")
@@ -324,26 +400,18 @@ def format_bag_growth_telegram_block(snap: Dict[str, Any]) -> str:
             pct = snap.get("since_baseline_pct")
         pct_s = f" ({pct:+.1f}%)" if pct is not None else ""
         base_date = (snap.get("baseline_utc") or "")[:10] or "?"
-        label = "Bot bag growth" if deposits > 0 else "Since baseline"
-        lines.append(f"{label} ({base_date}): {display_since:+.2f} XRP{pct_s}")
+        label = "Bot growth (ex deposits)" if deposits > 0 else "Since baseline"
+        lines.append(f"{label} ({base_date}): {display_since:+.2f} XRP-eq{pct_s}")
         if deposits > 0 and since is not None:
             lines.append(
-                f"  (raw {since:+.2f} XRP-equiv incl. {deposits:.2f} XRP-equiv deposits)"
+                f"  (raw {since:+.2f} incl. {deposits:.2f} deposits)"
             )
 
     stack_bot = snap.get("xrp_stack_delta_bot")
     stack_raw = snap.get("xrp_stack_delta_raw")
     stack_val = stack_bot if stack_bot is not None else stack_raw
     if stack_val is not None:
-        src = snap.get("stack_baseline_source") or "session"
-        lines.append(f"XRP stack Δ ({src}): {float(stack_val):+.2f} XRP coins")
-        lines.append(f"  (now {snap.get('xrp', 0):.1f} XRP · baseline {snap.get('baseline_xrp', 0):.1f})")
-
-    week = snap.get("week_delta_xrp")
-    if week is not None:
-        wpct = snap.get("week_delta_pct")
-        wpct_s = f" ({wpct:+.1f}%)" if wpct is not None else ""
-        lines.append(f"This week (Mon UTC): {week:+.2f} XRP{wpct_s}")
+        lines.append(f"XRP coin stack Δ: {float(stack_val):+.2f} coins")
 
     edge = snap.get("trading_edge_7d") or {}
     if edge.get("available"):
@@ -351,10 +419,8 @@ def format_bag_growth_telegram_block(snap: Dict[str, Any]) -> str:
             f"Trading edge 7d: {float(edge.get('realized_profit_xrp_equiv') or 0):+.2f} XRP "
             f"(TP {edge.get('tp_exits', 0)} / SL {edge.get('sl_exits', 0)})"
         )
-    else:
-        lines.append("Trading edge 7d: no closed brackets in window")
 
-    lines.append("(Value moves with price; XRP stack Δ is coin count only.)")
+    lines.append("(Primary goal: grow TOTAL BAG. Moves with price + trading.)")
     return "\n".join(lines)
 
 
@@ -363,14 +429,17 @@ def format_bag_growth_context_block(snap: Dict[str, Any]) -> str:
     if not snap or not snap.get("available"):
         return "=== Bag growth ===\n(baseline not set — wait for valid mid)"
     lines = [
-        "=== Bag growth (are we building the bag? — prefer over session_pnl MTM) ===",
-        f"portfolio_xrp_equiv={snap.get('portfolio_xrp_equiv')} mid={snap.get('mid_rlusd_per_xrp')}",
+        "=== Bag scoreboard (PRIMARY metric = TOTAL BAG / portfolio_xrp_equiv) ===",
+        f"TOTAL_BAG portfolio_xrp_equiv={snap.get('portfolio_xrp_equiv')} "
+        f"portfolio_rlusd_equiv={snap.get('portfolio_rlusd_equiv')} "
+        f"mid={snap.get('mid_rlusd_per_xrp')}",
+        f"day_delta_xrp={snap.get('day_delta_xrp')} week_delta_xrp={snap.get('week_delta_xrp')} "
+        f"off_high_xrp={snap.get('off_high_xrp')} at_high_water={snap.get('at_high_water')}",
         f"since_baseline_bot_xrp={snap.get('since_baseline_bot_xrp')} "
         f"since_baseline_bot_pct={snap.get('since_baseline_bot_pct')}",
         f"xrp_stack_delta_bot={snap.get('xrp_stack_delta_bot')} "
         f"(raw coins Δ; baseline source={snap.get('stack_baseline_source')})",
         f"operator_deposits_xrp_equiv={snap.get('operator_deposits_xrp_equiv')}",
-        f"week_delta_xrp={snap.get('week_delta_xrp')} week_delta_pct={snap.get('week_delta_pct')}",
     ]
     edge = snap.get("trading_edge_7d") or {}
     if edge.get("available"):

@@ -42,6 +42,45 @@
     .sidebar .pnl-meta { font-size:.68rem; margin-top:2px; line-height:1.3; }
     .sidebar .pnl-pos { color:var(--ok); }
     .sidebar .pnl-neg { color:var(--bad); }
+    .sidebar-scoreboard {
+      margin: 12px 0 14px;
+      padding: 10px 10px 12px;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      background: linear-gradient(180deg, #0b1220 0%, #111827 100%);
+      box-shadow: inset 0 0 0 1px rgba(96,165,250,.08);
+    }
+    .sidebar-scoreboard .score-title {
+      font-size: .68rem; color: var(--accent); text-transform: uppercase;
+      letter-spacing: .08em; font-weight: 700; margin-bottom: 8px;
+    }
+    .sidebar-scoreboard .score-hero { text-align: center; margin-bottom: 10px; }
+    .sidebar-scoreboard .score-hero .label { margin-bottom: 2px; }
+    .sidebar-scoreboard .score-total {
+      font-size: 1.55rem; font-weight: 800; line-height: 1.15;
+      letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+    }
+    .sidebar-scoreboard .score-unit {
+      font-size: .72rem; color: var(--muted); text-transform: uppercase;
+      letter-spacing: .06em; margin-top: 2px;
+    }
+    .sidebar-scoreboard .score-rlusd {
+      font-size: .8rem; color: var(--muted); margin-top: 2px;
+    }
+    .sidebar-scoreboard .score-deltas {
+      display: grid; gap: 5px; margin-top: 8px;
+      padding-top: 8px; border-top: 1px solid #1f2937;
+    }
+    .sidebar-scoreboard .score-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: 8px; font-size: .82rem;
+    }
+    .sidebar-scoreboard .score-row .k { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+    .sidebar-scoreboard .score-row .v { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+    .sidebar-scoreboard .score-parts {
+      margin-top: 8px; font-size: .72rem; color: var(--muted); line-height: 1.35;
+      text-align: center;
+    }
     .label { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
     .value { font-size:1rem; font-weight:600; margin-top:2px; }
     .main { padding:12px 16px; overflow:auto; }
@@ -255,22 +294,35 @@
       <div class="row"><div class="label">Account</div><div id="acct" class="value" style="font-size:.75rem;word-break:break-all">—</div></div>
       <div class="row"><div class="label">Mid (RLUSD/XRP)</div><div id="mid" class="value">—</div></div>
       <div class="row"><div class="label">Quote age</div><div id="midAge" class="value muted" style="font-size:.75rem">—</div></div>
+
+      <div class="sidebar-scoreboard" id="bagScoreboard" title="Primary goal: grow TOTAL BAG (XRP-equiv of coins + powder).">
+        <div class="score-title">Bag scoreboard · grow this number</div>
+        <div class="score-hero">
+          <div class="label">Total bag</div>
+          <div id="bagTotal" class="score-total">—</div>
+          <div class="score-unit">XRP-equivalent</div>
+          <div id="bagTotalRlusd" class="score-rlusd">—</div>
+        </div>
+        <div class="score-deltas">
+          <div class="score-row"><span class="k">Today</span><span id="bagDay" class="v">—</span></div>
+          <div class="score-row"><span class="k">This week</span><span id="bagWeek" class="v">—</span></div>
+          <div class="score-row"><span class="k">vs ATH</span><span id="bagAth" class="v">—</span></div>
+          <div class="score-row"><span class="k">Bot growth</span><span id="bagSinceBaseline" class="v">—</span></div>
+          <div class="score-row"><span class="k">XRP stack</span><span id="bagXrpStack" class="v">—</span></div>
+          <div class="score-row"><span class="k">Edge 7d</span><span id="bagEdge7d" class="v">—</span></div>
+        </div>
+        <div id="bagParts" class="score-parts">Waiting for portfolio…</div>
+        <div id="bagBaselineMeta" class="muted pnl-meta" style="text-align:center;margin-top:4px"></div>
+        <div id="bagXrpStackMeta" class="muted pnl-meta" style="display:none"></div>
+        <div id="bagWeekMeta" class="muted pnl-meta" style="display:none"></div>
+        <div id="bagEdgeMeta" class="muted pnl-meta" style="text-align:center;margin-top:2px"></div>
+      </div>
+
       <div class="row"><div class="label">XRP</div><div id="portXrp" class="value">—</div></div>
-      <div class="row"><div class="label">RLUSD</div><div id="portRlusd" class="value">—</div></div>
-      <div class="row"><div class="label">Total (RLUSD eq)</div><div id="port" class="value">—</div></div>
+      <div class="row"><div class="label">RLUSD (powder)</div><div id="portRlusd" class="value">—</div></div>
+      <div class="row" style="display:none"><div class="label">Total (legacy)</div><div id="port" class="value">—</div></div>
       <div class="row"><div class="label">Inventory</div><div id="inv" class="value">—</div></div>
       <div class="row"><div class="label">Drawdown</div><div id="dd" class="value">—</div></div>
-      <div class="sidebar-bag-growth" style="margin-top:10px;padding-top:10px;border-top:1px solid #334155">
-        <div class="label" style="margin-bottom:6px;font-weight:600">Bag growth</div>
-        <div class="row"><div class="label">Value Δ</div><div id="bagSinceBaseline" class="value">—</div></div>
-        <div id="bagBaselineMeta" class="muted pnl-meta">value (XRP-equiv) · moves with price</div>
-        <div class="row"><div class="label">XRP stack Δ</div><div id="bagXrpStack" class="value">—</div></div>
-        <div id="bagXrpStackMeta" class="muted pnl-meta">coin count · bot-adjusted</div>
-        <div class="row"><div class="label">This week</div><div id="bagWeek" class="value">—</div></div>
-        <div id="bagWeekMeta" class="muted pnl-meta">value (XRP-equiv)</div>
-        <div class="row"><div class="label">Trading edge 7d</div><div id="bagEdge7d" class="value">—</div></div>
-        <div id="bagEdgeMeta" class="muted pnl-meta">TP/SL from tax CSV</div>
-      </div>
       <div class="row">
         <div class="label">Session P&amp;L <span class="muted" style="font-size:.65rem">(MTM)</span></div>
         <div id="pnlXrp" class="value">—</div>
@@ -1510,92 +1562,120 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       }
     }
 
+    function setSignedScore(el, val, { pct = null, digits = 2, suffix = '' } = {}) {
+      if (!el) return;
+      el.classList.remove('pnl-pos', 'pnl-neg');
+      if (val == null || Number.isNaN(Number(val))) {
+        el.textContent = '—';
+        return;
+      }
+      const n = Number(val);
+      const sign = n > 0 ? '+' : '';
+      let text = sign + n.toFixed(digits) + suffix;
+      if (pct != null && !Number.isNaN(Number(pct))) {
+        text += ' (' + (Number(pct) >= 0 ? '+' : '') + Number(pct).toFixed(2) + '%)';
+      }
+      el.textContent = text;
+      if (n > 0) el.classList.add('pnl-pos');
+      else if (n < 0) el.classList.add('pnl-neg');
+    }
+
     function renderBagGrowth(s, mid) {
-      const b = s.bag_growth;
+      const b = s.bag_growth || {};
+      const bal = portfolioBalances(s);
+      const totalEl = $('bagTotal');
+      const totalRlusdEl = $('bagTotalRlusd');
+      const partsEl = $('bagParts');
       const sinceEl = $('bagSinceBaseline');
       const weekEl = $('bagWeek');
+      const dayEl = $('bagDay');
+      const athEl = $('bagAth');
       const stackEl = $('bagXrpStack');
       const edgeEl = $('bagEdge7d');
       const baseMeta = $('bagBaselineMeta');
-      const stackMeta = $('bagXrpStackMeta');
-      const weekMeta = $('bagWeekMeta');
       const edgeMeta = $('bagEdgeMeta');
+
+      // PRIMARY: total bag in XRP-equiv (same number as ~1145 you track).
+      const totalXrp = b.portfolio_xrp_equiv != null ? Number(b.portfolio_xrp_equiv)
+        : (bal.xrpEq != null ? Number(bal.xrpEq) : null);
+      const totalRlusd = b.portfolio_rlusd_equiv != null ? Number(b.portfolio_rlusd_equiv)
+        : (bal.rlusdEq != null ? Number(bal.rlusdEq)
+          : (totalXrp != null && mid ? totalXrp * Number(mid) : null));
+
+      if (totalEl) {
+        totalEl.textContent = totalXrp != null ? Number(totalXrp).toFixed(4) : '—';
+        totalEl.classList.remove('pnl-pos', 'pnl-neg');
+        if (b.at_high_water) totalEl.classList.add('pnl-pos');
+        else if (b.off_high_xrp != null && Number(b.off_high_xrp) < -0.5) totalEl.classList.add('pnl-neg');
+      }
+      if (totalRlusdEl) {
+        totalRlusdEl.textContent = totalRlusd != null
+          ? ('≈ ' + Number(totalRlusd).toFixed(2) + ' RLUSD eq')
+          : '—';
+      }
+      if (partsEl) {
+        const x = b.xrp != null ? b.xrp : bal.xrp;
+        const r = b.rlusd != null ? b.rlusd : bal.rlusd;
+        const bits = [];
+        if (x != null) bits.push(Number(x).toFixed(2) + ' XRP');
+        if (r != null) bits.push(Number(r).toFixed(2) + ' RLUSD powder');
+        partsEl.textContent = bits.length ? bits.join(' + ') : 'Waiting for portfolio…';
+      }
+
       if (!b || !b.available) {
-        sinceEl.textContent = '—';
-        weekEl.textContent = '—';
-        if (stackEl) stackEl.textContent = '—';
-        edgeEl.textContent = '—';
-        sinceEl.classList.remove('pnl-pos', 'pnl-neg');
-        weekEl.classList.remove('pnl-pos', 'pnl-neg');
-        if (stackEl) stackEl.classList.remove('pnl-pos', 'pnl-neg');
-        edgeEl.classList.remove('pnl-pos', 'pnl-neg');
-        baseMeta.textContent = 'waiting for baseline + mid';
-        if (stackMeta) stackMeta.textContent = 'coin count · bot-adjusted';
-        if (weekMeta) weekMeta.textContent = 'value (XRP-equiv)';
-        edgeMeta.textContent = 'TP/SL from tax CSV';
+        setSignedScore(dayEl, null);
+        setSignedScore(weekEl, null);
+        setSignedScore(sinceEl, null);
+        setSignedScore(stackEl, null);
+        setSignedScore(edgeEl, null);
+        if (athEl) { athEl.textContent = '—'; athEl.classList.remove('pnl-pos', 'pnl-neg'); }
+        if (baseMeta) baseMeta.textContent = 'waiting for baseline + mid';
+        if (edgeMeta) edgeMeta.textContent = 'TP/SL from tax CSV';
         return;
       }
-      const sinceFmt = fmtSignedPnl(
-        b.since_baseline_bot_xrp != null ? b.since_baseline_bot_xrp : b.since_baseline_xrp,
-        mid
-      );
-      const sincePct = b.since_baseline_bot_pct != null ? b.since_baseline_bot_pct : b.since_baseline_pct;
-      sinceEl.textContent = sinceFmt.xrp + (sincePct != null ? ' (' + (sincePct >= 0 ? '+' : '') + sincePct.toFixed(1) + '%)' : '');
-      sinceEl.classList.remove('pnl-pos', 'pnl-neg');
-      if (sinceFmt.tone) sinceEl.classList.add(sinceFmt.tone);
-      const baseDate = (b.baseline_utc || '').slice(0, 10) || '?';
-      const depVal = Number(b.operator_deposits_xrp_equiv || 0);
-      baseMeta.textContent = depVal > 0
-        ? 'since ' + baseDate + ' · value · net ' + depVal.toFixed(1) + ' XRP-equiv deposits'
-        : 'since ' + baseDate + ' · value (XRP-equiv) · moves with price';
 
-      if (stackEl) {
-        const stackBot = b.xrp_stack_delta_bot;
-        const stackRaw = b.xrp_stack_delta_raw;
-        const stackVal = stackBot != null ? stackBot : stackRaw;
-        if (stackVal != null) {
-          const sign = stackVal >= 0 ? '+' : '';
-          stackEl.textContent = sign + Number(stackVal).toFixed(2) + ' XRP';
-          stackEl.classList.remove('pnl-pos', 'pnl-neg');
-          if (stackVal > 0) stackEl.classList.add('pnl-pos');
-          else if (stackVal < 0) stackEl.classList.add('pnl-neg');
-          const baseX = b.baseline_xrp != null ? Number(b.baseline_xrp).toFixed(1) : '?';
-          const nowX = b.xrp != null ? Number(b.xrp).toFixed(1) : '?';
-          let sm = 'now ' + nowX + ' XRP · baseline ' + baseX;
-          if (b.stack_baseline_source === 'tax_csv') sm += ' (tax CSV)';
-          if (Number(b.operator_deposits_xrp || 0) > 0) {
-            sm += ' · net ' + Number(b.operator_deposits_xrp).toFixed(1) + ' XRP deposited';
-          }
-          if (stackMeta) stackMeta.textContent = sm;
+      setSignedScore(dayEl, b.day_delta_xrp, { pct: b.day_delta_pct, digits: 2, suffix: '' });
+      setSignedScore(weekEl, b.week_delta_xrp, { pct: b.week_delta_pct, digits: 2, suffix: '' });
+
+      if (athEl) {
+        athEl.classList.remove('pnl-pos', 'pnl-neg');
+        if (b.at_high_water) {
+          athEl.textContent = 'AT HIGH';
+          athEl.classList.add('pnl-pos');
+        } else if (b.off_high_xrp != null) {
+          const off = Number(b.off_high_xrp);
+          const hw = b.high_water_portfolio_xrp != null ? Number(b.high_water_portfolio_xrp).toFixed(2) : '?';
+          athEl.textContent = (off >= 0 ? '+' : '') + off.toFixed(2) + ' · ATH ' + hw;
+          if (off < 0) athEl.classList.add('pnl-neg');
+          else athEl.classList.add('pnl-pos');
         } else {
-          stackEl.textContent = '—';
-          stackEl.classList.remove('pnl-pos', 'pnl-neg');
-          if (stackMeta) stackMeta.textContent = 'coin count · baseline unknown';
+          athEl.textContent = '—';
         }
       }
 
-      const weekFmt = fmtSignedPnl(b.week_delta_xrp, mid);
-      weekEl.textContent = weekFmt.xrp + (b.week_delta_pct != null ? ' (' + (b.week_delta_pct >= 0 ? '+' : '') + b.week_delta_pct.toFixed(1) + '%)' : '');
-      weekEl.classList.remove('pnl-pos', 'pnl-neg');
-      if (weekFmt.tone) weekEl.classList.add(weekFmt.tone);
-      if (weekMeta) {
-        const wx = b.week_xrp_delta;
-        weekMeta.textContent = wx != null
-          ? 'value · coins ' + (wx >= 0 ? '+' : '') + Number(wx).toFixed(2) + ' XRP this week'
-          : 'value (XRP-equiv)';
+      const botSince = b.since_baseline_bot_xrp != null ? b.since_baseline_bot_xrp : b.since_baseline_xrp;
+      const botPct = b.since_baseline_bot_pct != null ? b.since_baseline_bot_pct : b.since_baseline_pct;
+      setSignedScore(sinceEl, botSince, { pct: botPct, digits: 2 });
+      const baseDate = (b.baseline_utc || '').slice(0, 10) || '?';
+      const depVal = Number(b.operator_deposits_xrp_equiv || 0);
+      if (baseMeta) {
+        baseMeta.textContent = depVal > 0
+          ? 'ex deposits since ' + baseDate + ' · deposits ' + depVal.toFixed(1) + ' XRP-eq'
+          : 'since ' + baseDate + ' · XRP-eq (price + trading)';
       }
+
+      const stackBot = b.xrp_stack_delta_bot;
+      const stackRaw = b.xrp_stack_delta_raw;
+      const stackVal = stackBot != null ? stackBot : stackRaw;
+      setSignedScore(stackEl, stackVal, { digits: 2, suffix: ' coins' });
 
       const edge = b.trading_edge_7d || {};
       if (edge.available) {
-        const edgeFmt = fmtSignedPnl(edge.realized_profit_xrp_equiv, mid);
-        edgeEl.textContent = edgeFmt.xrp;
-        edgeEl.classList.remove('pnl-pos', 'pnl-neg');
-        if (edgeFmt.tone) edgeEl.classList.add(edgeFmt.tone);
-        edgeMeta.textContent = (edge.tp_exits || 0) + ' TP · ' + (edge.sl_exits || 0) + ' SL · 7d tax CSV';
+        setSignedScore(edgeEl, edge.realized_profit_xrp_equiv, { digits: 2 });
+        if (edgeMeta) edgeMeta.textContent = (edge.tp_exits || 0) + ' TP · ' + (edge.sl_exits || 0) + ' SL · 7d';
       } else {
-        edgeEl.textContent = '—';
-        edgeEl.classList.remove('pnl-pos', 'pnl-neg');
-        edgeMeta.textContent = 'no closed brackets in 7d';
+        setSignedScore(edgeEl, null);
+        if (edgeMeta) edgeMeta.textContent = 'no closed brackets in 7d';
       }
     }
 
@@ -1710,14 +1790,31 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const brackets = (bs.pending_buys||0) + ' pending · ' + (bs.active_fixed||0) + ' active';
       const offers = s.open_offers_count != null ? s.open_offers_count : (s.open_offers?.length || 0);
       const bal = portfolioBalances(s);
+      const bg = s.bag_growth || {};
+      const totalBag = bg.portfolio_xrp_equiv != null ? Number(bg.portfolio_xrp_equiv)
+        : (bal.xrpEq != null ? Number(bal.xrpEq) : null);
+      const dayD = bg.day_delta_xrp;
+      const weekD = bg.week_delta_xrp;
+      let bagTicker = totalBag != null
+        ? ('TOTAL BAG <span class="ok">' + totalBag.toFixed(4) + ' XRP-eq</span>')
+        : 'TOTAL BAG —';
+      if (dayD != null) {
+        const cls = dayD > 0 ? 'ok' : (dayD < 0 ? 'bad' : 'info');
+        bagTicker += ' · today <span class="' + cls + '">' + (dayD >= 0 ? '+' : '') + Number(dayD).toFixed(2) + '</span>';
+      }
+      if (weekD != null) {
+        const cls = weekD > 0 ? 'ok' : (weekD < 0 ? 'bad' : 'info');
+        bagTicker += ' · week <span class="' + cls + '">' + (weekD >= 0 ? '+' : '') + Number(weekD).toFixed(2) + '</span>';
+      }
+      if (bg.at_high_water) bagTicker += ' · <span class="ok">ATH</span>';
       const portStr = [
         bal.xrp != null ? fmt(bal.xrp, 4) + ' XRP' : null,
         bal.rlusd != null ? fmt(bal.rlusd, 2) + ' RLUSD' : null,
-        bal.rlusdEq != null ? fmt(bal.rlusdEq, 2) + ' RLUSD eq' : null,
       ].filter(Boolean).join(' · ') || '—';
       const qAge = quoteAgeMeta(s);
 
       return [
+        bagTicker,
         '<span class="' + modeCls + '">' + mode + '</span>',
         posture, paused, kill,
         (function() {
@@ -1730,7 +1827,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         'Decision <span class="info">' + action + '</span> — ' + reason,
         'Mid ' + midHtml + ' · Bid ' + bid + ' · Ask ' + ask + ' · Spread ' + spread,
         'Quote <span class="' + (qAge.stale ? 'warn' : 'ok') + '">' + qAge.label + '</span>',
-        'Portfolio ' + portStr,
+        'Holdings ' + portStr,
         'Brackets ' + brackets + ' · Offers ' + offers,
         'Updated ' + ago(s.updated_utc),
       ].filter(Boolean).join('   |   ');
