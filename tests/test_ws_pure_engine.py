@@ -144,6 +144,71 @@ def test_engine_analysis_bundle_starts_empty() -> None:
     assert eng._analysis_bundle["sample_history"] == []
 
 
+def test_engine_restores_session_capture_brake_after_restart(tmp_path, monkeypatch) -> None:
+    from datetime import datetime, timezone
+
+    from config.settings import BotConfig
+    from core.runtime_state import RuntimeState, RuntimeStateStore
+    from experimental.ws_feed.quote_decision.adapter import compute_quoting_decision
+
+    monkeypatch.chdir(tmp_path)
+    boot = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc).isoformat()
+    recent_fill = {
+        "kind": "fill",
+        "ts_utc": boot,
+        "side": "BUY",
+        "xrp_amount": 100.0,
+        "capture_xrp": -0.02,
+        "quote_age_seconds": 4.5,
+    }
+    RuntimeStateStore().save(
+        RuntimeState(
+            active_profile="ws_pure",
+            as_mode="pure",
+            session_boot_utc=boot,
+            session_baseline_xrp=180.0,
+            session_baseline_rlusd=200.0,
+            session_baseline_mid=1.0,
+            fills_session=7,
+            session_spread_capture_xrp=-0.02,
+            recent_fill_quote_ages=[recent_fill],
+            acquisition_metrics={
+                "inventory_growth_at_edge": {"buy_capture_xrp": -0.02},
+                "sell_capture_by_state": {"balanced": {"cap": 0.01}},
+            },
+        )
+    )
+
+    eng = WsPureTradingEngine(BotConfig())
+
+    assert eng._session_boot_utc == boot
+    assert eng._session_fills == 7
+    assert eng._session_fill_records == [recent_fill]
+    assert eng._last_fill_quote_age_seconds == 4.5
+    assert eng._last_session_buy_capture_xrp == -0.02
+    assert eng._last_session_sell_capture_xrp == 0.01
+
+    qd = compute_quoting_decision(
+        mid=1.0,
+        best_bid=0.999,
+        best_ask=1.001,
+        l1_bid_price=0.999,
+        l1_ask_price=1.001,
+        xrp_balance=500.0,
+        rlusd_balance=500.0,
+        target_xrp_ratio=0.5,
+        inventory_label="balanced",
+        peer_lane_empty=False,
+        peer_lane_count=3,
+        session_buy_capture_xrp=eng._last_session_buy_capture_xrp,
+        session_sell_capture_xrp=eng._last_session_sell_capture_xrp,
+        recent_fills=tuple(eng._session_fill_records),
+    )
+    assert qd.bid.allowed is False
+    assert qd.bid.block_reason == "session_buy_cap=-0.0200"
+    assert qd.ask.allowed is True
+
+
 def test_stale_quote_merged_into_sync_cancel_plan() -> None:
     """Stale sequences cancel even when preserve_touch_queue would keep them."""
     from datetime import datetime, timedelta, timezone

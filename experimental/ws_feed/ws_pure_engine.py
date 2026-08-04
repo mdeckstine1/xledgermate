@@ -32,9 +32,11 @@ from experimental.ws_feed.intel_decisions_log import (
     tail_intel_records,
 )
 from experimental.ws_feed.fill_quote_age_log import (
+    RECENT_FILL_AGES_MAX,
     append_fill_quote_age_record,
     build_fill_quote_age_record,
     push_recent_fill_age,
+    tail_fill_quote_age_records,
 )
 from experimental.ws_feed.ws_feature_flags import WsFeatureFlags
 from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
@@ -237,6 +239,97 @@ class WsPureTradingEngine:
         self._reservation_crossed_after_ws_sample = False
         self._session_boot_utc = datetime.now(tz=timezone.utc).isoformat()
         self._analysis_bundle: Dict[str, Any] = {"sample_history": []}
+        self._restore_session_from_runtime_state()
+
+    @staticmethod
+    def _float_or_none(value: Any) -> Optional[float]:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _datetime_or_none(value: Any) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            out = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if out.tzinfo is None:
+            out = out.replace(tzinfo=timezone.utc)
+        return out
+
+    @staticmethod
+    def _sum_sell_capture(acquisition_metrics: Mapping[str, Any]) -> Optional[float]:
+        sell_states = acquisition_metrics.get("sell_capture_by_state") or {}
+        if not isinstance(sell_states, Mapping) or not sell_states:
+            return None
+        total = 0.0
+        seen = False
+        for value in sell_states.values():
+            raw = value.get("cap") if isinstance(value, Mapping) else value
+            cap = WsPureTradingEngine._float_or_none(raw)
+            if cap is None:
+                continue
+            total += cap
+            seen = True
+        return total if seen else None
+
+    def _runtime_fill_records(self, state: RuntimeState) -> List[Dict[str, Any]]:
+        boot_dt = self._datetime_or_none(state.session_boot_utc)
+        records: List[Dict[str, Any]] = []
+        if boot_dt is not None:
+            records = tail_fill_quote_age_records(
+                limit=2000,
+                since=boot_dt,
+                ws_as_version=current_ws_as_version(),
+            )
+        if not records:
+            records = [
+                dict(row)
+                for row in (state.recent_fill_quote_ages or [])
+                if isinstance(row, Mapping)
+            ]
+        return records
+
+    def _restore_session_from_runtime_state(self) -> None:
+        try:
+            state = self.state_store.load()
+        except (OSError, TypeError, ValueError) as exc:
+            self.decision_log.add("runtime", f"session restore skipped: {exc}")
+            return
+        if state is None:
+            return
+        if state.as_mode != "pure" and state.active_profile != "ws_pure":
+            return
+
+        if state.session_boot_utc:
+            self._session_boot_utc = str(state.session_boot_utc)
+        self._session_baseline_xrp = self._float_or_none(state.session_baseline_xrp)
+        self._session_baseline_rlusd = self._float_or_none(state.session_baseline_rlusd)
+        self._session_baseline_mid = self._float_or_none(state.session_baseline_mid)
+        self._session_spread_capture = float(state.session_spread_capture_xrp or 0.0)
+
+        records = self._runtime_fill_records(state)
+        if records:
+            self._session_fill_records = records
+            self._recent_fill_quote_ages = records[-RECENT_FILL_AGES_MAX:]
+            last_age = records[-1].get("quote_age_seconds")
+            self._last_fill_quote_age_seconds = self._float_or_none(last_age)
+        self._session_fills = int(state.fills_session or len(records) or 0)
+
+        acquisition_metrics = state.acquisition_metrics or {}
+        if isinstance(acquisition_metrics, Mapping):
+            buy_cap = (acquisition_metrics.get("inventory_growth_at_edge") or {}).get(
+                "buy_capture_xrp"
+            )
+            restored_buy = self._float_or_none(buy_cap)
+            if restored_buy is not None:
+                self._last_session_buy_capture_xrp = restored_buy
+            restored_sell = self._sum_sell_capture(acquisition_metrics)
+            if restored_sell is not None:
+                self._last_session_sell_capture_xrp = restored_sell
 
     def stop(self) -> None:
         self._running = False
