@@ -35,7 +35,6 @@ def select_quote_intent(
     *,
     buy_edge_viable: bool,
     sell_edge_viable: bool,
-    reservation_only_ask: bool = False,
 ) -> IntentSelection:
     """
     Pick operational intent from posture + edge viability hints.
@@ -74,19 +73,6 @@ def select_quote_intent(
                 reason="solo book + viable buy edge",
                 favor_bid=True,
                 favor_ask=False,
-                allow_two_sided=False,
-            )
-
-        if (
-            sell_edge_viable
-            and reservation_only_ask
-            and inv.band == DriftBand.NEUTRAL
-        ):
-            return IntentSelection(
-                intent=QuoteIntent.PATIENT_SOLO,
-                reason="solo + reservation ask-only edge",
-                favor_bid=False,
-                favor_ask=True,
                 allow_two_sided=False,
             )
 

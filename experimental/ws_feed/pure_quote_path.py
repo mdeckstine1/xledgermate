@@ -238,14 +238,11 @@ def _quote_posture_label(
     quote_ask: bool,
     allow_bid: bool,
     allow_ask: bool,
-    inventory_bid_rebalance: bool = False,
 ) -> str:
     """Reservation + QD combined posture label for HUD."""
     if quote_bid and quote_ask:
         return "inside" if (allow_bid and allow_ask) else "two_sided"
     if quote_bid:
-        if inventory_bid_rebalance:
-            return "bid_only_rebalance"
         return "bid_only_skew" if allow_bid else "above_ask"
     if quote_ask:
         return "ask_only_skew" if allow_ask else "below_bid"
@@ -549,7 +546,6 @@ class PureQuotePath:
             bid_backoff_bps=g7.bid_touch_backoff_bps,
             ask_backoff_bps=g7.ask_touch_backoff_bps,
         )
-        inventory_bid_rebalance = inv_policy.pause_asks and not inv_policy.pause_bids
         qd = compute_quoting_decision(
             mid=mid,
             best_bid=best_bid,
@@ -570,7 +566,7 @@ class PureQuotePath:
             session_buy_capture_xrp=session_buy_capture_xrp,
             session_sell_capture_xrp=session_sell_capture_xrp,
             recent_fills=recent_fill_records,
-            reservation_allows_bid=allow_bid or inventory_bid_rebalance,
+            reservation_allows_bid=allow_bid,
             reservation_allows_ask=allow_ask,
         )
 
@@ -582,7 +578,6 @@ class PureQuotePath:
             quote_ask=quote_ask,
             allow_bid=allow_bid,
             allow_ask=allow_ask,
-            inventory_bid_rebalance=inventory_bid_rebalance,
         )
 
         l1_bid_size = (
