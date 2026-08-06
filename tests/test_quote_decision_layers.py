@@ -108,6 +108,24 @@ def test_crowded_two_sided_when_both_edges_viable() -> None:
     assert qd.ask.allowed is True
 
 
+def test_solo_neutral_reservation_ask_only_uses_ask_side() -> None:
+    inp = _solo_inputs(
+        l1_bid=1.098,
+        l1_ask=1.102,
+        xrp_ratio=0.55,
+        label="balanced",
+    )
+    inp.reservation_allows_bid = False
+    inp.reservation_allows_ask = True
+
+    qd = run_quote_decision_pipeline(inp)
+
+    assert qd.intent == QuoteIntent.PATIENT_SOLO
+    assert qd.bid.allowed is False
+    assert qd.ask.allowed is True
+    assert qd.would_quote is True
+
+
 def test_layer1_drift_bands_wide() -> None:
     posture = build_posture_snapshot(_solo_inputs(xrp_ratio=0.64))
     assert posture.inventory.band == DriftBand.MILD_XRP
