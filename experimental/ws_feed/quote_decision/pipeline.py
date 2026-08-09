@@ -41,10 +41,13 @@ def run_quote_decision_pipeline(inputs: CycleQuoteInputs) -> QuotingDecision:
         book_mode=posture.book.mode,
     )
 
+    bid_side_viable = bid_edge.viable and inputs.reservation_allows_bid
+    ask_side_viable = ask_edge.viable and inputs.reservation_allows_ask
     intent = select_quote_intent(
         posture,
-        buy_edge_viable=bid_edge.viable,
-        sell_edge_viable=ask_edge.viable,
+        buy_edge_viable=bid_side_viable,
+        sell_edge_viable=ask_side_viable,
+        reservation_only_ask=ask_side_viable and not bid_side_viable,
     )
 
     bleed = apply_bleed_protection(posture)
