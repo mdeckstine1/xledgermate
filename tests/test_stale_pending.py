@@ -1,4 +1,4 @@
-"""Tests for shared stale pending-buy policy."""
+"""Tests for shared stale pending buy/sell policy."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ from alpha.hud.skynet import build_skynet_context
 from alpha.orders.stale_pending import (
     build_pending_buy_stale_snapshot,
     stale_pending_buy_reason,
+    stale_pending_sell_reason,
     target_buy_limit_price,
+    target_sell_limit_price,
 )
 
 
@@ -79,3 +81,46 @@ def test_build_skynet_context_includes_pending_buy_stale():
     )
     assert "Pending buy stale diagnostics" in ctx
     assert '"would_cancel"' in ctx
+
+
+def test_target_sell_limit_price_above_mid():
+    assert target_sell_limit_price(1.10, 0.08) > 1.10
+
+
+def test_stale_sell_zombie_far_above_mid():
+    """Classic zombie: ask parked 8% above mid while offset is 0.08%."""
+    reason = stale_pending_sell_reason(
+        1.091,
+        1.009,
+        offset_pct=0.08,
+        max_drift_pct=0.50,
+        stale_enabled=True,
+        price_decimals=6,
+    )
+    assert reason is not None
+    assert "ask_above_mid" in reason or "ask_drift" in reason
+
+
+def test_stale_sell_kept_near_target():
+    mid = 1.009
+    target = target_sell_limit_price(mid, 0.08, price_decimals=6)
+    reason = stale_pending_sell_reason(
+        target,
+        mid,
+        offset_pct=0.08,
+        max_drift_pct=0.50,
+        stale_enabled=True,
+        price_decimals=6,
+    )
+    assert reason is None
+
+
+def test_stale_sell_disabled_skips():
+    reason = stale_pending_sell_reason(
+        1.091,
+        1.009,
+        offset_pct=0.08,
+        max_drift_pct=0.50,
+        stale_enabled=False,
+    )
+    assert reason is None

@@ -32,6 +32,10 @@ MAXIMIZE_OPERATOR_OVERRIDES: Dict[str, Any] = {
     "alpha_stale_pending_buy_enabled": True,
     "alpha_stale_pending_buy_max_drift_pct": 0.35,
     "alpha_stale_pending_buy_max_age_seconds": 0,
+    # Auto-cancel zombie inventory asks so max_pending_sells cannot brick autonomy.
+    "alpha_stale_pending_sell_enabled": True,
+    "alpha_stale_pending_sell_max_drift_pct": 0.50,
+    "alpha_stale_pending_sell_max_age_seconds": 0,
     "alpha_ta_weight": 0.65,
     "alpha_ta_min_buy_score": 1.8,
     "alpha_ta_min_sell_score": 1.8,
@@ -48,12 +52,12 @@ MAXIMIZE_OPERATOR_OVERRIDES: Dict[str, Any] = {
     "alpha_reload_min_rlusd_deploy_xrp_equiv": 40.0,
     "alpha_reload_sell_offset_pct": 0.05,
     "alpha_reload_block_accumulation_until_funded": False,
-    # Harvest more often on real legs (not only monster 5% days).
-    "alpha_accumulation_harvest_move_24h_watch_pct": 3.5,
-    "alpha_accumulation_harvest_pullback_arm_pct": 0.9,
+    # Grind-friendly arms so harvest/dip run without waiting for 3.5% shock days.
+    "alpha_accumulation_harvest_move_24h_watch_pct": 2.0,
+    "alpha_accumulation_harvest_pullback_arm_pct": 0.7,
     "alpha_accumulation_harvest_trim_risk_pct": 2.0,
     # Dip redeploy — arm earlier so reverse after sell-off is bought.
-    "alpha_accumulation_dip_move_24h_arm_pct": 3.5,
+    "alpha_accumulation_dip_move_24h_arm_pct": 2.0,
     "alpha_accumulation_dip_bounce_arm_pct": 0.25,
     "alpha_accumulation_dip_buy_offset_pct": 0.14,
     # Drawdown funding still available as backup powder path.
@@ -104,8 +108,8 @@ MAXIMIZE_AGENT_PATCH: Dict[str, Any] = {
 
 MAXIMIZE_DESCRIPTION = (
     "Maximize: harvest-loop bag growth — target 85% XRP, strength trim at +5% dev, "
-    "powder floor 40 XRP-eq (block-until-funded OFF), harvest arms ~3.5% legs, "
-    "dip redeploy ~3.5%, 3.5% portfolio clips (scale with bag), "
+    "powder floor 40 XRP-eq (block-until-funded OFF), harvest/dip arms ~2% (grind-friendly), "
+    "stale inventory asks auto-cancel (no sell-slot brick), 3.5% portfolio clips, "
     "core bag brackets OFF (no SL factory). Grow XRP count over time."
 )
 

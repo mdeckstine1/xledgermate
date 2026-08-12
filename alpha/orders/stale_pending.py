@@ -26,6 +26,19 @@ def target_buy_limit_price(
     return round_rlusd_price(raw, price_decimals, direction="down")
 
 
+def target_sell_limit_price(
+    mid: float,
+    offset_pct: float,
+    *,
+    price_decimals: int = DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS,
+) -> float:
+    """Passive inventory ask: mid * (1 + offset%)."""
+    if offset_pct < 0:
+        offset_pct = 0.0
+    raw = mid * (1.0 + offset_pct / 100.0)
+    return round_rlusd_price(raw, price_decimals, direction="up")
+
+
 def stale_pending_buy_reason(
     entry: float,
     mid: float,
@@ -64,6 +77,57 @@ def stale_pending_buy_reason(
         drift_pct = abs(entry - target) / mid * 100.0
         if drift_pct > max_drift_pct + eps:
             return f"entry_drift={drift_pct:.3f}%>{max_drift_pct:g}%"
+
+    if max_age_seconds > 0 and age_seconds is not None and age_seconds > max_age_seconds:
+        return f"age={age_seconds:.0f}s>{max_age_seconds:.0f}s"
+    return None
+
+
+def stale_pending_sell_reason(
+    ask: float,
+    mid: float,
+    *,
+    offset_pct: float,
+    max_drift_pct: float,
+    stale_enabled: bool,
+    max_age_seconds: float = 0.0,
+    age_seconds: Optional[float] = None,
+    price_decimals: int = DEFAULT_ALPHA_RLUSD_PRICE_DECIMALS,
+) -> Optional[str]:
+    """
+    Return cancel reason when a resting inventory ask no longer matches policy.
+
+    Strength/harvest/reload asks sit *above* mid. When mid falls away, zombies
+    occupy max_pending_sells and brick autonomous trims — cancel so the next
+    cycle can re-place near the current target.
+    """
+    eps = price_eps(price_decimals)
+    if not stale_enabled:
+        return None
+    if mid <= 0 or ask <= 0:
+        return None
+
+    # Ask below mid is marketable / filling path — do not cancel as "stale high".
+    if ask + eps < mid:
+        if max_age_seconds > 0 and age_seconds is not None and age_seconds > max_age_seconds:
+            return f"age={age_seconds:.0f}s>{max_age_seconds:.0f}s"
+        return None
+
+    if max_drift_pct > 0:
+        # Gap from mid beyond intentional offset + allowed drift → zombie.
+        above_mid_pct = max(0.0, (ask - mid) / mid * 100.0)
+        allowed_above = max(0.0, float(offset_pct)) + float(max_drift_pct)
+        if above_mid_pct > allowed_above + eps:
+            return (
+                f"ask_above_mid={above_mid_pct:.3f}%>"
+                f"offset+drift={allowed_above:g}%"
+            )
+
+        target = target_sell_limit_price(mid, offset_pct, price_decimals=price_decimals)
+        if ask > target + eps:
+            drift_pct = (ask - target) / mid * 100.0
+            if drift_pct > max_drift_pct + eps:
+                return f"ask_drift={drift_pct:.3f}%>{max_drift_pct:g}%"
 
     if max_age_seconds > 0 and age_seconds is not None and age_seconds > max_age_seconds:
         return f"age={age_seconds:.0f}s>{max_age_seconds:.0f}s"

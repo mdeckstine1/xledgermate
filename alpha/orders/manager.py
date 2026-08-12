@@ -16,7 +16,8 @@ from alpha.dry_run import DryRunGuard
 from alpha.ledger.interface import LedgerInterface
 from alpha.orders.bracket import compute_bracket_prices, normalize_partial_fill_mode
 from alpha.orders.stale_pending import stale_pending_buy_reason as _stale_pending_buy_reason
-from alpha.orders.stale_pending import target_buy_limit_price
+from alpha.orders.stale_pending import stale_pending_sell_reason as _stale_pending_sell_reason
+from alpha.orders.stale_pending import target_buy_limit_price, target_sell_limit_price
 from alpha.orders.strength_sells import StrengthSellRecord, StrengthSellStore
 from alpha.precision import price_decimals, price_eps
 from alpha.orders.state import BracketStateStore
@@ -311,6 +312,7 @@ class OrderManager:
         current_price = structure.mid if structure and structure.mid > 0 else 0.0
         if current_price > 0:
             await self._cancel_stale_pending_buys(current_price)
+            await self._cancel_stale_pending_sells(current_price, open_map)
 
         candle_data: Optional[CandleData] = None
         if structure and structure.confirmation_candle is not None:
@@ -1238,6 +1240,86 @@ class OrderManager:
                         reason or "stale_pending_buy",
                     )
         cancelled += await self._prune_excess_pending_buys(mid)
+        return cancelled
+
+    def _sell_offset_for_purpose(self, purpose: str) -> float:
+        p = str(purpose or "strength").strip().lower()
+        if p == "reload_funding":
+            return float(getattr(self._config, "alpha_reload_sell_offset_pct", 0.05) or 0.05)
+        if p == "harvest_trim":
+            return float(
+                getattr(self._config, "alpha_accumulation_harvest_sell_offset_pct", 0.10) or 0.10
+            )
+        if p == "drawdown_reload":
+            return float(getattr(self._config, "alpha_reload_sell_offset_pct", 0.05) or 0.05)
+        return float(self._config.alpha_sell_limit_offset_pct or 0.08)
+
+    def stale_pending_sell_reason(
+        self,
+        *,
+        ask: float,
+        mid: float,
+        purpose: str = "strength",
+    ) -> Optional[str]:
+        """Return cancel reason when a resting inventory ask is a zombie vs mid/target."""
+        return _stale_pending_sell_reason(
+            ask,
+            mid,
+            offset_pct=self._sell_offset_for_purpose(purpose),
+            max_drift_pct=float(
+                getattr(self._config, "alpha_stale_pending_sell_max_drift_pct", 0.5) or 0.5
+            ),
+            stale_enabled=getattr(self._config, "alpha_stale_pending_sell_enabled", True) is not False,
+            max_age_seconds=float(
+                getattr(self._config, "alpha_stale_pending_sell_max_age_seconds", 0.0) or 0.0
+            ),
+            age_seconds=None,
+            price_decimals=price_decimals(self._config),
+        )
+
+    async def _cancel_stale_pending_sells(
+        self,
+        mid: float,
+        open_map: Dict[int, dict[str, Any]],
+    ) -> int:
+        """Cancel inventory asks that drifted too far above mid (free max_pending_sells slots)."""
+        if getattr(self._config, "alpha_stale_pending_sell_enabled", True) is False:
+            return 0
+        if mid <= 0:
+            return 0
+
+        leg_seqs = self._store.bracket_leg_sequences()
+        cancelled = 0
+        for seq, offer in list(open_map.items()):
+            if str(offer.get("side") or "") != "ask":
+                continue
+            if int(seq) in leg_seqs:
+                continue  # leave bracket TP/SL alone
+            ask = float(offer.get("price") or 0.0)
+            if ask <= 0:
+                continue
+            tracked = self._strength_sells.get(int(seq))
+            purpose = tracked.purpose if tracked is not None else "strength"
+            reason = self.stale_pending_sell_reason(ask=ask, mid=mid, purpose=purpose)
+            if reason is None:
+                continue
+            if await self.cancel_open_offer(int(seq)):
+                cancelled += 1
+                target = target_sell_limit_price(
+                    mid,
+                    self._sell_offset_for_purpose(purpose),
+                    price_decimals=price_decimals(self._config),
+                )
+                logger.info(
+                    "stale_pending_sell_cancelled | seq=%s | purpose=%s | ask=%.6f | mid=%.6f | "
+                    "target=%.6f | %s",
+                    seq,
+                    purpose,
+                    ask,
+                    mid,
+                    target,
+                    reason,
+                )
         return cancelled
 
     async def _prune_excess_pending_buys(self, mid: float) -> int:

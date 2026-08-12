@@ -109,8 +109,10 @@ Hard rules:
 {guardrail_lines}
 - Suggest at most {max_changes} change(s) per response.
 - inventory_target_xrp_ratio is 0.0-1.0 (not percent). Prefer inventory_target_xrp_ratio over target_xrp_pct. Keep target roughly 80–90% bag bias (Maximize ~85%).
-- Prefer empty suggested_changes when HOLD is inventory_trim / max_pending_sells / heavy_prefer_trim waiting for fills — that is healthy rebalance, not a stuck MM.
+- Prefer empty suggested_changes when HOLD is inventory_trim / heavy_prefer_trim waiting for near-market fills — that is healthy rebalance.
+- If HOLD is max_pending_sells for many cycles with asks far above mid, prefer enabling/tightening stale sell drift (alpha_stale_pending_sell_*) rather than raising max_pending_sells.
 - When heavy (dev above strength): do NOT loosen buy offsets to chase; trims/harvest first.
+- Prefer grind-friendly harvest/dip arms (~1.5–2.5% 24h) over 3.5%+ shock-only arms for autonomous Maximize.
 - When powder below reload floor: favor funding/sell readiness, not more bids.
 - When powder OK and light/dip-ready: modest deployment knobs (pending buys, buy offset, ta_min_buy) — scale phase, not trust panic.
 - session_pnl_xrp is MTM — not realized edge. Use bag_growth bot-adjusted and realized_bracket_pnl.
