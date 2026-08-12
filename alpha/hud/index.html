@@ -884,7 +884,7 @@
         </div>
         <div class="card skynet-agent-card">
           <h2 style="margin:0 0 8px;font-size:1rem;color:var(--accent)">Agent Smith — Phase 2</h2>
-          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Agent Smith suggests knob changes within guardrails every 3–5 engine cycles (or on significant events). Phase 2: review and apply manually.</p>
+          <p class="muted" style="margin:0 0 10px;font-size:.78rem">Agent Smith suggests knobs within guardrails on a <strong>slow schedule</strong> (token budget) and on <strong>high-value events</strong> (kill, drawdown, sell-slot stall, powder stress). Full SKYNET stays off unless you enable it. Phase 2: review and apply manually.</p>
           <p class="muted" style="margin:0 0 10px;font-size:.75rem;line-height:1.45"><strong>Quick presets</strong> apply operator knobs immediately (no LLM). <strong>Maximize</strong> = default harvest loop (powder floor 40, core bag no SL, redeploy dips, scale clips). <strong>Unassed</strong> = recovery only — unbrick stranded bag, then return to Maximize.</p>
           <div class="ctrl-row">
             <label><input type="checkbox" id="skynetAgentEnabled"> Enable Agent Smith Mode</label>
@@ -912,8 +912,11 @@
               <div><label>SL cooldown min (min)</label><input type="number" id="grSlMinMin" step="1" min="0"></div>
               <div><label>SL cooldown min (max)</label><input type="number" id="grSlMinMax" step="1" min="0"></div>
               <div><label>Max changes per cycle</label><input type="number" id="grMaxChanges" step="1" min="0" max="10"></div>
-              <div><label>Run every (cycles) min</label><input type="number" id="grIntervalMin" step="1" min="1" max="50"></div>
-              <div><label>Run every (cycles) max</label><input type="number" id="grIntervalMax" step="1" min="1" max="50"></div>
+              <div><label>Run every (cycles) min</label><input type="number" id="grIntervalMin" step="1" min="1" max="500" title="Scheduled cadence lower bound. ~40 ≈ 10 min at 15s cycles."></div>
+              <div><label>Run every (cycles) max</label><input type="number" id="grIntervalMax" step="1" min="1" max="500" title="Scheduled cadence upper bound."></div>
+              <div><label>Daily call budget</label><input type="number" id="grDailyBudget" step="1" min="0" max="1000" title="Max auto Grok calls per UTC day. 0 = unlimited. Manual Run can bypass when empty."></div>
+              <div><label>Agent max tokens</label><input type="number" id="grAgentMaxTokens" step="64" min="256" max="8192" title="Response budget for Agent Smith (not manual Ask)."></div>
+              <div><label title="Fire Agent Smith on high-value events between scheduled runs"><input type="checkbox" id="grEventTriggersEnabled" checked> Event triggers ON</label></div>
             </div>
           </details>
           <div id="skynetAgentProposal" class="skynet-agent-proposal muted" style="display:none"></div>
@@ -3480,9 +3483,19 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if (d.full_mode_enabled) parts.push('FULL');
       if (d.engine_cycle != null) parts.push('engine cycle ' + d.engine_cycle);
       if (d.next_run_engine_cycle) parts.push('next run ≥ cycle ' + d.next_run_engine_cycle);
+      if (d.daily_call_budget != null) {
+        const used = d.daily_calls_used != null ? d.daily_calls_used : 0;
+        const rem = d.budget_remaining != null ? d.budget_remaining : '∞';
+        parts.push('budget ' + used + '/' + (d.daily_call_budget || '∞') + ' (left ' + rem + ')');
+      }
+      if (d.max_tokens != null) parts.push('max_tok ' + d.max_tokens);
+      if (d.event_triggered && d.event_reasons && d.event_reasons.length) {
+        parts.push('event: ' + d.event_reasons.slice(0, 2).join(', '));
+      }
       if (d.last_run_utc) parts.push('last run ' + d.last_run_utc.replace('T', ' ').slice(0, 19) + ' UTC');
       if (d.running) parts.push('running…');
       else if (d.due && d.agent_enabled) parts.push('due now');
+      else if (d.budget_remaining === 0) parts.push('budget empty');
       el.textContent = parts.join(' · ');
     }
 
@@ -3499,6 +3512,11 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         }
         if (d.interval_cycles_min != null) $('grIntervalMin').value = d.interval_cycles_min;
         if (d.interval_cycles_max != null) $('grIntervalMax').value = d.interval_cycles_max;
+        if ($('grDailyBudget') && d.daily_call_budget != null) $('grDailyBudget').value = d.daily_call_budget;
+        if ($('grAgentMaxTokens') && d.max_tokens != null) $('grAgentMaxTokens').value = d.max_tokens;
+        if ($('grEventTriggersEnabled') && d.event_triggers) {
+          $('grEventTriggersEnabled').checked = d.event_triggers.enabled !== false;
+        }
         fillGuardrailsForm(d.guardrails);
         fillEmergencyForm(d.emergency_rules);
         renderAgentMeta(d);
@@ -3593,6 +3611,11 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         agent_enabled: $('skynetAgentEnabled').checked,
         interval_cycles_min: +$('grIntervalMin').value,
         interval_cycles_max: +$('grIntervalMax').value,
+        daily_call_budget: $('grDailyBudget') ? +$('grDailyBudget').value : 48,
+        max_tokens: $('grAgentMaxTokens') ? +$('grAgentMaxTokens').value : 1536,
+        event_triggers: {
+          enabled: $('grEventTriggersEnabled') ? !!$('grEventTriggersEnabled').checked : true,
+        },
         guardrails: readGuardrailsFromForm(),
         emergency_rules: readEmergencyFromForm(),
       };

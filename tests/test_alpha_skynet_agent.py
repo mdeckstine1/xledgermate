@@ -6,10 +6,13 @@ from pathlib import Path
 
 from alpha.hud.skynet_agent import (
     _AGENT_SYSTEM_PROMPT,
+    _DEFAULT_EVENT_TRIGGERS,
     _DEFAULT_GUARDRAILS,
     _FULL_MODE_CONFIRM,
     _FULL_MODE_SYSTEM_PROMPT,
     append_audit_entry,
+    budget_allows_run,
+    budget_remaining,
     default_agent_config,
     describe_knob_change,
     detect_significant_events,
@@ -19,6 +22,8 @@ from alpha.hud.skynet_agent import (
     load_audit_entries,
     merge_agent_patch,
     pause_full_skynet_mode,
+    record_budget_call,
+    refresh_daily_budget,
     save_agent_config,
     should_run_agent,
 )
@@ -143,7 +148,7 @@ def test_full_mode_system_prompt_format():
         guardrail_lines="- alpha_risk_per_trade_pct: min=0.1 max=2",
         max_changes=3,
     )
-    assert "disciplined" in rendered.lower()
+    assert "maximize" in rendered.lower() or "bag-growth" in rendered.lower()
     assert '"reasoning"' in rendered
 
 
@@ -191,24 +196,98 @@ def test_emergency_drawdown_pauses_trading(tmp_path: Path):
     assert runtime.load_overrides().get("trading_enabled") is False
 
 
-def test_detect_significant_events():
+def test_detect_significant_events_default_skips_decision_noise():
+    """Default policy: decision_changed OFF (token saver)."""
+    hud = {
+        "engine_cycle": 10,
+        "decision": {"action": "hold", "reason": "balanced"},
+        "risk": {"kill_switch_active": False, "drawdown_pct": 0.5, "session_pnl_xrp": 0.0},
+        "inventory": {"deviation": -0.05},
+        "trading_enabled": True,
+    }
+    last = {
+        "decision_action": "place_bid",
+        "decision_reason": "weakness",
+        "kill_switch_active": False,
+        "drawdown_pct": 0.5,
+        "session_pnl_xrp": 0.0,
+        "inventory_deviation": -0.05,
+        "sell_slot_stall": False,
+    }
+    triggered, reasons = detect_significant_events(hud, last)
+    assert not triggered
+    assert not any("decision_changed" in r for r in reasons)
+
+
+def test_detect_significant_events_kill_and_sell_stall():
+    hud = {
+        "engine_cycle": 10,
+        "decision": {"action": "hold", "reason": "max_pending_sells=2"},
+        "risk": {"kill_switch_active": True, "drawdown_pct": 2.0, "session_pnl_xrp": 0.0},
+        "inventory": {"deviation": 0.0},
+        "trading_enabled": True,
+    }
+    last = {
+        "decision_action": "place_bid",
+        "decision_reason": "strength",
+        "kill_switch_active": False,
+        "drawdown_pct": 0.5,
+        "session_pnl_xrp": 0.0,
+        "inventory_deviation": 0.0,
+        "sell_slot_stall": False,
+    }
+    triggered, reasons = detect_significant_events(hud, last)
+    assert triggered
+    assert any("kill_switch" in r for r in reasons)
+    assert any("sell_slot_stall" in r for r in reasons)
+
+
+def test_detect_decision_changed_when_policy_enables_it():
     hud = {
         "engine_cycle": 10,
         "decision": {"action": "hold"},
-        "risk": {"kill_switch_active": False, "drawdown_pct": 2.0, "session_pnl_xrp": 0.0},
-        "inventory": {"deviation": -0.4},
-        "trading_enabled": True,
+        "risk": {"kill_switch_active": False, "drawdown_pct": 0.5, "session_pnl_xrp": 0.0},
+        "inventory": {"deviation": 0.0},
     }
     last = {
         "decision_action": "place_bid",
         "kill_switch_active": False,
         "drawdown_pct": 0.5,
-        "session_pnl_xrp": 10.0,
-        "inventory_deviation": -0.3,
+        "session_pnl_xrp": 0.0,
+        "inventory_deviation": 0.0,
     }
-    triggered, reasons = detect_significant_events(hud, last)
+    policy = dict(_DEFAULT_EVENT_TRIGGERS)
+    policy["decision_changed"] = True
+    triggered, reasons = detect_significant_events(hud, last, event_policy=policy)
     assert triggered
     assert any("decision_changed" in r for r in reasons)
+
+
+def test_daily_budget_blocks_auto_allows_force():
+    agent = default_agent_config()
+    agent["agent_enabled"] = True
+    agent["daily_call_budget"] = 2
+    agent["daily_calls_used"] = 2
+    refresh_daily_budget(agent)
+    ok, note = budget_allows_run(agent, force=False)
+    assert not ok
+    assert "exhausted" in note
+    ok_f, note_f = budget_allows_run(agent, force=True)
+    assert ok_f
+    assert "force" in note_f
+    assert budget_remaining(agent) == 0
+    record_budget_call(agent)
+    assert agent["daily_calls_used"] == 3
+
+
+def test_should_run_respects_budget():
+    agent = default_agent_config()
+    agent["agent_enabled"] = True
+    agent["next_run_engine_cycle"] = 10
+    agent["daily_call_budget"] = 1
+    agent["daily_calls_used"] = 1
+    assert not should_run_agent(agent, 10)
+    assert should_run_agent(agent, 10, force=True)
 
 
 def test_audit_log_roundtrip(tmp_path: Path):
@@ -237,18 +316,65 @@ def test_should_run_on_significant_event():
     agent = default_agent_config()
     agent["agent_enabled"] = True
     agent["next_run_engine_cycle"] = 100
+    agent["last_event_run_engine_cycle"] = 0
     hud = {
         "engine_cycle": 5,
-        "decision": {"action": "hold"},
+        "decision": {"action": "hold", "reason": "max_pending_sells=2"},
         "risk": {"kill_switch_active": True, "drawdown_pct": 1.0, "session_pnl_xrp": 0.0},
         "inventory": {"deviation": 0.0},
     }
     last = {
         "kill_switch_active": False,
         "decision_action": "place_bid",
+        "decision_reason": "strength",
         "drawdown_pct": 0.0,
         "session_pnl_xrp": 0.0,
         "inventory_deviation": 0.0,
+        "sell_slot_stall": False,
     }
     agent["last_event_snapshot"] = last
     assert should_run_agent(agent, 5, hud)
+
+
+def test_event_cooldown_blocks_burst():
+    agent = default_agent_config()
+    agent["agent_enabled"] = True
+    agent["next_run_engine_cycle"] = 1000
+    agent["last_event_run_engine_cycle"] = 50
+    agent["event_triggers"] = dict(_DEFAULT_EVENT_TRIGGERS)
+    agent["event_triggers"]["min_cycles_between_event_runs"] = 20
+    hud = {
+        "engine_cycle": 55,
+        "decision": {"action": "hold"},
+        "risk": {"kill_switch_active": True, "drawdown_pct": 1.0, "session_pnl_xrp": 0.0},
+        "inventory": {"deviation": 0.0},
+    }
+    agent["last_event_snapshot"] = {
+        "kill_switch_active": False,
+        "decision_action": "hold",
+        "drawdown_pct": 0.0,
+        "session_pnl_xrp": 0.0,
+        "inventory_deviation": 0.0,
+        "sell_slot_stall": False,
+    }
+    assert not should_run_agent(agent, 55, hud)
+    # After cooldown gap elapsed
+    assert should_run_agent(agent, 75, hud)
+
+
+def test_merge_agent_budget_and_tokens(tmp_path: Path):
+    path = tmp_path / "agent.json"
+    cfg, errors = merge_agent_patch(
+        {
+            "daily_call_budget": 24,
+            "max_tokens": 1024,
+            "interval_cycles_min": 40,
+            "interval_cycles_max": 60,
+            "event_triggers": {"enabled": True, "sell_slot_stall": True},
+        },
+        path=path,
+    )
+    assert not errors
+    assert cfg["daily_call_budget"] == 24
+    assert cfg["max_tokens"] == 1024
+    assert cfg["event_triggers"]["sell_slot_stall"] is True

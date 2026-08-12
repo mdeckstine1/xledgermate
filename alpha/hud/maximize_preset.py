@@ -74,8 +74,26 @@ MAXIMIZE_OPERATOR_OVERRIDES: Dict[str, Any] = {
 MAXIMIZE_AGENT_PATCH: Dict[str, Any] = {
     "agent_enabled": True,
     "full_mode_enabled": False,
-    "interval_cycles_min": 10,
-    "interval_cycles_max": 15,
+    # Token-saver: ~10–15 min between scheduled runs @ 15s cycles + selective events.
+    "interval_cycles_min": 40,
+    "interval_cycles_max": 60,
+    "daily_call_budget": 48,
+    "max_tokens": 1536,
+    "event_triggers": {
+        "enabled": True,
+        "min_cycles_between_event_runs": 12,
+        "decision_changed": False,
+        "opportunity": False,
+        "kill_switch": True,
+        "drawdown_spike": True,
+        "session_loss": True,
+        "inventory_shift": True,
+        "accumulation": True,
+        "reload": True,
+        "drawdown_reload": True,
+        "sell_slot_stall": True,
+        "powder_shortfall": True,
+    },
     "guardrails": {
         "alpha_risk_per_trade_pct": {"min": 2.0, "max": 4.0},
         "inventory_target_xrp_pct": {"min": 75.0, "max": 90.0},

@@ -81,6 +81,28 @@ _DEFAULT_EMERGENCY_RULES: Dict[str, Any] = {
     "session_loss_pause_xrp": 25.0,
 }
 
+# Event-driven agent runs (token saver: decision_changed OFF by default — too chatty).
+_DEFAULT_EVENT_TRIGGERS: Dict[str, Any] = {
+    "enabled": True,
+    # After an event-driven run, ignore further events for this many cycles (scheduled still OK).
+    "min_cycles_between_event_runs": 12,
+    "kill_switch": True,
+    "drawdown_spike": True,
+    "drawdown_spike_pct": 1.0,
+    "session_loss": True,
+    "session_loss_xrp": 8.0,
+    "inventory_shift": True,
+    "inventory_shift_dev": 0.12,
+    "decision_changed": False,
+    "opportunity": False,
+    "accumulation": True,
+    "reload": True,
+    "drawdown_reload": True,
+    # Free sell slots / powder — high value for Maximize autonomy.
+    "sell_slot_stall": True,
+    "powder_shortfall": True,
+}
+
 _AGENT_SYSTEM_PROMPT = """You are Agent Smith (SKYNET Phase 2) for xLedgerMate Alpha — a bounded advisor for an XRPL XRP/RLUSD **accumulation / bag-growth** bot (Maximize doctrine).
 
 This is NOT pure market-making. Core loop:
@@ -178,18 +200,99 @@ def default_agent_config() -> Dict[str, Any]:
     return {
         "agent_enabled": False,
         "full_mode_enabled": False,
-        # Calmer cadence for accumulation soak (was 3–5; Maximize uses ~8–15).
-        "interval_cycles_min": 10,
-        "interval_cycles_max": 15,
+        # Token-saver soak: ~10–15 min between scheduled runs at 15s cycles.
+        "interval_cycles_min": 40,
+        "interval_cycles_max": 60,
+        # Max auto Grok calls per UTC day (0 = unlimited). Manual force can bypass when empty.
+        "daily_call_budget": 48,
+        "daily_calls_used": 0,
+        "budget_day_utc": None,
+        # Agent response budget (manual Ask SKYNET keeps config alpha_skynet_grok_max_tokens).
+        "max_tokens": 1536,
         "guardrails": deepcopy(_DEFAULT_GUARDRAILS),
         "emergency_rules": deepcopy(_DEFAULT_EMERGENCY_RULES),
+        "event_triggers": deepcopy(_DEFAULT_EVENT_TRIGGERS),
         "last_run_engine_cycle": 0,
         "next_run_engine_cycle": 0,
+        "last_event_run_engine_cycle": 0,
         "last_run_utc": None,
         "running": False,
         "latest_proposal": None,
         "last_event_snapshot": None,
     }
+
+
+def _normalize_event_triggers(raw: Dict[str, Any]) -> Dict[str, Any]:
+    out = deepcopy(_DEFAULT_EVENT_TRIGGERS)
+    if not isinstance(raw, dict):
+        return out
+    for key, default in _DEFAULT_EVENT_TRIGGERS.items():
+        if key not in raw:
+            continue
+        val = raw[key]
+        if isinstance(default, bool):
+            out[key] = bool(val)
+        else:
+            try:
+                if key.endswith("_pct") or key.endswith("_dev") or key.endswith("_xrp"):
+                    out[key] = float(val)
+                else:
+                    out[key] = int(val)
+            except (TypeError, ValueError):
+                pass
+    out["min_cycles_between_event_runs"] = max(
+        0, min(500, int(out.get("min_cycles_between_event_runs") or 0))
+    )
+    out["drawdown_spike_pct"] = max(0.25, min(20.0, float(out.get("drawdown_spike_pct") or 1.0)))
+    out["session_loss_xrp"] = max(0.5, min(500.0, float(out.get("session_loss_xrp") or 8.0)))
+    out["inventory_shift_dev"] = max(0.02, min(0.5, float(out.get("inventory_shift_dev") or 0.12)))
+    return out
+
+
+def _utc_day() -> str:
+    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+
+
+def refresh_daily_budget(agent: Dict[str, Any]) -> Dict[str, Any]:
+    """Roll daily call counter at UTC midnight."""
+    today = _utc_day()
+    stored = str(agent.get("budget_day_utc") or "")
+    if stored != today:
+        # New calendar day → reset. First stamp (empty stored) keeps existing counter.
+        agent["budget_day_utc"] = today
+        if stored:
+            agent["daily_calls_used"] = 0
+        else:
+            agent["daily_calls_used"] = int(agent.get("daily_calls_used") or 0)
+    return agent
+
+
+def budget_remaining(agent: Dict[str, Any]) -> Optional[int]:
+    """None = unlimited; else remaining auto calls today."""
+    refresh_daily_budget(agent)
+    budget = int(agent.get("daily_call_budget") or 0)
+    if budget <= 0:
+        return None
+    used = int(agent.get("daily_calls_used") or 0)
+    return max(0, budget - used)
+
+
+def budget_allows_run(agent: Dict[str, Any], *, force: bool = False) -> Tuple[bool, str]:
+    """Whether a Grok call is allowed. force=True bypasses empty budget (manual trigger)."""
+    refresh_daily_budget(agent)
+    remaining = budget_remaining(agent)
+    if remaining is None:
+        return True, "unlimited"
+    if remaining > 0:
+        return True, f"remaining={remaining}"
+    if force:
+        return True, "budget_exhausted_force_bypass"
+    return False, "daily_call_budget_exhausted"
+
+
+def record_budget_call(agent: Dict[str, Any]) -> None:
+    refresh_daily_budget(agent)
+    agent["daily_calls_used"] = int(agent.get("daily_calls_used") or 0) + 1
 
 
 def load_agent_config(path: Path = _DEFAULT_AGENT_PATH) -> Dict[str, Any]:
@@ -202,7 +305,17 @@ def load_agent_config(path: Path = _DEFAULT_AGENT_PATH) -> Dict[str, Any]:
         return cfg
     if not isinstance(data, dict):
         return cfg
-    for key in ("agent_enabled", "full_mode_enabled", "interval_cycles_min", "interval_cycles_max"):
+    for key in (
+        "agent_enabled",
+        "full_mode_enabled",
+        "interval_cycles_min",
+        "interval_cycles_max",
+        "daily_call_budget",
+        "daily_calls_used",
+        "budget_day_utc",
+        "max_tokens",
+        "last_event_run_engine_cycle",
+    ):
         if key in data:
             cfg[key] = data[key]
     if isinstance(data.get("emergency_rules"), dict):
@@ -213,6 +326,8 @@ def load_agent_config(path: Path = _DEFAULT_AGENT_PATH) -> Dict[str, Any]:
         merged = deepcopy(_DEFAULT_GUARDRAILS)
         merged.update(data["guardrails"])
         cfg["guardrails"] = _normalize_guardrails(merged)
+    if isinstance(data.get("event_triggers"), dict):
+        cfg["event_triggers"] = _normalize_event_triggers(data["event_triggers"])
     for key in (
         "last_run_engine_cycle",
         "next_run_engine_cycle",
@@ -223,6 +338,7 @@ def load_agent_config(path: Path = _DEFAULT_AGENT_PATH) -> Dict[str, Any]:
     ):
         if key in data:
             cfg[key] = data[key]
+    refresh_daily_budget(cfg)
     return cfg
 
 
@@ -314,12 +430,37 @@ def merge_agent_patch(
                 val = int(patch[key])
                 if val < 1:
                     raise ValueError("must be >= 1")
+                if val > 500:
+                    raise ValueError("must be <= 500")
                 current[key] = val
             except (TypeError, ValueError) as exc:
                 errors.append(f"{key}: {exc}")
 
     if current["interval_cycles_min"] > current["interval_cycles_max"]:
         errors.append("interval_cycles_min cannot exceed interval_cycles_max")
+
+    if "daily_call_budget" in patch:
+        try:
+            val = int(patch["daily_call_budget"])
+            if val < 0:
+                raise ValueError("must be >= 0 (0=unlimited)")
+            current["daily_call_budget"] = min(10000, val)
+        except (TypeError, ValueError) as exc:
+            errors.append(f"daily_call_budget: {exc}")
+
+    if "max_tokens" in patch:
+        try:
+            val = int(patch["max_tokens"])
+            if val < 256:
+                raise ValueError("must be >= 256")
+            current["max_tokens"] = max(256, min(8192, val))
+        except (TypeError, ValueError) as exc:
+            errors.append(f"max_tokens: {exc}")
+
+    if "event_triggers" in patch and isinstance(patch["event_triggers"], dict):
+        merged_ev = deepcopy(current.get("event_triggers") or _DEFAULT_EVENT_TRIGGERS)
+        merged_ev.update(patch["event_triggers"])
+        current["event_triggers"] = _normalize_event_triggers(merged_ev)
 
     if "guardrails" in patch and isinstance(patch["guardrails"], dict):
         prior = _normalize_guardrails(current.get("guardrails") or _DEFAULT_GUARDRAILS)
@@ -577,9 +718,12 @@ def _event_snapshot(hud_state: Dict[str, Any]) -> Dict[str, Any]:
     risk = hud_state.get("risk") or {}
     inv = hud_state.get("inventory") or {}
     decision = hud_state.get("decision") or {}
+    reason = str(decision.get("reason") or "")
     return {
         "engine_cycle": int(hud_state.get("engine_cycle") or 0),
         "decision_action": str(decision.get("action") or ""),
+        "decision_reason": reason[:160],
+        "sell_slot_stall": "max_pending_sells" in reason,
         "kill_switch_active": bool(risk.get("kill_switch_active")),
         "drawdown_pct": float(risk.get("drawdown_pct") or 0.0),
         "session_pnl_xrp": float(risk.get("session_pnl_xrp") or 0.0),
@@ -589,59 +733,113 @@ def _event_snapshot(hud_state: Dict[str, Any]) -> Dict[str, Any]:
         "opportunity_headline": (hud_state.get("opportunity_watch") or {}).get("headline"),
         "accumulation_phase": (hud_state.get("accumulation_regime") or {}).get("phase"),
         "accumulation_armed": (hud_state.get("accumulation_regime") or {}).get("armed"),
-        "accumulation_missed": (hud_state.get("accumulation_regime") or {}).get("scorecard", {}).get("missed_opportunity"),
+        "accumulation_missed": (hud_state.get("accumulation_regime") or {})
+        .get("scorecard", {})
+        .get("missed_opportunity"),
         "reload_phase": (hud_state.get("reload_regime") or {}).get("phase"),
-        "reload_blocks_accumulation": (hud_state.get("reload_regime") or {}).get("blocks_accumulation"),
+        "reload_blocks_accumulation": (hud_state.get("reload_regime") or {}).get(
+            "blocks_accumulation"
+        ),
         "drawdown_phase": (hud_state.get("drawdown_reload") or {}).get("phase"),
         "drawdown_armed": (hud_state.get("drawdown_reload") or {}).get("armed"),
+        "portfolio_xrp_equiv": (hud_state.get("bag_growth") or {}).get("portfolio_xrp_equiv")
+        or hud_state.get("portfolio_xrp_equiv"),
     }
 
 
 def detect_significant_events(
     hud_state: Dict[str, Any],
     last_snapshot: Optional[Dict[str, Any]],
+    event_policy: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, List[str]]:
-    """Return (triggered, reasons) for event-driven agent runs."""
+    """Return (triggered, reasons) for event-driven agent runs (policy-gated)."""
     if not hud_state:
+        return False, []
+    policy = _normalize_event_triggers(event_policy or _DEFAULT_EVENT_TRIGGERS)
+    if not policy.get("enabled", True):
         return False, []
     snap = _event_snapshot(hud_state)
     if not last_snapshot:
         return False, []
 
     reasons: List[str] = []
-    if snap["kill_switch_active"] and not last_snapshot.get("kill_switch_active"):
+    if policy.get("kill_switch") and snap["kill_switch_active"] and not last_snapshot.get(
+        "kill_switch_active"
+    ):
         reasons.append("kill_switch_activated")
-    if snap["decision_action"] and snap["decision_action"] != last_snapshot.get("decision_action"):
-        reasons.append(f"decision_changed:{last_snapshot.get('decision_action')}→{snap['decision_action']}")
+    if (
+        policy.get("decision_changed")
+        and snap["decision_action"]
+        and snap["decision_action"] != last_snapshot.get("decision_action")
+    ):
+        reasons.append(
+            f"decision_changed:{last_snapshot.get('decision_action')}→{snap['decision_action']}"
+        )
+    dd_spike = float(policy.get("drawdown_spike_pct") or 1.0)
     dd_delta = snap["drawdown_pct"] - float(last_snapshot.get("drawdown_pct") or 0.0)
-    if dd_delta >= 1.0:
+    if policy.get("drawdown_spike") and dd_delta >= dd_spike:
         reasons.append(f"drawdown_spike:+{dd_delta:.2f}pct")
+    loss_thr = float(policy.get("session_loss_xrp") or 8.0)
     pnl_delta = snap["session_pnl_xrp"] - float(last_snapshot.get("session_pnl_xrp") or 0.0)
-    if pnl_delta <= -5.0:
+    if policy.get("session_loss") and pnl_delta <= -loss_thr:
         reasons.append(f"session_loss:{pnl_delta:.2f}xrp")
-    dev_delta = abs(snap["inventory_deviation"] - float(last_snapshot.get("inventory_deviation") or 0.0))
-    if dev_delta >= 0.12:
+    inv_thr = float(policy.get("inventory_shift_dev") or 0.12)
+    dev_delta = abs(
+        snap["inventory_deviation"] - float(last_snapshot.get("inventory_deviation") or 0.0)
+    )
+    if policy.get("inventory_shift") and dev_delta >= inv_thr:
         reasons.append(f"inventory_shift:deviation_delta={dev_delta:.3f}")
-    rs = snap.get("ready_state")
-    prev_rs = last_snapshot.get("ready_state")
-    if rs and rs != prev_rs and rs in ("armed", "blocked", "watching", "executing"):
-        reasons.append(f"opportunity_{rs}")
-    if rs == "blocked" and prev_rs in ("watching", "armed", None, "idle"):
-        reasons.append("opportunity_blocked_on_rip")
-    acc_phase = snap.get("accumulation_phase")
-    prev_acc = last_snapshot.get("accumulation_phase")
-    if acc_phase and acc_phase != prev_acc and acc_phase in ("armed", "executing", "blocked", "primed"):
-        reasons.append(f"accumulation_{acc_phase}")
-    if snap.get("accumulation_armed") and not last_snapshot.get("accumulation_armed"):
-        reasons.append("accumulation_armed")
-    if snap.get("reload_blocks_accumulation") and not last_snapshot.get("reload_blocks_accumulation"):
-        reasons.append("reload_blocks_accumulation")
-    if snap.get("reload_phase") == "armed" and last_snapshot.get("reload_phase") != "armed":
-        reasons.append("reload_armed")
-    if snap.get("drawdown_armed") and not last_snapshot.get("drawdown_armed"):
-        reasons.append("drawdown_armed")
-    if snap.get("drawdown_phase") == "armed" and last_snapshot.get("drawdown_phase") != "armed":
-        reasons.append("drawdown_phase_armed")
+
+    if policy.get("opportunity"):
+        rs = snap.get("ready_state")
+        prev_rs = last_snapshot.get("ready_state")
+        if rs and rs != prev_rs and rs in ("armed", "blocked", "watching", "executing"):
+            reasons.append(f"opportunity_{rs}")
+        if rs == "blocked" and prev_rs in ("watching", "armed", None, "idle"):
+            reasons.append("opportunity_blocked_on_rip")
+
+    if policy.get("accumulation"):
+        acc_phase = snap.get("accumulation_phase")
+        prev_acc = last_snapshot.get("accumulation_phase")
+        if (
+            acc_phase
+            and acc_phase != prev_acc
+            and acc_phase in ("armed", "executing", "blocked", "primed")
+        ):
+            reasons.append(f"accumulation_{acc_phase}")
+        if snap.get("accumulation_armed") and not last_snapshot.get("accumulation_armed"):
+            reasons.append("accumulation_armed")
+
+    if policy.get("reload"):
+        if snap.get("reload_blocks_accumulation") and not last_snapshot.get(
+            "reload_blocks_accumulation"
+        ):
+            reasons.append("reload_blocks_accumulation")
+        if snap.get("reload_phase") == "armed" and last_snapshot.get("reload_phase") != "armed":
+            reasons.append("reload_armed")
+
+    if policy.get("drawdown_reload"):
+        if snap.get("drawdown_armed") and not last_snapshot.get("drawdown_armed"):
+            reasons.append("drawdown_armed")
+        if snap.get("drawdown_phase") == "armed" and last_snapshot.get("drawdown_phase") != "armed":
+            reasons.append("drawdown_phase_armed")
+
+    if policy.get("sell_slot_stall"):
+        if snap.get("sell_slot_stall") and not last_snapshot.get("sell_slot_stall"):
+            reasons.append("sell_slot_stall:max_pending_sells")
+
+    if policy.get("powder_shortfall"):
+        if snap.get("reload_blocks_accumulation") and not last_snapshot.get(
+            "reload_blocks_accumulation"
+        ):
+            if "reload_blocks_accumulation" not in reasons:
+                reasons.append("powder_shortfall:reload_blocks")
+        if snap.get("reload_phase") in ("armed", "executing") and last_snapshot.get(
+            "reload_phase"
+        ) not in ("armed", "executing"):
+            if "reload_armed" not in reasons:
+                reasons.append(f"powder_shortfall:reload_{snap.get('reload_phase')}")
+
     return bool(reasons), reasons
 
 
@@ -743,18 +941,36 @@ def should_run_agent(
     agent: Dict[str, Any],
     engine_cycle: int,
     hud_state: Optional[Dict[str, Any]] = None,
+    *,
+    force: bool = False,
 ) -> bool:
-    if not agent.get("agent_enabled"):
+    if not agent.get("agent_enabled") and not force:
         return False
     if agent.get("running"):
         return False
+    allowed, _ = budget_allows_run(agent, force=force)
+    if not allowed:
+        return False
+
     next_at = int(agent.get("next_run_engine_cycle") or 0)
     scheduled = engine_cycle >= next_at if next_at > 0 else engine_cycle > 0
     if scheduled:
         return True
+    if force:
+        return True
     if hud_state:
-        triggered, _ = detect_significant_events(hud_state, agent.get("last_event_snapshot"))
-        return triggered
+        policy = agent.get("event_triggers") or _DEFAULT_EVENT_TRIGGERS
+        triggered, _ = detect_significant_events(
+            hud_state, agent.get("last_event_snapshot"), event_policy=policy
+        )
+        if not triggered:
+            return False
+        # Cooldown so a flurry of events does not burn the daily budget.
+        gap = int((policy or {}).get("min_cycles_between_event_runs") or 0)
+        last_ev = int(agent.get("last_event_run_engine_cycle") or 0)
+        if gap > 0 and last_ev > 0 and (engine_cycle - last_ev) < gap:
+            return False
+        return True
     return False
 
 
@@ -779,12 +995,26 @@ def run_skynet_agent(
 
         hud_state = _load_hud_state(runtime_path)
         engine_cycle = int(hud_state.get("engine_cycle") or 0)
+        refresh_daily_budget(agent)
+        allowed, budget_note = budget_allows_run(agent, force=force)
+        if not allowed:
+            return {
+                "ok": True,
+                "skipped": True,
+                "budget_exhausted": True,
+                "message": "Daily Agent Smith call budget exhausted — wait for UTC midnight or raise daily_call_budget",
+                "engine_cycle": engine_cycle,
+                "daily_calls_used": agent.get("daily_calls_used"),
+                "daily_call_budget": agent.get("daily_call_budget"),
+                "next_run_engine_cycle": agent.get("next_run_engine_cycle"),
+            }
         if not force and not should_run_agent(agent, engine_cycle, hud_state):
             return {
                 "ok": True,
                 "skipped": True,
                 "engine_cycle": engine_cycle,
                 "next_run_engine_cycle": agent.get("next_run_engine_cycle"),
+                "budget_remaining": budget_remaining(agent),
             }
 
         if agent.get("running"):
@@ -796,12 +1026,14 @@ def run_skynet_agent(
     event_reasons: List[str] = []
     emergency_action: Optional[Dict[str, Any]] = None
     full_mode = False
+    event_driven = False
 
     try:
         with _AGENT_LOCK:
             agent = load_agent_config(agent_path)
             full_mode = bool(agent.get("full_mode_enabled"))
             emergency_rules = agent.get("emergency_rules") or _DEFAULT_EMERGENCY_RULES
+            event_policy = agent.get("event_triggers") or _DEFAULT_EVENT_TRIGGERS
 
         base = BotConfig.load()
         from alpha.operator.runtime import OperatorRuntimeStore
@@ -834,9 +1066,12 @@ def run_skynet_agent(
             effective = apply_overrides(base, overrides)
             effective_snap = effective_config_snapshot(effective, overrides)
 
+        next_at = int(agent.get("next_run_engine_cycle") or 0)
+        scheduled = engine_cycle >= next_at if next_at > 0 else True
         triggered, event_reasons = detect_significant_events(
-            hud_state, agent.get("last_event_snapshot")
+            hud_state, agent.get("last_event_snapshot"), event_policy=event_policy
         )
+        event_driven = bool(triggered) and not scheduled and not force
 
         context = build_skynet_context(
             hud_state, operator_config=effective_snap, effective_config=effective
@@ -854,7 +1089,11 @@ def run_skynet_agent(
         )
         user_prompt = user_tpl.format(context=context)
         model = (getattr(cfg, "alpha_skynet_grok_model", None) or "grok-3").strip() or "grok-3"
-        max_tokens = int(getattr(cfg, "alpha_skynet_grok_max_tokens", 4096) or 4096)
+        # Prefer agent max_tokens (token saver); fall back to config agent then manual caps.
+        agent_cfg_tokens = int(agent.get("max_tokens") or 0)
+        if agent_cfg_tokens <= 0:
+            agent_cfg_tokens = int(getattr(cfg, "alpha_skynet_agent_max_tokens", 1536) or 1536)
+        max_tokens = max(256, min(8192, agent_cfg_tokens))
         operator_phase = effective_snap.get("alpha_operator_phase")
         raw, parsed = call_skynet_advisor(
             user_prompt="",
@@ -888,6 +1127,7 @@ def run_skynet_agent(
             "ts": _utc_now(),
             "engine_cycle": engine_cycle,
             "mode": source,
+            "event_driven": event_driven,
             "event_triggers": event_reasons,
             "summary": parsed.get("summary"),
             "reasoning": parsed.get("reasoning"),
@@ -898,6 +1138,7 @@ def run_skynet_agent(
             "auto_applied": auto_applied,
             "applied_changes": applied_changes,
             "emergency_action": emergency_action,
+            "max_tokens": max_tokens,
             "display": format_agent_proposal_display(
                 parsed,
                 safe_changes=safe,
@@ -915,6 +1156,7 @@ def run_skynet_agent(
                 "event": "agent_run",
                 "engine_cycle": engine_cycle,
                 "mode": source,
+                "event_driven": event_driven,
                 "event_triggers": event_reasons,
                 "summary": proposal.get("summary"),
                 "reasoning": proposal.get("reasoning"),
@@ -924,6 +1166,7 @@ def run_skynet_agent(
                 "auto_applied": auto_applied,
                 "emergency_action": emergency_action,
                 "warnings": proposal.get("warnings"),
+                "max_tokens": max_tokens,
             }
         )
 
@@ -932,17 +1175,24 @@ def run_skynet_agent(
             agent["running"] = False
             agent["last_run_utc"] = proposal["ts"]
             agent["last_event_snapshot"] = _event_snapshot(hud_state)
+            record_budget_call(agent)
+            if event_driven or event_reasons:
+                agent["last_event_run_engine_cycle"] = engine_cycle
             _schedule_next_run(agent, engine_cycle)
             agent["latest_proposal"] = proposal
             save_agent_config(agent)
 
         logger.info(
-            "skynet_agent_run | mode=%s | cycle=%s | safe=%d | rejected=%d | auto=%s",
+            "skynet_agent_run | mode=%s | cycle=%s | safe=%d | rejected=%d | auto=%s | "
+            "event=%s | budget_used=%s/%s",
             source,
             engine_cycle,
             len(safe),
             len(rejected),
             auto_applied,
+            event_driven,
+            agent.get("daily_calls_used"),
+            agent.get("daily_call_budget"),
         )
         return {
             "ok": True,
@@ -951,6 +1201,10 @@ def run_skynet_agent(
             "engine_cycle": engine_cycle,
             "proposal": proposal,
             "next_run_engine_cycle": agent.get("next_run_engine_cycle"),
+            "daily_calls_used": agent.get("daily_calls_used"),
+            "daily_call_budget": agent.get("daily_call_budget"),
+            "budget_remaining": budget_remaining(agent),
+            "event_driven": event_driven,
         }
     except Exception as exc:
         logger.warning("skynet_agent_failed | %s", exc)
@@ -977,20 +1231,32 @@ def maybe_run_agent_tick() -> None:
 
 def agent_status_payload() -> Dict[str, Any]:
     agent = load_agent_config()
+    refresh_daily_budget(agent)
     hud = _load_hud_state()
     engine_cycle = int(hud.get("engine_cycle") or 0)
     proposal = agent.get("latest_proposal")
-    triggered, event_reasons = detect_significant_events(hud, agent.get("last_event_snapshot"))
+    policy = agent.get("event_triggers") or _DEFAULT_EVENT_TRIGGERS
+    triggered, event_reasons = detect_significant_events(
+        hud, agent.get("last_event_snapshot"), event_policy=policy
+    )
+    remaining = budget_remaining(agent)
     return {
         "agent_enabled": bool(agent.get("agent_enabled")),
         "full_mode_enabled": bool(agent.get("full_mode_enabled")),
         "interval_cycles_min": agent.get("interval_cycles_min"),
         "interval_cycles_max": agent.get("interval_cycles_max"),
+        "daily_call_budget": agent.get("daily_call_budget"),
+        "daily_calls_used": agent.get("daily_calls_used"),
+        "budget_day_utc": agent.get("budget_day_utc"),
+        "budget_remaining": remaining,
+        "max_tokens": agent.get("max_tokens"),
+        "event_triggers": policy,
         "guardrails": agent.get("guardrails"),
         "emergency_rules": agent.get("emergency_rules"),
         "engine_cycle": engine_cycle,
         "last_run_engine_cycle": agent.get("last_run_engine_cycle"),
         "next_run_engine_cycle": agent.get("next_run_engine_cycle"),
+        "last_event_run_engine_cycle": agent.get("last_event_run_engine_cycle"),
         "last_run_utc": agent.get("last_run_utc"),
         "running": bool(agent.get("running")),
         "due": should_run_agent(agent, engine_cycle, hud),

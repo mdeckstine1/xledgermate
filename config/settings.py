@@ -231,7 +231,9 @@ class BotConfig:
     alpha_hud_port: int = 8765  # Operator HUD (FastAPI) — replaces legacy ws-hud port
     alpha_skynet_enabled: bool = True  # HUD SKYNET tab (Grok advisor — Phase 1 manual)
     alpha_skynet_grok_model: str = "grok-3"
-    alpha_skynet_grok_max_tokens: int = 4096  # Grok response budget (SKYNET manual + agent)
+    alpha_skynet_grok_max_tokens: int = 4096  # Manual Ask SKYNET response budget
+    alpha_skynet_agent_max_tokens: int = 1536  # Agent Smith / Full mode (token saver)
+    alpha_skynet_agent_daily_call_budget: int = 48  # Max auto agent Grok calls per UTC day (0=unlimited)
     alpha_grok_api_key: str = ""  # Optional; prefer XLG_GROK_KEY / XAI_API_KEY in .env
     # PRO — replay analytics + auto-defensive circuit (HUD PRO tab)
     alpha_defensive_circuit_enabled: bool = True
