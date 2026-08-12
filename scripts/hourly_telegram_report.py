@@ -285,61 +285,34 @@ def build_alpha_report(
     logs_dir: Optional[Path] = None,
     now: Optional[datetime] = None,
 ) -> str:
-    """Hourly digest for Trading Bot Alpha (reads alpha_runtime_state.json)."""
+    """Short Alpha hourly pulse — stack-first narrative (no MM/QD clutter)."""
     logs = logs_dir or LOGS
     now = now or datetime.now(tz=timezone.utc)
-    since = now - timedelta(hours=window_hours)
-    state = _alpha_runtime_state(logs)
+    from alpha.reporting.telegram_narrative import (
+        build_alpha_narrative_report,
+        load_agent_for_recs,
+        load_alpha_state,
+    )
+
+    state = load_alpha_state(logs)
+    # Merge kill flag from kill_switch.json if present
     kill = _load_json(logs / "kill_switch.json")
-
-    mode = "DRY-RUN" if state.get("dry_run", True) else "LIVE"
-    inv = state.get("inventory") or {}
-    risk = state.get("risk") or {}
-    decision = state.get("decision") or {}
-    brackets = (state.get("brackets") or {}).get("summary") or {}
-    cycles = _alpha_cycles_since(logs, since=since)
-
-    kill_active = bool(kill.get("active")) or bool(risk.get("kill_switch_active"))
-    kill_reason = str(kill.get("reason") or risk.get("kill_switch_reason") or "").strip()
-
-    from alpha.reporting.bag_growth import build_bag_growth_snapshot, format_bag_growth_telegram_block
-
-    bag = build_bag_growth_snapshot(
-        xrp=float(state.get("xrp") or 0),
-        rlusd=float(state.get("rlusd") or 0),
-        mid_rlusd_per_xrp=state.get("mid"),
+    if kill.get("active") and isinstance(state.get("risk"), dict):
+        state = dict(state)
+        risk = dict(state.get("risk") or {})
+        risk["kill_switch_active"] = True
+        risk["kill_switch_reason"] = kill.get("reason") or risk.get("kill_switch_reason")
+        state["risk"] = risk
+    _ = window_hours  # pulse is state-based; window reserved for future fill mix
+    return build_alpha_narrative_report(
+        state=state,
         logs_dir=logs,
+        period="pulse",
         now=now,
+        hud_url=hud_url,
+        agent=load_agent_for_recs(logs),
         persist_week=False,
     )
-    bag_block = format_bag_growth_telegram_block(bag)
-
-    lines = [
-        "XLedgerMate Alpha hourly",
-        f"{now.strftime('%Y-%m-%d %H:%M')} UTC",
-        "",
-        f"Mode: {mode} | Network: {state.get('network', '?')}",
-        f"Posture: {state.get('posture', '?')} | Cycles ({window_hours:g}h): {cycles}",
-        f"Decision: {decision.get('action', '?')} — {decision.get('reason', '')}",
-        "",
-        f"Portfolio: {float(state.get('portfolio_xrp_equiv') or 0):.4f} XRP equiv",
-        f"XRP: {float(state.get('xrp') or 0):.4f} | RLUSD: {float(state.get('rlusd') or 0):.4f}",
-        f"Mid: {float(state.get('mid') or 0):.6f} RLUSD/XRP",
-        f"Inventory: {inv.get('label', '?')} dev={float(inv.get('deviation') or 0):+.3f}",
-        f"Session P&L: {float(risk.get('session_pnl_xrp') or 0):+.4f} XRP | Drawdown: {float(risk.get('drawdown_pct') or 0):.2f}%",
-        "",
-        f"Brackets: pending={brackets.get('pending_buys', 0)} fixed={brackets.get('active_fixed', 0)} "
-        f"sl_trail={brackets.get('active_sl_trailing', 0)} breakout={brackets.get('active_breakout_trailing', 0)}",
-        f"Open offers: {int(state.get('open_offers_count') or 0)}",
-        "",
-        bag_block,
-    ]
-    if kill_active:
-        lines.append(f"KILL: {kill_reason[:200] if kill_reason else 'active'}")
-    hud = (hud_url or "").strip()
-    if hud:
-        lines.extend(["", f"HUD: {hud}"])
-    return "\n".join(lines)
 
 
 def build_report(
