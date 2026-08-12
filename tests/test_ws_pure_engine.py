@@ -1,5 +1,8 @@
 """Tests for WS pure production engine helpers."""
 
+import asyncio
+from types import SimpleNamespace
+
 from connectors.xrpl_connector import OpenOffer
 from engine.order_sync import plan_order_sync
 from experimental.ws_feed.offer_age_tracker import OfferAgeTracker
@@ -142,6 +145,67 @@ def test_engine_analysis_bundle_starts_empty() -> None:
 
     eng = WsPureTradingEngine(BotConfig.load())
     assert eng._analysis_bundle["sample_history"] == []
+
+
+def test_ws_session_balance_loss_kill_cancels_and_persists(monkeypatch, tmp_path) -> None:
+    from config.settings import BotConfig
+    from risk.kill_switch import KillSwitch
+
+    cfg = BotConfig.load()
+    cfg.dry_run = False
+    cfg.trading_enabled = True
+    cfg.bot_secret_key = "sSecretForTestOnly"
+    cfg.max_daily_drawdown_percent = 99.0
+    cfg.session_balance_loss_kill_xrp = 0.35
+    cfg.session_balance_loss_kill_min_fills = 25
+
+    eng = WsPureTradingEngine(cfg)
+    eng.kill_switch = KillSwitch(path=tmp_path / "kill_switch.json")
+    eng._session_baseline_xrp = 100.0
+    eng._session_baseline_rlusd = 100.0
+    eng._session_fills = 25
+
+    class FakeConnector:
+        async def get_xrp_balance(self) -> float:
+            return 99.0
+
+        async def get_rlusd_balance(self) -> float:
+            return 99.0
+
+        async def get_rlusd_trust_line(self):
+            return SimpleNamespace(exists=True, limit="1000", no_ripple=True)
+
+    async def fake_ensure_ws_stack() -> None:
+        eng.connector = FakeConnector()
+        eng._ws_feed = object()
+        eng._adapter = object()
+
+    async def fake_refresh_book_state():
+        return SimpleNamespace(age_seconds=lambda: 0.0), 0.999, 1.001, 1.0
+
+    cancelled: list[str] = []
+    persisted: dict[str, object] = {}
+
+    async def fake_cancel_if_live(connector, config, reason: str) -> None:
+        cancelled.append(reason)
+
+    async def fake_persist_cycle(*args, **kwargs) -> None:
+        persisted["execution"] = kwargs["execution"]
+        persisted["intents"] = args[7]
+
+    monkeypatch.setattr(BotConfig, "load", staticmethod(lambda *args, **kwargs: cfg))
+    monkeypatch.setattr(eng, "_ensure_ws_stack", fake_ensure_ws_stack)
+    monkeypatch.setattr(eng, "_refresh_book_state", fake_refresh_book_state)
+    monkeypatch.setattr(eng, "_cancel_if_live", fake_cancel_if_live)
+    monkeypatch.setattr(eng, "_persist_cycle", fake_persist_cycle)
+
+    asyncio.run(eng._run_cycle())
+
+    assert eng.kill_switch.is_active()
+    assert "Session balance PnL" in eng.kill_switch.reason
+    assert cancelled == [eng.kill_switch.reason]
+    assert persisted["execution"] == eng.kill_switch.reason
+    assert persisted["intents"] == []
 
 
 def test_stale_quote_merged_into_sync_cancel_plan() -> None:

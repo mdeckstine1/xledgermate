@@ -428,6 +428,22 @@ class WsPureTradingEngine:
                 self.alerts.send_kill_switch_alert(drawdown_pct, reason)
             return
 
+        session_kill_reason = self._session_balance_loss_kill_reason(
+            config,
+            balance_xrp=balance_xrp,
+            balance_rlusd=balance_rlusd,
+            mid=mid,
+        )
+        if session_kill_reason:
+            self.kill_switch.activate(session_kill_reason)
+            await self._cancel_if_live(connector, config, session_kill_reason)
+            await self._persist_cycle(
+                config, mid, bb, ba, balance_xrp, balance_rlusd, portfolio, [], 0,
+                execution=session_kill_reason,
+                engine_dec=None,
+            )
+            return
+
         preflight = evaluate_preflight(
             config=config,
             xrp_balance=balance_xrp,
@@ -1241,3 +1257,37 @@ class WsPureTradingEngine:
                 )
             except OSError:
                 pass
+
+    def _session_balance_loss_kill_reason(
+        self,
+        config: BotConfig,
+        *,
+        balance_xrp: float,
+        balance_rlusd: float,
+        mid: Optional[float],
+    ) -> Optional[str]:
+        if (
+            config.dry_run
+            or self._session_baseline_xrp is None
+            or self._session_baseline_rlusd is None
+            or mid is None
+            or self._session_fills < int(config.session_balance_loss_kill_min_fills)
+            or float(config.session_balance_loss_kill_xrp) <= 0
+            or self.kill_switch.is_active()
+        ):
+            return None
+
+        session_bal_pnl = session_pnl_balance_delta_xrp(
+            balance_xrp=balance_xrp,
+            balance_rlusd=balance_rlusd,
+            baseline_xrp=self._session_baseline_xrp,
+            baseline_rlusd=self._session_baseline_rlusd,
+            mid_rlusd_per_xrp=mid,
+        )
+        loss_limit = float(config.session_balance_loss_kill_xrp)
+        if session_bal_pnl >= -loss_limit:
+            return None
+        return (
+            f"Session balance PnL {session_bal_pnl:+.4f} XRP "
+            f"(limit -{loss_limit:.2f} after {self._session_fills} fills)"
+        )
