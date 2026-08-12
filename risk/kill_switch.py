@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,8 +39,13 @@ class KillSwitch:
                 reason=str(data.get("reason", "")),
                 activated_utc=data.get("activated_utc"),
             )
-        except (json.JSONDecodeError, OSError):
-            return KillSwitchState()
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.critical("Could not read kill switch state; failing closed: %s", exc)
+            return KillSwitchState(
+                active=True,
+                reason="Kill switch state unreadable; failing closed.",
+                activated_utc=datetime.now(tz=timezone.utc).isoformat(),
+            )
 
     def _save(self) -> None:
         payload = {
@@ -46,7 +53,26 @@ class KillSwitch:
             "reason": self._state.reason,
             "activated_utc": self._state.activated_utc,
         }
-        self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{self.path.name}.",
+            suffix=".tmp",
+            dir=str(self.path.parent),
+            text=True,
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_name, self.path)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
 
     def reload(self) -> KillSwitchState:
         """Reload from disk so GUI/CLI clears apply to a running engine."""
