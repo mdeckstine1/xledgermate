@@ -5,11 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from alpha.hud.maximize_preset import MAXIMIZE_OPERATOR_OVERRIDES
-
 PATH = Path("logs/alpha_overrides.json")
 
-# Autonomy-critical keys (code defaults + maximize posture).
+# Autonomy-critical keys (code defaults + maximize posture). No package imports.
 PATCH = {
     "alpha_stale_pending_sell_enabled": True,
     "alpha_stale_pending_sell_max_drift_pct": 0.50,
@@ -18,7 +16,8 @@ PATCH = {
     "alpha_accumulation_harvest_pullback_arm_pct": 0.7,
     "alpha_accumulation_dip_move_24h_arm_pct": 2.0,
     "alpha_accumulation_dip_bounce_arm_pct": 0.25,
-    # Keep core Maximize posture if already present; fill gaps only for autonomy keys.
+    "alpha_max_pending_sells": 2,
+    "alpha_sell_limit_offset_pct": 0.08,
 }
 
 
@@ -30,9 +29,6 @@ def main() -> None:
             data = {}
     before = {k: data.get(k) for k in PATCH}
     data.update(PATCH)
-    # Ensure sell-slot caps stay sane for autonomy
-    data.setdefault("alpha_max_pending_sells", MAXIMIZE_OPERATOR_OVERRIDES["alpha_max_pending_sells"])
-    data.setdefault("alpha_sell_limit_offset_pct", MAXIMIZE_OPERATOR_OVERRIDES["alpha_sell_limit_offset_pct"])
     PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = PATH.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
