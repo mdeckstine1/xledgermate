@@ -21,3 +21,6 @@ logs/engine.pid
 .vscode/*.log
 .DS_Store
 Thumbs.db
+
+# Local session dumps (do not commit live JSON / extracted HUD JS)
+scripts/_tmp_*
