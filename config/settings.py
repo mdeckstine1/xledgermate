@@ -423,7 +423,7 @@ class BotConfig:
     telegram_token: str = ""       # From @BotFather
     telegram_chat_id: str = ""     # Your chat ID (numeric, or @channel username)
     telegram_notify_each_cycle: bool = False
-    telegram_hud_url: str = ""  # Optional public HUD URL in Telegram (prefer https://xledgermate.com)
+    telegram_hud_url: str = ""  # Optional public HUD URL for hourly Telegram (e.g. http://host:8765)
     telegram_quiet_hours_enabled: bool = False  # Skip hourly reports during quiet window (UTC)
     telegram_quiet_start_hour: int = 22  # Inclusive UTC hour (0–23)
     telegram_quiet_end_hour: int = 7  # Exclusive UTC hour (0–23); 22→7 = overnight

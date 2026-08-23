@@ -82,9 +82,7 @@ def test_unauthenticated_state_returns_401():
     client = _auth_client()
     r = client.get("/state")
     assert r.status_code == 401
-    body = r.json()
-    assert body.get("ok") is False
-    assert body.get("error") == "unauthorized"
+    assert r.json() == {"ok": False, "error": "unauthorized"}
 
 
 def test_logout_clears_session_and_redirects():
