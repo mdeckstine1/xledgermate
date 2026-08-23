@@ -26,6 +26,7 @@ def _solo_inputs(
     mid: float = 1.10,
     xrp_ratio: float = 0.55,
     label: str = "balanced",
+    toxic_ratio_30s: float = 0.05,
     buy_fills: tuple = (),
     sell_fills: tuple = (),
 ) -> CycleQuoteInputs:
@@ -40,7 +41,7 @@ def _solo_inputs(
         inventory_label=label,
         peer_lane_empty=True,
         peer_lane_count=0,
-        toxic_ratio_30s=0.05,
+        toxic_ratio_30s=toxic_ratio_30s,
         recent_buys=buy_fills,
         recent_sells=sell_fills,
         reservation_allows_bid=True,
@@ -64,6 +65,14 @@ def test_solo_no_edge_patient_off() -> None:
         _solo_inputs(l1_bid=1.0999, l1_ask=1.1001)
     )
     assert qd.intent == QuoteIntent.PATIENT_SOLO
+    assert qd.would_quote is False
+
+
+def test_solo_toxic_band_blocks_accumulate_bid() -> None:
+    """QD solo-acquire toxicity ceiling must match G7's 20% live gate."""
+    qd = run_quote_decision_pipeline(_solo_inputs(toxic_ratio_30s=0.22))
+    assert qd.intent == QuoteIntent.PATIENT_SOLO
+    assert qd.bid.allowed is False
     assert qd.would_quote is False
 
 
