@@ -4288,17 +4288,27 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
 
     $('btnArbSoakReport')?.addEventListener('click', () => openReportInNewTab('alpha_clob_amm_soak'));
 
+    let hudDiagOkStreak = 0;
     function setHudDiag(msg, kind) {
       const el = $('hudDiag');
       if (!el) return;
-      el.style.display = 'block';
       if (kind === 'ok') {
+        hudDiagOkStreak += 1;
+        // Stay quiet after a few healthy polls — no green/red flash.
+        if (hudDiagOkStreak >= 3) {
+          el.style.display = 'none';
+          return;
+        }
+        el.style.display = 'block';
         el.style.background = '#14532d';
         el.style.color = '#bbf7d0';
       } else if (kind === 'bad') {
+        hudDiagOkStreak = 0;
+        el.style.display = 'block';
         el.style.background = '#7f1d1d';
         el.style.color = '#fecaca';
       } else {
+        el.style.display = 'block';
         el.style.background = '#78350f';
         el.style.color = '#fde68a';
       }
@@ -4307,7 +4317,6 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
 
     async function poll() {
       const t0 = Date.now();
-      setHudDiag('Polling /state …', 'wait');
       try {
         const r = await fetch('/state?_=' + Date.now(), { credentials: 'same-origin' });
         const ms = Date.now() - t0;
