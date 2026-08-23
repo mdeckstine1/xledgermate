@@ -2129,8 +2129,9 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
 
     function chartViewForRender(chart) {
       const mids = chart?.mids;
-      if (Array.isArray(mids) && mids.length >= 4) {
-        const sampleSec = Math.max(1, parseInt(chart?.sample_seconds, 10) || 15);
+      const sampleSec = Math.max(1, parseInt(chart?.sample_seconds, 10) || 15);
+      const needed = Math.max(8, Math.ceil((chartIntervalSec / sampleSec) * CHART_MAX_CANDLES));
+      if (Array.isArray(mids) && mids.length >= 4 && mids.length >= Math.min(needed, 32)) {
         const bucket = Math.max(1, Math.round(chartIntervalSec / sampleSec));
         return {
           ...chart,
@@ -4286,14 +4287,26 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
 
     async function poll() {
       try {
-        const r = await fetch('/state?_=' + Date.now());
+        const r = await fetch('/state?_=' + Date.now(), { credentials: 'same-origin' });
         if (r.status === 401) {
           location.href = '/login?next=' + encodeURIComponent(location.pathname);
           return;
         }
-        render(await r.json());
+        if (!r.ok) {
+          $('ticker').textContent = 'HUD state HTTP ' + r.status;
+          return;
+        }
+        const data = await r.json();
+        try {
+          render(data);
+        } catch (re) {
+          console.error('HUD render failed', re);
+          if ($('ticker')) $('ticker').textContent = 'HUD render error: ' + re;
+          // Still try scoreboard so the page is not blank.
+          try { renderBagGrowth(data, liveMid(data)); } catch (_) {}
+        }
       } catch (e) {
-        $('ticker').textContent = 'HUD poll error: ' + e;
+        if ($('ticker')) $('ticker').textContent = 'HUD poll error: ' + e;
       }
     }
     poll();

@@ -124,6 +124,16 @@ if app is not None:
         from alpha.hud.state_export import refresh_live_metrics_in_state, sanitize_for_json
 
         state = refresh_live_metrics_in_state(_load_state(), logs_dir=_RUNTIME.parent)
+        # Defense in depth: never serve unbounded chart ticks to the 1s poll.
+        chart = state.get("chart")
+        if isinstance(chart, dict):
+            mids = chart.get("mids")
+            if isinstance(mids, list) and len(mids) > 4000:
+                chart = dict(chart)
+                chart["mids"] = mids[-2500:]
+                chart["mids_capped"] = True
+                state = dict(state)
+                state["chart"] = chart
         return JSONResponse(sanitize_for_json(state))
 
     @app.get("/reports/catalog")

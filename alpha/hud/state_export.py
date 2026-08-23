@@ -327,9 +327,14 @@ def _chart_payload(
                     },
                 ]
             )
+    # Live HUD polls /state every 1s — do not ship full mid history (can be 300KB+ and
+    # leaves the dashboard blank). Keep enough ticks for 5m/30m resamples; longer TFs
+    # use server-built candles.
+    clean_mids = [round(float(m), 6) for m in mids if float(m) > 0]
+    hud_mid_cap = max(500, int(CHART_MAX_CANDLES * 300 / max(1, sample_seconds)) * 2)
     return {
         "candles": candles,
-        "mids": [round(float(m), 6) for m in mids if float(m) > 0],
+        "mids": clean_mids[-hud_mid_cap:],
         "indicators": indicators,
         "bucket_samples": bucket,
         "sample_seconds": sample_seconds,
@@ -337,7 +342,8 @@ def _chart_payload(
         "max_candles": CHART_MAX_CANDLES,
         "chart_interval_options": list(CHART_CANDLE_INTERVAL_OPTIONS_SECONDS),
         "default_chart_interval_seconds": CHART_DEFAULT_INTERVAL_SECONDS,
-        "mid_samples": len(mids),
+        "mid_samples": len(clean_mids),
+        "mids_capped": len(clean_mids) > hud_mid_cap,
     }
 
 
