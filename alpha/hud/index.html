@@ -67,22 +67,40 @@
     .sidebar-scoreboard .score-rlusd {
       font-size: .8rem; color: var(--muted); margin-top: 2px;
     }
+    .sidebar-scoreboard .score-hero-main {
+      text-align: center; margin-bottom: 8px; padding: 10px 8px;
+      border-radius: 10px; background: linear-gradient(180deg, #12203a 0%, #0b1220 100%);
+      border: 1px solid rgba(96,165,250,.25);
+    }
+    .sidebar-scoreboard .score-hero-main .score-total {
+      font-size: 1.65rem; font-weight: 800; letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+    .sidebar-scoreboard .score-hero-main .score-unit {
+      font-size: .72rem; color: var(--accent); text-transform: uppercase;
+      letter-spacing: .08em; margin-top: 2px;
+    }
     .sidebar-scoreboard .score-heroes {
       display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
       margin-bottom: 10px;
     }
     .sidebar-scoreboard .score-heroes .score-hero {
-      margin-bottom: 0; padding: 6px 4px;
+      margin-bottom: 0; padding: 8px 6px;
       border-radius: 8px; background: rgba(15, 23, 42, 0.55);
+      text-align: center;
     }
     .sidebar-scoreboard .score-heroes .score-total { font-size: 1.15rem; }
-    .sidebar-scoreboard .score-heroes .score-bot .score-total { font-size: 1.2rem; }
+    .sidebar-scoreboard .score-heroes .score-tokens .score-total { font-size: 1.25rem; color: var(--ok); }
     .sidebar-scoreboard .score-math {
       font-size: .68rem; color: var(--muted); line-height: 1.4;
       text-align: center; margin: 0 0 8px; padding: 6px 4px;
       border: 1px dashed #334155; border-radius: 6px;
     }
     .sidebar-scoreboard .score-math strong { color: var(--text); font-weight: 600; }
+    .sidebar-scoreboard .score-posture {
+      font-size: .7rem; color: var(--muted); text-align: center;
+      margin: 0 0 8px; line-height: 1.35;
+    }
     .sidebar-scoreboard .score-deltas {
       display: grid; gap: 5px; margin-top: 8px;
       padding-top: 8px; border-top: 1px solid #1f2937;
@@ -311,32 +329,43 @@
       <div class="row"><div class="label">Mid (RLUSD/XRP)</div><div id="mid" class="value">—</div></div>
       <div class="row"><div class="label">Quote age</div><div id="midAge" class="value muted" style="font-size:.75rem">—</div></div>
 
-      <div class="sidebar-scoreboard" id="bagScoreboard" title="TOTAL BAG = size of the account. BOT ADDED = what the bot grew after stripping operator deposits.">
+      <div class="sidebar-scoreboard" id="bagScoreboard" title="WEALTH = overall value in RLUSD. TOKENS = XRP coin count. Selling strength → powder for dips is intended.">
         <div class="score-title">Bag scoreboard</div>
+        <div class="score-hero-main" title="Overall account value in RLUSD (coins×mid + powder). Best read of 'are we richer?'">
+          <div class="label">Wealth</div>
+          <div id="bagWealth" class="score-total">—</div>
+          <div class="score-unit">RLUSD total</div>
+          <div id="bagWealthDelta" class="score-rlusd">today / week</div>
+        </div>
         <div class="score-heroes">
-          <div class="score-hero" title="Full portfolio in XRP-equiv (coins + powder at mid). Includes deposits.">
-            <div class="label">Total bag</div>
-            <div id="bagTotal" class="score-total">—</div>
-            <div class="score-unit">XRP-eq</div>
-            <div id="bagTotalRlusd" class="score-rlusd">—</div>
+          <div class="score-hero score-tokens" title="XRP coins you hold right now (token count).">
+            <div class="label">XRP tokens</div>
+            <div id="bagTokens" class="score-total">—</div>
+            <div class="score-unit">coins held</div>
+            <div id="bagTokensStack" class="score-rlusd">stack Δ —</div>
           </div>
-          <div class="score-hero score-bot" title="What the bot added since baseline: total change minus operator deposits.">
-            <div class="label">Bot added</div>
-            <div id="bagBotAdded" class="score-total">—</div>
-            <div class="score-unit">ex deposits</div>
-            <div id="bagBotAddedMeta" class="score-rlusd">—</div>
+          <div class="score-hero" title="Dry powder ready for downturn buys.">
+            <div class="label">Powder</div>
+            <div id="bagPowder" class="score-total">—</div>
+            <div class="score-unit">RLUSD</div>
+            <div id="bagPowderEq" class="score-rlusd">— XRP-eq</div>
           </div>
         </div>
-        <div id="bagMath" class="score-math">baseline + deposits + bot = total</div>
+        <div id="bagPosture" class="score-posture">Sell strength → powder · buy dips</div>
         <div class="score-deltas">
+          <div class="score-row"><span class="k">Bag XRP-eq</span><span id="bagTotal" class="v">—</span></div>
+          <div class="score-row"><span class="k">Bot added</span><span id="bagBotAdded" class="v">—</span></div>
           <div class="score-row"><span class="k">Today</span><span id="bagDay" class="v">—</span></div>
           <div class="score-row"><span class="k">This week</span><span id="bagWeek" class="v">—</span></div>
           <div class="score-row"><span class="k">vs ATH</span><span id="bagAth" class="v">—</span></div>
           <div class="score-row"><span class="k">Deposits</span><span id="bagDeposits" class="v">—</span></div>
-          <div class="score-row"><span class="k">XRP stack</span><span id="bagXrpStack" class="v">—</span></div>
+          <div class="score-row" style="display:none"><span class="k">XRP stack</span><span id="bagXrpStack" class="v">—</span></div>
           <div class="score-row"><span class="k">Edge 7d</span><span id="bagEdge7d" class="v">—</span></div>
         </div>
-        <div id="bagParts" class="score-parts">Waiting for portfolio…</div>
+        <div id="bagMath" class="score-math">wealth = tokens×mid + powder</div>
+        <div id="bagParts" class="score-parts" style="display:none">Waiting for portfolio…</div>
+        <div id="bagTotalRlusd" style="display:none"></div>
+        <div id="bagBotAddedMeta" style="display:none"></div>
         <div id="bagBaselineMeta" class="muted pnl-meta" style="text-align:center;margin-top:4px"></div>
         <div id="bagSinceBaseline" style="display:none"></div>
         <div id="bagXrpStackMeta" class="muted pnl-meta" style="display:none"></div>
@@ -1614,6 +1643,13 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const bal = portfolioBalances(s);
       const totalEl = $('bagTotal');
       const totalRlusdEl = $('bagTotalRlusd');
+      const wealthEl = $('bagWealth');
+      const wealthDeltaEl = $('bagWealthDelta');
+      const tokensEl = $('bagTokens');
+      const tokensStackEl = $('bagTokensStack');
+      const powderEl = $('bagPowder');
+      const powderEqEl = $('bagPowderEq');
+      const postureEl = $('bagPosture');
       const botEl = $('bagBotAdded');
       const botMetaEl = $('bagBotAddedMeta');
       const mathEl = $('bagMath');
@@ -1642,15 +1678,67 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         : (b.since_baseline_pct != null ? Number(b.since_baseline_pct) : null);
       const rawSince = b.since_baseline_xrp != null ? Number(b.since_baseline_xrp) : null;
 
+      const tokensNow = b.xrp != null ? Number(b.xrp) : (bal.xrp != null ? Number(bal.xrp) : null);
+      const powderNow = b.rlusd != null ? Number(b.rlusd) : (bal.rlusd != null ? Number(bal.rlusd) : null);
+      const stackBot = b.xrp_stack_delta_bot != null ? Number(b.xrp_stack_delta_bot)
+        : (b.xrp_stack_delta_raw != null ? Number(b.xrp_stack_delta_raw) : null);
+
+      if (wealthEl) {
+        wealthEl.textContent = totalRlusd != null ? Number(totalRlusd).toFixed(2) : '—';
+        wealthEl.classList.remove('pnl-pos', 'pnl-neg');
+        if (totalRlusd != null && mid && b.day_delta_xrp != null) {
+          const dayR = Number(b.day_delta_xrp) * Number(mid);
+          if (dayR > 0.5) wealthEl.classList.add('pnl-pos');
+          else if (dayR < -0.5) wealthEl.classList.add('pnl-neg');
+        }
+      }
+      if (wealthDeltaEl) {
+        if (mid && (b.day_delta_xrp != null || b.week_delta_xrp != null)) {
+          const dR = b.day_delta_xrp != null ? Number(b.day_delta_xrp) * Number(mid) : null;
+          const wR = b.week_delta_xrp != null ? Number(b.week_delta_xrp) * Number(mid) : null;
+          const bits = [];
+          if (dR != null) bits.push((dR >= 0 ? '+' : '') + dR.toFixed(1) + ' today');
+          if (wR != null) bits.push((wR >= 0 ? '+' : '') + wR.toFixed(1) + ' week');
+          wealthDeltaEl.textContent = bits.join(' · ') || 'today / week';
+        } else {
+          wealthDeltaEl.textContent = 'overall value (coins + powder)';
+        }
+      }
+      if (tokensEl) {
+        tokensEl.textContent = tokensNow != null ? Number(tokensNow).toFixed(2) : '—';
+      }
+      if (tokensStackEl) {
+        tokensStackEl.classList.remove('pnl-pos', 'pnl-neg');
+        if (stackBot == null || Number.isNaN(stackBot)) {
+          tokensStackEl.textContent = 'stack Δ —';
+        } else {
+          const sign = stackBot >= 0 ? '+' : '';
+          tokensStackEl.textContent = 'bot stack ' + sign + stackBot.toFixed(2);
+          if (stackBot > 0) tokensStackEl.classList.add('pnl-pos');
+          else if (stackBot < 0) tokensStackEl.classList.add('pnl-neg');
+        }
+      }
+      if (powderEl) {
+        powderEl.textContent = powderNow != null ? Number(powderNow).toFixed(1) : '—';
+      }
+      if (powderEqEl && mid && powderNow != null) {
+        powderEqEl.textContent = (Number(powderNow) / Number(mid)).toFixed(1) + ' XRP-eq ammo';
+      } else if (powderEqEl) {
+        powderEqEl.textContent = 'downturn ammo';
+      }
+      if (postureEl) {
+        postureEl.textContent = 'Sell strength → powder · buy dips (intended)';
+      }
+
       if (totalEl) {
-        totalEl.textContent = totalXrp != null ? Number(totalXrp).toFixed(4) : '—';
+        totalEl.textContent = totalXrp != null ? Number(totalXrp).toFixed(2) + ' XRP-eq' : '—';
         totalEl.classList.remove('pnl-pos', 'pnl-neg');
         if (b.at_high_water) totalEl.classList.add('pnl-pos');
         else if (b.off_high_xrp != null && Number(b.off_high_xrp) < -0.5) totalEl.classList.add('pnl-neg');
       }
       if (totalRlusdEl) {
         totalRlusdEl.textContent = totalRlusd != null
-          ? ('≈ ' + Number(totalRlusd).toFixed(2) + ' RLUSD')
+          ? Number(totalRlusd).toFixed(2) + ' RLUSD'
           : '—';
       }
 
@@ -1674,15 +1762,19 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       }
 
       if (mathEl) {
-        if (baseline != null && totalXrp != null && botAdded != null) {
+        if (tokensNow != null && powderNow != null && mid) {
+          mathEl.innerHTML = tokensNow.toFixed(1) + ' XRP × ' + Number(mid).toFixed(3)
+            + ' + ' + powderNow.toFixed(1) + ' RLUSD = <strong>'
+            + (totalRlusd != null ? Number(totalRlusd).toFixed(0) : '—') + '</strong> wealth';
+        } else if (baseline != null && totalXrp != null && botAdded != null) {
           const baseS = baseline.toFixed(1);
           const depS = depVal > 0 ? (' + ' + depVal.toFixed(1) + ' dep') : '';
           const botS = (botAdded >= 0 ? ' + ' : ' − ') + Math.abs(botAdded).toFixed(2) + ' bot';
           mathEl.innerHTML = '<strong>' + baseS + '</strong> start'
             + depS + botS
-            + ' = <strong>' + Number(totalXrp).toFixed(2) + '</strong>';
+            + ' = <strong>' + Number(totalXrp).toFixed(2) + '</strong> XRP-eq';
         } else {
-          mathEl.textContent = 'baseline + deposits + bot = total';
+          mathEl.textContent = 'wealth = tokens × mid + powder';
         }
       }
 
@@ -1877,15 +1969,21 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         : (bal.xrpEq != null ? Number(bal.xrpEq) : null);
       const dayD = bg.day_delta_xrp;
       const weekD = bg.week_delta_xrp;
-      let bagTicker = totalBag != null
-        ? ('TOTAL BAG <span class="ok">' + totalBag.toFixed(4) + ' XRP-eq</span>')
-        : 'TOTAL BAG —';
+      const wealth = bg.portfolio_rlusd_equiv != null ? Number(bg.portfolio_rlusd_equiv)
+        : (totalBag != null && midVal ? totalBag * Number(midVal) : null);
+      const tokens = bg.xrp != null ? Number(bg.xrp) : (bal.xrp != null ? Number(bal.xrp) : null);
+      let bagTicker = wealth != null
+        ? ('WEALTH <span class="ok">' + wealth.toFixed(0) + ' RLUSD</span>')
+        : 'WEALTH —';
+      if (tokens != null) {
+        bagTicker += ' · TOKENS <span class="ok">' + tokens.toFixed(1) + ' XRP</span>';
+      }
       const botAdd = bg.since_baseline_bot_xrp != null ? Number(bg.since_baseline_bot_xrp)
         : (bg.since_baseline_xrp != null ? Number(bg.since_baseline_xrp) : null);
       if (botAdd != null) {
         const cls = botAdd > 0 ? 'ok' : (botAdd < 0 ? 'bad' : 'info');
         bagTicker += ' · BOT ADDED <span class="' + cls + '">'
-          + (botAdd >= 0 ? '+' : '') + botAdd.toFixed(2) + '</span>';
+          + (botAdd >= 0 ? '+' : '') + botAdd.toFixed(2) + ' XRP-eq</span>';
       }
       if (dayD != null) {
         const cls = dayD > 0 ? 'ok' : (dayD < 0 ? 'bad' : 'info');
