@@ -48,6 +48,7 @@ _PUBLIC_PREFIXES = (
     "/auth/passkey/login",
     "/auth/passkey/register",
     "/favicon.png",
+    "/hud-health",
 )
 
 

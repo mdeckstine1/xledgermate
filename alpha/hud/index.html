@@ -319,6 +319,9 @@
       <span id="fresh" class="muted"></span>
     </span>
   </header>
+  <div id="hudDiag" style="padding:8px 16px;background:#78350f;color:#fde68a;font-size:.82rem;line-height:1.4;font-family:ui-monospace,monospace">
+    HUD diagnostics: page loaded — waiting for /state …
+  </div>
   <div class="marquee-container">
     <div class="marquee" id="ticker">Loading Alpha operator feed…</div>
   </div>
@@ -1609,6 +1612,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     }
 
     function applyPnlDual(xrpEl, rlusdEl, xrpVal, mid, xrpDec = 4, rlusdDec = 2) {
+      if (!xrpEl || !rlusdEl) return;
       const f = fmtSignedPnl(xrpVal, mid, xrpDec, rlusdDec);
       xrpEl.textContent = f.xrp;
       rlusdEl.textContent = f.rlusd;
@@ -2928,25 +2932,27 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       $('pauseBadge').style.display = s.operator_paused ? 'inline' : 'none';
       $('killBadge').style.display = s.risk?.kill_switch_active ? 'inline' : 'none';
       if (s.risk?.kill_switch_active) $('killBadge').className = 'badge kill';
-      $('fresh').textContent = 'Updated ' + ago(s.updated_utc);
-      updateTicker(s);
-      $('acct').textContent = s.account_address || '—';
+      if ($('fresh')) $('fresh').textContent = 'Updated ' + ago(s.updated_utc);
+      try { updateTicker(s); } catch (e) { console.warn('ticker', e); }
+      if ($('acct')) $('acct').textContent = s.account_address || '—';
       const bal = portfolioBalances(s);
       const qAge = quoteAgeMeta(s);
-      $('mid').textContent = bal.mid != null ? fmtPrice(bal.mid) : '—';
-      $('midAge').textContent = qAge.label + (qAge.stale ? ' (stale)' : '');
-      $('midAge').style.color = qAge.stale ? 'var(--warn)' : 'var(--muted)';
-      $('portXrp').textContent = bal.xrp != null ? fmt(bal.xrp, 4) + ' XRP' : '—';
-      $('portRlusd').textContent = bal.rlusd != null ? fmt(bal.rlusd, 2) : '—';
+      if ($('mid')) $('mid').textContent = bal.mid != null ? fmtPrice(bal.mid) : '—';
+      if ($('midAge')) {
+        $('midAge').textContent = qAge.label + (qAge.stale ? ' (stale)' : '');
+        $('midAge').style.color = qAge.stale ? 'var(--warn)' : 'var(--muted)';
+      }
+      if ($('portXrp')) $('portXrp').textContent = bal.xrp != null ? fmt(bal.xrp, 4) + ' XRP' : '—';
+      if ($('portRlusd')) $('portRlusd').textContent = bal.rlusd != null ? fmt(bal.rlusd, 2) : '—';
       const portLine = [];
       if (bal.rlusdEq != null) portLine.push(fmt(bal.rlusdEq, 2) + ' RLUSD');
       if (bal.xrpEq != null) portLine.push(fmt(bal.xrpEq, 4) + ' XRP eq');
-      $('port').textContent = portLine.length ? portLine.join(' · ') : '—';
-      $('inv').textContent = (s.inventory?.label || '—') + ' (' + fmt((s.inventory?.deviation||0)*100, 2) + '% dev)';
-      $('dd').textContent = fmt(s.risk?.drawdown_pct, 2) + '% / ' + fmt(s.risk?.max_drawdown_pct, 2) + '%';
+      if ($('port')) $('port').textContent = portLine.length ? portLine.join(' · ') : '—';
+      if ($('inv')) $('inv').textContent = (s.inventory?.label || '—') + ' (' + fmt((s.inventory?.deviation||0)*100, 2) + '% dev)';
+      if ($('dd')) $('dd').textContent = fmt(s.risk?.drawdown_pct, 2) + '% / ' + fmt(s.risk?.max_drawdown_pct, 2) + '%';
       const pnlMid = bal.mid;
-      applyPnlDual($('pnlXrp'), $('pnlRlusd'), s.risk?.session_pnl_xrp, pnlMid);
-      renderBagGrowth(s, pnlMid);
+      try { applyPnlDual($('pnlXrp'), $('pnlRlusd'), s.risk?.session_pnl_xrp, pnlMid); } catch (e) { console.warn('pnl', e); }
+      try { renderBagGrowth(s, pnlMid); } catch (e) { console.warn('bag', e); throw e; }
       renderRealizedPnl24h(s, pnlMid);
       $('btnPause').style.display = s.operator_paused ? 'none' : 'inline-block';
       $('btnResume').style.display = s.operator_paused ? 'inline-block' : 'none';
@@ -4285,29 +4291,73 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
 
     $('btnArbSoakReport')?.addEventListener('click', () => openReportInNewTab('alpha_clob_amm_soak'));
 
+    function setHudDiag(msg, kind) {
+      const el = $('hudDiag');
+      if (!el) return;
+      el.style.display = 'block';
+      if (kind === 'ok') {
+        el.style.background = '#14532d';
+        el.style.color = '#bbf7d0';
+      } else if (kind === 'bad') {
+        el.style.background = '#7f1d1d';
+        el.style.color = '#fecaca';
+      } else {
+        el.style.background = '#78350f';
+        el.style.color = '#fde68a';
+      }
+      el.textContent = msg;
+    }
+
     async function poll() {
+      const t0 = Date.now();
+      setHudDiag('Polling /state …', 'wait');
       try {
         const r = await fetch('/state?_=' + Date.now(), { credentials: 'same-origin' });
+        const ms = Date.now() - t0;
         if (r.status === 401) {
-          location.href = '/login?next=' + encodeURIComponent(location.pathname);
+          setHudDiag('HTTP 401 from /state — session expired, redirecting to login', 'bad');
+          location.href = '/login?next=' + encodeURIContentErrorSafe();
           return;
         }
         if (!r.ok) {
-          $('ticker').textContent = 'HUD state HTTP ' + r.status;
+          const body = await r.text();
+          setHudDiag('HTTP ' + r.status + ' /state in ' + ms + 'ms — ' + body.slice(0, 180), 'bad');
+          if ($('ticker')) $('ticker').textContent = 'HUD state HTTP ' + r.status;
           return;
         }
-        const data = await r.json();
+        const text = await r.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (pe) {
+          setHudDiag('JSON parse failed after ' + ms + 'ms (' + text.length + ' bytes): ' + pe, 'bad');
+          return;
+        }
         try {
           render(data);
+          const mid = data.mid != null ? Number(data.mid).toFixed(4) : 'n/a';
+          const xrp = data.xrp != null ? Number(data.xrp).toFixed(1) : 'n/a';
+          setHudDiag(
+            'OK · /state ' + text.length + ' bytes in ' + ms + 'ms · mid ' + mid
+              + ' · XRP ' + xrp + ' · updated ' + (data.updated_utc || '?'),
+            'ok'
+          );
         } catch (re) {
           console.error('HUD render failed', re);
+          setHudDiag('Render error after /state OK (' + text.length + ' bytes): ' + re, 'bad');
           if ($('ticker')) $('ticker').textContent = 'HUD render error: ' + re;
-          // Still try scoreboard so the page is not blank.
-          try { renderBagGrowth(data, liveMid(data)); } catch (_) {}
+          try { renderBagGrowth(data, liveMid(data)); } catch (be) {
+            setHudDiag('Render error AND scoreboard failed: ' + re + ' | bag: ' + be, 'bad');
+          }
         }
       } catch (e) {
+        setHudDiag('Poll/network error: ' + e, 'bad');
         if ($('ticker')) $('ticker').textContent = 'HUD poll error: ' + e;
       }
+    }
+
+    function encodeURIContentErrorSafe() {
+      try { return encodeURIComponent(location.pathname); } catch (_) { return '/'; }
     }
     poll();
     loadOperatorConfig();

@@ -119,6 +119,34 @@ if app is not None:
             return Response(status_code=404)
         return FileResponse(_LOGO, media_type="image/jpeg")
 
+    @app.get("/hud-health")
+    async def hud_health() -> JSONResponse:
+        """Tiny public heartbeat so a blank HUD can still be diagnosed."""
+        from datetime import datetime, timezone
+
+        state = _load_state()
+        updated = state.get("updated_utc")
+        age = None
+        if updated:
+            try:
+                ts = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
+                age = round((datetime.now(tz=timezone.utc) - ts).total_seconds(), 1)
+            except (TypeError, ValueError):
+                age = None
+        size = _RUNTIME.stat().st_size if _RUNTIME.is_file() else 0
+        return JSONResponse(
+            {
+                "ok": True,
+                "hud": "alpha",
+                "updated_utc": updated,
+                "state_age_seconds": age,
+                "state_bytes": size,
+                "has_xrp": state.get("xrp") is not None,
+                "has_mid": state.get("mid") is not None,
+                "chart_mids": len(((state.get("chart") or {}).get("mids") or [])),
+            }
+        )
+
     @app.get("/state")
     async def get_state() -> JSONResponse:
         from alpha.hud.state_export import refresh_live_metrics_in_state, sanitize_for_json
