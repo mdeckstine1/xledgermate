@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from experimental.ws_feed.execution_envelope import SOLO_ACQUIRE_TOXIC_30S_MAX
 from experimental.ws_feed.quote_decision.types import (
     BookMode,
     DriftBand,
@@ -18,8 +17,8 @@ from experimental.ws_feed.quote_decision.types import (
     QuoteIntent,
 )
 
-# Keep QD's solo-acquire kill band aligned with G7's execution envelope.
-SOLO_TOXIC_MAX = SOLO_ACQUIRE_TOXIC_30S_MAX
+# Prefer bid accumulation on solo when buy edge is viable (set in pipeline).
+SOLO_TOXIC_MAX = 0.25
 
 
 @dataclass(frozen=True)
