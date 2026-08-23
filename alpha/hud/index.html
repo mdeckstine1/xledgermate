@@ -1842,10 +1842,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         }
       }
 
-      const stackBot = b.xrp_stack_delta_bot;
-      const stackRaw = b.xrp_stack_delta_raw;
-      const stackVal = stackBot != null ? stackBot : stackRaw;
-      setSignedScore(stackEl, stackVal, { digits: 2, suffix: ' coins' });
+      setSignedScore(stackEl, stackBot, { digits: 2, suffix: ' coins' });
 
       const edge = b.trading_edge_7d || {};
       if (edge.available) {
