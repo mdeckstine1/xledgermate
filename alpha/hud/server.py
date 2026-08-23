@@ -302,7 +302,14 @@ def run_alpha_hud(*, host: str = "127.0.0.1", port: int = 8765, background: bool
     elif bind_host in ("127.0.0.1", "localhost", "::1"):
         logger.info("alpha_hud_auth | disabled | localhost bind only")
 
-    config_uvicorn = uvicorn.Config(app, host=bind_host, port=port, log_level="warning")
+    config_uvicorn = uvicorn.Config(
+        app,
+        host=bind_host,
+        port=port,
+        log_level="warning",
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )
     server = uvicorn.Server(config_uvicorn)
     logger.info("alpha_hud_start | host=%s | port=%d", bind_host, port)
 

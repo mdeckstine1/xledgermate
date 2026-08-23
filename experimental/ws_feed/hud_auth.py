@@ -166,7 +166,20 @@ def is_authenticated(settings: HudAuthSettings, request: Request) -> bool:
     return _verify_session(settings, _session_from_request(request) or "")
 
 
-def _session_response(settings: HudAuthSettings, *, next_url: str = "/") -> Response:
+def _cookie_secure(request: Optional[Request] = None) -> bool:
+    if request is None:
+        return False
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "")
+    proto = proto.split(",")[0].strip().lower()
+    return proto == "https"
+
+
+def _session_response(
+    settings: HudAuthSettings,
+    *,
+    next_url: str = "/",
+    request: Optional[Request] = None,
+) -> Response:
     target = next_url if next_url.startswith("/") and not next_url.startswith("//") else "/"
     resp = RedirectResponse(url=target, status_code=303)
     resp.set_cookie(
@@ -176,6 +189,7 @@ def _session_response(settings: HudAuthSettings, *, next_url: str = "/") -> Resp
         samesite="lax",
         max_age=SESSION_MAX_AGE_S,
         path="/",
+        secure=_cookie_secure(request),
     )
     return resp
 
@@ -470,7 +484,7 @@ def attach_hud_auth(
                 ),
                 status_code=401,
             )
-        return _session_response(settings, next_url=next_url)
+        return _session_response(settings, next_url=next_url, request=request)
 
     @app.get("/login/passkey-setup", response_class=HTMLResponse)
     async def passkey_setup_page(request: Request):
@@ -643,6 +657,7 @@ def attach_hud_auth(
             samesite="lax",
             max_age=SESSION_MAX_AGE_S,
             path="/",
+            secure=_cookie_secure(request),
         )
         return resp
 
