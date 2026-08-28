@@ -592,8 +592,9 @@
           <div class="ctrl-row"><label data-knob="alpha_accumulation_dip_pullback_arm_pct" title="Pullback from 24h high % to arm dip even if 24h net is still green. 0 = off (24h net drop only).">dip_pullback_arm_pct</label><input type="range" id="slDipPullback" min="0" max="5" step="0.1"><input type="number" id="numDipPullback" step="0.1"><span id="valDipPullback" class="muted">%</span></div>
           <div class="ctrl-row"><label data-knob="alpha_accumulation_dip_move_24h_arm_pct" title="Backup: 24h net drop % to arm dip deploy.">dip_move_24h_arm_pct</label><input type="range" id="slDipMove" min="1" max="15" step="0.5"><input type="number" id="numDipMove" step="0.5"><span id="valDipMove" class="muted">%</span></div>
           <div class="ctrl-row"><label data-knob="alpha_accumulation_dip_bounce_arm_pct" title="Bounce off 24h low required before a dip bid (knife filter).">dip_bounce_arm_pct</label><input type="range" id="slDipBounce" min="0.05" max="2" step="0.05"><input type="number" id="numDipBounce" step="0.05"><span id="valDipBounce" class="muted">%</span></div>
-          <div class="ctrl-row"><label data-knob="alpha_powder_ceiling_xrp_equiv" title="If powder XRP-eq exceeds this while under target, deploy. 0 = off. Floor is still kept.">powder_ceiling_xrp_eq</label><input type="range" id="slPowderCeil" min="0" max="400" step="5"><input type="number" id="numPowderCeil" step="5"><span id="valPowderCeil" class="muted">XRP-eq</span></div>
-          <div class="ctrl-row"><label data-knob="alpha_reload_min_rlusd_deploy_xrp_equiv" title="Minimum RLUSD dry powder (XRP-eq) to keep. Recycle/dip must not spend through this floor.">powder_floor_xrp_eq</label><input type="range" id="slPowderFloor" min="5" max="500" step="1"><input type="number" id="numPowderFloor" step="1"><span id="valPowderFloor" class="muted">XRP-eq</span></div>
+          <div class="ctrl-row"><label data-knob="alpha_reload_min_rlusd_deploy_pct" title="Minimum RLUSD powder as a percent of the total bag. Scales when you add inventory. Recycle/dip keep this floor.">powder_floor_pct</label><input type="range" id="slPowderFloorPct" min="0" max="20" step="0.1"><input type="number" id="numPowderFloorPct" step="0.1"><span id="valPowderFloorPct" class="muted">% of bag</span></div>
+          <div class="ctrl-row"><label data-knob="alpha_powder_ceiling_pct" title="If powder exceeds this percent of bag while under the XRP target, deploy. Scales when you add inventory. 0 = off.">powder_ceiling_pct</label><input type="range" id="slPowderCeilPct" min="0" max="30" step="0.5"><input type="number" id="numPowderCeilPct" step="0.5"><span id="valPowderCeilPct" class="muted">% of bag</span></div>
+          <div id="powderPctHint" class="muted" style="font-size:.72rem;margin:0 0 10px;line-height:1.4">Floor/ceiling in XRP-eq update with bag size.</div>
           <button id="btnApplyRecycle">Apply bag recycle</button>
         </div>
         <div class="controls-section card">
@@ -1244,8 +1245,26 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     const syncDipPullback = linkSlider('slDipPullback', 'numDipPullback', 'valDipPullback');
     const syncDipMove = linkSlider('slDipMove', 'numDipMove', 'valDipMove');
     const syncDipBounce = linkSlider('slDipBounce', 'numDipBounce', 'valDipBounce');
-    const syncPowderCeil = linkSlider('slPowderCeil', 'numPowderCeil', 'valPowderCeil');
-    const syncPowderFloor = linkSlider('slPowderFloor', 'numPowderFloor', 'valPowderFloor');
+    const syncPowderCeilPct = linkSlider('slPowderCeilPct', 'numPowderCeilPct', 'valPowderCeilPct');
+    const syncPowderFloorPct = linkSlider('slPowderFloorPct', 'numPowderFloorPct', 'valPowderFloorPct');
+    function updatePowderPctHint() {
+      const el = $('powderPctHint');
+      if (!el) return;
+      const bag = Number(hudState?.bag_growth?.portfolio_xrp_equiv || hudState?.portfolio_xrp_equiv || 0);
+      const floorPct = parseFloat($('numPowderFloorPct') && $('numPowderFloorPct').value || 0) || 0;
+      const ceilPct = parseFloat($('numPowderCeilPct') && $('numPowderCeilPct').value || 0) || 0;
+      if (!(bag > 0)) {
+        el.textContent = 'Floor and ceiling are % of bag — live XRP-eq shows once the portfolio loads.';
+        return;
+      }
+      el.textContent = 'At current bag ' + bag.toFixed(0) + ' XRP-eq → floor ≈ '
+        + (bag * floorPct / 100).toFixed(0) + ' · ceiling ≈ '
+        + (bag * ceilPct / 100).toFixed(0) + ' XRP-eq. Scales if you add inventory.';
+    }
+    ['slPowderFloorPct', 'numPowderFloorPct', 'slPowderCeilPct', 'numPowderCeilPct'].forEach((id) => {
+      const n = $(id);
+      if (n) n.addEventListener('input', updatePowderPctHint);
+    });
     const syncTaWeight = linkSlider('slTaWeight', 'numTaWeight', 'valTaWeight');
     const syncTaBuyScore = linkSlider('slTaBuyScore', 'numTaBuyScore');
     const syncTaSellScore = linkSlider('slTaSellScore', 'numTaSellScore');
@@ -1313,8 +1332,9 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if ($('slDipPullback')) syncDipPullback(c.alpha_accumulation_dip_pullback_arm_pct ?? 1.2);
       if ($('slDipMove')) syncDipMove(c.alpha_accumulation_dip_move_24h_arm_pct ?? 2.0);
       if ($('slDipBounce')) syncDipBounce(c.alpha_accumulation_dip_bounce_arm_pct ?? 0.25);
-      if ($('slPowderCeil')) syncPowderCeil(c.alpha_powder_ceiling_xrp_equiv ?? 90);
-      if ($('slPowderFloor')) syncPowderFloor(c.alpha_reload_min_rlusd_deploy_xrp_equiv ?? 40);
+      if ($('slPowderCeilPct')) syncPowderCeilPct(c.alpha_powder_ceiling_pct ?? 8);
+      if ($('slPowderFloorPct')) syncPowderFloorPct(c.alpha_reload_min_rlusd_deploy_pct ?? 3.5);
+      updatePowderPctHint();
       if ($('taEnabled')) $('taEnabled').checked = !!c.alpha_ta_enabled;
       syncTaWeight(c.alpha_ta_weight ?? 1.0);
       syncTaBuyScore(c.alpha_ta_min_buy_score ?? 1.5);
@@ -1447,8 +1467,8 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         alpha_accumulation_dip_pullback_arm_pct: parseFloat($('numDipPullback').value),
         alpha_accumulation_dip_move_24h_arm_pct: parseFloat($('numDipMove').value),
         alpha_accumulation_dip_bounce_arm_pct: parseFloat($('numDipBounce').value),
-        alpha_powder_ceiling_xrp_equiv: parseFloat($('numPowderCeil').value),
-        alpha_reload_min_rlusd_deploy_xrp_equiv: parseFloat($('numPowderFloor').value),
+        alpha_powder_ceiling_pct: parseFloat($('numPowderCeilPct').value),
+        alpha_reload_min_rlusd_deploy_pct: parseFloat($('numPowderFloorPct').value),
       }});
       if (d?.ok) { toast('Bag recycle knobs updated'); operatorConfig = d; poll(); }
       else toast((d?.errors || [d?.message || 'Save failed']).join('; '), true);
@@ -1841,6 +1861,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
           depEl.textContent = 'none recorded';
         }
       }
+      if (typeof updatePowderPctHint === 'function') updatePowderPctHint();
       const lastSellEl = $('bagLastSell');
       if (lastSellEl) {
         const hw = (s.accumulation_regime || {}).harvest_watch || {};
@@ -3869,7 +3890,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     };
 
     $('btnMaximizePreset').onclick = async () => {
-      if (!confirm('Apply Maximize preset?\n\nHarvest-loop bag growth:\n• target 85% XRP · strength trim at +5% dev · stop asks at target\n• recycle bid below last sell · last-sell ceiling (no chase)\n• dip on pullback-from-high (~1.2%) + bounce · bearish TA waived on recycle/dip\n• powder ceiling 90 XRP-eq deploys idle cash · floor 40 kept\n• drawdown-reload only when powder is under the floor\n• 3.5% clips · CORE BAG BRACKETS OFF\n\nSKYNET can still recommend/apply these knobs.')) return;
+      if (!confirm('Apply Maximize preset?\n\nHarvest-loop bag growth:\n• target 85% XRP · strength trim at +5% dev · stop asks at target\n• recycle bid below last sell · last-sell ceiling (no chase)\n• dip on pullback-from-high (~1.2%) + bounce · bearish TA waived on recycle/dip\n• powder floor 3.5% of bag · ceiling 8% of bag (scales with inventory)\n• drawdown-reload only when powder is under the floor\n• 3.5% clips · CORE BAG BRACKETS OFF\n\nSKYNET can still recommend/apply these knobs.')) return;
       const d = await postJson('/operator/maximize', {});
       if (!d?.ok) {
         toast((d?.errors || [d?.message || 'Maximize failed']).join('; '), true);

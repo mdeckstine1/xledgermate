@@ -50,6 +50,7 @@ MAXIMIZE_OPERATOR_OVERRIDES: Dict[str, Any] = {
     "alpha_deferred_sl_arm_buffer_pct": 0.20,
     # Healthy powder reserve so dips can be bought (XRP-eq).
     "alpha_reload_min_rlusd_deploy_xrp_equiv": 40.0,
+    "alpha_reload_min_rlusd_deploy_pct": 3.5,
     "alpha_reload_sell_offset_pct": 0.05,
     "alpha_reload_block_accumulation_until_funded": False,
     # Grind-friendly arms so harvest/dip run without waiting for 3.5% shock days.
@@ -67,6 +68,7 @@ MAXIMIZE_OPERATOR_OVERRIDES: Dict[str, Any] = {
     "alpha_trim_stop_at_target": True,
     "alpha_dip_waive_bearish_ta": True,
     "alpha_powder_ceiling_xrp_equiv": 90.0,
+    "alpha_powder_ceiling_pct": 8.0,
     "alpha_drawdown_reload_only_below_floor": True,
     # Drawdown funding still available as backup powder path.
     "alpha_drawdown_reload_stage1_arm_pct": 2.5,
@@ -116,6 +118,7 @@ MAXIMIZE_AGENT_PATCH: Dict[str, Any] = {
         "alpha_accumulation_max_deviation": {"min": 0.08, "max": 0.15},
         "alpha_bull_run_max_deviation": {"min": 0.08, "max": 0.15},
         "alpha_reload_min_rlusd_deploy_xrp_equiv": {"min": 25.0, "max": 80.0},
+        "alpha_reload_min_rlusd_deploy_pct": {"min": 2.0, "max": 8.0},
         "alpha_ta_min_buy_score": {"min": 1.0, "max": 3.5},
         "alpha_ta_min_sell_score": {"min": 1.0, "max": 3.5},
         "initial_stop_loss_pct": {"min": 0.05, "max": 0.12},
@@ -127,6 +130,7 @@ MAXIMIZE_AGENT_PATCH: Dict[str, Any] = {
         "alpha_accumulation_dip_pullback_arm_pct": {"min": 0.5, "max": 3.0},
         "alpha_recycle_buy_offset_pct": {"min": 0.08, "max": 0.30},
         "alpha_powder_ceiling_xrp_equiv": {"min": 50.0, "max": 200.0},
+        "alpha_powder_ceiling_pct": {"min": 4.0, "max": 15.0},
         "max_changes_per_cycle": 2,
     },
     "emergency_rules": {
@@ -140,8 +144,8 @@ MAXIMIZE_DESCRIPTION = (
     "Maximize: harvest-loop bag growth — target 85% XRP, strength trim at +5% dev, "
     "stop asks at target (1 pending sell), recycle bid below last sell, last-sell ceiling, "
     "dip on pullback-from-high (~1.2%) plus −24h path, bearish TA waived on recycle/dip, "
-    "powder ceiling 90 XRP-eq deploys idle cash, drawdown-reload only under floor, "
-    "powder floor 40, 3.5% clips, core bag brackets OFF. Grow XRP count over time."
+    "powder floor 3.5% of bag / ceiling 8% of bag (scales with inventory), "
+    "3.5% clips, core bag brackets OFF. Grow XRP count over time."
 )
 
 

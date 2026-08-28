@@ -152,8 +152,20 @@ def rlusd_deploy_xrp_equiv(rlusd_balance: float, mid: float) -> float:
     return rlusd_balance / mid
 
 
-def deploy_floor_xrp_equiv(config: BotConfig) -> float:
-    return max(0.0, float(getattr(config, "alpha_reload_min_rlusd_deploy_xrp_equiv", 45.0)))
+def deploy_floor_xrp_equiv(config: BotConfig, portfolio_xrp_equiv: float = 0.0) -> float:
+    """Powder floor in XRP-eq. % of bag wins when set so a bigger bag keeps a bigger floor."""
+    pct = float(getattr(config, "alpha_reload_min_rlusd_deploy_pct", 0.0) or 0.0)
+    if pct > 0 and portfolio_xrp_equiv > 0:
+        return max(0.0, portfolio_xrp_equiv * (pct / 100.0))
+    return max(0.0, float(getattr(config, "alpha_reload_min_rlusd_deploy_xrp_equiv", 45.0) or 0.0))
+
+
+def powder_ceiling_xrp_equiv(config: BotConfig, portfolio_xrp_equiv: float = 0.0) -> float:
+    """Idle-powder deploy trigger in XRP-eq. % of bag wins when set; 0 = off."""
+    pct = float(getattr(config, "alpha_powder_ceiling_pct", 0.0) or 0.0)
+    if pct > 0 and portfolio_xrp_equiv > 0:
+        return max(0.0, portfolio_xrp_equiv * (pct / 100.0))
+    return max(0.0, float(getattr(config, "alpha_powder_ceiling_xrp_equiv", 0.0) or 0.0))
 
 
 def reload_shortfall_xrp_equiv(
@@ -161,11 +173,12 @@ def reload_shortfall_xrp_equiv(
     *,
     rlusd_balance: float,
     mid: float,
+    portfolio_xrp_equiv: float = 0.0,
 ) -> float:
     if mid <= 0:
         return 0.0
     current = rlusd_deploy_xrp_equiv(rlusd_balance, mid)
-    floor = deploy_floor_xrp_equiv(config)
+    floor = deploy_floor_xrp_equiv(config, portfolio_xrp_equiv)
     return max(0.0, floor - current)
 
 
@@ -175,6 +188,7 @@ def reload_blocks_accumulation_bids(
     rlusd_balance: float,
     mid: float,
     pending_funding_sells: int = 0,
+    portfolio_xrp_equiv: float = 0.0,
 ) -> bool:
     """Policy 4: no accumulation bids until deploy floor met (reload funds in chop)."""
     if not getattr(config, "alpha_reload_block_accumulation_until_funded", True):
@@ -185,7 +199,12 @@ def reload_blocks_accumulation_bids(
         return False
     if pending_funding_sells > 0:
         return True
-    return reload_shortfall_xrp_equiv(config, rlusd_balance=rlusd_balance, mid=mid) > (
+    return reload_shortfall_xrp_equiv(
+        config,
+        rlusd_balance=rlusd_balance,
+        mid=mid,
+        portfolio_xrp_equiv=portfolio_xrp_equiv,
+    ) > (
         config.min_order_size_xrp * 0.5
     )
 
@@ -250,7 +269,7 @@ def reload_knobs_from_snapshot(
             ),
             max_pending_sells=int(config.alpha_max_pending_sells),
             min_edge_pct=float(config.alpha_min_edge_threshold_pct),
-            target_floor_xrp_equiv=deploy_floor_xrp_equiv(config),
+            target_floor_xrp_equiv=float(snap.deploy_floor_xrp_equiv or 0.0),
         )
     return ReloadKnobs(
         active=True,
@@ -258,7 +277,7 @@ def reload_knobs_from_snapshot(
         sell_offset_pct=float(getattr(config, "alpha_reload_sell_offset_pct", 0.06)),
         max_pending_sells=int(getattr(config, "alpha_reload_max_pending_sells", 1)),
         min_edge_pct=float(getattr(config, "alpha_reload_min_edge_pct", 0.05)),
-        target_floor_xrp_equiv=deploy_floor_xrp_equiv(config),
+        target_floor_xrp_equiv=float(snap.deploy_floor_xrp_equiv or 0.0),
     )
 
 
@@ -289,14 +308,21 @@ def evaluate_reload_regime(
         return disabled
 
     regime = normalize_market_regime(operator_market_regime)
-    floor = deploy_floor_xrp_equiv(config)
+    portfolio = float(getattr(inventory, "portfolio_xrp_equiv", 0.0) or 0.0)
+    floor = deploy_floor_xrp_equiv(config, portfolio)
     rlusd_xeq = rlusd_deploy_xrp_equiv(rlusd_balance, mid)
-    shortfall = reload_shortfall_xrp_equiv(config, rlusd_balance=rlusd_balance, mid=mid)
+    shortfall = reload_shortfall_xrp_equiv(
+        config,
+        rlusd_balance=rlusd_balance,
+        mid=mid,
+        portfolio_xrp_equiv=portfolio,
+    )
     blocks_acc = reload_blocks_accumulation_bids(
         config,
         rlusd_balance=rlusd_balance,
         mid=mid,
         pending_funding_sells=pending_funding_sells,
+        portfolio_xrp_equiv=portfolio,
     )
 
     tape = evaluate_tape_participation(config, mid=mid, structure=structure, ta=ta)

@@ -321,11 +321,14 @@ class BotConfig:
     alpha_dip_waive_bearish_ta: bool = True
     # If powder XRP-eq exceeds this while under target, deploy (0 = off). Keep reload floor.
     alpha_powder_ceiling_xrp_equiv: float = 90.0
+    # Powder ceiling as % of bag (0 = use XRP-eq fallback / off). Scales when inventory is added.
+    alpha_powder_ceiling_pct: float = 0.0
     # Drawdown-reload asks only when powder is under the deploy floor (else it fights dip buys).
     alpha_drawdown_reload_only_below_floor: bool = True
     # RLUSD reload — sell XRP in post-run chop to fund accumulation deploy floor
     alpha_reload_regime_enabled: bool = True
-    alpha_reload_min_rlusd_deploy_xrp_equiv: float = 45.0  # Min RLUSD dry powder (XRP-equiv)
+    alpha_reload_min_rlusd_deploy_xrp_equiv: float = 45.0  # Fallback if deploy_pct is 0
+    alpha_reload_min_rlusd_deploy_pct: float = 0.0  # Powder floor as % of bag (0 = use XRP-eq fallback)
     alpha_reload_min_deviation: float = 0.0  # Only trim when at/above XRP target
     alpha_reload_post_run_min_move_pct: float = 0.25  # Prove a run before chop reload
     alpha_reload_near_high_pct: float = 0.15  # Mid within this % of rolling high

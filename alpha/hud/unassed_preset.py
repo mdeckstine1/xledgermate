@@ -45,6 +45,7 @@ UNASSED_OPERATOR_OVERRIDES: Dict[str, Any] = {
     "alpha_deferred_sl_arm_buffer_pct": 0.20,
     # Unlock accumulation with partial powder + allow residual bids.
     "alpha_reload_min_rlusd_deploy_xrp_equiv": 18.0,
+    "alpha_reload_min_rlusd_deploy_pct": 1.6,
     "alpha_reload_sell_offset_pct": 0.04,
     "alpha_reload_block_accumulation_until_funded": False,
     # Keep harvest/dip sane (not the brick path).

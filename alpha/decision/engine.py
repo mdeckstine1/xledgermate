@@ -617,7 +617,10 @@ class DecisionEngine:
         )
 
         rlusd_xeq = rlusd_deploy_xrp_equiv(balances.rlusd, book.mid)
-        floor = deploy_floor_xrp_equiv(self._config)
+        floor = deploy_floor_xrp_equiv(
+            self._config,
+            float(inventory.portfolio_xrp_equiv or 0.0),
+        )
         if floor <= 0 or rlusd_xeq + 1e-9 >= floor:
             return None
         max_sells = max(1, int(self._config.alpha_max_pending_sells))
@@ -677,6 +680,7 @@ class DecisionEngine:
             rlusd_balance=balances.rlusd,
             mid=book.mid,
             pending_funding_sells=pending_sell_count,
+            portfolio_xrp_equiv=float(balances.portfolio_xrp_equiv or 0.0),
         )
 
     def _reload_funding_allowed(
@@ -726,7 +730,12 @@ class DecisionEngine:
         if bool(getattr(self._config, "alpha_drawdown_reload_only_below_floor", False)):
             mid = book.mid
             powder = self._powder_xeq(balances, mid)
-            floor = float(getattr(self._config, "alpha_reload_min_rlusd_deploy_xrp_equiv", 0.0) or 0.0)
+            from alpha.decision.reload_regime import deploy_floor_xrp_equiv
+
+            floor = deploy_floor_xrp_equiv(
+                self._config,
+                float(inventory.portfolio_xrp_equiv or 0.0),
+            )
             if powder + 1e-9 >= floor:
                 return None
         reason = snap.reason or snap.detail or "drawdown_armed"
@@ -823,7 +832,10 @@ class DecisionEngine:
         pending_buy_count: int,
         balances: Optional[BalanceSnapshot],
     ) -> Optional[str]:
-        ceiling = float(getattr(self._config, "alpha_powder_ceiling_xrp_equiv", 0.0) or 0.0)
+        from alpha.decision.reload_regime import deploy_floor_xrp_equiv, powder_ceiling_xrp_equiv
+
+        portfolio = float(inventory.portfolio_xrp_equiv or 0.0)
+        ceiling = powder_ceiling_xrp_equiv(self._config, portfolio)
         if ceiling <= 0:
             return None
         if inventory.deviation >= -1e-9:
@@ -840,7 +852,7 @@ class DecisionEngine:
         powder = self._powder_xeq(balances, mid)
         if powder + 1e-9 < ceiling:
             return None
-        floor = float(getattr(self._config, "alpha_reload_min_rlusd_deploy_xrp_equiv", 0.0) or 0.0)
+        floor = deploy_floor_xrp_equiv(self._config, portfolio)
         spendable = powder - floor
         if spendable < float(self._config.min_order_size_xrp):
             return None

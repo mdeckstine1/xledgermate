@@ -18,6 +18,7 @@ def test_unassed_preset_unbricks_key_knobs() -> None:
     assert ov["alpha_accumulation_max_deviation"] == 0.15
     assert ov["alpha_ta_min_sell_score"] == 2.0
     assert ov["alpha_reload_min_rlusd_deploy_xrp_equiv"] == 18.0
+    assert ov["alpha_reload_min_rlusd_deploy_pct"] == 1.6
     assert ov["alpha_reload_block_accumulation_until_funded"] is False
     assert ov["bracket_trailing_enabled"] is False
     assert ov["initial_stop_loss_pct"] == 0.09

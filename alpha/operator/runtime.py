@@ -127,6 +127,7 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_trim_stop_at_target",
     "alpha_dip_waive_bearish_ta",
     "alpha_powder_ceiling_xrp_equiv",
+    "alpha_powder_ceiling_pct",
     "alpha_drawdown_reload_only_below_floor",
     "alpha_drawdown_reload_stage1_arm_pct",
     "alpha_drawdown_reload_stage2_arm_pct",
@@ -135,6 +136,7 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_drawdown_reload_stage2_bag_pct",
     # Reload / dry-powder (Unassed + funding recovery)
     "alpha_reload_min_rlusd_deploy_xrp_equiv",
+    "alpha_reload_min_rlusd_deploy_pct",
     "alpha_reload_sell_offset_pct",
     "alpha_reload_block_accumulation_until_funded",
 )
@@ -192,6 +194,8 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "alpha_accumulation_dip_pullback_arm_pct": {"min": 0.0, "max": 5.0, "step": 0.1},
     "alpha_recycle_buy_offset_pct": {"min": 0.05, "max": 1.0, "step": 0.01},
     "alpha_powder_ceiling_xrp_equiv": {"min": 0.0, "max": 400.0, "step": 5.0},
+    "alpha_powder_ceiling_pct": {"min": 0.0, "max": 30.0, "step": 0.5},
+    "alpha_reload_min_rlusd_deploy_pct": {"min": 0.0, "max": 20.0, "step": 0.1},
     "alpha_drawdown_reload_stage1_arm_pct": {"min": 1.0, "max": 10.0, "step": 0.25},
     "alpha_drawdown_reload_stage2_arm_pct": {"min": 2.0, "max": 15.0, "step": 0.25},
     "alpha_drawdown_reload_total_bag_pct": {"min": 1.0, "max": 10.0, "step": 0.5},
@@ -521,6 +525,16 @@ def _validate_merged_config(config: BotConfig, changed_keys: Any) -> List[str]:
 
     if "alpha_powder_ceiling_xrp_equiv" in keys and config.alpha_powder_ceiling_xrp_equiv < 0:
         errors.append("alpha_powder_ceiling_xrp_equiv must be non-negative (0 = off)")
+
+    if "alpha_powder_ceiling_pct" in keys and (
+        config.alpha_powder_ceiling_pct < 0 or config.alpha_powder_ceiling_pct > 50
+    ):
+        errors.append("alpha_powder_ceiling_pct must be between 0 and 50 (0 = use XRP-eq fallback)")
+
+    if "alpha_reload_min_rlusd_deploy_pct" in keys and (
+        config.alpha_reload_min_rlusd_deploy_pct < 0 or config.alpha_reload_min_rlusd_deploy_pct > 40
+    ):
+        errors.append("alpha_reload_min_rlusd_deploy_pct must be between 0 and 40 (0 = use XRP-eq fallback)")
 
     if "alpha_recycle_buy_offset_pct" in keys and config.alpha_recycle_buy_offset_pct <= 0:
         errors.append("alpha_recycle_buy_offset_pct must be positive")

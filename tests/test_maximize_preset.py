@@ -39,6 +39,8 @@ def test_maximize_preset_harvest_loop_knobs() -> None:
     assert ov["alpha_trim_stop_at_target"] is True
     assert ov["alpha_dip_waive_bearish_ta"] is True
     assert ov["alpha_powder_ceiling_xrp_equiv"] == 90.0
+    assert ov["alpha_reload_min_rlusd_deploy_pct"] == 3.5
+    assert ov["alpha_powder_ceiling_pct"] == 8.0
     assert ov["alpha_drawdown_reload_only_below_floor"] is True
     assert ov["alpha_max_pending_sells"] == 1
     assert ov["alpha_stale_pending_sell_enabled"] is True

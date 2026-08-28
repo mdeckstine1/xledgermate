@@ -51,6 +51,7 @@ _DEFAULT_GUARDRAILS: Dict[str, Any] = {
     "alpha_accumulation_max_deviation": {"min": 0.08, "max": 0.15},
     "alpha_bull_run_max_deviation": {"min": 0.08, "max": 0.15},
     "alpha_reload_min_rlusd_deploy_xrp_equiv": {"min": 25.0, "max": 80.0},
+    "alpha_reload_min_rlusd_deploy_pct": {"min": 2.0, "max": 8.0},
     "alpha_ta_min_buy_score": {"min": 1.0, "max": 3.5},
     "alpha_ta_min_sell_score": {"min": 1.0, "max": 3.5},
     "initial_stop_loss_pct": {"min": 0.05, "max": 0.12},
@@ -66,6 +67,7 @@ _DEFAULT_GUARDRAILS: Dict[str, Any] = {
     "alpha_accumulation_dip_pullback_arm_pct": {"min": 0.5, "max": 3.0},
     "alpha_recycle_buy_offset_pct": {"min": 0.08, "max": 0.30},
     "alpha_powder_ceiling_xrp_equiv": {"min": 50.0, "max": 200.0},
+    "alpha_powder_ceiling_pct": {"min": 4.0, "max": 15.0},
     "max_changes_per_cycle": 2,
 }
 
@@ -142,7 +144,8 @@ Hard rules:
 - When heavy (dev above strength): do NOT loosen buy offsets to chase; trims/harvest first.
 - Prefer grind-friendly dip pullback (~1.0–1.5% off 24h high) over shock-only −2% 24h net.
 - Keep alpha_recycle_after_sell_enabled, alpha_last_sell_ceiling_enabled, alpha_trim_stop_at_target, alpha_dip_waive_bearish_ta true on Maximize unless the operator asks otherwise.
-- You MAY tune: dip_pullback_arm, recycle_buy_offset, powder_ceiling, max_pending_sells (1–2), dip_bounce.
+- You MAY tune: dip_pullback_arm, recycle_buy_offset, powder_ceiling_pct, powder_floor_pct (alpha_reload_min_rlusd_deploy_pct), max_pending_sells (1–2), dip_bounce.
+- Prefer % of bag for powder floor/ceiling so added inventory scales. Do not recommend a fixed XRP-eq floor/ceiling as the primary lever.
 - When powder below reload floor: favor funding/sell readiness, not more bids.
 - When powder above ceiling and under target: recommend deploy (powder_ceiling / dip / recycle offset) — do not congratulate idle RLUSD.
 - HOLD ta_buy_blocked on a fade with fat powder is a mismatch: check dip_waive_bearish_ta, pullback arm, last_sell_ceiling — not "wait for crash".
@@ -723,6 +726,19 @@ def load_audit_entries(*, limit: int = 50, path: Path = _AUDIT_PATH) -> List[Dic
     return out
 
 
+def _effective_powder_ceiling_xeq(hud_state: Dict[str, Any]) -> float:
+    cfg = hud_state.get("config_effective") or {}
+    port = float(
+        (hud_state.get("bag_growth") or {}).get("portfolio_xrp_equiv")
+        or hud_state.get("portfolio_xrp_equiv")
+        or 0.0
+    )
+    pct = float(cfg.get("alpha_powder_ceiling_pct") or 0.0)
+    if pct > 0 and port > 0:
+        return port * (pct / 100.0)
+    return float(cfg.get("alpha_powder_ceiling_xrp_equiv") or 0.0)
+
+
 def _event_snapshot(hud_state: Dict[str, Any]) -> Dict[str, Any]:
     risk = hud_state.get("risk") or {}
     inv = hud_state.get("inventory") or {}
@@ -754,9 +770,7 @@ def _event_snapshot(hud_state: Dict[str, Any]) -> Dict[str, Any]:
         "portfolio_xrp_equiv": (hud_state.get("bag_growth") or {}).get("portfolio_xrp_equiv")
         or hud_state.get("portfolio_xrp_equiv"),
         "powder_xeq": (hud_state.get("reload_regime") or {}).get("rlusd_xrp_equiv"),
-        "powder_ceiling": (hud_state.get("config_effective") or {}).get(
-            "alpha_powder_ceiling_xrp_equiv"
-        ),
+        "powder_ceiling": _effective_powder_ceiling_xeq(hud_state),
         "dip_phase": ((hud_state.get("accumulation_regime") or {}).get("dip_deploy_watch") or {}).get(
             "phase"
         ),

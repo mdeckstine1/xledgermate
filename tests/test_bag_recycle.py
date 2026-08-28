@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
+
 from alpha.decision.engine import DecisionAction, DecisionEngine
 from alpha.decision.harvest_watch import (
     HarvestSessionTracker,
     evaluate_dip_deploy_watch,
     harvest_knobs_from_snapshot,
 )
+from alpha.decision.reload_regime import deploy_floor_xrp_equiv, powder_ceiling_xrp_equiv
 from alpha.decision.price_history import _save_store
 from alpha.decision.structure import MarketStructureSnapshot
 from alpha.decision.technical_analysis import TechnicalAnalysisSnapshot
@@ -284,6 +287,27 @@ def test_session_preserves_last_sell_across_window_roll(tmp_path):
     assert sess.pending_reentry() is True
 
 
+def test_powder_floor_and_ceiling_scale_with_bag():
+    cfg = BotConfig(
+        alpha_reload_min_rlusd_deploy_pct=3.5,
+        alpha_reload_min_rlusd_deploy_xrp_equiv=40.0,
+        alpha_powder_ceiling_pct=8.0,
+        alpha_powder_ceiling_xrp_equiv=90.0,
+    )
+    assert deploy_floor_xrp_equiv(cfg, 1130.0) == pytest.approx(39.55, abs=0.01)
+    assert powder_ceiling_xrp_equiv(cfg, 1130.0) == pytest.approx(90.4, abs=0.01)
+    assert deploy_floor_xrp_equiv(cfg, 12000.0) == pytest.approx(420.0, abs=0.01)
+    assert powder_ceiling_xrp_equiv(cfg, 12000.0) == pytest.approx(960.0, abs=0.01)
+    abs_only = BotConfig(
+        alpha_reload_min_rlusd_deploy_pct=0.0,
+        alpha_reload_min_rlusd_deploy_xrp_equiv=40.0,
+        alpha_powder_ceiling_pct=0.0,
+        alpha_powder_ceiling_xrp_equiv=90.0,
+    )
+    assert deploy_floor_xrp_equiv(abs_only, 12000.0) == 40.0
+    assert powder_ceiling_xrp_equiv(abs_only, 12000.0) == 90.0
+
+
 def test_recycle_knobs_are_operator_tunable():
     sanitized, errors = validate_override_updates(
         {
@@ -293,10 +317,12 @@ def test_recycle_knobs_are_operator_tunable():
             "alpha_dip_waive_bearish_ta": True,
             "alpha_drawdown_reload_only_below_floor": True,
             "alpha_accumulation_dip_pullback_arm_pct": 1.2,
-            "alpha_powder_ceiling_xrp_equiv": 90.0,
+            "alpha_powder_ceiling_pct": 8.0,
+            "alpha_reload_min_rlusd_deploy_pct": 3.5,
             "alpha_recycle_buy_offset_pct": 0.14,
         }
     )
     assert errors == []
     assert sanitized["alpha_recycle_after_sell_enabled"] is True
-    assert sanitized["alpha_powder_ceiling_xrp_equiv"] == 90.0
+    assert sanitized["alpha_powder_ceiling_pct"] == 8.0
+    assert sanitized["alpha_reload_min_rlusd_deploy_pct"] == 3.5
