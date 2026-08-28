@@ -120,6 +120,14 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     "alpha_accumulation_dip_move_24h_arm_pct",
     "alpha_accumulation_dip_bounce_arm_pct",
     "alpha_accumulation_dip_buy_offset_pct",
+    "alpha_accumulation_dip_pullback_arm_pct",
+    "alpha_recycle_after_sell_enabled",
+    "alpha_recycle_buy_offset_pct",
+    "alpha_last_sell_ceiling_enabled",
+    "alpha_trim_stop_at_target",
+    "alpha_dip_waive_bearish_ta",
+    "alpha_powder_ceiling_xrp_equiv",
+    "alpha_drawdown_reload_only_below_floor",
     "alpha_drawdown_reload_stage1_arm_pct",
     "alpha_drawdown_reload_stage2_arm_pct",
     "alpha_drawdown_reload_total_bag_pct",
@@ -178,9 +186,12 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "alpha_accumulation_harvest_move_24h_watch_pct": {"min": 2.0, "max": 15.0, "step": 0.5},
     "alpha_accumulation_harvest_pullback_arm_pct": {"min": 0.25, "max": 5.0, "step": 0.25},
     "alpha_accumulation_harvest_trim_risk_pct": {"min": 0.5, "max": 5.0, "step": 0.25},
-    "alpha_accumulation_dip_move_24h_arm_pct": {"min": 2.0, "max": 15.0, "step": 0.5},
+    "alpha_accumulation_dip_move_24h_arm_pct": {"min": 1.0, "max": 15.0, "step": 0.5},
     "alpha_accumulation_dip_bounce_arm_pct": {"min": 0.05, "max": 2.0, "step": 0.05},
     "alpha_accumulation_dip_buy_offset_pct": {"min": 0.05, "max": 1.0, "step": 0.01},
+    "alpha_accumulation_dip_pullback_arm_pct": {"min": 0.0, "max": 5.0, "step": 0.1},
+    "alpha_recycle_buy_offset_pct": {"min": 0.05, "max": 1.0, "step": 0.01},
+    "alpha_powder_ceiling_xrp_equiv": {"min": 0.0, "max": 400.0, "step": 5.0},
     "alpha_drawdown_reload_stage1_arm_pct": {"min": 1.0, "max": 10.0, "step": 0.25},
     "alpha_drawdown_reload_stage2_arm_pct": {"min": 2.0, "max": 15.0, "step": 0.25},
     "alpha_drawdown_reload_total_bag_pct": {"min": 1.0, "max": 10.0, "step": 0.5},
@@ -354,6 +365,11 @@ def _coerce_override(key: str, value: Any) -> Any:
         "alpha_stale_pending_sell_enabled",
         "alpha_deferred_sl_enabled",
         "alpha_reload_block_accumulation_until_funded",
+        "alpha_recycle_after_sell_enabled",
+        "alpha_last_sell_ceiling_enabled",
+        "alpha_trim_stop_at_target",
+        "alpha_dip_waive_bearish_ta",
+        "alpha_drawdown_reload_only_below_floor",
     }
     if key in _BOOL_KEYS:
         if isinstance(value, bool):
@@ -502,6 +518,15 @@ def _validate_merged_config(config: BotConfig, changed_keys: Any) -> List[str]:
 
     if "trailing_step_pct" in keys and config.trailing_step_pct <= 0:
         errors.append("trailing_step_pct must be positive")
+
+    if "alpha_powder_ceiling_xrp_equiv" in keys and config.alpha_powder_ceiling_xrp_equiv < 0:
+        errors.append("alpha_powder_ceiling_xrp_equiv must be non-negative (0 = off)")
+
+    if "alpha_recycle_buy_offset_pct" in keys and config.alpha_recycle_buy_offset_pct <= 0:
+        errors.append("alpha_recycle_buy_offset_pct must be positive")
+
+    if "alpha_accumulation_dip_pullback_arm_pct" in keys and config.alpha_accumulation_dip_pullback_arm_pct < 0:
+        errors.append("alpha_accumulation_dip_pullback_arm_pct must be non-negative (0 = off)")
 
     return errors
 

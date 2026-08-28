@@ -444,6 +444,7 @@ class AlphaApplication:
             harvest_snap,
             harvest_knobs,
             reentry_pending=self._harvest_session.pending_reentry(),
+            last_sell_price=self._harvest_session.last_sell_price(),
         )
         dip_snap = acc_snap.dip_deploy_watch
         dip_knobs = (

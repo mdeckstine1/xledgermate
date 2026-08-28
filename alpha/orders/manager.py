@@ -1870,24 +1870,46 @@ class OrderManager:
             mid=mid,
         )
 
+    def record_inventory_sell_fill(
+        self,
+        *,
+        purpose: str,
+        size_xrp: float,
+        price_rlusd_per_xrp: float,
+    ) -> None:
+        """Persist last sell and optionally queue a recycle bid (strength/harvest)."""
+        if size_xrp <= 0 or price_rlusd_per_xrp <= 0:
+            return
+        sess = self._harvest_session
+        if sess is None:
+            return
+        record_sell = getattr(sess, "record_sell_fill", None)
+        if callable(record_sell):
+            record_sell(price_rlusd_per_xrp=price_rlusd_per_xrp, size_xrp=size_xrp)
+        recycle = bool(getattr(self._config, "alpha_recycle_after_sell_enabled", False))
+        harvest_reentry = bool(getattr(self._config, "alpha_accumulation_harvest_reentry_enabled", True))
+        if purpose in ("harvest_trim", "strength") and (recycle or harvest_reentry):
+            set_pending = getattr(sess, "set_pending_reentry", None)
+            if callable(set_pending):
+                set_pending(enabled=True)
+                logger.info(
+                    "harvest_session | sell_fill | purpose=%s | size=%.4f | price=%.6f | recycle_queued",
+                    purpose,
+                    size_xrp,
+                    price_rlusd_per_xrp,
+                )
+
     def _record_harvest_trim_fill(
         self,
         *,
         size_xrp: float,
         price_rlusd_per_xrp: float,
     ) -> None:
-        if self._harvest_session is None or size_xrp <= 0 or price_rlusd_per_xrp <= 0:
-            return
-        set_pending = getattr(self._harvest_session, "set_pending_reentry", None)
-        if callable(set_pending) and getattr(
-            self._config, "alpha_accumulation_harvest_reentry_enabled", True
-        ):
-            set_pending(enabled=True)
-            logger.info(
-                "harvest_session | trim_fill | size=%.4f | price=%.6f | reentry_queued",
-                size_xrp,
-                price_rlusd_per_xrp,
-            )
+        self.record_inventory_sell_fill(
+            purpose="harvest_trim",
+            size_xrp=size_xrp,
+            price_rlusd_per_xrp=price_rlusd_per_xrp,
+        )
 
     async def _reconcile_strength_sell_fills(
         self,
@@ -1934,6 +1956,12 @@ class OrderManager:
                 )
             elif rec.purpose == "harvest_trim":
                 self._record_harvest_trim_fill(
+                    size_xrp=rec.size_xrp,
+                    price_rlusd_per_xrp=rec.price_rlusd_per_xrp,
+                )
+            elif rec.purpose == "strength":
+                self.record_inventory_sell_fill(
+                    purpose="strength",
                     size_xrp=rec.size_xrp,
                     price_rlusd_per_xrp=rec.price_rlusd_per_xrp,
                 )

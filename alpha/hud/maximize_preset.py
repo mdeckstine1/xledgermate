@@ -28,7 +28,7 @@ MAXIMIZE_OPERATOR_OVERRIDES: Dict[str, Any] = {
     "alpha_bull_run_max_deviation": 0.15,
     "alpha_accumulation_max_deviation": 0.15,
     "alpha_max_pending_buys": 3,
-    "alpha_max_pending_sells": 2,
+    "alpha_max_pending_sells": 1,
     "alpha_stale_pending_buy_enabled": True,
     "alpha_stale_pending_buy_max_drift_pct": 0.35,
     "alpha_stale_pending_buy_max_age_seconds": 0,
@@ -60,6 +60,14 @@ MAXIMIZE_OPERATOR_OVERRIDES: Dict[str, Any] = {
     "alpha_accumulation_dip_move_24h_arm_pct": 2.0,
     "alpha_accumulation_dip_bounce_arm_pct": 0.25,
     "alpha_accumulation_dip_buy_offset_pct": 0.14,
+    "alpha_accumulation_dip_pullback_arm_pct": 1.2,
+    "alpha_recycle_after_sell_enabled": True,
+    "alpha_recycle_buy_offset_pct": 0.14,
+    "alpha_last_sell_ceiling_enabled": True,
+    "alpha_trim_stop_at_target": True,
+    "alpha_dip_waive_bearish_ta": True,
+    "alpha_powder_ceiling_xrp_equiv": 90.0,
+    "alpha_drawdown_reload_only_below_floor": True,
     # Drawdown funding still available as backup powder path.
     "alpha_drawdown_reload_stage1_arm_pct": 2.5,
     "alpha_drawdown_reload_stage2_arm_pct": 4.0,
@@ -93,6 +101,7 @@ MAXIMIZE_AGENT_PATCH: Dict[str, Any] = {
         "drawdown_reload": True,
         "sell_slot_stall": True,
         "powder_shortfall": True,
+        "powder_excess": True,
     },
     "guardrails": {
         "alpha_risk_per_trade_pct": {"min": 2.0, "max": 4.0},
@@ -103,7 +112,7 @@ MAXIMIZE_AGENT_PATCH: Dict[str, Any] = {
         "alpha_buy_limit_offset_pct": {"min": 0.08, "max": 0.25},
         "alpha_sell_limit_offset_pct": {"min": 0.05, "max": 0.18},
         "alpha_max_pending_buys": {"min": 1, "max": 4},
-        "alpha_max_pending_sells": {"min": 1, "max": 3},
+        "alpha_max_pending_sells": {"min": 1, "max": 2},
         "alpha_accumulation_max_deviation": {"min": 0.08, "max": 0.15},
         "alpha_bull_run_max_deviation": {"min": 0.08, "max": 0.15},
         "alpha_reload_min_rlusd_deploy_xrp_equiv": {"min": 25.0, "max": 80.0},
@@ -115,6 +124,9 @@ MAXIMIZE_AGENT_PATCH: Dict[str, Any] = {
         "alpha_drawdown_reload_total_bag_pct": {"min": 2.0, "max": 8.0},
         "alpha_drawdown_reload_stage1_bag_pct": {"min": 1.0, "max": 4.0},
         "alpha_drawdown_reload_stage2_bag_pct": {"min": 1.0, "max": 4.0},
+        "alpha_accumulation_dip_pullback_arm_pct": {"min": 0.5, "max": 3.0},
+        "alpha_recycle_buy_offset_pct": {"min": 0.08, "max": 0.30},
+        "alpha_powder_ceiling_xrp_equiv": {"min": 50.0, "max": 200.0},
         "max_changes_per_cycle": 2,
     },
     "emergency_rules": {
@@ -126,9 +138,10 @@ MAXIMIZE_AGENT_PATCH: Dict[str, Any] = {
 
 MAXIMIZE_DESCRIPTION = (
     "Maximize: harvest-loop bag growth — target 85% XRP, strength trim at +5% dev, "
-    "powder floor 40 XRP-eq (block-until-funded OFF), harvest/dip arms ~2% (grind-friendly), "
-    "stale inventory asks auto-cancel (no sell-slot brick), 3.5% portfolio clips, "
-    "core bag brackets OFF (no SL factory). Grow XRP count over time."
+    "stop asks at target (1 pending sell), recycle bid below last sell, last-sell ceiling, "
+    "dip on pullback-from-high (~1.2%) plus −24h path, bearish TA waived on recycle/dip, "
+    "powder ceiling 90 XRP-eq deploys idle cash, drawdown-reload only under floor, "
+    "powder floor 40, 3.5% clips, core bag brackets OFF. Grow XRP count over time."
 )
 
 

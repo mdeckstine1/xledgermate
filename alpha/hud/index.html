@@ -362,6 +362,7 @@
           <div class="score-row"><span class="k">This week</span><span id="bagWeek" class="v">—</span></div>
           <div class="score-row"><span class="k">vs ATH</span><span id="bagAth" class="v">—</span></div>
           <div class="score-row"><span class="k">Deposits</span><span id="bagDeposits" class="v">—</span></div>
+          <div class="score-row"><span class="k">Last sell</span><span id="bagLastSell" class="v">—</span></div>
           <div class="score-row" style="display:none"><span class="k">XRP stack</span><span id="bagXrpStack" class="v">—</span></div>
           <div class="score-row"><span class="k">Edge 7d</span><span id="bagEdge7d" class="v">—</span></div>
         </div>
@@ -578,6 +579,22 @@
           <div class="ctrl-row"><label data-knob="alpha_reentry_post_clear_buy_spacing_cycles" title="After gate clears, wait this many cycles between new bids — avoids stacking correlated brackets on one wick.">post_clear_buy_spacing_cycles</label><input type="range" id="slReSpacing" min="0" max="30" step="1"><input type="number" id="numReSpacing" min="0" step="1"></div>
           <button id="btnApplyReentry">Apply re-entry</button>
         </div>
+        </div>
+        <div class="controls-section card">
+          <h2>Bag recycle (Maximize)</h2>
+          <p class="muted" style="margin:0 0 10px;font-size:.75rem;line-height:1.45">Developer knobs: after a strength/harvest fill, buy back below that sell. SKYNET can recommend or apply these. Idle powder above the ceiling while under target should bid.</p>
+          <div class="ctrl-row toggle"><label data-knob="alpha_recycle_after_sell_enabled" title="Queue a bid below the last strength/harvest sell fill."><input type="checkbox" id="recycleAfterSell" checked> recycle_after_sell</label></div>
+          <div class="ctrl-row"><label data-knob="alpha_recycle_buy_offset_pct" title="Recycle bid this % below last sell and mid.">recycle_buy_offset_pct</label><input type="range" id="slRecycleOff" min="0.05" max="1" step="0.01"><input type="number" id="numRecycleOff" step="0.01"><span id="valRecycleOff" class="muted">%</span></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_last_sell_ceiling_enabled" title="Block bids at or above last strength-harvest sell — no chasing the rip you just sold."><input type="checkbox" id="lastSellCeiling" checked> last_sell_ceiling</label></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_trim_stop_at_target" title="Do not queue more strength/harvest asks once at or under the XRP target."><input type="checkbox" id="trimStopTarget" checked> trim_stop_at_target</label></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_dip_waive_bearish_ta" title="Waive bearish TA veto on dip, recycle, and powder-ceiling buys. Score gate still applies, softer."><input type="checkbox" id="dipWaiveBearish" checked> dip_waive_bearish_ta</label></div>
+          <div class="ctrl-row toggle"><label data-knob="alpha_drawdown_reload_only_below_floor" title="Drawdown-reload sells only when powder is under the deploy floor, so it does not fight dip buys."><input type="checkbox" id="ddOnlyBelowFloor" checked> drawdown_reload_only_below_floor</label></div>
+          <div class="ctrl-row"><label data-knob="alpha_accumulation_dip_pullback_arm_pct" title="Pullback from 24h high % to arm dip even if 24h net is still green. 0 = off (24h net drop only).">dip_pullback_arm_pct</label><input type="range" id="slDipPullback" min="0" max="5" step="0.1"><input type="number" id="numDipPullback" step="0.1"><span id="valDipPullback" class="muted">%</span></div>
+          <div class="ctrl-row"><label data-knob="alpha_accumulation_dip_move_24h_arm_pct" title="Backup: 24h net drop % to arm dip deploy.">dip_move_24h_arm_pct</label><input type="range" id="slDipMove" min="1" max="15" step="0.5"><input type="number" id="numDipMove" step="0.5"><span id="valDipMove" class="muted">%</span></div>
+          <div class="ctrl-row"><label data-knob="alpha_accumulation_dip_bounce_arm_pct" title="Bounce off 24h low required before a dip bid (knife filter).">dip_bounce_arm_pct</label><input type="range" id="slDipBounce" min="0.05" max="2" step="0.05"><input type="number" id="numDipBounce" step="0.05"><span id="valDipBounce" class="muted">%</span></div>
+          <div class="ctrl-row"><label data-knob="alpha_powder_ceiling_xrp_equiv" title="If powder XRP-eq exceeds this while under target, deploy. 0 = off. Floor is still kept.">powder_ceiling_xrp_eq</label><input type="range" id="slPowderCeil" min="0" max="400" step="5"><input type="number" id="numPowderCeil" step="5"><span id="valPowderCeil" class="muted">XRP-eq</span></div>
+          <div class="ctrl-row"><label data-knob="alpha_reload_min_rlusd_deploy_xrp_equiv" title="Minimum RLUSD dry powder (XRP-eq) to keep. Recycle/dip must not spend through this floor.">powder_floor_xrp_eq</label><input type="range" id="slPowderFloor" min="5" max="500" step="1"><input type="number" id="numPowderFloor" step="1"><span id="valPowderFloor" class="muted">XRP-eq</span></div>
+          <button id="btnApplyRecycle">Apply bag recycle</button>
         </div>
         <div class="controls-section card">
           <h2>Manual actions</h2>
@@ -1223,6 +1240,12 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     const syncReRecoveryPct = linkSlider('slReRecoveryPct', 'numReRecoveryPct');
     const syncReRecoveryMin = linkSlider('slReRecoveryMin', 'numReRecoveryMin');
     const syncReSpacing = linkSlider('slReSpacing', 'numReSpacing');
+    const syncRecycleOff = linkSlider('slRecycleOff', 'numRecycleOff', 'valRecycleOff');
+    const syncDipPullback = linkSlider('slDipPullback', 'numDipPullback', 'valDipPullback');
+    const syncDipMove = linkSlider('slDipMove', 'numDipMove', 'valDipMove');
+    const syncDipBounce = linkSlider('slDipBounce', 'numDipBounce', 'valDipBounce');
+    const syncPowderCeil = linkSlider('slPowderCeil', 'numPowderCeil', 'valPowderCeil');
+    const syncPowderFloor = linkSlider('slPowderFloor', 'numPowderFloor', 'valPowderFloor');
     const syncTaWeight = linkSlider('slTaWeight', 'numTaWeight', 'valTaWeight');
     const syncTaBuyScore = linkSlider('slTaBuyScore', 'numTaBuyScore');
     const syncTaSellScore = linkSlider('slTaSellScore', 'numTaSellScore');
@@ -1281,6 +1304,17 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       syncReRecoveryPct(c.alpha_reentry_recovery_release_pct ?? 0.05);
       syncReRecoveryMin(c.alpha_reentry_recovery_min_cycles ?? 2);
       syncReSpacing(c.alpha_reentry_post_clear_buy_spacing_cycles ?? 5);
+      if ($('recycleAfterSell')) $('recycleAfterSell').checked = c.alpha_recycle_after_sell_enabled !== false;
+      if ($('lastSellCeiling')) $('lastSellCeiling').checked = c.alpha_last_sell_ceiling_enabled !== false;
+      if ($('trimStopTarget')) $('trimStopTarget').checked = c.alpha_trim_stop_at_target !== false;
+      if ($('dipWaiveBearish')) $('dipWaiveBearish').checked = c.alpha_dip_waive_bearish_ta !== false;
+      if ($('ddOnlyBelowFloor')) $('ddOnlyBelowFloor').checked = c.alpha_drawdown_reload_only_below_floor !== false;
+      if ($('slRecycleOff')) syncRecycleOff(c.alpha_recycle_buy_offset_pct ?? 0.14);
+      if ($('slDipPullback')) syncDipPullback(c.alpha_accumulation_dip_pullback_arm_pct ?? 1.2);
+      if ($('slDipMove')) syncDipMove(c.alpha_accumulation_dip_move_24h_arm_pct ?? 2.0);
+      if ($('slDipBounce')) syncDipBounce(c.alpha_accumulation_dip_bounce_arm_pct ?? 0.25);
+      if ($('slPowderCeil')) syncPowderCeil(c.alpha_powder_ceiling_xrp_equiv ?? 90);
+      if ($('slPowderFloor')) syncPowderFloor(c.alpha_reload_min_rlusd_deploy_xrp_equiv ?? 40);
       if ($('taEnabled')) $('taEnabled').checked = !!c.alpha_ta_enabled;
       syncTaWeight(c.alpha_ta_weight ?? 1.0);
       syncTaBuyScore(c.alpha_ta_min_buy_score ?? 1.5);
@@ -1402,6 +1436,23 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         poll();
       }
     });
+    $('btnApplyRecycle').onclick = async () => {
+      const d = await patchJson('/operator/config', { overrides: {
+        alpha_recycle_after_sell_enabled: $('recycleAfterSell').checked,
+        alpha_recycle_buy_offset_pct: parseFloat($('numRecycleOff').value),
+        alpha_last_sell_ceiling_enabled: $('lastSellCeiling').checked,
+        alpha_trim_stop_at_target: $('trimStopTarget').checked,
+        alpha_dip_waive_bearish_ta: $('dipWaiveBearish').checked,
+        alpha_drawdown_reload_only_below_floor: $('ddOnlyBelowFloor').checked,
+        alpha_accumulation_dip_pullback_arm_pct: parseFloat($('numDipPullback').value),
+        alpha_accumulation_dip_move_24h_arm_pct: parseFloat($('numDipMove').value),
+        alpha_accumulation_dip_bounce_arm_pct: parseFloat($('numDipBounce').value),
+        alpha_powder_ceiling_xrp_equiv: parseFloat($('numPowderCeil').value),
+        alpha_reload_min_rlusd_deploy_xrp_equiv: parseFloat($('numPowderFloor').value),
+      }});
+      if (d?.ok) { toast('Bag recycle knobs updated'); operatorConfig = d; poll(); }
+      else toast((d?.errors || [d?.message || 'Save failed']).join('; '), true);
+    };
     $('btnApplyReentry').onclick = async () => {
       const d = await patchJson('/operator/config', { overrides: {
         alpha_reentry_enabled: $('reentryEnabled').checked,
@@ -1788,6 +1839,17 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
           depEl.textContent = '+' + depVal.toFixed(1) + ' XRP-eq';
         } else {
           depEl.textContent = 'none recorded';
+        }
+      }
+      const lastSellEl = $('bagLastSell');
+      if (lastSellEl) {
+        const hw = (s.accumulation_regime || {}).harvest_watch || {};
+        const ls = Number(hw.last_sell_price || 0);
+        const pend = !!hw.pending_reentry;
+        if (ls > 0) {
+          lastSellEl.textContent = ls.toFixed(4) + (pend ? ' · recycle queued' : '');
+        } else {
+          lastSellEl.textContent = pend ? 'recycle queued' : '—';
         }
       }
 
@@ -3807,7 +3869,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     };
 
     $('btnMaximizePreset').onclick = async () => {
-      if (!confirm('Apply Maximize preset?\n\nHarvest-loop bag growth:\n• target 85% XRP · strength trim at +5% dev\n• powder floor 40 XRP-eq (bids not hard-blocked)\n• harvest ~3.5% legs · dip redeploy ~3.5%\n• 3.5% portfolio clips (scale with bag)\n• CORE BAG BRACKETS OFF (no SL factory)\n\nIncludes code-path stranded-powder recovery on the server.')) return;
+      if (!confirm('Apply Maximize preset?\n\nHarvest-loop bag growth:\n• target 85% XRP · strength trim at +5% dev · stop asks at target\n• recycle bid below last sell · last-sell ceiling (no chase)\n• dip on pullback-from-high (~1.2%) + bounce · bearish TA waived on recycle/dip\n• powder ceiling 90 XRP-eq deploys idle cash · floor 40 kept\n• drawdown-reload only when powder is under the floor\n• 3.5% clips · CORE BAG BRACKETS OFF\n\nSKYNET can still recommend/apply these knobs.')) return;
       const d = await postJson('/operator/maximize', {});
       if (!d?.ok) {
         toast((d?.errors || [d?.message || 'Maximize failed']).join('; '), true);

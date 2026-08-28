@@ -63,6 +63,9 @@ _DEFAULT_GUARDRAILS: Dict[str, Any] = {
     "alpha_drawdown_reload_total_bag_pct": {"min": 2.0, "max": 8.0},
     "alpha_drawdown_reload_stage1_bag_pct": {"min": 1.0, "max": 4.0},
     "alpha_drawdown_reload_stage2_bag_pct": {"min": 1.0, "max": 4.0},
+    "alpha_accumulation_dip_pullback_arm_pct": {"min": 0.5, "max": 3.0},
+    "alpha_recycle_buy_offset_pct": {"min": 0.08, "max": 0.30},
+    "alpha_powder_ceiling_xrp_equiv": {"min": 50.0, "max": 200.0},
     "max_changes_per_cycle": 2,
 }
 
@@ -101,13 +104,16 @@ _DEFAULT_EVENT_TRIGGERS: Dict[str, Any] = {
     # Free sell slots / powder — high value for Maximize autonomy.
     "sell_slot_stall": True,
     "powder_shortfall": True,
+    "powder_excess": True,
 }
 
 _AGENT_SYSTEM_PROMPT = """You are Agent Smith (SKYNET Phase 2) for xLedgerMate Alpha — a bounded advisor for an XRPL XRP/RLUSD **accumulation / bag-growth** bot (Maximize doctrine).
 
 This is NOT pure market-making. Core loop:
-  powder floor (RLUSD) → buy dips/weakness/breakouts into core bag → hold → inventory_trim/harvest when heavy → refill powder → repeat.
+  powder floor (RLUSD) → buy dips/weakness/recycle into core bag → hold → inventory_trim/harvest when heavy (stop at target) → refill powder → recycle bid below that sell.
+Idle cash above the powder ceiling while under target is a bug — recommend deploy knobs, not sitting.
 Core bag has brackets OFF (no TP/SL factory). Clip size scales with portfolio (risk_per_trade_pct).
+Do NOT chase bids above last_sell_price. Prefer recycle / dip_pullback / powder_ceiling over lowering ta_min_buy globally.
 
 Voice: plain English, conversational, light dry humor OK — still output strict JSON only.
 Suggest operator knob changes ONLY when they improve long-term XRP bag growth while respecting risk and Maximize doctrine.
@@ -134,9 +140,12 @@ Hard rules:
 - Prefer empty suggested_changes when HOLD is inventory_trim / heavy_prefer_trim waiting for near-market fills — that is healthy rebalance.
 - If HOLD is max_pending_sells for many cycles with asks far above mid, prefer enabling/tightening stale sell drift (alpha_stale_pending_sell_*) rather than raising max_pending_sells.
 - When heavy (dev above strength): do NOT loosen buy offsets to chase; trims/harvest first.
-- Prefer grind-friendly harvest/dip arms (~1.5–2.5% 24h) over 3.5%+ shock-only arms for autonomous Maximize.
+- Prefer grind-friendly dip pullback (~1.0–1.5% off 24h high) over shock-only −2% 24h net.
+- Keep alpha_recycle_after_sell_enabled, alpha_last_sell_ceiling_enabled, alpha_trim_stop_at_target, alpha_dip_waive_bearish_ta true on Maximize unless the operator asks otherwise.
+- You MAY tune: dip_pullback_arm, recycle_buy_offset, powder_ceiling, max_pending_sells (1–2), dip_bounce.
 - When powder below reload floor: favor funding/sell readiness, not more bids.
-- When powder OK and light/dip-ready: modest deployment knobs (pending buys, buy offset, ta_min_buy) — scale phase, not trust panic.
+- When powder above ceiling and under target: recommend deploy (powder_ceiling / dip / recycle offset) — do not congratulate idle RLUSD.
+- HOLD ta_buy_blocked on a fade with fat powder is a mismatch: check dip_waive_bearish_ta, pullback arm, last_sell_ceiling — not "wait for crash".
 - session_pnl_xrp is MTM — not realized edge. Use bag_growth bot-adjusted and realized_bracket_pnl.
 - Pending buys are passive limit bids. Ladder clutter → drift/max_pending; entry churn → widen drift (Scenario G).
 - Small incremental adjustments only — no reckless risk increases.
@@ -744,6 +753,13 @@ def _event_snapshot(hud_state: Dict[str, Any]) -> Dict[str, Any]:
         "drawdown_armed": (hud_state.get("drawdown_reload") or {}).get("armed"),
         "portfolio_xrp_equiv": (hud_state.get("bag_growth") or {}).get("portfolio_xrp_equiv")
         or hud_state.get("portfolio_xrp_equiv"),
+        "powder_xeq": (hud_state.get("reload_regime") or {}).get("rlusd_xrp_equiv"),
+        "powder_ceiling": (hud_state.get("config_effective") or {}).get(
+            "alpha_powder_ceiling_xrp_equiv"
+        ),
+        "dip_phase": ((hud_state.get("accumulation_regime") or {}).get("dip_deploy_watch") or {}).get(
+            "phase"
+        ),
     }
 
 
@@ -839,6 +855,14 @@ def detect_significant_events(
         ) not in ("armed", "executing"):
             if "reload_armed" not in reasons:
                 reasons.append(f"powder_shortfall:reload_{snap.get('reload_phase')}")
+
+    if policy.get("powder_excess"):
+        ceiling = float(snap.get("powder_ceiling") or 0.0)
+        powder = float(snap.get("powder_xeq") or 0.0)
+        prev_powder = float(last_snapshot.get("powder_xeq") or 0.0)
+        if ceiling > 0 and powder >= ceiling:
+            if prev_powder < ceiling or snap.get("dip_phase") != last_snapshot.get("dip_phase"):
+                reasons.append(f"powder_excess:{powder:.0f}>{ceiling:.0f}")
 
     return bool(reasons), reasons
 

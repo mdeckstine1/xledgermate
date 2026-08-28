@@ -33,6 +33,14 @@ def test_maximize_preset_harvest_loop_knobs() -> None:
     assert ov["alpha_risk_per_trade_pct"] == 3.5
     assert ov["alpha_accumulation_harvest_move_24h_watch_pct"] == 2.0
     assert ov["alpha_accumulation_dip_move_24h_arm_pct"] == 2.0
+    assert ov["alpha_accumulation_dip_pullback_arm_pct"] == 1.2
+    assert ov["alpha_recycle_after_sell_enabled"] is True
+    assert ov["alpha_last_sell_ceiling_enabled"] is True
+    assert ov["alpha_trim_stop_at_target"] is True
+    assert ov["alpha_dip_waive_bearish_ta"] is True
+    assert ov["alpha_powder_ceiling_xrp_equiv"] == 90.0
+    assert ov["alpha_drawdown_reload_only_below_floor"] is True
+    assert ov["alpha_max_pending_sells"] == 1
     assert ov["alpha_stale_pending_sell_enabled"] is True
     assert ov["alpha_stale_pending_sell_max_drift_pct"] == 0.50
     assert "harvest" in payload["description"].lower() or "Maximize" in payload["label"]

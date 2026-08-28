@@ -20,7 +20,7 @@ from alpha.hud.skynet_knobs import KNOB_ALIASES  # noqa: F401 — re-export for 
 # SKYNET quick-prompt: bot posture vs market tape (HUD Analysis button — keep in sync).
 # Developer HUD ships two presets only: Maximize (default) + Unassed (recovery).
 REGIME_PRESET_TACTICS = """=== Regime preset tactics (HUD one-click bundles) ===
-Maximize (default): scale + bull, 85% XRP target, strength trim ~5% dev, powder floor 40 XRP-eq, harvest/dip arms ~3.5%, 3.5% portfolio clips, core bag brackets OFF (no SL factory). Use when: healthy powder + inventory loop — grow XRP count via harvest → powder → redeploy dips.
+Maximize (default): scale + bull, 85% XRP target, strength trim ~5% dev then STOP at target, recycle bid below last sell, last-sell ceiling, dip on pullback-from-high (~1.2%) or −24h, bearish TA waived on recycle/dip, powder ceiling ~90 XRP-eq, drawdown-reload only under floor, powder floor 40, 3.5% clips, brackets OFF. Use when: grow XRP count via harvest → recycle powder → dips.
 Unassed (recovery only): scale + bull, 88% XRP target, strength gate 0.06, softer sell TA 2.0, reload floor 18 XRP-eq (accumulation not hard-blocked), wide SL 9% / no trail / fixed TP 2.5%. Use when: stranded bag (near 99% XRP, no powder, dead zone / SL factory). Switch back to Maximize once trims + powder recover.
 Fit rules:
 - Normal soak / bag growth: Maximize. Do not invent legacy presets (walk-away, long-build, stack-growth, bracket-edge are removed).
@@ -78,9 +78,10 @@ M — balanced dev=: lower weakness to buy OR rely on bull_run/momentum (see opp
 U — Bull run / breakout missed: TA bullish + balanced dev — accumulation_regime should be PRIMED/ARMED; enable accumulation (default on), SKYNET regime Bull, check re-entry blockers; do NOT silently HOLD without explaining watch state.
 V — Accumulation regime ARMED/EXECUTING: alpha_accumulation_buy_offset_pct ~0.06, alpha_accumulation_stale_drift_pct ~0.08 (chase), alpha_accumulation_max_pending_buys 2–3, alpha_accumulation_risk_boost 1.5, alpha_accumulation_bypass_reentry true. Do NOT tighten to dip-only or max_pending=1 unless operator asks defense.
 W — RLUSD reload (post-run CHOP): alpha_reload_min_rlusd_deploy_xrp_equiv ~45, alpha_reload_sell_offset_pct ~0.06, sell in consolidation not rip. blocks_accumulation until floor met — fund then bid. Do NOT strength-sell into active breakout; wait for reload WATCHING→ARMED.
-X — Drawdown reload (sell-off acquisition funding): when 24h mid already down (~−2.5% stage1 / −4% stage2), recycle staged ~2%+2% of bag (cap ~4%) into RLUSD for dip/accumulate buys. Multi-day reclaim OK. NOT Martingale — hard caps. Distinct from W (chop near highs). Set-and-forget; AI only tunes knobs.
-Y — Swing harvest (UP-leg turn): alpha_accumulation_harvest_move_24h_watch_pct ~5, pullback_arm ~1%, trim ~1.5% portfolio, pause acc bids, bracketed re-entry. ONLY on positive 24h legs + pullback — never on red 24h.
-Z — Dip deploy (DOWN-leg buy): alpha_accumulation_dip_move_24h_arm_pct ~5, bounce_arm ~0.25% off 24h low, wider buy offset ~0.22. Deploy RLUSD when XRP-heavy after sharp drop stabilizes — inverse of harvest. Not knife-catching: needs bounce confirm.
+X — Drawdown reload: only when powder is UNDER the floor. If powder is already fat, do NOT sell more into a dump — use dip/recycle. Tune only_below_floor stays true on Maximize.
+Y — Swing harvest (UP-leg turn): trim when heavy, stop at target, max 1 pending sell. On fill → recycle bid below that sell. ONLY on positive 24h legs — never on red 24h.
+Z — Dip deploy: arm on pullback-from-24h-high (~1.2%) OR −24h net, plus bounce off low. Bearish TA is waived on this path. Last-sell ceiling still blocks chase-higher.
+AA — Idle powder (301 RLUSD, 0 bids, under target): powder_ceiling should fire. Check recycle pending, last_sell_ceiling, dip_waive_bearish_ta, pullback arm. Do not recommend waiting for a −2% 24h crash.
 N — Pending bid no fill: passive limit; lower offset or wait for ask to hit bid.
 O — XRP-heavy strength sells: strength_deviation, sell_limit_offset, ta_min_sell.
 P — kill_switch / pause_bids / preflight: fix risk first, do not crank aggression.

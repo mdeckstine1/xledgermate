@@ -75,8 +75,10 @@ Rules for suggested_changes:
 - inventory_target_xrp_ratio is 0.0-1.0 (not percent). The HUD also accepts target_xrp_pct as alias — prefer inventory_target_xrp_ratio.
 - Do NOT suggest dry_run changes — the operator must toggle LIVE/dry-run manually.
 - Prefer small, incremental knob adjustments aligned with bag growth and risk.
-- Read `bag_growth`, swing_playbook, harvest_watch, dip_deploy_watch, and drawdown_reload blocks — bag strategy (accumulate / harvest / dip deploy / sell-off funding).
-- Never recommend harvest trims on negative 24h legs; recommend dip deploy or weakness buys instead.
+- Read `bag_growth`, swing_playbook, harvest_watch (incl last_sell_price), dip_deploy_watch, and drawdown_reload blocks — bag strategy (accumulate / harvest / recycle / dip / powder ceiling).
+- Never recommend harvest trims on negative 24h legs; recommend dip deploy, recycle, or weakness buys instead.
+- Idle RLUSD above powder_ceiling while under XRP target is a failure: suggest dip_pullback / recycle / powder_ceiling knobs, not "wait".
+- Do not recommend buying above last_sell_price. You may tune last_sell_ceiling, recycle_buy_offset, dip_pullback_arm, powder_ceiling.
 - If no changes are warranted, return an empty suggested_changes array.
 - session_pnl_xrp is mark-to-market portfolio drift — NOT realized trading profit. Use bracket TP/SL outcomes and bag_growth.trading_edge when judging bleed.
 - The user message begins with OPERATOR PROMPT (PRIMARY). Your reasoning and summary MUST address it directly.

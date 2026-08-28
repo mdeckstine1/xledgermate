@@ -236,6 +236,12 @@ class EntryExecutor:
                     price_rlusd_per_xrp=price,
                     mid=price,
                 )
+            elif purpose in ("harvest_trim", "strength"):
+                self._orders.record_inventory_sell_fill(
+                    purpose=purpose,
+                    size_xrp=size,
+                    price_rlusd_per_xrp=price,
+                )
             dedupe_seq = hash((size, price, sell_result.tx_hash or "")) & 0x7FFFFFFF
             log_strength_sell_tax_event(
                 sequence=dedupe_seq or 1,

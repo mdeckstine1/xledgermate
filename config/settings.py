@@ -308,6 +308,21 @@ class BotConfig:
     alpha_accumulation_dip_min_rlusd: float = 25.0
     alpha_accumulation_dip_risk_boost: float = 1.25
     alpha_accumulation_dip_ta_weight_factor: float = 0.70
+    # Pullback from 24h high % to ARM dip even when 24h net is still green (0 = off).
+    alpha_accumulation_dip_pullback_arm_pct: float = 1.2
+    # After strength/harvest fills: queue a bid below that sell (token recycle).
+    alpha_recycle_after_sell_enabled: bool = True
+    alpha_recycle_buy_offset_pct: float = 0.14
+    # Do not bid at/above last strength-harvest sell (blocks chase-higher).
+    alpha_last_sell_ceiling_enabled: bool = True
+    # Stop strength/harvest asks once at or below inventory target.
+    alpha_trim_stop_at_target: bool = True
+    # Waive bearish TA hard-veto on dip / recycle / powder-ceiling bids (score still applies, softer).
+    alpha_dip_waive_bearish_ta: bool = True
+    # If powder XRP-eq exceeds this while under target, deploy (0 = off). Keep reload floor.
+    alpha_powder_ceiling_xrp_equiv: float = 90.0
+    # Drawdown-reload asks only when powder is under the deploy floor (else it fights dip buys).
+    alpha_drawdown_reload_only_below_floor: bool = True
     # RLUSD reload — sell XRP in post-run chop to fund accumulation deploy floor
     alpha_reload_regime_enabled: bool = True
     alpha_reload_min_rlusd_deploy_xrp_equiv: float = 45.0  # Min RLUSD dry powder (XRP-equiv)

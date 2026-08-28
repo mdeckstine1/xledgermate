@@ -76,6 +76,7 @@ class DecisionEngine:
         self._harvest: Optional["HarvestWatchSnapshot"] = None
         self._harvest_knobs: Optional["HarvestKnobs"] = None
         self._harvest_reentry_pending: bool = False
+        self._last_sell_price: float = 0.0
         self._dip: Optional["DipDeploySnapshot"] = None
         self._dip_knobs: Optional["DipDeployKnobs"] = None
         self._drawdown: Optional["DrawdownReloadSnapshot"] = None
@@ -103,10 +104,13 @@ class DecisionEngine:
         knobs: Optional["HarvestKnobs"],
         *,
         reentry_pending: bool = False,
+        last_sell_price: float = 0.0,
     ) -> None:
         self._harvest = snapshot
         self._harvest_knobs = knobs
         self._harvest_reentry_pending = reentry_pending
+        snap_sell = float(getattr(snapshot, "last_sell_price", 0.0) or 0.0) if snapshot is not None else 0.0
+        self._last_sell_price = float(last_sell_price or 0.0) or snap_sell
 
     def set_dip_deploy(
         self,
@@ -227,6 +231,26 @@ class DecisionEngine:
                 structure=structure,
                 entry_mode="dip_deploy",
                 entry_reason=dip_reason,
+            )
+
+        powder_reason = self._powder_ceiling_allowed(
+            inventory=inventory,
+            book=book,
+            pending_buy_count=pending_buy_count,
+            balances=balances or (operator.balances if operator else None),
+        )
+        if powder_reason is not None:
+            return self._build_bid(
+                inventory=inventory,
+                risk=risk,
+                book=book,
+                liquidity=liquidity,
+                pending_buy_count=pending_buy_count,
+                balances=balances or (operator.balances if operator else None),
+                ta=ta,
+                structure=structure,
+                entry_mode="powder_ceiling",
+                entry_reason=powder_reason,
             )
 
         harvest_reason = self._harvest_trim_allowed(
@@ -391,6 +415,11 @@ class DecisionEngine:
             )
 
         if self._inventory is not None and self._inventory.allows_sell(inventory):
+            if self._trim_blocked_at_target(inventory):
+                return DecisionResult(
+                    action=DecisionAction.HOLD,
+                    reason=f"trim_stop_at_target dev={inventory.deviation:+.3f}",
+                )
             return self._build_ask(
                 inventory=inventory,
                 risk=risk,
@@ -455,6 +484,20 @@ class DecisionEngine:
     def _is_inventory_heavy(self, inventory: InventorySnapshot) -> bool:
         return inventory.deviation >= self._config.alpha_strength_deviation
 
+    def _trim_blocked_at_target(self, inventory: InventorySnapshot) -> bool:
+        return bool(getattr(self._config, "alpha_trim_stop_at_target", False)) and inventory.deviation <= 1e-9
+
+    def _recycle_entry_modes(self) -> frozenset[str]:
+        return frozenset({"harvest_reentry", "dip_deploy", "powder_ceiling"})
+
+    def _waive_bearish_ta(self, entry_mode: str) -> bool:
+        return bool(getattr(self._config, "alpha_dip_waive_bearish_ta", False)) and entry_mode in self._recycle_entry_modes()
+
+    def _powder_xeq(self, balances: Optional[BalanceSnapshot], mid: Optional[float]) -> float:
+        if balances is None or mid is None or mid <= 0:
+            return 0.0
+        return float(balances.rlusd or 0.0) / float(mid)
+
     def _try_strength_trim(
         self,
         *,
@@ -468,6 +511,8 @@ class DecisionEngine:
     ) -> Optional[DecisionResult]:
         """When overweight, place strength asks before bull_run/accum chase buys."""
         if not self._is_inventory_heavy(inventory):
+            return None
+        if self._trim_blocked_at_target(inventory):
             return None
         if inventory.pause_asks or inventory.sell_blocked_imbalance:
             return None
@@ -678,6 +723,12 @@ class DecisionEngine:
             return None
         if knobs.target_sell_xrp < self._config.min_order_size_xrp * 0.5:
             return None
+        if bool(getattr(self._config, "alpha_drawdown_reload_only_below_floor", False)):
+            mid = book.mid
+            powder = self._powder_xeq(balances, mid)
+            floor = float(getattr(self._config, "alpha_reload_min_rlusd_deploy_xrp_equiv", 0.0) or 0.0)
+            if powder + 1e-9 >= floor:
+                return None
         reason = snap.reason or snap.detail or "drawdown_armed"
         if snap.signals:
             reason = f"drawdown_reload {'+'.join(snap.signals[:3])} | {reason}"
@@ -701,6 +752,8 @@ class DecisionEngine:
         if snap.phase not in ("armed", "executing") or not snap.entry_allowed:
             return None
         if inventory.pause_asks:
+            return None
+        if self._trim_blocked_at_target(inventory):
             return None
         if pending_sell_count >= knobs.max_pending_sells:
             return None
@@ -762,6 +815,42 @@ class DecisionEngine:
         logger.info("dip_deploy | entry | %s", reason)
         return reason
 
+    def _powder_ceiling_allowed(
+        self,
+        *,
+        inventory: InventorySnapshot,
+        book: OrderBookSnapshot,
+        pending_buy_count: int,
+        balances: Optional[BalanceSnapshot],
+    ) -> Optional[str]:
+        ceiling = float(getattr(self._config, "alpha_powder_ceiling_xrp_equiv", 0.0) or 0.0)
+        if ceiling <= 0:
+            return None
+        if inventory.deviation >= -1e-9:
+            return None
+        if inventory.pause_bids or inventory.buy_blocked_imbalance:
+            return None
+        if self._harvest_pause_bids():
+            return None
+        if balances is None:
+            return None
+        mid = book.mid
+        if mid is None or mid <= 0:
+            return None
+        powder = self._powder_xeq(balances, mid)
+        if powder + 1e-9 < ceiling:
+            return None
+        floor = float(getattr(self._config, "alpha_reload_min_rlusd_deploy_xrp_equiv", 0.0) or 0.0)
+        spendable = powder - floor
+        if spendable < float(self._config.min_order_size_xrp):
+            return None
+        max_pending = int(self._config.alpha_max_pending_buys)
+        if pending_buy_count >= max_pending:
+            return None
+        reason = f"powder_ceiling {powder:.0f}>{ceiling:.0f} under_target"
+        logger.info("powder_ceiling | entry | %s", reason)
+        return reason
+
     def _accumulation_entry_allowed(
         self,
         *,
@@ -807,13 +896,25 @@ class DecisionEngine:
         elif entry_mode == "accumulation" and self._accumulation_knobs is not None:
             offset_pct = self._accumulation_knobs.buy_offset_pct
         elif entry_mode == "harvest_reentry" and self._harvest_knobs is not None:
-            offset_pct = self._harvest_knobs.reentry_buy_offset_pct
+            offset_pct = float(
+                getattr(self._config, "alpha_recycle_buy_offset_pct", 0.0)
+                or self._harvest_knobs.reentry_buy_offset_pct
+            )
         elif entry_mode == "dip_deploy" and self._dip_knobs is not None:
             offset_pct = self._dip_knobs.buy_offset_pct
+        elif entry_mode == "powder_ceiling":
+            offset_pct = float(
+                getattr(self._config, "alpha_recycle_buy_offset_pct", 0.0)
+                or self._effective_buy_offset_pct()
+            )
         else:
             offset_pct = self._effective_buy_offset_pct()
         dec = price_decimals(self._config)
         raw = mid * (1.0 - offset_pct / 100.0)
+        last_sell = self._last_sell_price
+        if last_sell > 0 and entry_mode in self._recycle_entry_modes():
+            cap = last_sell * (1.0 - offset_pct / 100.0)
+            raw = min(raw, cap)
         return round_rlusd_price(raw, dec, direction="down")
 
     def _effective_buy_offset_pct(self) -> float:
@@ -880,8 +981,13 @@ class DecisionEngine:
         knobs = self._accumulation_knobs
         if entry_mode == "accumulation" and knobs is not None and knobs.armed:
             weight *= max(0.0, min(1.0, knobs.ta_weight_factor))
-        if entry_mode == "dip_deploy" and self._dip_knobs is not None and self._dip_knobs.armed:
-            weight *= max(0.0, min(1.0, self._dip_knobs.ta_weight_factor))
+        if entry_mode in self._recycle_entry_modes():
+            factor = (
+                self._dip_knobs.ta_weight_factor
+                if self._dip_knobs is not None
+                else float(getattr(self._config, "alpha_accumulation_dip_ta_weight_factor", 0.70))
+            )
+            weight *= max(0.0, min(1.0, factor))
         if weight <= 0:
             return 0.0
         return cfg.min_buy_score * weight
@@ -915,6 +1021,8 @@ class DecisionEngine:
                 f"weight={weight:.2f} sell={ta.sell_score:.2f} bias={ta.bias}"
             )
         if ta.bias == "bearish":
+            if self._waive_bearish_ta(entry_mode):
+                return None
             from alpha.decision.tape_participation import tape_participation_waives_bearish_buy_block
 
             ref_mid = mid if mid is not None else (structure.mid if structure else 0.0)
@@ -1040,7 +1148,12 @@ class DecisionEngine:
                 ta=ta,
                 structure=structure,
                 momentum_chase=(entry_mode == "bull_run"),
-                accumulation_chase=entry_mode in ("accumulation", "harvest_reentry", "dip_deploy"),
+                accumulation_chase=entry_mode in (
+                    "accumulation",
+                    "harvest_reentry",
+                    "dip_deploy",
+                    "powder_ceiling",
+                ),
             )
             if blocked:
                 return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
@@ -1054,13 +1167,29 @@ class DecisionEngine:
         if price is None or price <= 0:
             return DecisionResult(action=DecisionAction.HOLD, reason="invalid_buy_price")
 
+        last_sell = self._last_sell_price
+        if (
+            bool(getattr(self._config, "alpha_last_sell_ceiling_enabled", False))
+            and last_sell > 0
+        ):
+            if mid + 1e-12 >= last_sell:
+                return DecisionResult(
+                    action=DecisionAction.HOLD,
+                    reason=f"last_sell_ceiling mid={mid:.6f}>=sell={last_sell:.6f}",
+                )
+            if price + 1e-12 >= last_sell:
+                return DecisionResult(
+                    action=DecisionAction.HOLD,
+                    reason=f"last_sell_ceiling price={price:.6f}>=sell={last_sell:.6f}",
+                )
+
         edge = self._buy_edge_pct(mid=mid, limit_price=price)
         min_edge = self._config.alpha_min_edge_threshold_pct
         if entry_mode == "accumulation" and knobs is not None and knobs.armed:
             min_edge = min(min_edge, knobs.min_edge_pct)
         elif entry_mode == "harvest_reentry" and self._accumulation_knobs is not None:
             min_edge = min(min_edge, self._accumulation_knobs.min_edge_pct)
-        elif entry_mode == "dip_deploy":
+        elif entry_mode in ("dip_deploy", "powder_ceiling"):
             min_edge = min(min_edge, float(self._config.alpha_min_edge_threshold_pct) * 0.75)
         if self._risk is not None:
             ok, msg = self._risk.validate_entry(risk, edge_pct=edge)
@@ -1090,7 +1219,7 @@ class DecisionEngine:
         risk_pct = self._config.alpha_risk_per_trade_pct
         if entry_mode == "accumulation" and knobs is not None and knobs.armed:
             risk_pct = knobs.risk_per_trade_pct
-        elif entry_mode == "dip_deploy" and self._dip_knobs is not None:
+        elif entry_mode in ("dip_deploy", "powder_ceiling") and self._dip_knobs is not None:
             risk_pct = self._dip_knobs.risk_per_trade_pct
         size = self._cap_size_xrp(
             desired=desired,
@@ -1101,7 +1230,7 @@ class DecisionEngine:
             inventory=inventory,
             balances=balances,
             risk_per_trade_pct=risk_pct,
-            skip_inventory_cap=(entry_mode in ("harvest_reentry", "dip_deploy")),
+            skip_inventory_cap=(entry_mode in ("harvest_reentry", "dip_deploy", "powder_ceiling")),
         )
         if size <= 0:
             return DecisionResult(
