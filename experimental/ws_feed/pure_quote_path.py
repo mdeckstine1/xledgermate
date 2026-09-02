@@ -249,6 +249,23 @@ def _quote_posture_label(
     return "blocked"
 
 
+def _apply_qd_size_multiplier(
+    *,
+    capped_size_xrp: float,
+    uncapped_size_xrp: float,
+    size_mult: float,
+    allowed: bool,
+) -> float:
+    """Apply QD sizing without increasing a leg that inventory policy already capped."""
+    if not allowed:
+        return 0.0
+    base = max(0.0, capped_size_xrp)
+    scaled = round(base * max(0.0, size_mult), 4)
+    if base < max(0.0, uncapped_size_xrp):
+        return round(min(scaled, base), 4)
+    return scaled
+
+
 def _build_summary(
     decision: PureQuoteDecision,
     *,
@@ -501,6 +518,14 @@ class PureQuotePath:
             pressure_size_mult=pressure_size_mult,
             effective_pressure=effective_pressure,
         )
+        uncapped_bid_size_xrp = round(
+            max(0.0, sizes.bid_size_xrp * inv_state.bid_size_mult * g4.bid_size_mult),
+            4,
+        )
+        uncapped_ask_size_xrp = round(
+            max(0.0, sizes.ask_size_xrp * inv_state.ask_size_mult * g4.ask_size_mult),
+            4,
+        )
         inv_policy = apply_pure_inventory_policy(
             bid_size_xrp=sizes.bid_size_xrp,
             ask_size_xrp=sizes.ask_size_xrp,
@@ -580,15 +605,17 @@ class PureQuotePath:
             allow_ask=allow_ask,
         )
 
-        l1_bid_size = (
-            round(inv_policy.bid_size_xrp * qd.bid.size_mult, 4)
-            if qd.bid.allowed
-            else 0.0
+        l1_bid_size = _apply_qd_size_multiplier(
+            capped_size_xrp=inv_policy.bid_size_xrp,
+            uncapped_size_xrp=uncapped_bid_size_xrp,
+            size_mult=qd.bid.size_mult,
+            allowed=qd.bid.allowed,
         )
-        l1_ask_size = (
-            round(inv_policy.ask_size_xrp * qd.ask.size_mult, 4)
-            if qd.ask.allowed
-            else 0.0
+        l1_ask_size = _apply_qd_size_multiplier(
+            capped_size_xrp=inv_policy.ask_size_xrp,
+            uncapped_size_xrp=uncapped_ask_size_xrp,
+            size_mult=qd.ask.size_mult,
+            allowed=qd.ask.allowed,
         )
 
         brake_panel = format_execution_brake_panel(

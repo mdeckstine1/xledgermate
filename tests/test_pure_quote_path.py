@@ -249,3 +249,30 @@ def test_g7_xrp_heavy_ask_tighter_touch() -> None:
         assert d.qd_bid_allowed is True
 
     asyncio.run(run())
+
+
+def test_qd_size_multiplier_does_not_exceed_inventory_cap() -> None:
+    path = PureQuotePath(
+        gamma=0.35,
+        kappa=3.5,
+        configured_l1_xrp=150.0,
+        balance_fraction_k=1.0,
+    )
+
+    async def run() -> None:
+        d = await path.compute_decision(
+            mid=1.0,
+            best_bid=0.999,
+            best_ask=1.001,
+            xrp_bal=160.0,
+            rlusd_bal=40.0,
+            target_ratio=0.55,
+            inventory_max_deviation=0.12,
+            inventory_overshoot_slack=0.03,
+            competitor_intel={"peer_lane_count": 4, "peer_lane_empty": False},
+        )
+        assert d.qd_ask_allowed is True
+        assert d.qd_ask_size_mult > 1.0
+        assert d.ask_size == 56.0
+
+    asyncio.run(run())
