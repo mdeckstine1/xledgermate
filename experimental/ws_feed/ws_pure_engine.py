@@ -44,7 +44,7 @@ from experimental.ws_feed.peer_lane_quoting import is_peer_lane_empty
 from experimental.ws_feed.pure_quote_path import current_ws_as_version
 from experimental.ws_feed.stale_quote_guard import stale_quote_cancel_decisions
 from experimental.ws_feed.stale_cross import detect_stale_cross
-from experimental.ws_runtime_analysis import append_runtime_sample
+from experimental.ws_runtime_analysis import STALE_CROSS_ZERO_REASON, append_runtime_sample
 from experimental.ws_feed.pair_books import RlusdXrpPair
 from experimental.ws_feed.network_urls import rpc_url_to_websocket_url
 from experimental.ws_feed.ws_book_feed import WsBookFeed
@@ -168,6 +168,53 @@ def pure_intents_to_quote_intents(
         if intent is not None:
             out.append(intent)
     return out
+
+
+def gate_decision_for_stale_cross(engine_dec: Mapping[str, Any]) -> Dict[str, Any]:
+    """Convert a known stale-cross decision into a no-place, cancel-only cycle."""
+    gated = dict(engine_dec)
+    note = (
+        "M3 stale-cross: reservation crossed BBO during intel scrape; "
+        "pulling live quotes for a fresh cycle"
+    )
+    summary = str(gated.get("quote_decision_summary") or "").strip()
+    if note not in summary:
+        gated["quote_decision_summary"] = f"{summary} | {note}" if summary else note
+
+    gated.update(
+        {
+            "market_edge_met": False,
+            "would_quote": False,
+            "qd_would_quote": False,
+            "qd_bid_allowed": False,
+            "qd_ask_allowed": False,
+            "qd_bid_block_reason": STALE_CROSS_ZERO_REASON,
+            "qd_ask_block_reason": STALE_CROSS_ZERO_REASON,
+            "qd_bid_size_mult": 0.0,
+            "qd_ask_size_mult": 0.0,
+            "bid_size": 0.0,
+            "ask_size": 0.0,
+            "suggested_bid": None,
+            "suggested_ask": None,
+            "zero_quote_reason": STALE_CROSS_ZERO_REASON,
+            "zero_quote_detail": "reservation crossed BBO during intel scrape window",
+            "zero_quote_operator_note": (
+                "STALE-CROSS - reservation moved from inside to outside L1 during "
+                "competitor/intel refresh; live offers are pulled until the next cycle."
+            ),
+            "reservation_crossed_after_ws_sample": True,
+        }
+    )
+
+    quote_intents: list[Dict[str, Any]] = []
+    for row in gated.get("quote_intents") or []:
+        item = dict(row)
+        if item.get("active"):
+            item["active"] = False
+            item["planned"] = True
+        quote_intents.append(item)
+    gated["quote_intents"] = quote_intents
+    return gated
 
 
 def ladder_intents_for_hud(
@@ -504,6 +551,7 @@ class WsPureTradingEngine:
                 "book",
                 "M3 stale-cross: reservation inside BBO pre-intel, outside post-refresh",
             )
+            engine_dec = gate_decision_for_stale_cross(engine_dec)
         l1_from_dec = float(engine_dec.get("l1_xrp") or 0)
         if l1_from_dec > 0:
             self._last_our_lane_xrp = l1_from_dec

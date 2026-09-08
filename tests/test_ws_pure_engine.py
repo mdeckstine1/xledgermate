@@ -7,9 +7,11 @@ from experimental.ws_feed.stale_quote_guard import stale_quote_sequences_to_canc
 from experimental.ws_feed.ws_pure_engine import (
     WsPureTradingEngine,
     fill_side_to_offer_age_side,
+    gate_decision_for_stale_cross,
     pure_intents_to_quote_intents,
     resolve_ws_sync_tolerances,
 )
+from experimental.ws_runtime_analysis import STALE_CROSS_ZERO_REASON
 
 
 def test_plan_order_sync_empty_intents_cancels_all() -> None:
@@ -26,6 +28,7 @@ def test_execution_summary_pull_when_blocked() -> None:
     from config.settings import BotConfig
 
     eng = WsPureTradingEngine(BotConfig.load())
+    eng.config.dry_run = False
     msg = eng._execution_summary(
         eng.config, 0, cancelled=2, would_sync=0, would_quote=False
     )
@@ -48,6 +51,65 @@ def test_pure_intents_empty_when_blocked() -> None:
         {"level": 1, "side": "bid", "price": 1.1, "size_xrp": 12.0, "active": True},
     ]
     assert pure_intents_to_quote_intents(ladder, would_quote=False) == []
+
+
+def test_stale_cross_gate_forces_cancel_only_decision() -> None:
+    gated = gate_decision_for_stale_cross(
+        {
+            "would_quote": True,
+            "market_edge_met": True,
+            "qd_would_quote": True,
+            "qd_bid_allowed": True,
+            "qd_ask_allowed": True,
+            "bid_size": 12.0,
+            "ask_size": 12.0,
+            "suggested_bid": 1.099,
+            "suggested_ask": 1.101,
+            "quote_decision_summary": "Generated 2 quotes",
+            "quote_intents": [
+                {
+                    "level": 1,
+                    "side": "bid",
+                    "price": 1.099,
+                    "size_xrp": 12.0,
+                    "active": True,
+                },
+                {
+                    "level": 1,
+                    "side": "ask",
+                    "price": 1.101,
+                    "size_xrp": 12.0,
+                    "active": True,
+                },
+            ],
+        }
+    )
+
+    assert gated["would_quote"] is False
+    assert gated["market_edge_met"] is False
+    assert gated["qd_bid_allowed"] is False
+    assert gated["qd_ask_allowed"] is False
+    assert gated["zero_quote_reason"] == STALE_CROSS_ZERO_REASON
+    assert gated["bid_size"] == 0.0
+    assert gated["ask_size"] == 0.0
+    assert all(not row["active"] for row in gated["quote_intents"])
+    assert pure_intents_to_quote_intents(
+        gated["quote_intents"], would_quote=bool(gated["would_quote"])
+    ) == []
+
+    offers = [
+        OpenOffer(sequence=1, side="bid", price=1.099, size_xrp=12.0),
+        OpenOffer(sequence=2, side="ask", price=1.101, size_xrp=12.0),
+    ]
+    plan = plan_order_sync(
+        [],
+        offers,
+        best_bid=1.100,
+        best_ask=1.102,
+        preserve_touch_queue=True,
+    )
+    assert plan.cancel_sequences == [1, 2]
+    assert plan.place_intents == []
 
 
 def test_resolve_ws_sync_tolerances_small_mid_move_keeps_queue() -> None:
