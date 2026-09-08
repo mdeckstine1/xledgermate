@@ -28,6 +28,7 @@ def test_execution_summary_pull_when_blocked() -> None:
     from config.settings import BotConfig
 
     eng = WsPureTradingEngine(BotConfig.load())
+    eng.config.dry_run = False
     msg = eng._execution_summary(
         eng.config, 0, cancelled=2, would_sync=0, would_quote=False
     )
