@@ -12,6 +12,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 KILL_SWITCH_PATH = Path("logs/kill_switch.json")
+DRAWDOWN_RESET_FLAG = "drawdown_reset.flag"
 
 
 @dataclass
@@ -65,8 +66,20 @@ class KillSwitch:
     def clear(self, reason: str = "Operator reset") -> None:
         self._state = KillSwitchState(active=False, reason=reason, activated_utc=None)
         self._save()
+        self._request_drawdown_reset()
         self._sync_runtime_state_cleared()
         logger.info("Kill switch cleared: %s", reason)
+
+    def _request_drawdown_reset(self) -> None:
+        """Tell the running Alpha engine to restart the daily drawdown mark from now."""
+        flag = self.path.parent / DRAWDOWN_RESET_FLAG
+        try:
+            flag.write_text(
+                datetime.now(tz=timezone.utc).isoformat(),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.warning("Could not write drawdown reset flag: %s", exc)
 
     def _sync_runtime_state_cleared(self) -> None:
         """Update GUI snapshot immediately after operator clear."""

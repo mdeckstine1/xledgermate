@@ -209,7 +209,14 @@ def register_operator_routes(app: Any) -> None:
     @app.post("/controls/clear-kill")
     async def controls_clear_kill() -> JSONResponse:
         KillSwitch(path=_KILL).clear("Operator cleared via HUD")
-        return JSONResponse({"ok": True, "kill_switch_active": False})
+        return JSONResponse(
+            {
+                "ok": True,
+                "kill_switch_active": False,
+                "drawdown_reset": True,
+                "message": "Kill cleared. Daily drawdown mark restarts from the next cycle.",
+            }
+        )
 
     @app.post("/controls/cancel-all")
     async def controls_cancel_all(body: Dict[str, Any] = Body(...)) -> JSONResponse:

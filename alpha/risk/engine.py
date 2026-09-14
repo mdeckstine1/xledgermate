@@ -10,7 +10,7 @@ from alpha.risk.session import SessionPnlTracker
 from alpha.types import BalanceSnapshot, RiskSnapshot, TrustLineSnapshot
 from config.settings import BotConfig
 from risk.drawdown import DrawdownMonitor
-from risk.kill_switch import KillSwitch
+from risk.kill_switch import DRAWDOWN_RESET_FLAG, KillSwitch
 from utils.preflight import evaluate_preflight
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,7 @@ class RiskEngine:
             max_drawdown_percent=config.max_daily_drawdown_percent,
         )
         self._session = SessionPnlTracker(path=state_dir / "alpha_session.json")
+        self._drawdown_reset_flag = state_dir / DRAWDOWN_RESET_FLAG
 
     @property
     def kill_switch(self) -> KillSwitch:
@@ -56,6 +57,9 @@ class RiskEngine:
             balances.rlusd,
             mid,
         )
+        if self._consume_drawdown_reset():
+            self._drawdown.reset_baseline()
+            logger.info("Daily drawdown baseline reset after kill-switch clear")
         drawdown_pct = self._drawdown.get_drawdown_percent()
 
         if self._drawdown.is_kill_switch_triggered() and not kill_active:
@@ -117,6 +121,17 @@ class RiskEngine:
             trading_allowed,
         )
         return snap
+
+    def _consume_drawdown_reset(self) -> bool:
+        flag = self._drawdown_reset_flag
+        if not flag.is_file():
+            return False
+        try:
+            flag.unlink()
+        except OSError as exc:
+            logger.warning("Could not remove drawdown reset flag: %s", exc)
+            return False
+        return True
 
     def validate_edge(self, edge_pct: Optional[float]) -> tuple[bool, str]:
         """Return whether edge meets configured minimum for entry."""
