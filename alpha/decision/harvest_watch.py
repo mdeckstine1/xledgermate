@@ -38,6 +38,7 @@ class RollingMoveSnapshot:
     bounce_from_low_pct: float
     samples_used: int
     hours: float
+    session: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -49,6 +50,7 @@ class RollingMoveSnapshot:
             "bounce_from_low_pct": round(self.bounce_from_low_pct, 3),
             "samples_used": self.samples_used,
             "hours": self.hours,
+            "session": self.session,
         }
 
 
@@ -226,6 +228,7 @@ def rolling_move_snapshot(
     hours: float = 24.0,
     price_source: str | None = None,
     price_history_path: Path | None = None,
+    session: str = "",
 ) -> Optional[RollingMoveSnapshot]:
     if mid <= 0:
         return None
@@ -263,6 +266,7 @@ def rolling_move_snapshot(
         bounce_from_low_pct=bounce_from_low_pct,
         samples_used=len(window),
         hours=hours,
+        session=session,
     )
 
 
@@ -324,12 +328,15 @@ def evaluate_harvest_watch(
     if accumulation_armed or accumulation_executing:
         sess.record_accumulation_active()
 
-    hours = float(getattr(config, "alpha_accumulation_harvest_move_hours", 24.0))
+    from alpha.decision.fx_session import move_window_hours
+
+    hours, session_name = move_window_hours(config)
     rolling = rolling_move_snapshot(
         config,
         mid=mid,
         hours=hours,
         price_history_path=price_history_path,
+        session=session_name,
     )
     if rolling is None:
         return HarvestWatchSnapshot(
@@ -361,8 +368,11 @@ def evaluate_harvest_watch(
                 f"{rolling.move_pct:+.2f}% over {hours:.0f}h — harvest only trims extended UP legs"
             ),
             entry_allowed=False,
-            reason="negative_24h_leg",
-            signals=(f"move_{int(hours)}h={rolling.move_pct:+.2f}%",),
+            reason="negative_session_leg",
+            signals=(
+                f"session={rolling.session or '24h'}",
+                f"move_{hours:.1f}h={rolling.move_pct:+.2f}%",
+            ),
             blockers=("negative_24h_move",),
             rolling=rolling,
             release_streak=sess.release_streak(),
@@ -394,7 +404,8 @@ def evaluate_harvest_watch(
     sess.set_release_streak(streak)
 
     signals: list[str] = [
-        f"move_{int(hours)}h={rolling.move_pct:+.2f}%",
+        f"session={rolling.session or '24h'}",
+        f"move_{hours:.1f}h={rolling.move_pct:+.2f}%",
         f"pullback={rolling.pullback_pct:.2f}%",
     ]
     if momentum_active:
@@ -606,12 +617,15 @@ def evaluate_dip_deploy_watch(
     if not getattr(config, "alpha_accumulation_dip_deploy_enabled", True):
         return disabled
 
-    hours = float(getattr(config, "alpha_accumulation_harvest_move_hours", 24.0))
+    from alpha.decision.fx_session import move_window_hours
+
+    hours, session_name = move_window_hours(config)
     rolling = rolling_move_snapshot(
         config,
         mid=mid,
         hours=hours,
         price_history_path=price_history_path,
+        session=session_name,
     )
     if rolling is None:
         return DipDeploySnapshot(
@@ -631,7 +645,8 @@ def evaluate_dip_deploy_watch(
     execute = bool(getattr(config, "alpha_accumulation_dip_deploy_execute_enabled", True))
 
     signals: list[str] = [
-        f"move_{int(hours)}h={rolling.move_pct:+.2f}%",
+        f"session={rolling.session or '24h'}",
+        f"move_{hours:.1f}h={rolling.move_pct:+.2f}%",
         f"bounce={rolling.bounce_from_low_pct:.2f}%",
         f"pullback={rolling.pullback_pct:.2f}%",
     ]
@@ -739,7 +754,8 @@ def build_harvest_context_block(snap: Dict[str, Any]) -> str:
             "",
             "Philosophy: harvest trims XRP into RLUSD when a multi-hour UP leg turns (24h move + pullback).",
             "Mutually exclusive with dip deploy. On fill → recycle bid below that sell (harvest_reentry).",
-            "Do NOT recommend harvest when move_24h is negative — use dip deploy or weakness buys.",
+            "Do NOT recommend harvest when the current FX session move is negative — use dip deploy or weakness buys.",
+            "Session clock: Tokyo 00:00 / London 07:00 / NY 13:00 UTC. Rolling move is since last open, not 24h.",
             "last_sell_price is the ceiling for recycle bids — do not chase above it.",
         ]
     )

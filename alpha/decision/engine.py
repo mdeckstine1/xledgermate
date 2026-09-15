@@ -500,7 +500,7 @@ class DecisionEngine:
         return inventory.deviation >= self._config.alpha_strength_deviation
 
     def _tape_is_down_leg(self) -> bool:
-        """True when the 24h rolling move is net red — do not strength-sell the dump."""
+        """True when the current FX session (or 24h fallback) is net red — no dump-sells."""
         for snap in (self._harvest, self._dip):
             rolling = getattr(snap, "rolling", None) if snap is not None else None
             if rolling is not None and float(getattr(rolling, "move_pct", 0.0) or 0.0) < 0:
@@ -508,9 +508,6 @@ class DecisionEngine:
         return False
 
     def _last_sell_ceiling_expired(self) -> bool:
-        ttl_h = float(getattr(self._config, "alpha_last_sell_ceiling_ttl_hours", 24.0) or 0.0)
-        if ttl_h <= 0:
-            return False
         raw = self._last_sell_utc
         if not raw:
             return False
@@ -520,7 +517,17 @@ class DecisionEngine:
                 ts = ts.replace(tzinfo=timezone.utc)
         except (TypeError, ValueError):
             return True
-        return (utc_now() - ts).total_seconds() >= ttl_h * 3600.0
+        if bool(getattr(self._config, "alpha_fx_session_clock_enabled", True)):
+            from alpha.decision.fx_session import current_fx_session, parse_session_opens
+
+            opens = parse_session_opens(getattr(self._config, "alpha_fx_session_opens_utc", "0,7,13"))
+            sess = current_fx_session(opens_utc=opens)
+            if ts < sess.open_utc:
+                return True
+        ttl_h = float(getattr(self._config, "alpha_last_sell_ceiling_ttl_hours", 24.0) or 0.0)
+        if ttl_h > 0 and (utc_now() - ts).total_seconds() >= ttl_h * 3600.0:
+            return True
+        return False
 
     def _trim_blocked_at_target(self, inventory: InventorySnapshot) -> bool:
         return bool(getattr(self._config, "alpha_trim_stop_at_target", False)) and inventory.deviation <= 1e-9

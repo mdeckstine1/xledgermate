@@ -76,7 +76,7 @@ Rules for suggested_changes:
 - Do NOT suggest dry_run changes — the operator must toggle LIVE/dry-run manually.
 - Prefer small, incremental knob adjustments aligned with bag growth and risk.
 - Read `bag_growth`, swing_playbook, harvest_watch (incl last_sell_price), dip_deploy_watch, and drawdown_reload blocks — bag strategy (accumulate / harvest / recycle / dip / powder ceiling).
-- Never recommend harvest trims on negative 24h legs; recommend dip deploy, recycle, or weakness buys instead.
+- Never recommend harvest trims on a red FX session (Tokyo 00:00 / London 07:00 / NY 13:00 UTC). Rolling move is since last session open, not 24h.
 - Idle RLUSD above powder_ceiling_pct of bag while under XRP target is a failure: suggest dip_pullback / recycle / powder_ceiling_pct knobs, not "wait".
 - Powder floor/ceiling should be % of bag (alpha_reload_min_rlusd_deploy_pct, alpha_powder_ceiling_pct) so deposits scale. Do not treat the old XRP-eq knobs as primary.
 - Do not recommend buying above last_sell_price. You may tune last_sell_ceiling, recycle_buy_offset, dip_pullback_arm, powder_ceiling.

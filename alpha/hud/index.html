@@ -363,6 +363,7 @@
           <div class="score-row"><span class="k">vs ATH</span><span id="bagAth" class="v">—</span></div>
           <div class="score-row"><span class="k">Deposits</span><span id="bagDeposits" class="v">—</span></div>
           <div class="score-row"><span class="k">Last sell</span><span id="bagLastSell" class="v">—</span></div>
+          <div class="score-row"><span class="k">FX session</span><span id="bagFxSession" class="v">—</span></div>
           <div class="score-row" style="display:none"><span class="k">XRP stack</span><span id="bagXrpStack" class="v">—</span></div>
           <div class="score-row"><span class="k">Edge 7d</span><span id="bagEdge7d" class="v">—</span></div>
         </div>
@@ -1866,6 +1867,22 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         }
       }
       if (typeof updatePowderPctHint === 'function') updatePowderPctHint();
+      const fxEl = $('bagFxSession');
+      if (fxEl) {
+        const hw = (s.accumulation_regime || {}).harvest_watch || {};
+        const dip = (s.accumulation_regime || {}).dip_deploy_watch || {};
+        const roll = dip.rolling || hw.rolling || {};
+        const sess = roll.session || '';
+        const mv = roll.move_pct;
+        const hrs = roll.hours;
+        if (sess || mv != null) {
+          fxEl.textContent = (sess || '24h')
+            + (hrs != null ? ' · ' + Number(hrs).toFixed(1) + 'h' : '')
+            + (mv != null ? ' · ' + (Number(mv) >= 0 ? '+' : '') + Number(mv).toFixed(2) + '%' : '');
+        } else {
+          fxEl.textContent = '—';
+        }
+      }
       const lastSellEl = $('bagLastSell');
       if (lastSellEl) {
         const hw = (s.accumulation_regime || {}).harvest_watch || {};

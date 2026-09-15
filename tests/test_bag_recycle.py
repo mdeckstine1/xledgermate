@@ -138,6 +138,8 @@ def test_dip_arms_on_pullback_from_high_while_24h_green(tmp_path):
         alpha_accumulation_dip_pullback_arm_pct=1.2,
         alpha_accumulation_dip_bounce_arm_pct=0.20,
         alpha_cycle_interval_seconds=15,
+        alpha_fx_session_clock_enabled=False,
+        alpha_accumulation_harvest_move_hours=24.0,
     )
     mid = 1.427
     snap = evaluate_dip_deploy_watch(

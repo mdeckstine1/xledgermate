@@ -317,6 +317,9 @@ class BotConfig:
     alpha_last_sell_ceiling_enabled: bool = True
     # Ignore last-sell ceiling after this many hours (0 = never expire). Stops a dump-sale from blocking for weeks.
     alpha_last_sell_ceiling_ttl_hours: float = 24.0
+    # Harvest/dip/down-leg use FX session opens (Tokyo 00:00, London 07:00, NY 13:00 UTC), not trailing 24h.
+    alpha_fx_session_clock_enabled: bool = True
+    alpha_fx_session_opens_utc: str = "0,7,13"
     # Stop strength/harvest asks once at or below inventory target.
     alpha_trim_stop_at_target: bool = True
     # Waive bearish TA hard-veto on dip / recycle / powder-ceiling bids (score still applies, softer).

@@ -67,6 +67,8 @@ MAXIMIZE_OPERATOR_OVERRIDES: Dict[str, Any] = {
     "alpha_recycle_buy_offset_pct": 0.14,
     "alpha_last_sell_ceiling_enabled": True,
     "alpha_last_sell_ceiling_ttl_hours": 24.0,
+    "alpha_fx_session_clock_enabled": True,
+    "alpha_fx_session_opens_utc": "0,7,13",
     "alpha_trim_stop_at_target": True,
     "alpha_dip_waive_bearish_ta": True,
     "alpha_powder_ceiling_xrp_equiv": 90.0,

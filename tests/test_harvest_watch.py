@@ -92,6 +92,8 @@ def test_harvest_arms_on_pullback_after_extended_leg(price_history_rally):
         alpha_accumulation_harvest_execute_enabled=True,
         alpha_strength_deviation=0.05,
         alpha_accumulation_harvest_pullback_arm_pct=0.5,
+        alpha_fx_session_clock_enabled=False,
+        alpha_accumulation_harvest_move_hours=24.0,
     )
     sess = HarvestSessionTracker(path=price_history_rally.parent / "harvest.json")
     sess.record_accumulation_active()
@@ -118,6 +120,8 @@ def test_harvest_releases_after_momentum_streak(price_history_rally):
     cfg = BotConfig(
         alpha_accumulation_harvest_watch_enabled=True,
         alpha_accumulation_harvest_release_cycles=1,
+        alpha_fx_session_clock_enabled=False,
+        alpha_accumulation_harvest_move_hours=24.0,
     )
     sess = HarvestSessionTracker(path=price_history_rally.parent / "harvest.json")
     sess.record_accumulation_active()
@@ -147,6 +151,8 @@ def test_engine_harvest_trim_when_armed(price_history_rally):
         alpha_accumulation_harvest_pullback_arm_pct=0.5,
         alpha_min_edge_threshold_pct=0.01,
         min_order_size_xrp=1.0,
+        alpha_fx_session_clock_enabled=False,
+        alpha_accumulation_harvest_move_hours=24.0,
     )
     sess = HarvestSessionTracker(path=price_history_rally.parent / "harvest.json")
     sess.record_accumulation_active()
@@ -292,8 +298,12 @@ def price_history_drop(tmp_path):
     return path
 
 
-def test_harvest_blocks_on_negative_24h_leg(price_history_drop):
-    cfg = BotConfig(alpha_accumulation_harvest_watch_enabled=True)
+def test_harvest_blocks_on_negative_session_leg(price_history_drop):
+    cfg = BotConfig(
+        alpha_accumulation_harvest_watch_enabled=True,
+        alpha_fx_session_clock_enabled=False,
+        alpha_accumulation_harvest_move_hours=24.0,
+    )
     sess = HarvestSessionTracker(path=price_history_drop.parent / "harvest_neg.json")
     sess.record_accumulation_active()
     mid = 1.055  # small bounce off 24h low ~1.05
@@ -312,7 +322,7 @@ def test_harvest_blocks_on_negative_24h_leg(price_history_drop):
         price_history_path=price_history_drop,
     )
     assert snap.phase == "idle"
-    assert snap.reason == "negative_24h_leg"
+    assert snap.reason == "negative_session_leg"
     assert snap.rolling is not None
     assert snap.rolling.move_pct < 0
 
@@ -324,6 +334,8 @@ def test_dip_deploy_arms_after_drop_with_bounce(price_history_drop):
         alpha_accumulation_dip_move_24h_arm_pct=5.0,
         alpha_accumulation_dip_bounce_arm_pct=0.25,
         alpha_accumulation_dip_min_rlusd=25.0,
+        alpha_fx_session_clock_enabled=False,
+        alpha_accumulation_harvest_move_hours=24.0,
     )
     mid = 1.055
     snap = evaluate_dip_deploy_watch(
@@ -353,6 +365,8 @@ def test_engine_dip_deploy_bid_when_armed(price_history_drop):
         min_order_size_xrp=1.0,
         alpha_ta_weight=0.0,
         inventory_target_xrp_ratio=0.85,
+        alpha_fx_session_clock_enabled=False,
+        alpha_accumulation_harvest_move_hours=24.0,
     )
     mid = 1.055
     dip = evaluate_dip_deploy_watch(
