@@ -180,6 +180,46 @@ def test_last_sell_ceiling_expires_after_ttl():
     assert decision.action != DecisionAction.HOLD or "last_sell_ceiling" not in (decision.reason or "")
 
 
+def test_recycle_bids_below_last_sell_even_if_mid_above():
+    cfg = BotConfig(
+        alpha_ta_weight=0.0,
+        alpha_last_sell_ceiling_enabled=True,
+        alpha_last_sell_ceiling_ttl_hours=0.0,
+        alpha_recycle_after_sell_enabled=True,
+        alpha_min_edge_threshold_pct=0.01,
+        min_order_size_xrp=1.0,
+        alpha_powder_ceiling_xrp_equiv=0.0,
+        alpha_powder_ceiling_pct=0.0,
+    )
+    from alpha.decision.harvest_watch import HarvestWatchSnapshot
+
+    hw = HarvestWatchSnapshot(
+        enabled=True,
+        phase="idle",
+        headline="",
+        detail="",
+        entry_allowed=False,
+        reason="idle",
+        pending_reentry=True,
+        last_sell_price=1.45,
+    )
+    knobs = harvest_knobs_from_snapshot(hw, cfg)
+    engine = DecisionEngine(cfg, inventory=InventoryManager(cfg))
+    engine.set_harvest(hw, knobs, reentry_pending=True, last_sell_price=1.45, last_sell_utc="")
+    mid = 1.46
+    decision = engine.evaluate(
+        inventory=_inv(ratio=0.81),
+        risk=_risk(),
+        book=_book(mid),
+        liquidity=_liq(mid),
+        balances=BalanceSnapshot(xrp=922.0, rlusd=301.0, mid_rlusd_per_xrp=mid, portfolio_xrp_equiv=1133.0),
+    )
+    assert decision.action == DecisionAction.PLACE_BID
+    assert "harvest_reentry" in decision.reason
+    assert decision.price_rlusd_per_xrp is not None
+    assert decision.price_rlusd_per_xrp < 1.45
+
+
 def test_last_sell_ceiling_blocks_chase():
     cfg = BotConfig(
         alpha_ta_weight=0.0,
@@ -200,6 +240,36 @@ def test_last_sell_ceiling_blocks_chase():
     )
     assert decision.action == DecisionAction.HOLD
     assert "last_sell_ceiling" in decision.reason
+
+
+def test_bearish_ta_waived_on_weakness_when_powder_above_floor():
+    cfg = BotConfig(
+        alpha_ta_weight=0.65,
+        alpha_dip_waive_bearish_ta=True,
+        alpha_last_sell_ceiling_enabled=False,
+        alpha_powder_ceiling_xrp_equiv=0.0,
+        alpha_powder_ceiling_pct=0.0,
+        alpha_reload_min_rlusd_deploy_pct=3.5,
+        alpha_min_edge_threshold_pct=0.01,
+        min_order_size_xrp=1.0,
+        alpha_weakness_deviation=0.03,
+        alpha_technical_analysis=replace(
+            BotConfig().alpha_technical_analysis, min_buy_score=1.8, enabled=True
+        ),
+    )
+    engine = DecisionEngine(cfg, inventory=InventoryManager(cfg))
+    mid = 1.42
+    decision = engine.evaluate(
+        inventory=_inv(ratio=0.81),
+        risk=_risk(),
+        book=_book(mid),
+        liquidity=_liq(mid),
+        balances=BalanceSnapshot(xrp=922.0, rlusd=301.0, mid_rlusd_per_xrp=mid, portfolio_xrp_equiv=1133.0),
+        ta=_ta_bearish(),
+        structure=_structure(mid),
+    )
+    assert decision.action == DecisionAction.PLACE_BID
+    assert "weakness" in decision.reason or "powder_ceiling" in decision.reason
 
 
 def test_bearish_ta_waived_on_recycle():

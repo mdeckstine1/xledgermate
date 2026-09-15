@@ -71,7 +71,7 @@ F — Chop / more fills: offset 0.08–0.12, min_edge 0.05–0.08, weakness 0.03
 G — Entry keeps moving: drift 0.35–0.50, max_pending 1, max_age 0; NOT drift≈offset.
 H — Small size (~13 RLUSD @ ~584 XRP): raise risk_per_trade_pct (2→3→4%); not offset.
 I — RLUSD-heavy sell_block: normal; buys when dev≤−weakness; no strength sells until less RLUSD-heavy.
-J — ta_buy_blocked / bearish: lower ta_min_buy or ta_weight; or wait.
+J — ta_buy_blocked / bearish: if under target with powder, dip_waive / powder_ceiling / weakness waiver should already bid. Do NOT pause trading. Do NOT wait for a crash.
 K — post_sl_* re-entry: sl_cooldown, sl_stabilization, sl_min_ta_score; patient reload.
 L — post_tp_* re-entry: tp_cooldown, tp_dip_pct, tp_min_ta_score.
 M — balanced dev=: lower weakness to buy OR rely on bull_run/momentum (see opportunity_watch). If chart rips while HOLD, read Opportunity watch card — dip-only gate may be blocking.

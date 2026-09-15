@@ -352,6 +352,7 @@ def test_engine_dip_deploy_bid_when_armed(price_history_drop):
         alpha_min_edge_threshold_pct=0.01,
         min_order_size_xrp=1.0,
         alpha_ta_weight=0.0,
+        inventory_target_xrp_ratio=0.85,
     )
     mid = 1.055
     dip = evaluate_dip_deploy_watch(
@@ -389,7 +390,7 @@ def test_engine_dip_deploy_bid_when_armed(price_history_drop):
         alerts=(),
     )
     balances = BalanceSnapshot(
-        xrp=500.0, rlusd=100.0, mid_rlusd_per_xrp=mid, portfolio_xrp_equiv=600.0
+        xrp=400.0, rlusd=200.0, mid_rlusd_per_xrp=mid, portfolio_xrp_equiv=590.0
     )
     liq = LiquidityDepth(
         max_slippage_pct=0.5,

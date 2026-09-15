@@ -207,6 +207,25 @@ def test_emergency_disabled_does_not_pause_trading(tmp_path: Path):
     assert action is None
 
 
+def test_agent_cannot_pause_trading_or_undo_recycle():
+    base = BotConfig()
+    safe, rejected, _errors = filter_guardrailed_suggestions(
+        [
+            {"key": "trading_enabled", "value": False, "reason": "pause"},
+            {"key": "max_daily_drawdown_percent", "value": 10.0, "reason": "tighten"},
+            {"key": "alpha_recycle_after_sell_enabled", "value": False, "reason": "off"},
+            {"key": "alpha_buy_limit_offset_pct", "value": 0.12, "reason": "ok"},
+        ],
+        guardrails=_DEFAULT_GUARDRAILS,
+        base=base,
+    )
+    keys_rejected = {r["key"] for r in rejected}
+    assert "trading_enabled" in keys_rejected
+    assert "max_daily_drawdown_percent" in keys_rejected
+    assert "alpha_recycle_after_sell_enabled" in keys_rejected
+    assert any(s["key"] == "alpha_buy_limit_offset_pct" for s in safe)
+
+
 def test_detect_significant_events():
     hud = {
         "engine_cycle": 10,

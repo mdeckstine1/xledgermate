@@ -98,6 +98,7 @@ MAXIMIZE_AGENT_PATCH: Dict[str, Any] = {
         "opportunity": False,
         "kill_switch": True,
         "drawdown_spike": True,
+        "drawdown_spike_pct": 5.0,
         "session_loss": True,
         "inventory_shift": True,
         "accumulation": True,

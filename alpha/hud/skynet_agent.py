@@ -79,6 +79,24 @@ _FORBIDDEN_TRUE_KEYS = frozenset(
         "alpha_reload_block_accumulation_until_funded",
     }
 )
+# Agent must not pause trading or retighten the MTM kill.
+_FORBIDDEN_KEYS = frozenset(
+    {
+        "trading_enabled",
+        "dry_run",
+        "max_daily_drawdown_percent",
+    }
+)
+# Do not let soak-night suggestions undo recycle doctrine.
+_FORBIDDEN_FALSE_KEYS = frozenset(
+    {
+        "alpha_recycle_after_sell_enabled",
+        "alpha_last_sell_ceiling_enabled",
+        "alpha_trim_stop_at_target",
+        "alpha_dip_waive_bearish_ta",
+        "alpha_drawdown_reload_only_below_floor",
+    }
+)
 
 _DEFAULT_EMERGENCY_RULES: Dict[str, Any] = {
     "enabled": False,
@@ -93,7 +111,7 @@ _DEFAULT_EVENT_TRIGGERS: Dict[str, Any] = {
     "min_cycles_between_event_runs": 12,
     "kill_switch": True,
     "drawdown_spike": True,
-    "drawdown_spike_pct": 1.0,
+    "drawdown_spike_pct": 5.0,
     "session_loss": True,
     "session_loss_xrp": 8.0,
     "inventory_shift": True,
@@ -132,8 +150,9 @@ Respond with a single JSON object (no markdown fences):
 
 Hard rules:
 - Only keys from this allowlist: {allowed_keys}
-- NEVER suggest dry_run changes.
+- NEVER suggest dry_run, trading_enabled, or max_daily_drawdown_percent.
 - NEVER re-enable alpha_brackets_enabled or bracket_trailing_enabled (must stay false for core bag).
+- NEVER disable recycle_after_sell, last_sell_ceiling, trim_stop_at_target, dip_waive_bearish_ta, or drawdown_reload_only_below_floor.
 - NEVER set alpha_reload_block_accumulation_until_funded to true (Maximize keeps residual bids possible).
 - NEVER exceed these guardrails (values must stay inside min/max):
 {guardrail_lines}
@@ -556,8 +575,18 @@ def filter_guardrailed_suggestions(
     for item in accepted:
         key = item["key"]
         # Maximize core-bag: reject re-enabling brackets / hard accum block.
+        if key in _FORBIDDEN_KEYS:
+            msg = f"{key}: forbidden for Agent Smith (operator/HUD only)"
+            rejected.append({**item, "reject_reason": msg})
+            errors.append(msg)
+            continue
         if key in _FORBIDDEN_TRUE_KEYS and bool(item.get("value")):
             msg = f"{key}: forbidden true under Maximize core-bag doctrine"
+            rejected.append({**item, "reject_reason": msg})
+            errors.append(msg)
+            continue
+        if key in _FORBIDDEN_FALSE_KEYS and not bool(item.get("value")):
+            msg = f"{key}: cannot disable Maximize recycle doctrine via agent"
             rejected.append({**item, "reject_reason": msg})
             errors.append(msg)
             continue

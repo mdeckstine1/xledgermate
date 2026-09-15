@@ -420,6 +420,11 @@ class DecisionEngine:
             )
 
         if self._inventory is not None and self._inventory.allows_sell(inventory):
+            if self._tape_is_down_leg():
+                return DecisionResult(
+                    action=DecisionAction.HOLD,
+                    reason=f"no_dump_sell 24h_red dev={inventory.deviation:+.3f}",
+                )
             if self._trim_blocked_at_target(inventory):
                 return DecisionResult(
                     action=DecisionAction.HOLD,
@@ -439,6 +444,11 @@ class DecisionEngine:
             and inventory.deviation >= self._config.alpha_strength_deviation
             and not inventory.pause_asks
         ):
+            if self._tape_is_down_leg():
+                return DecisionResult(
+                    action=DecisionAction.HOLD,
+                    reason=f"no_dump_sell 24h_red dev={inventory.deviation:+.3f}",
+                )
             return self._build_ask(
                 inventory=inventory,
                 risk=risk,
@@ -518,8 +528,30 @@ class DecisionEngine:
     def _recycle_entry_modes(self) -> frozenset[str]:
         return frozenset({"harvest_reentry", "dip_deploy", "powder_ceiling"})
 
-    def _waive_bearish_ta(self, entry_mode: str) -> bool:
-        return bool(getattr(self._config, "alpha_dip_waive_bearish_ta", False)) and entry_mode in self._recycle_entry_modes()
+    def _waive_bearish_ta(
+        self,
+        entry_mode: str,
+        *,
+        inventory: Optional[InventorySnapshot] = None,
+        balances: Optional[BalanceSnapshot] = None,
+        mid: Optional[float] = None,
+    ) -> bool:
+        if not bool(getattr(self._config, "alpha_dip_waive_bearish_ta", False)):
+            return False
+        if entry_mode in self._recycle_entry_modes():
+            return True
+        if entry_mode != "weakness" or inventory is None or inventory.deviation >= -1e-9:
+            return False
+        if balances is None or mid is None or mid <= 0:
+            return False
+        from alpha.decision.reload_regime import deploy_floor_xrp_equiv
+
+        powder = self._powder_xeq(balances, mid)
+        floor = deploy_floor_xrp_equiv(
+            self._config,
+            float(inventory.portfolio_xrp_equiv or balances.portfolio_xrp_equiv or 0.0),
+        )
+        return powder + 1e-9 > floor
 
     def _powder_xeq(self, balances: Optional[BalanceSnapshot], mid: Optional[float]) -> float:
         if balances is None or mid is None or mid <= 0:
@@ -638,6 +670,8 @@ class DecisionEngine:
             return None
         if inventory.pause_asks or inventory.sell_blocked_imbalance:
             return None
+        if self._tape_is_down_leg():
+            return None
         # Only when at/above target (bag growth long, not RLUSD-heavy recovery buys).
         if inventory.deviation < 0:
             return None
@@ -727,6 +761,8 @@ class DecisionEngine:
             return None
         if inventory.pause_asks:
             return None
+        if self._tape_is_down_leg():
+            return None
         if pending_sell_count >= knobs.max_pending_sells:
             return None
         if balances is None or book.mid is None or book.mid <= 0:
@@ -750,6 +786,8 @@ class DecisionEngine:
         if snap is None or knobs is None or not snap.entry_allowed or not knobs.armed:
             return None
         if inventory.pause_asks:
+            return None
+        if self._tape_is_down_leg():
             return None
         if pending_sell_count >= knobs.max_pending_sells:
             return None
@@ -1027,7 +1065,10 @@ class DecisionEngine:
         knobs = self._accumulation_knobs
         if entry_mode == "accumulation" and knobs is not None and knobs.armed:
             weight *= max(0.0, min(1.0, knobs.ta_weight_factor))
-        if entry_mode in self._recycle_entry_modes():
+        if entry_mode in self._recycle_entry_modes() or (
+            entry_mode == "weakness"
+            and bool(getattr(self._config, "alpha_dip_waive_bearish_ta", False))
+        ):
             factor = (
                 self._dip_knobs.ta_weight_factor
                 if self._dip_knobs is not None
@@ -1053,6 +1094,8 @@ class DecisionEngine:
         mid: Optional[float] = None,
         structure: Optional["MarketStructureSnapshot"] = None,
         entry_mode: str = "weakness",
+        inventory: Optional[InventorySnapshot] = None,
+        balances: Optional[BalanceSnapshot] = None,
     ) -> Optional[str]:
         cfg = self._config.alpha_technical_analysis
         weight = getattr(self._config, "alpha_ta_weight", 1.0)
@@ -1067,7 +1110,12 @@ class DecisionEngine:
                 f"weight={weight:.2f} sell={ta.sell_score:.2f} bias={ta.bias}"
             )
         if ta.bias == "bearish":
-            if self._waive_bearish_ta(entry_mode):
+            if self._waive_bearish_ta(
+                entry_mode,
+                inventory=inventory,
+                balances=balances,
+                mid=mid,
+            ):
                 return None
             from alpha.decision.tape_participation import tape_participation_waives_bearish_buy_block
 
@@ -1204,7 +1252,14 @@ class DecisionEngine:
             if blocked:
                 return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
 
-        blocked = self._ta_blocks_buy(ta, mid=mid, structure=structure, entry_mode=entry_mode)
+        blocked = self._ta_blocks_buy(
+            ta,
+            mid=mid,
+            structure=structure,
+            entry_mode=entry_mode,
+            inventory=inventory,
+            balances=balances,
+        )
         if blocked:
             return DecisionResult(action=DecisionAction.HOLD, reason=blocked)
         mid = book.mid
@@ -1218,6 +1273,7 @@ class DecisionEngine:
             bool(getattr(self._config, "alpha_last_sell_ceiling_enabled", False))
             and last_sell > 0
             and not self._last_sell_ceiling_expired()
+            and entry_mode != "harvest_reentry"
         ):
             if mid + 1e-12 >= last_sell:
                 return DecisionResult(
@@ -1277,7 +1333,7 @@ class DecisionEngine:
             inventory=inventory,
             balances=balances,
             risk_per_trade_pct=risk_pct,
-            skip_inventory_cap=(entry_mode in ("harvest_reentry", "dip_deploy")),
+            skip_inventory_cap=(entry_mode == "harvest_reentry"),
         )
         if size <= 0:
             return DecisionResult(
