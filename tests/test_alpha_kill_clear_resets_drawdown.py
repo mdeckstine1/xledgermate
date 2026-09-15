@@ -63,3 +63,33 @@ def test_eleven_percent_mtm_does_not_kill_at_25pct_limit(tmp_path: Path) -> None
     snap = engine.evaluate(balances=dumped, trust_line=_trust())
     assert snap.kill_switch_active is False
     assert snap.drawdown_pct == pytest.approx(11.2, abs=0.1)
+
+
+def test_drawdown_kill_auto_clears_on_new_utc_day(tmp_path: Path, monkeypatch) -> None:
+    from datetime import datetime, timedelta
+
+    cfg = BotConfig(
+        bot_account_address="rTestAccount123456789012345678901234",
+        max_daily_drawdown_percent=10.0,
+        trading_enabled=True,
+        dry_run=True,
+    )
+    engine = RiskEngine(cfg, state_dir=tmp_path)
+    start = BalanceSnapshot(xrp=1000.0, rlusd=0.0, mid_rlusd_per_xrp=1.0, portfolio_xrp_equiv=1000.0)
+    dumped = BalanceSnapshot(xrp=880.0, rlusd=0.0, mid_rlusd_per_xrp=1.0, portfolio_xrp_equiv=880.0)
+    engine.evaluate(balances=start, trust_line=_trust())
+    snap = engine.evaluate(balances=dumped, trust_line=_trust())
+    assert snap.kill_switch_active is True
+
+    class _Tomorrow:
+        @staticmethod
+        def utcnow():
+            return datetime.utcnow() + timedelta(days=1)
+
+        @staticmethod
+        def now(tz=None):
+            return datetime.now(tz) + timedelta(days=1) if tz else datetime.utcnow() + timedelta(days=1)
+
+    monkeypatch.setattr("risk.drawdown.datetime", _Tomorrow)
+    snap = engine.evaluate(balances=dumped, trust_line=_trust())
+    assert snap.kill_switch_active is False

@@ -53,15 +53,33 @@ class RiskEngine:
         alerts: List[str] = []
 
         self._drawdown.max_drawdown_percent = float(self._config.max_daily_drawdown_percent)
+        prior_day = self._drawdown.daily_start_time.date() if self._drawdown.daily_start_time else None
         self._drawdown.update_portfolio(
             balances.xrp,
             balances.rlusd,
             mid,
         )
+        rolled_utc_day = bool(
+            prior_day is not None
+            and self._drawdown.daily_start_time is not None
+            and self._drawdown.daily_start_time.date() != prior_day
+        )
         if self._consume_drawdown_reset():
             self._drawdown.reset_baseline()
             logger.info("Daily drawdown baseline reset after kill-switch clear")
         drawdown_pct = self._drawdown.get_drawdown_percent()
+
+        if (
+            rolled_utc_day
+            and kill_active
+            and "drawdown" in (kill_reason or "").lower()
+            and drawdown_pct < float(self._config.max_daily_drawdown_percent)
+        ):
+            self._kill.clear("New UTC day — daily drawdown mark reset")
+            kill_active = False
+            kill_reason = ""
+            self._restore_trading_enabled()
+            logger.info("Drawdown kill auto-cleared on UTC day rollover")
 
         if self._drawdown.is_kill_switch_triggered() and not kill_active:
             kill_reason = (
@@ -122,6 +140,18 @@ class RiskEngine:
             trading_allowed,
         )
         return snap
+
+    def _restore_trading_enabled(self) -> None:
+        try:
+            from alpha.operator.runtime import OperatorRuntimeStore
+            from config.settings import BotConfig
+
+            OperatorRuntimeStore().patch_overrides(
+                {"trading_enabled": True},
+                base=BotConfig.load(),
+            )
+        except Exception as exc:
+            logger.warning("Could not re-enable trading after drawdown kill clear: %s", exc)
 
     def _consume_drawdown_reset(self) -> bool:
         flag = self._drawdown_reset_flag

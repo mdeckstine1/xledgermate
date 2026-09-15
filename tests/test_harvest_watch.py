@@ -400,12 +400,34 @@ def test_engine_dip_deploy_bid_when_armed(price_history_drop):
         mid=mid,
         spread_pct=0.19,
     )
+    light = InventorySnapshot(
+        xrp_ratio=0.70,
+        target_xrp_ratio=0.85,
+        deviation=-0.15,
+        label="light",
+        pause_bids=False,
+        pause_asks=False,
+        summary="test",
+        portfolio_xrp_equiv=600.0,
+        xrp_allocation_pct=70.0,
+        rlusd_allocation_pct=30.0,
+        buy_blocked_imbalance=False,
+        sell_blocked_imbalance=False,
+    )
     decision = engine.evaluate(
+        inventory=light,
+        risk=risk,
+        book=book,
+        liquidity=liq,
+        balances=balances,
+    )
+    assert decision.action == DecisionAction.PLACE_BID, decision.reason
+    assert "dip_deploy" in decision.reason
+    heavy = engine.evaluate(
         inventory=_xrp_heavy(),
         risk=risk,
         book=book,
         liquidity=liq,
         balances=balances,
     )
-    assert decision.action == DecisionAction.PLACE_BID
-    assert "dip_deploy" in decision.reason
+    assert "dip_deploy" not in (heavy.reason or "")

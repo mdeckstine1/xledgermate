@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
@@ -14,6 +15,7 @@ from alpha.types import (
     OperatorSnapshot,
     OrderBookSnapshot,
     RiskSnapshot,
+    utc_now,
 )
 from alpha.decision.reentry import ReentryGate
 from alpha.precision import price_decimals, round_rlusd_price
@@ -77,6 +79,7 @@ class DecisionEngine:
         self._harvest_knobs: Optional["HarvestKnobs"] = None
         self._harvest_reentry_pending: bool = False
         self._last_sell_price: float = 0.0
+        self._last_sell_utc: str = ""
         self._dip: Optional["DipDeploySnapshot"] = None
         self._dip_knobs: Optional["DipDeployKnobs"] = None
         self._drawdown: Optional["DrawdownReloadSnapshot"] = None
@@ -105,12 +108,14 @@ class DecisionEngine:
         *,
         reentry_pending: bool = False,
         last_sell_price: float = 0.0,
+        last_sell_utc: str = "",
     ) -> None:
         self._harvest = snapshot
         self._harvest_knobs = knobs
         self._harvest_reentry_pending = reentry_pending
         snap_sell = float(getattr(snapshot, "last_sell_price", 0.0) or 0.0) if snapshot is not None else 0.0
         self._last_sell_price = float(last_sell_price or 0.0) or snap_sell
+        self._last_sell_utc = last_sell_utc or ""
 
     def set_dip_deploy(
         self,
@@ -484,6 +489,29 @@ class DecisionEngine:
     def _is_inventory_heavy(self, inventory: InventorySnapshot) -> bool:
         return inventory.deviation >= self._config.alpha_strength_deviation
 
+    def _tape_is_down_leg(self) -> bool:
+        """True when the 24h rolling move is net red — do not strength-sell the dump."""
+        for snap in (self._harvest, self._dip):
+            rolling = getattr(snap, "rolling", None) if snap is not None else None
+            if rolling is not None and float(getattr(rolling, "move_pct", 0.0) or 0.0) < 0:
+                return True
+        return False
+
+    def _last_sell_ceiling_expired(self) -> bool:
+        ttl_h = float(getattr(self._config, "alpha_last_sell_ceiling_ttl_hours", 24.0) or 0.0)
+        if ttl_h <= 0:
+            return False
+        raw = self._last_sell_utc
+        if not raw:
+            return False
+        try:
+            ts = datetime.fromisoformat(str(raw))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            return True
+        return (utc_now() - ts).total_seconds() >= ttl_h * 3600.0
+
     def _trim_blocked_at_target(self, inventory: InventorySnapshot) -> bool:
         return bool(getattr(self._config, "alpha_trim_stop_at_target", False)) and inventory.deviation <= 1e-9
 
@@ -511,6 +539,8 @@ class DecisionEngine:
     ) -> Optional[DecisionResult]:
         """When overweight, place strength asks before bull_run/accum chase buys."""
         if not self._is_inventory_heavy(inventory):
+            return None
+        if self._tape_is_down_leg():
             return None
         if self._trim_blocked_at_target(inventory):
             return None
@@ -762,6 +792,8 @@ class DecisionEngine:
             return None
         if inventory.pause_asks:
             return None
+        if self._tape_is_down_leg():
+            return None
         if self._trim_blocked_at_target(inventory):
             return None
         if pending_sell_count >= knobs.max_pending_sells:
@@ -807,6 +839,8 @@ class DecisionEngine:
         if snap is None or knobs is None or not knobs.execute or not knobs.armed:
             return None
         if snap.phase != "armed" or not snap.entry_allowed:
+            return None
+        if inventory.deviation >= -1e-9:
             return None
         if inventory.pause_bids or inventory.buy_blocked_imbalance:
             return None
@@ -1183,6 +1217,7 @@ class DecisionEngine:
         if (
             bool(getattr(self._config, "alpha_last_sell_ceiling_enabled", False))
             and last_sell > 0
+            and not self._last_sell_ceiling_expired()
         ):
             if mid + 1e-12 >= last_sell:
                 return DecisionResult(
@@ -1242,7 +1277,7 @@ class DecisionEngine:
             inventory=inventory,
             balances=balances,
             risk_per_trade_pct=risk_pct,
-            skip_inventory_cap=(entry_mode in ("harvest_reentry", "dip_deploy", "powder_ceiling")),
+            skip_inventory_cap=(entry_mode in ("harvest_reentry", "dip_deploy")),
         )
         if size <= 0:
             return DecisionResult(

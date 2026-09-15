@@ -315,6 +315,8 @@ class BotConfig:
     alpha_recycle_buy_offset_pct: float = 0.14
     # Do not bid at/above last strength-harvest sell (blocks chase-higher).
     alpha_last_sell_ceiling_enabled: bool = True
+    # Ignore last-sell ceiling after this many hours (0 = never expire). Stops a dump-sale from blocking for weeks.
+    alpha_last_sell_ceiling_ttl_hours: float = 24.0
     # Stop strength/harvest asks once at or below inventory target.
     alpha_trim_stop_at_target: bool = True
     # Waive bearish TA hard-veto on dip / recycle / powder-ceiling bids (score still applies, softer).

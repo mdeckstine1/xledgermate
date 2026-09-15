@@ -215,6 +215,9 @@ class HarvestSessionTracker:
         except (TypeError, ValueError):
             return 0.0
 
+    def last_sell_utc(self) -> str:
+        return str(self._state.get("last_sell_utc") or "")
+
 
 def rolling_move_snapshot(
     config: BotConfig,

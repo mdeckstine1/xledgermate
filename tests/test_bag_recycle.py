@@ -157,6 +157,29 @@ def test_dip_arms_on_pullback_from_high_while_24h_green(tmp_path):
     assert snap.reason == "pullback_from_high"
 
 
+def test_last_sell_ceiling_expires_after_ttl():
+    cfg = BotConfig(
+        alpha_ta_weight=0.0,
+        alpha_last_sell_ceiling_enabled=True,
+        alpha_last_sell_ceiling_ttl_hours=24.0,
+        alpha_min_edge_threshold_pct=0.01,
+        min_order_size_xrp=1.0,
+        alpha_powder_ceiling_xrp_equiv=0.0,
+        alpha_powder_ceiling_pct=0.0,
+    )
+    engine = DecisionEngine(cfg, inventory=InventoryManager(cfg))
+    engine.set_harvest(None, None, last_sell_price=1.45, last_sell_utc="2026-09-02T10:51:32+00:00")
+    mid = 1.46
+    decision = engine.evaluate(
+        inventory=_inv(ratio=0.81),
+        risk=_risk(),
+        book=_book(mid),
+        liquidity=_liq(mid),
+        balances=BalanceSnapshot(xrp=922.0, rlusd=301.0, mid_rlusd_per_xrp=mid, portfolio_xrp_equiv=1133.0),
+    )
+    assert decision.action != DecisionAction.HOLD or "last_sell_ceiling" not in (decision.reason or "")
+
+
 def test_last_sell_ceiling_blocks_chase():
     cfg = BotConfig(
         alpha_ta_weight=0.0,
