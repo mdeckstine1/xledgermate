@@ -191,6 +191,22 @@ def test_emergency_drawdown_pauses_trading(tmp_path: Path):
     assert runtime.load_overrides().get("trading_enabled") is False
 
 
+def test_emergency_disabled_does_not_pause_trading(tmp_path: Path):
+    from alpha.operator.runtime import OperatorRuntimeStore
+
+    runtime = OperatorRuntimeStore(
+        overrides_path=tmp_path / "overrides.json",
+        commands_path=tmp_path / "commands.json",
+    )
+    action = evaluate_emergency_rules(
+        {"risk": {"drawdown_pct": 12.0, "session_pnl_xrp": 0.0}, "trading_enabled": True},
+        emergency_rules={"enabled": False, "drawdown_pause_pct": 8.0, "session_loss_pause_xrp": 25.0},
+        runtime=runtime,
+        trading_enabled=True,
+    )
+    assert action is None
+
+
 def test_detect_significant_events():
     hud = {
         "engine_cycle": 10,

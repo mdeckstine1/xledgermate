@@ -209,12 +209,19 @@ def register_operator_routes(app: Any) -> None:
     @app.post("/controls/clear-kill")
     async def controls_clear_kill() -> JSONResponse:
         KillSwitch(path=_KILL).clear("Operator cleared via HUD")
+        merged, errors = _runtime().patch_overrides(
+            {"trading_enabled": True},
+            base=_base_config(),
+        )
         return JSONResponse(
             {
                 "ok": True,
                 "kill_switch_active": False,
                 "drawdown_reset": True,
-                "message": "Kill cleared. Daily drawdown mark restarts from the next cycle.",
+                "trading_enabled": True,
+                "operator_overrides": merged,
+                "errors": errors,
+                "message": "Kill cleared. Daily drawdown mark restarts; trading re-enabled.",
             }
         )
 

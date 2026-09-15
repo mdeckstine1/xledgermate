@@ -81,7 +81,7 @@ _FORBIDDEN_TRUE_KEYS = frozenset(
 )
 
 _DEFAULT_EMERGENCY_RULES: Dict[str, Any] = {
-    "enabled": True,
+    "enabled": False,
     "drawdown_pause_pct": 8.0,
     "session_loss_pause_xrp": 25.0,
 }
@@ -372,7 +372,7 @@ def _normalize_emergency_rules(raw: Dict[str, Any]) -> Dict[str, Any]:
             except (TypeError, ValueError):
                 pass
     if out.get("drawdown_pause_pct") is not None:
-        out["drawdown_pause_pct"] = max(0.5, min(50.0, float(out["drawdown_pause_pct"])))
+        out["drawdown_pause_pct"] = max(0.0, min(50.0, float(out["drawdown_pause_pct"])))
     if out.get("session_loss_pause_xrp") is not None:
         out["session_loss_pause_xrp"] = max(0.0, float(out["session_loss_pause_xrp"]))
     return out

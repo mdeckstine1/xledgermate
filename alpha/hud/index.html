@@ -545,6 +545,7 @@
           <div class="ctrl-row toggle"><label data-knob="alpha_deferred_sl_enabled" title="Hold stop-loss off the ledger until price nears the stop. Prevents XRPL limit sells below the bid from instant-exiting new brackets."><input type="checkbox" id="deferredSlEnabled" checked> deferred_sl_enabled</label></div>
           <div class="ctrl-row"><label data-knob="alpha_deferred_sl_arm_buffer_pct" title="Arm the SL on-ledger when mid is within this % above the stop target (0 = at or below stop only).">deferred_sl_arm_buffer_pct</label><input type="range" id="slDeferredArm" min="0" max="2" step="0.05"><input type="number" id="numDeferredArm" step="0.05"><span id="valDeferredArm" class="muted">%</span></div>
           <div class="ctrl-row"><label data-knob="alpha_cycle_interval_seconds" title="Seconds between full engine cycles (5–60). Shorter = more responsive, more RPC load.">cycle_interval_seconds</label><input type="range" id="slCycle" min="5" max="60" step="1"><input type="number" id="numCycle" min="5" max="60" step="1"><span id="valCycle" class="muted">s</span></div>
+          <div class="ctrl-row"><label data-knob="max_daily_drawdown_percent" title="Hard kill if today's bag MTM drops this % from the daily mark. 10% false-trips on normal XRP dumps. 25% is a crash brake. HUD Emergency kill still works.">daily_drawdown_kill_pct</label><input type="range" id="slDailyDd" min="10" max="40" step="1"><input type="number" id="numDailyDd" min="10" max="40" step="1"><span id="valDailyDd" class="muted">%</span></div>
           <button id="btnApplyRisk">Apply risk &amp; entry</button>
         </div>
         <div class="controls-section card">
@@ -1215,6 +1216,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     const syncOffset = linkSlider('slOffset', 'numOffset', 'valOffset');
     const syncSellOffset = linkSlider('slSellOffset', 'numSellOffset', 'valSellOffset');
     const syncCycle = linkSlider('slCycle', 'numCycle', 'valCycle');
+    const syncDailyDd = linkSlider('slDailyDd', 'numDailyDd', 'valDailyDd');
     const syncStaleDrift = linkSlider('slStaleDrift', 'numStaleDrift', 'valStaleDrift');
     const syncStaleAge = linkSlider('slStaleAge', 'numStaleAge', 'valStaleAge');
     const syncDeferredArm = linkSlider('slDeferredArm', 'numDeferredArm', 'valDeferredArm');
@@ -1305,6 +1307,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       $('deferredSlEnabled').checked = c.alpha_deferred_sl_enabled !== false;
       syncDeferredArm(c.alpha_deferred_sl_arm_buffer_pct ?? 0);
       syncCycle(c.alpha_cycle_interval_seconds ?? 15);
+      if ($('slDailyDd')) syncDailyDd(c.max_daily_drawdown_percent ?? 25);
       $('trailingEnabled').checked = !!c.bracket_trailing_enabled;
       $('tradingEnabled').checked = c.trading_enabled !== false;
       $('reentryEnabled').checked = c.alpha_reentry_enabled !== false;
@@ -1439,6 +1442,7 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         alpha_deferred_sl_enabled: $('deferredSlEnabled').checked,
         alpha_deferred_sl_arm_buffer_pct: parseFloat($('numDeferredArm').value),
         alpha_cycle_interval_seconds: parseInt($('numCycle').value, 10),
+        max_daily_drawdown_percent: parseFloat($('numDailyDd').value),
       }});
       if (d?.ok) { toast('Risk & entry updated'); operatorConfig = d; poll(); }
     };

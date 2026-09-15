@@ -55,6 +55,7 @@ OPERATOR_TUNABLE_KEYS: Tuple[str, ...] = (
     OPERATOR_MARKET_REGIME_KEY,
     "dry_run",
     "trading_enabled",
+    "max_daily_drawdown_percent",
     "inventory_target_xrp_ratio",
     "risk_capital_xrp",
     "alpha_risk_capital_sync_portfolio",
@@ -196,6 +197,7 @@ OPERATOR_SLIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "alpha_powder_ceiling_xrp_equiv": {"min": 0.0, "max": 400.0, "step": 5.0},
     "alpha_powder_ceiling_pct": {"min": 0.0, "max": 30.0, "step": 0.5},
     "alpha_reload_min_rlusd_deploy_pct": {"min": 0.0, "max": 20.0, "step": 0.1},
+    "max_daily_drawdown_percent": {"min": 10.0, "max": 40.0, "step": 1.0},
     "alpha_drawdown_reload_stage1_arm_pct": {"min": 1.0, "max": 10.0, "step": 0.25},
     "alpha_drawdown_reload_stage2_arm_pct": {"min": 2.0, "max": 15.0, "step": 0.25},
     "alpha_drawdown_reload_total_bag_pct": {"min": 1.0, "max": 10.0, "step": 0.5},
@@ -424,6 +426,10 @@ def _validate_merged_config(config: BotConfig, changed_keys: Any) -> List[str]:
     if "alpha_ta_weight" in keys:
         if config.alpha_ta_weight < 0 or config.alpha_ta_weight > 1:
             errors.append("alpha_ta_weight must be between 0 and 1")
+
+    if "max_daily_drawdown_percent" in keys:
+        if config.max_daily_drawdown_percent < 5.0 or config.max_daily_drawdown_percent > 50.0:
+            errors.append("max_daily_drawdown_percent must be between 5 and 50")
 
     if "alpha_risk_per_trade_pct" in keys:
         if config.alpha_risk_per_trade_pct <= 0 or config.alpha_risk_per_trade_pct > 100:

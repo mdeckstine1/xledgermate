@@ -53,6 +53,7 @@ MAXIMIZE_OPERATOR_OVERRIDES: Dict[str, Any] = {
     "alpha_reload_min_rlusd_deploy_pct": 3.5,
     "alpha_reload_sell_offset_pct": 0.05,
     "alpha_reload_block_accumulation_until_funded": False,
+    "max_daily_drawdown_percent": 25.0,
     # Grind-friendly arms so harvest/dip run without waiting for 3.5% shock days.
     "alpha_accumulation_harvest_move_24h_watch_pct": 2.0,
     "alpha_accumulation_harvest_pullback_arm_pct": 0.7,
@@ -134,9 +135,9 @@ MAXIMIZE_AGENT_PATCH: Dict[str, Any] = {
         "max_changes_per_cycle": 2,
     },
     "emergency_rules": {
-        "enabled": True,
-        "drawdown_pause_pct": 8.0,
-        "session_loss_pause_xrp": 40.0,
+        "enabled": False,
+        "drawdown_pause_pct": 0.0,
+        "session_loss_pause_xrp": 0.0,
     },
 }
 

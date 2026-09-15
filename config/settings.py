@@ -399,9 +399,9 @@ class BotConfig:
     breakout_confirmation_tf: str = "15m"  # HTF lookback for breakout (15m, 1h, 4h, 1d)
 
     # === RISK MANAGEMENT (GUI-adjustable daily drawdown kill switch) ===
-    # 5% is too tight for a market maker — normal inventory MTM and spread timing
-    # cause false trips during testing; 10% is a realistic starting default.
-    max_daily_drawdown_percent: float = 10.0
+    # Long-XRP accumulator: 10% bag MTM is ~one normal XRP dump and false-trips
+    # the kill. 25% is a catastrophe brake; operator HUD kill still always works.
+    max_daily_drawdown_percent: float = 25.0
     min_drawdown_percent: float = 2.0
     max_drawdown_percent: float = 25.0
     inventory_target_xrp_ratio: float = 0.75   # Aggressive Bag Growth — deploy RLUSD into XRP (75% XRP target)

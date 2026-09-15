@@ -52,6 +52,7 @@ class RiskEngine:
         mid = balances.mid_rlusd_per_xrp
         alerts: List[str] = []
 
+        self._drawdown.max_drawdown_percent = float(self._config.max_daily_drawdown_percent)
         self._drawdown.update_portfolio(
             balances.xrp,
             balances.rlusd,
