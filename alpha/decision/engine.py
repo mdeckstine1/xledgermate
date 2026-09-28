@@ -719,6 +719,8 @@ class DecisionEngine:
         mid = book.mid
         if mid is None or mid <= 0:
             return None
+        if inventory.deviation >= -1e-9:
+            return None
         snap = evaluate_bull_run_entry(
             self._config,
             inventory=inventory,
@@ -861,6 +863,8 @@ class DecisionEngine:
             return None
         if inventory.pause_bids or inventory.buy_blocked_imbalance:
             return None
+        if pending_buy_count >= 1:
+            return None
         max_pending = int(self._config.alpha_max_pending_buys)
         if pending_buy_count >= max_pending:
             return None
@@ -959,6 +963,8 @@ class DecisionEngine:
         if self._dip_knobs is not None and self._dip_knobs.armed:
             return None
         if inventory.pause_bids or inventory.buy_blocked_imbalance:
+            return None
+        if inventory.deviation >= -1e-9:
             return None
         if inventory.deviation > knobs.max_deviation:
             return None

@@ -689,8 +689,6 @@ class AlphaApplication:
             execution = await self._executor.execute(decision, risk=snap.risk)
             if execution.executed and execution.action == "place_bid":
                 self._reentry.clear(reason="buy_executed")
-                if "harvest_reentry" in (decision.reason or ""):
-                    self._harvest_session.set_pending_reentry(enabled=False)
                 knobs = self._last_accumulation_knobs
                 if (
                     knobs is not None

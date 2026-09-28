@@ -1420,6 +1420,10 @@ class OrderManager:
                 size_xrp=record.filled_xrp,
                 price_rlusd_per_xrp=record.entry_price_rlusd_per_xrp,
             )
+        if self._harvest_session is not None:
+            set_pending = getattr(self._harvest_session, "set_pending_reentry", None)
+            if callable(set_pending):
+                set_pending(enabled=False)
         self._emit_event(
             BracketFillEvent(
                 bracket_id=record.bracket_id,
