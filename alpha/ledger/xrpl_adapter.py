@@ -88,7 +88,9 @@ class XrplLedgerAdapter(LedgerInterface):
         snap = build_order_book_snapshot(raw, best_bid=best_bid, best_ask=best_ask, mid=mid)
         self._book_cache = snap
         logger.info(
-            "ledger_book | bid=%s ask=%s mid=%s spread_pct=%s",
+            "ledger_book | bids=%d asks=%d bid=%s ask=%s mid=%s spread_pct=%s",
+            len(raw.get("bids") or []),
+            len(raw.get("asks") or []),
             f"{best_bid:.6f}" if best_bid else "n/a",
             f"{best_ask:.6f}" if best_ask else "n/a",
             f"{mid:.6f}" if mid else "n/a",

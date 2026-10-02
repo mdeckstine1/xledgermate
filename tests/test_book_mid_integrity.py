@@ -18,6 +18,15 @@ def test_crossed_book_returns_no_mid() -> None:
     assert not is_trustworthy_rlusd_mid(0.283, best_bid=1.164, best_ask=0.283)
 
 
+def test_one_sided_bid_used_as_mid() -> None:
+    book = {
+        "bids": [{"price": 1.537, "size": 100.0}],
+        "asks": [],
+    }
+    conn = XRPLConnector.__new__(XRPLConnector)
+    assert conn.compute_mid_price(book) == 1.537
+
+
 def test_normal_book_mid() -> None:
     book = {
         "bids": [{"price": 1.179, "size": 100.0}],

@@ -680,22 +680,29 @@ class XRPLConnector:
     def compute_mid_price(self, order_book: Dict[str, List[Dict[str, float]]]) -> Optional[float]:
         bids = order_book.get("bids", [])
         asks = order_book.get("asks", [])
-        if not bids or not asks:
-            return None
-        # RLUSD per XRP: highest bid, lowest ask.
-        best_bid = max(bids, key=lambda x: x["price"])["price"]
-        best_ask = min(asks, key=lambda x: x["price"])["price"]
-        if best_bid <= 0 or best_ask <= 0:
-            return None
-        # Crossed book: do not use a lone ask as mid (inflates portfolio / false drawdown).
-        if is_book_crossed(best_bid, best_ask):
-            logger.warning(
-                "Order book crossed or stale (bid=%.6f ask=%.6f); mid unavailable this cycle.",
-                best_bid,
-                best_ask,
-            )
-            return None
-        return (best_bid + best_ask) / 2.0
+        best_bid = max(bids, key=lambda x: x["price"])["price"] if bids else None
+        best_ask = min(asks, key=lambda x: x["price"])["price"] if asks else None
+        if best_bid is not None and best_bid <= 0:
+            best_bid = None
+        if best_ask is not None and best_ask <= 0:
+            best_ask = None
+        if best_bid is not None and best_ask is not None:
+            if is_book_crossed(best_bid, best_ask):
+                logger.warning(
+                    "Order book crossed or stale (bid=%.6f ask=%.6f); mid unavailable this cycle.",
+                    best_bid,
+                    best_ask,
+                )
+                return None
+            return (best_bid + best_ask) / 2.0
+        # One-sided DEX: still show a price (HUD/preflight). Do not invent a spread.
+        if best_bid is not None:
+            logger.warning("one_sided_book | using bid=%.6f as mid (no asks)", best_bid)
+            return best_bid
+        if best_ask is not None:
+            logger.warning("one_sided_book | using ask=%.6f as mid (no bids)", best_ask)
+            return best_ask
+        return None
 
     def _sanitize_book(
         self, book: Dict[str, List[Dict[str, float]]]
