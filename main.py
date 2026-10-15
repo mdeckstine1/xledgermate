@@ -82,6 +82,18 @@ def parse_args() -> argparse.Namespace:
         help="Asset to send",
     )
     parser.add_argument(
+        "--destination-tag",
+        dest="destination_tag",
+        default="",
+        help="XRPL DestinationTag / exchange memo tag (0–4294967295)",
+    )
+    parser.add_argument(
+        "--memo",
+        dest="send_memo",
+        default="",
+        help="Optional XRPL memo text attached to the payment",
+    )
+    parser.add_argument(
         "--hud-host",
         default="",
         help="Alpha HUD bind host (alpha-hud mode; default from config hud_bind_host)",
@@ -137,8 +149,17 @@ async def run_engine_async(config: BotConfig, mode: str, args: argparse.Namespac
             destination=args.send_to,
             amount=args.amount,
             asset=args.asset,
+            destination_tag=args.destination_tag,
+            memo=args.send_memo,
         )
-        logger.info("Sent %s %s to %s | tx=%s", args.amount, args.asset.upper(), args.send_to, tx_hash)
+        logger.info(
+            "Sent %s %s to %s dest_tag=%s | tx=%s",
+            args.amount,
+            args.asset.upper(),
+            args.send_to,
+            args.destination_tag or None,
+            tx_hash,
+        )
         return
     if mode == "cancel-offers":
         count = await engine.cancel_all_offers()

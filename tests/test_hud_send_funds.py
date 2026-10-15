@@ -56,3 +56,20 @@ def test_send_funds_blocks_when_engine_running_without_confirm(hud_client: TestC
     body = r.json()
     assert body["ok"] is False
     assert body.get("engine_running") is True
+
+
+def test_send_funds_rejects_non_numeric_dest_tag(hud_client: TestClient) -> None:
+    r = hud_client.post(
+        "/send_funds",
+        json={
+            "destination": "rDest123456789012345678901234",
+            "amount": 1.0,
+            "asset": "XRP",
+            "destination_tag": "memo-text",
+            "confirm_text": "SEND",
+            "confirm_engine_running": True,
+        },
+    )
+    body = r.json()
+    assert body["ok"] is False
+    assert "whole number" in body["message"]

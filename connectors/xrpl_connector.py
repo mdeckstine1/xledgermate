@@ -56,6 +56,7 @@ try:
     from xrpl.models.currencies import IssuedCurrency, XRP
     from xrpl.models.requests import AccountInfo, AccountLines, AccountOffers, AccountTx, BookOffers
     from xrpl.models.transactions import (
+        Memo,
         OfferCancel,
         OfferCreate,
         Payment,
@@ -76,6 +77,7 @@ except ImportError:  # pragma: no cover - handled at runtime
     BookOffers = None
     OfferCancel = None
     OfferCreate = None
+    Memo = None
     Payment = None
     TrustSet = None
     TrustSetFlag = None
@@ -221,6 +223,12 @@ class XRPLConnector:
         if isinstance(meta, dict):
             tx_result = meta.get("TransactionResult")
             if tx_result and tx_result != "tesSUCCESS":
+                if tx_result == "tecDST_TAG_NEEDED":
+                    raise RuntimeError(
+                        "XRPL transaction failed: tecDST_TAG_NEEDED — this destination "
+                        "requires a destination tag / memo tag. Enter the numeric tag from "
+                        "the exchange deposit screen and send again."
+                    )
                 raise RuntimeError(f"XRPL transaction failed: {tx_result}")
         tx_hash = result.get("hash", "")
         if not tx_hash:
@@ -335,6 +343,31 @@ class XRPLConnector:
         response = await self._sign_and_submit(tx, wallet)
         return self._validate_tx_response(response)
 
+    async def destination_requires_dest_tag(self, destination: str) -> bool:
+        """True when the destination account has lsfRequireDestTag set."""
+        dest = (destination or "").strip()
+        if not dest.startswith("r"):
+            return False
+        try:
+            req = AccountInfo(account=dest, ledger_index="validated")
+            result = (await self._request(req)).result
+            flags = int((result.get("account_data") or {}).get("Flags") or 0)
+            return bool(flags & 0x00020000)  # lsfRequireDestTag
+        except Exception as exc:
+            logger.info("dest_tag_lookup_failed | dest=%s err=%s", dest, exc)
+            return False
+
+    @staticmethod
+    def _memos_from_text(memo: Optional[str]) -> Optional[List[Any]]:
+        text = (memo or "").strip()
+        if not text:
+            return None
+        if Memo is None:
+            raise RuntimeError("xrpl-py is not installed. Install with: pip install xrpl-py")
+        encoded = text.encode("utf-8").hex().upper()
+        kind = "text/plain".encode("utf-8").hex().upper()
+        return [Memo(memo_data=encoded, memo_format=kind, memo_type=kind)]
+
     async def send_payment(
         self,
         *,
@@ -342,6 +375,8 @@ class XRPLConnector:
         amount: float,
         asset: str = "XRP",
         xrp_reserve: float = 12.0,
+        destination_tag: Optional[int] = None,
+        memo: Optional[str] = None,
     ) -> str:
         """Send XRP or RLUSD from the bot account to destination (classic address)."""
         dest = (destination or "").strip()
@@ -351,8 +386,33 @@ class XRPLConnector:
             raise ValueError("Destination cannot be the bot account itself.")
         if amount <= 0:
             raise ValueError("Amount must be greater than zero.")
+        if destination_tag is not None:
+            if not isinstance(destination_tag, int) or isinstance(destination_tag, bool):
+                raise ValueError(
+                    "Destination tag / memo tag must be a whole number from 0 to 4294967295."
+                )
+            if destination_tag < 0 or destination_tag > 0xFFFFFFFF:
+                raise ValueError(
+                    "Destination tag / memo tag must be a whole number from 0 to 4294967295."
+                )
+
+        if destination_tag is None and await self.destination_requires_dest_tag(dest):
+            raise ValueError(
+                "This destination requires a destination tag / memo tag. "
+                "Enter the numeric tag from the exchange deposit screen before sending — "
+                "sending without it can permanently lose the funds."
+            )
 
         wallet = self.load_wallet()
+        payment_kwargs: Dict[str, Any] = {
+            "account": self.account_address,
+            "destination": dest,
+        }
+        if destination_tag is not None:
+            payment_kwargs["destination_tag"] = destination_tag
+        memos = self._memos_from_text(memo)
+        if memos:
+            payment_kwargs["memos"] = memos
 
         if asset.upper() == "XRP":
             balance = await self.get_xrp_balance()
@@ -362,9 +422,8 @@ class XRPLConnector:
                     f"amount={amount:.4f}, reserve={xrp_reserve:.4f}."
                 )
             tx = Payment(
-                account=self.account_address,
-                destination=dest,
                 amount=str(xrp_to_drops(amount)),
+                **payment_kwargs,
             )
         elif asset.upper() == "RLUSD":
             trust = await self.get_rlusd_trust_line()
@@ -375,13 +434,12 @@ class XRPLConnector:
                     f"Insufficient RLUSD balance ({trust.balance:.6f}) for send {amount:.6f}."
                 )
             tx = Payment(
-                account=self.account_address,
-                destination=dest,
                 amount=IssuedCurrencyAmount(
                     currency=self._issued_rlusd_currency_code(),
                     issuer=self.rlusd_issuer,
                     value=f"{amount:.6f}",
                 ),
+                **payment_kwargs,
             )
         else:
             raise ValueError(f"Unsupported asset: {asset}. Use XRP or RLUSD.")
@@ -389,10 +447,11 @@ class XRPLConnector:
         response = await self._sign_and_submit(tx, wallet)
         tx_hash = self._validate_tx_response(response)
         logger.info(
-            "Sent %s %s to %s | hash=%s",
+            "Sent %s %s to %s dest_tag=%s | hash=%s",
             amount,
             asset.upper(),
             dest,
+            destination_tag,
             tx_hash,
         )
         return tx_hash

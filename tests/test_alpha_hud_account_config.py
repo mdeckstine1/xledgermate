@@ -127,3 +127,56 @@ def test_send_funds_requires_send_confirm(client):
     )
     assert r.status_code == 400
     assert "SEND" in r.json()["message"]
+
+
+def test_send_funds_rejects_non_numeric_dest_tag(client):
+    r = client.post(
+        "/operator/send-funds",
+        json={
+            "destination": "rDest123456789012345678901234",
+            "amount": 1.0,
+            "asset": "XRP",
+            "destination_tag": "not-a-tag",
+            "confirm_text": "SEND",
+            "confirm_engine_running": True,
+        },
+    )
+    assert r.status_code == 400
+    assert "whole number" in r.json()["message"]
+
+
+def test_send_funds_forwards_destination_tag(client, monkeypatch):
+    captured: dict = {}
+
+    async def fake_send(**kwargs):
+        captured.update(kwargs)
+        return "HASHDESTTAG"
+
+    class _Cfg:
+        bot_account_address = "rBot123456789012345678901234"
+        bot_secret_key = "sEdTEST"
+
+    monkeypatch.setattr("config.settings.BotConfig.load", lambda: _Cfg())
+    monkeypatch.setattr("utils.send_funds.send_from_bot_account", fake_send)
+
+    r = client.post(
+        "/operator/send-funds",
+        json={
+            "destination": "rDest123456789012345678901234",
+            "amount": 12.5,
+            "asset": "XRP",
+            "destination_tag": "1,234,567",
+            "memo": "withdraw",
+            "confirm_text": "SEND",
+            "confirm_engine_running": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    assert body["tx_hash"] == "HASHDESTTAG"
+    assert body["destination_tag"] == 1234567
+    assert captured["destination"] == "rDest123456789012345678901234"
+    assert captured["destination_tag"] == 1234567
+    assert captured["memo"] == "withdraw"
+    assert captured["amount"] == 12.5

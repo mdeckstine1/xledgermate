@@ -206,12 +206,16 @@ class CSVLogger:
         balance_xrp_after: float = 0.0,
         balance_rlusd_after: float = 0.0,
         proceeds_usd: Optional[float] = None,
+        destination_tag: Optional[int] = None,
+        memo: Optional[str] = None,
     ) -> None:
         xrp_amt = amount if asset.upper() == "XRP" else 0.0
         rlusd_amt = amount if asset.upper() == "RLUSD" else 0.0
         usd = proceeds_usd
         if usd is None and rlusd_amt > 0:
             usd = rlusd_amt
+        tag_note = f" dest_tag={destination_tag}" if destination_tag is not None else ""
+        memo_note = f" memo={memo}" if memo else ""
         self.log_event(
             event_type="TRANSFER",
             taxable=True,
@@ -220,7 +224,7 @@ class CSVLogger:
             xrp_amount=xrp_amt,
             rlusd_amount=rlusd_amt,
             tx_hash=tx_hash,
-            notes=f"Payment to {destination}",
+            notes=f"Payment to {destination}{tag_note}{memo_note}",
             balance_xrp_after=balance_xrp_after,
             balance_rlusd_after=balance_rlusd_after,
             proceeds_usd=usd,

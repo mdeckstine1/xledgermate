@@ -205,9 +205,12 @@ def read_recent_transfers(*, limit: int = 25) -> List[Dict[str, str]]:
     header = [h.strip() for h in lines[0].split(",")]
     for line in lines[1:][-limit:]:
         parts = line.split(",")
-        if len(parts) < len(header):
+        if not parts:
             continue
-        rows.append({header[i]: parts[i] for i in range(len(header))})
+        row = {header[i]: (parts[i] if i < len(parts) else "") for i in range(len(header))}
+        if "destination_tag" not in row and len(parts) > len(header):
+            row["destination_tag"] = parts[len(header)]
+        rows.append(row)
     return list(reversed(rows))
 
 

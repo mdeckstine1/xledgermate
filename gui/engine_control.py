@@ -448,7 +448,13 @@ def disable_rlusd_rippling() -> tuple[bool, str]:
     return True, "RLUSD rippling disabled (No Ripple) on the ledger."
 
 
-def send_funds(destination: str, amount: float, asset: str = "XRP") -> tuple[bool, str]:
+def send_funds(
+    destination: str,
+    amount: float,
+    asset: str = "XRP",
+    destination_tag: str | int | None = None,
+    memo: str | None = None,
+) -> tuple[bool, str]:
     """Send XRP or RLUSD from bot account via subprocess."""
     dest = (destination or "").strip()
     if not dest.startswith("r"):
@@ -456,19 +462,27 @@ def send_funds(destination: str, amount: float, asset: str = "XRP") -> tuple[boo
     if amount <= 0:
         return False, "Amount must be greater than zero."
 
+    cmd = [
+        _python_exe(),
+        "main.py",
+        "--mode",
+        "send",
+        "--to",
+        dest,
+        "--amount",
+        str(amount),
+        "--asset",
+        asset.upper(),
+    ]
+    tag = "" if destination_tag is None else str(destination_tag).strip()
+    if tag:
+        cmd.extend(["--destination-tag", tag])
+    memo_text = "" if memo is None else str(memo).strip()
+    if memo_text:
+        cmd.extend(["--memo", memo_text])
+
     result = subprocess.run(
-        [
-            _python_exe(),
-            "main.py",
-            "--mode",
-            "send",
-            "--to",
-            dest,
-            "--amount",
-            str(amount),
-            "--asset",
-            asset.upper(),
-        ],
+        cmd,
         cwd=str(ROOT),
         capture_output=True,
         text=True,

@@ -2675,10 +2675,19 @@ def _render_account_tab(config: BotConfig, runtime: dict) -> None:
             st.warning("RLUSD trust line may exist; balance still **0** until faucet pays you.")
 
     st.markdown("### Send / withdraw")
+    st.warning(
+        "Exchanges require a destination tag / memo tag. Sending XRP without it can permanently lose the funds."
+    )
     send_dest = st.text_input(
         "Send to address",
         value=getattr(config, "send_destination_default", "") or "",
     )
+    send_dest_tag = st.text_input(
+        "Destination tag / memo (required by most exchanges)",
+        value="",
+        help="Numeric XRPL DestinationTag from the exchange deposit screen. Leave blank only for personal wallets.",
+    )
+    send_memo = st.text_input("On-ledger memo (optional)", value="")
     sc1, sc2 = st.columns(2)
     with sc1:
         send_amount = st.number_input("Amount", min_value=0.0, value=0.0, step=1.0)
@@ -2696,7 +2705,13 @@ def _render_account_tab(config: BotConfig, runtime: dict) -> None:
             config.send_destination_default = send_dest.strip()
             _persist_config(config)[0]
             with st.spinner("Sending..."):
-                ok, msg = send_funds(send_dest.strip(), send_amount, send_asset)
+                ok, msg = send_funds(
+                    send_dest.strip(),
+                    send_amount,
+                    send_asset,
+                    destination_tag=send_dest_tag.strip() or None,
+                    memo=send_memo.strip() or None,
+                )
             _show_result(ok, msg)
 
 

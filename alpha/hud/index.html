@@ -239,6 +239,8 @@
     .config-form .ctrl-row label { min-width:180px; }
     .config-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:12px; margin-bottom:16px; }
     .transfer-form .ctrl-row input[type=number] { width:120px; }
+    .transfer-form .ctrl-row input[type=text] { flex:1; min-width:200px; max-width:480px; background:#0f172a; border:1px solid var(--border); color:var(--text); padding:6px; border-radius:4px; }
+    .transfer-form .ctrl-row label { min-width:200px; }
     .transfer-log { font-size:.78rem; max-height:240px; overflow:auto; }
     .skynet-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
     @media (max-width:900px) { .skynet-grid { grid-template-columns:1fr; } .regime-cards-row { grid-template-columns:1fr; } }
@@ -779,7 +781,10 @@
         <div class="card controls-section transfer-form">
           <h2>Send / withdraw from bot</h2>
           <p class="muted" style="margin:0 0 10px">Signed XRPL payment from the bot account. Logged to <code>logs/transfers.csv</code>. Pause trading and stop the engine before large withdrawals.</p>
+          <p style="color:var(--warn);font-size:.8rem;margin:0 0 12px;max-width:640px">Exchanges (Binance, Coinbase, Kraken, Uphold, Bitstamp, etc.) require a <strong>destination tag / memo tag</strong>. Sending XRP without it can permanently lose the funds. Personal wallets (Xaman, Tangem) usually leave this blank.</p>
           <div class="ctrl-row"><label>Destination (r…)</label><input type="text" id="sendDest" placeholder="r…" autocomplete="off"></div>
+          <div class="ctrl-row"><label>Destination tag / memo</label><input type="text" id="sendDestTag" inputmode="numeric" pattern="[0-9]*" placeholder="numeric tag from the exchange" autocomplete="off"></div>
+          <div class="ctrl-row"><label>On-ledger memo (optional)</label><input type="text" id="sendMemo" placeholder="optional XRPL memo text" autocomplete="off"></div>
           <div class="ctrl-row"><label>Asset</label>
             <select id="sendAsset" style="background:#0f172a;border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px">
               <option value="XRP">XRP</option>
@@ -3245,12 +3250,13 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         el.innerHTML = '<div class="muted">No transfers yet.</div>';
         return;
       }
-      el.innerHTML = '<table><thead><tr><th>Time</th><th>Asset</th><th>Amount</th><th>Destination</th><th>Tx</th></tr></thead><tbody>' +
+      el.innerHTML = '<table><thead><tr><th>Time</th><th>Asset</th><th>Amount</th><th>Destination</th><th>Tag</th><th>Tx</th></tr></thead><tbody>' +
         rows.map(t => `<tr>
           <td>${(t.timestamp_utc||'').slice(0,19)}</td>
           <td>${t.asset||'—'}</td>
           <td>${t.amount||'—'}</td>
           <td style="font-size:.7rem;word-break:break-all">${t.destination||'—'}</td>
+          <td>${t.destination_tag||'—'}</td>
           <td style="font-size:.7rem;word-break:break-all">${(t.tx_hash||'').slice(0,12)}…</td>
         </tr>`).join('') + '</tbody></table>';
     }
@@ -3425,14 +3431,23 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
     $('btnSendFunds').onclick = async () => {
       const dest = $('sendDest').value.trim();
       const amount = parseFloat($('sendAmount').value);
+      const destTag = ($('sendDestTag') && $('sendDestTag').value.trim()) || '';
+      const memo = ($('sendMemo') && $('sendMemo').value.trim()) || '';
+      const asset = $('sendAsset').value;
       if (!dest || !amount || amount <= 0) { toast('Enter destination and amount', true); return; }
-      if (!confirm('Send ' + amount + ' ' + $('sendAsset').value + ' to ' + dest + '?')) return;
+      let warn = 'Send ' + amount + ' ' + asset + ' to ' + dest;
+      if (destTag) warn += ' with destination tag ' + destTag;
+      else warn += '\n\nWARNING: No destination tag. Most exchanges require a memo / dest tag. Sending without it can permanently lose the funds.';
+      if (memo) warn += '\nMemo: ' + memo;
+      if (!confirm(warn)) return;
       $('sendResult').dataset.busy = '1';
       $('sendResult').textContent = 'Submitting…';
       const d = await postJson('/operator/send-funds', {
         destination: dest,
-        asset: $('sendAsset').value,
+        asset,
         amount,
+        destination_tag: destTag,
+        memo,
         confirm_text: $('sendConfirmText').value,
         confirm_engine_running: $('sendConfirmEngine').checked,
       });

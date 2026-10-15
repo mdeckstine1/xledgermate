@@ -139,6 +139,8 @@ def register_config_routes(app: Any) -> None:
             amount = 0.0
         confirm_text = str(body.get("confirm_text") or "").strip().upper()
         confirm_engine_running = bool(body.get("confirm_engine_running"))
+        raw_tag = body.get("destination_tag", body.get("memo_tag", body.get("dest_tag")))
+        memo_text = body.get("memo")
 
         if confirm_text != "SEND":
             return JSONResponse(
@@ -163,6 +165,14 @@ def register_config_routes(app: Any) -> None:
                 {"ok": False, "message": "Asset must be XRP or RLUSD."},
                 status_code=400,
             )
+
+        from utils.send_funds import parse_destination_tag, parse_memo_text, send_from_bot_account
+
+        try:
+            dest_tag = parse_destination_tag(raw_tag)
+            memo = parse_memo_text(memo_text)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
 
         engine_up = is_alpha_engine_running()
         if engine_up and not confirm_engine_running:
@@ -193,23 +203,25 @@ def register_config_routes(app: Any) -> None:
             )
 
         try:
-            from utils.send_funds import send_from_bot_account
-
             tx_hash = await send_from_bot_account(
                 destination=destination,
                 amount=amount,
                 asset=asset,
+                destination_tag=dest_tag,
+                memo=memo,
             )
         except Exception as exc:
             logger.warning("alpha_send_funds_failed | %s", exc)
             return JSONResponse({"ok": False, "message": str(exc)[:500]}, status_code=400)
 
         patch_config_file({"send_destination_default": destination})
+        tag_note = f" tag {dest_tag}" if dest_tag is not None else ""
         return JSONResponse(
             {
                 "ok": True,
-                "message": f"Sent {amount:g} {asset} to {destination}",
+                "message": f"Sent {amount:g} {asset} to {destination}{tag_note}",
                 "tx_hash": tx_hash,
+                "destination_tag": dest_tag,
                 "transfers": read_recent_transfers(),
             }
         )

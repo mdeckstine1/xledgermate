@@ -1402,6 +1402,15 @@
                                 <input id="send-dest" type="text" value="" placeholder="r..." style="width:100%; padding:3px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:3px; font-family:monospace;">
                             </div>
                             <div style="grid-column: 1 / -1;">
+                                <label for="send-dest-tag" class="label" style="display:block; margin-bottom:2px;">Destination tag / memo (required by most exchanges)</label>
+                                <input id="send-dest-tag" type="text" inputmode="numeric" value="" placeholder="numeric tag from the exchange" style="width:100%; padding:3px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:3px; font-family:monospace;">
+                                <div style="font-size:0.72rem; color:#fde047; margin-top:4px;">Sending XRP to an exchange without this tag can permanently lose the funds. Personal wallets usually leave it blank.</div>
+                            </div>
+                            <div style="grid-column: 1 / -1;">
+                                <label for="send-memo" class="label" style="display:block; margin-bottom:2px;">On-ledger memo (optional)</label>
+                                <input id="send-memo" type="text" value="" placeholder="optional XRPL memo text" style="width:100%; padding:3px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:3px;">
+                            </div>
+                            <div style="grid-column: 1 / -1;">
                                 <label style="font-size:0.65rem; display:block; margin-bottom:4px;">
                                     <input type="checkbox" id="send-confirm-running"> Engine may be running — I accept sending while MM is live
                                 </label>
@@ -4454,7 +4463,7 @@
             if (lines.length > 12) log.textContent = lines.slice(0, 12).join('\n') + '\n';
         }
 
-        async function performLiveSend(asset, amount, dest) {
+        async function performLiveSend(asset, amount, dest, destTag, memo) {
             const resEl = document.getElementById('send-result');
             const confirmRunning = !!(document.getElementById('send-confirm-running') || {}).checked;
             const confirmText = (document.getElementById('send-confirm-text') || {}).value || '';
@@ -4470,6 +4479,8 @@
                         destination: dest,
                         amount: amount,
                         asset: asset,
+                        destination_tag: destTag || '',
+                        memo: memo || '',
                         confirm_engine_running: confirmRunning,
                         confirm_text: confirmText,
                     }),
@@ -4858,6 +4869,8 @@
                     const asset = (document.getElementById('send-asset') || {}).value || 'XRP';
                     const amt = parseFloat((document.getElementById('send-amount') || {}).value || '0');
                     const dest = ((document.getElementById('send-dest') || {}).value || '').trim();
+                    const destTag = ((document.getElementById('send-dest-tag') || {}).value || '').trim();
+                    const memo = ((document.getElementById('send-memo') || {}).value || '').trim();
                     if (!dest.startsWith('r')) {
                         const res = document.getElementById('send-result');
                         if (res) {
@@ -4871,10 +4884,15 @@
                         if (res) res.textContent = 'Amount must be > 0.';
                         return;
                     }
-                    if (!confirm(`Send ${amt} ${asset} to ${dest}?\n\nThis is a LIVE on-ledger payment from the bot account.`)) {
+                    let warn = `Send ${amt} ${asset} to ${dest}`;
+                    if (destTag) warn += ` with destination tag ${destTag}`;
+                    else warn += `\n\nWARNING: No destination tag. Most exchanges require a memo / dest tag. Sending without it can permanently lose the funds.`;
+                    if (memo) warn += `\nMemo: ${memo}`;
+                    warn += `\n\nThis is a LIVE on-ledger payment from the bot account.`;
+                    if (!confirm(warn)) {
                         return;
                     }
-                    performLiveSend(asset, amt, dest);
+                    performLiveSend(asset, amt, dest, destTag, memo);
                 });
             }
             const sendDestInput = document.getElementById('send-dest');

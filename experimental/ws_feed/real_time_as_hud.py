@@ -454,6 +454,8 @@ if app:
         except (TypeError, ValueError):
             amount = 0.0
         confirm_running = bool(data.get("confirm_engine_running"))
+        raw_tag = data.get("destination_tag", data.get("memo_tag", data.get("dest_tag")))
+        memo_text = data.get("memo")
 
         from config.settings import BotConfig, patch_config_file
 
@@ -471,6 +473,14 @@ if app:
             return {"ok": False, "message": "Amount must be greater than zero."}
         if asset not in ("XRP", "RLUSD"):
             return {"ok": False, "message": "Asset must be XRP or RLUSD."}
+
+        from utils.send_funds import parse_destination_tag, parse_memo_text, send_from_bot_account
+
+        try:
+            dest_tag = parse_destination_tag(raw_tag)
+            memo = parse_memo_text(memo_text)
+        except ValueError as exc:
+            return {"ok": False, "message": str(exc)}
 
         typed = str(data.get("confirm_text") or "").strip().upper()
         if typed != "SEND":
@@ -493,21 +503,23 @@ if app:
             }
 
         try:
-            from utils.send_funds import send_from_bot_account
-
             tx_hash = await send_from_bot_account(
                 destination=destination,
                 amount=amount,
                 asset=asset,
+                destination_tag=dest_tag,
+                memo=memo,
             )
         except Exception as exc:
             return {"ok": False, "message": str(exc)[:500]}
 
         patch_config_file({"send_destination_default": destination})
+        tag_note = f" tag {dest_tag}" if dest_tag is not None else ""
         return {
             "ok": True,
-            "message": f"Sent {amount:g} {asset} to {destination}",
+            "message": f"Sent {amount:g} {asset} to {destination}{tag_note}",
             "tx_hash": tx_hash,
+            "destination_tag": dest_tag,
         }
 
     @app.post("/analyze_competitor")
