@@ -798,6 +798,24 @@
           <button type="button" id="btnSendFunds" class="danger">Send payment</button>
           <span id="sendResult" class="muted" style="margin-left:8px"></span>
         </div>
+        <div class="card controls-section transfer-form">
+          <h2>Swap XRP ↔ RLUSD</h2>
+          <p class="muted" style="margin:0 0 10px">Takes the DEX book. You pay the spread once. The offer is immediate-or-cancel, so nothing rests. Maximum 200 XRP per click. The XRP reserve stays untouched.</p>
+          <div class="ctrl-row"><label>Direction</label>
+            <select id="swapDirection" style="background:#0f172a;border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px">
+              <option value="xrp_to_rlusd">XRP → RLUSD</option>
+              <option value="rlusd_to_xrp">RLUSD → XRP</option>
+            </select>
+          </div>
+          <div class="ctrl-row"><label>Amount</label><input type="number" id="swapAmount" step="any" min="0" placeholder="XRP or RLUSD to spend"></div>
+          <div class="ctrl-row"><label>Max slippage (bps)</label><input type="number" id="swapSlippage" step="1" min="1" max="30" value="30"></div>
+          <div class="ctrl-row toggle"><label><input type="checkbox" id="swapConfirmEngine"> Engine is running — I still want to swap</label></div>
+          <div class="ctrl-row"><label>Type SWAP to confirm</label><input type="text" id="swapConfirmText" placeholder="SWAP" autocomplete="off"></div>
+          <button type="button" id="btnSwapPreview" class="secondary">Preview</button>
+          <button type="button" id="btnSwapExecute" class="danger">Swap</button>
+          <p id="swapPreview" class="muted" style="margin:10px 0 0;font-size:.85rem">Preview before you swap.</p>
+          <span id="swapResult" class="muted" style="margin-left:8px"></span>
+        </div>
         <div class="card">
           <h3>Recent transfers</h3>
           <div id="transferLog" class="transfer-log muted">Loading…</div>
@@ -3475,6 +3493,59 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
         const msg = 'Send failed: ' + (err && err.message ? err.message : err);
         $('sendResult').textContent = msg;
         toast(msg, true);
+      }
+    };
+
+    function swapPayload() {
+      return {
+        direction: $('swapDirection').value,
+        amount: parseFloat($('swapAmount').value),
+        max_slippage_bps: parseFloat($('swapSlippage').value) || 30,
+      };
+    }
+
+    $('btnSwapPreview').onclick = async () => {
+      const body = swapPayload();
+      if (!body.amount || body.amount <= 0) { toast('Enter an amount', true); return; }
+      $('swapPreview').textContent = 'Reading the book…';
+      const d = await postJson('/operator/swap/preview', body);
+      if (!d) return;
+      if (d.ok) {
+        const line = (d.message || 'Ready')
+          + (d.average_price ? ' · best ' + Number(d.best_price).toFixed(6) : '');
+        $('swapPreview').textContent = line;
+      } else {
+        $('swapPreview').textContent = d.message || 'Preview refused';
+      }
+    };
+
+    $('btnSwapExecute').onclick = async () => {
+      const body = swapPayload();
+      if (!body.amount || body.amount <= 0) { toast('Enter an amount', true); return; }
+      if (($('swapConfirmText').value || '').trim().toUpperCase() !== 'SWAP') {
+        toast('Type SWAP in the confirmation box', true);
+        $('swapResult').textContent = 'Type SWAP to authorize the trade.';
+        return;
+      }
+      const dir = body.direction === 'rlusd_to_xrp' ? 'RLUSD → XRP' : 'XRP → RLUSD';
+      if (!confirm('Swap ' + body.amount + ' (' + dir + ')? This takes the book and pays the spread.')) return;
+      $('swapResult').textContent = 'Submitting…';
+      const d = await postJson('/operator/swap', {
+        ...body,
+        confirm_text: $('swapConfirmText').value,
+        confirm_engine_running: $('swapConfirmEngine').checked,
+      });
+      if (!d) return;
+      if (d.ok) {
+        $('swapResult').textContent = (d.message || 'Swapped') + (d.tx_hash ? ' · ' + String(d.tx_hash).slice(0, 12) + '…' : '');
+        $('swapConfirmText').value = '';
+        $('swapPreview').textContent = d.no_fill
+          ? 'No fill. The book moved and nothing is resting.'
+          : (d.partial ? 'Partial fill. Check balances before another swap.' : 'Filled.');
+        toast(d.no_fill ? 'No fill' : (d.partial ? 'Partial swap' : 'Swap submitted'));
+        poll();
+      } else {
+        $('swapResult').textContent = d.message || 'Swap failed';
       }
     };
 

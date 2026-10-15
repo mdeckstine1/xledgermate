@@ -233,4 +233,77 @@ def register_config_routes(app: Any) -> None:
             }
         )
 
+    def _swap_request(body: Dict[str, Any]) -> tuple[str, float, float]:
+        direction = str(body.get("direction") or "").strip().lower()
+        try:
+            amount = float(body.get("amount") or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        try:
+            slippage = float(body.get("max_slippage_bps") or 30)
+        except (TypeError, ValueError):
+            slippage = 30.0
+        return direction, amount, slippage
+
+    @app.post("/operator/swap/preview")
+    async def post_swap_preview(body: Dict[str, Any] = Body(...)) -> JSONResponse:
+        from utils.dex_swap import preview_swap_for_operator
+
+        direction, amount, slippage = _swap_request(body)
+        if amount <= 0:
+            return JSONResponse({"ok": False, "message": "Amount must be greater than zero."}, status_code=400)
+        try:
+            preview = await preview_swap_for_operator(
+                direction=direction,
+                amount=amount,
+                max_slippage_bps=slippage,
+            )
+        except Exception as exc:
+            logger.warning("alpha_swap_preview_failed | %s", exc)
+            return JSONResponse({"ok": False, "message": str(exc)[:500]}, status_code=400)
+        status = 200 if preview.get("ok") else 400
+        return JSONResponse(preview, status_code=status)
+
+    @app.post("/operator/swap")
+    async def post_swap(body: Dict[str, Any] = Body(...)) -> JSONResponse:
+        from utils.dex_swap import execute_swap_for_operator
+
+        direction, amount, slippage = _swap_request(body)
+        confirm_text = str(body.get("confirm_text") or "").strip().upper()
+        confirm_engine_running = bool(body.get("confirm_engine_running"))
+        logger.info(
+            "alpha_swap_request | direction=%s amount=%s slippage_bps=%s",
+            direction,
+            amount,
+            slippage,
+        )
+        if confirm_text != "SWAP":
+            return JSONResponse(
+                {"ok": False, "message": "Type SWAP in the confirmation box to authorize the trade."},
+                status_code=400,
+            )
+        if amount <= 0:
+            return JSONResponse({"ok": False, "message": "Amount must be greater than zero."}, status_code=400)
+
+        engine_up = is_alpha_engine_running()
+        if engine_up and not confirm_engine_running:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "message": "Alpha engine is running — Pause trading and stop engine, or check the confirmation box.",
+                    "engine_running": True,
+                },
+                status_code=400,
+            )
+        try:
+            result = await execute_swap_for_operator(
+                direction=direction,
+                amount=amount,
+                max_slippage_bps=slippage,
+            )
+        except Exception as exc:
+            logger.warning("alpha_swap_failed | %s", exc)
+            return JSONResponse({"ok": False, "message": str(exc)[:500]}, status_code=400)
+        return JSONResponse(result)
+
     logger.debug("alpha_hud_config_routes_registered")

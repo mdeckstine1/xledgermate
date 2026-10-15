@@ -59,6 +59,7 @@ try:
         Memo,
         OfferCancel,
         OfferCreate,
+        OfferCreateFlag,
         Payment,
         TrustSet,
         TrustSetFlag,
@@ -77,6 +78,7 @@ except ImportError:  # pragma: no cover - handled at runtime
     BookOffers = None
     OfferCancel = None
     OfferCreate = None
+    OfferCreateFlag = None
     Memo = None
     Payment = None
     TrustSet = None
@@ -655,6 +657,61 @@ class XRPLConnector:
             intent.level,
             intent.size_xrp,
             format_rlusd_price(intent.price, dec),
+            offer_seq if offer_seq is not None else "n/a",
+            offer_resting,
+            tx_hash,
+        )
+        return tx_hash, offer_seq, offer_resting
+
+    async def place_ioc_swap(
+        self,
+        *,
+        direction: str,
+        xrp_amount: float,
+        rlusd_amount: float,
+    ) -> tuple[str, Optional[int], Optional[bool]]:
+        """Cross the book and cancel any remainder in the same transaction.
+
+        ``xrp_to_rlusd`` gives ``xrp_amount`` and requires at least ``rlusd_amount``.
+        ``rlusd_to_xrp`` gives ``rlusd_amount`` and requires at least ``xrp_amount``.
+        """
+        if OfferCreateFlag is None:
+            raise RuntimeError("xrpl-py is not installed. Install with: pip install xrpl-py")
+        if direction not in ("xrp_to_rlusd", "rlusd_to_xrp"):
+            raise ValueError(f"Unsupported swap direction: {direction}")
+        if xrp_amount <= 0 or rlusd_amount <= 0:
+            raise ValueError("Swap legs must be greater than zero.")
+
+        wallet = self.load_wallet()
+        dec = 6
+        rlusd_value = format_rlusd_amount(rlusd_amount, dec)
+        rlusd_leg = IssuedCurrencyAmount(
+            currency=self._issued_rlusd_currency_code(),
+            issuer=self.rlusd_issuer,
+            value=rlusd_value,
+        )
+        xrp_leg = str(xrp_to_drops(xrp_amount))
+        if direction == "xrp_to_rlusd":
+            taker_gets = xrp_leg
+            taker_pays = rlusd_leg
+        else:
+            taker_gets = rlusd_leg
+            taker_pays = xrp_leg
+
+        tx = OfferCreate(
+            account=self.account_address,
+            taker_gets=taker_gets,
+            taker_pays=taker_pays,
+            flags=OfferCreateFlag.TF_IMMEDIATE_OR_CANCEL,
+        )
+        response = await self._sign_and_submit(tx, wallet)
+        tx_hash = self._validate_tx_response(response)
+        offer_seq, offer_resting = self.classify_offer_create(response)
+        logger.info(
+            "IOC swap %s | xrp=%.6f rlusd=%s seq=%s resting=%s hash=%s",
+            direction,
+            xrp_amount,
+            rlusd_value,
             offer_seq if offer_seq is not None else "n/a",
             offer_resting,
             tx_hash,
