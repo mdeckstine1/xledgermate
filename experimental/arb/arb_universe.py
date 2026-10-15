@@ -207,24 +207,9 @@ def refresh_arb_universe(
 
 
 def tail_universe_records(*, limit: int = 96, path: Path = ARB_UNIVERSE_LOG) -> List[Dict[str, Any]]:
-    if not path.is_file() or limit <= 0:
-        return []
-    try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return []
-    out: List[Dict[str, Any]] = []
-    for line in lines[-limit:]:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(row, dict):
-            out.append(row)
-    return out
+    from utils.jsonl_tail import tail_json_objects
+
+    return tail_json_objects(path, limit)
 
 
 def format_universe_report(*, logs_dir: Optional[Path] = None, limit: int = 48) -> str:

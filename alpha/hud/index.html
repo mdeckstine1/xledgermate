@@ -792,8 +792,9 @@
             </select>
           </div>
           <div class="ctrl-row"><label>Amount</label><input type="number" id="sendAmount" step="any" min="0" placeholder="0.0"></div>
-          <div class="ctrl-row toggle"><label><input type="checkbox" id="sendConfirmEngine"> I confirm engine is stopped / paused</label></div>
+          <div class="ctrl-row toggle"><label><input type="checkbox" id="sendConfirmEngine"> Engine is running — I still want to send</label></div>
           <div class="ctrl-row"><label>Type SEND to confirm</label><input type="text" id="sendConfirmText" placeholder="SEND" autocomplete="off"></div>
+          <p class="muted" style="margin:-4px 0 10px 200px;font-size:.75rem;max-width:520px">Engine is live. Check the box and type <strong>SEND</strong> or the payment is blocked.</p>
           <button type="button" id="btnSendFunds" class="danger">Send payment</button>
           <span id="sendResult" class="muted" style="margin-left:8px"></span>
         </div>
@@ -3435,6 +3436,11 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       const memo = ($('sendMemo') && $('sendMemo').value.trim()) || '';
       const asset = $('sendAsset').value;
       if (!dest || !amount || amount <= 0) { toast('Enter destination and amount', true); return; }
+      if (($('sendConfirmText').value || '').trim().toUpperCase() !== 'SEND') {
+        toast('Type SEND in the confirmation box', true);
+        if ($('sendResult')) $('sendResult').textContent = 'Type SEND to authorize withdrawal.';
+        return;
+      }
       let warn = 'Send ' + amount + ' ' + asset + ' to ' + dest;
       if (destTag) warn += ' with destination tag ' + destTag;
       else warn += '\n\nWARNING: No destination tag. Most exchanges require a memo / dest tag. Sending without it can permanently lose the funds.';
@@ -3442,24 +3448,33 @@ Judge bleed from realized_bracket_pnl (tp_exits/sl_exits), not session P&amp;L. 
       if (!confirm(warn)) return;
       $('sendResult').dataset.busy = '1';
       $('sendResult').textContent = 'Submitting…';
-      const d = await postJson('/operator/send-funds', {
-        destination: dest,
-        asset,
-        amount,
-        destination_tag: destTag,
-        memo,
-        confirm_text: $('sendConfirmText').value,
-        confirm_engine_running: $('sendConfirmEngine').checked,
-      });
-      delete $('sendResult').dataset.busy;
-      if (d?.ok) {
-        $('sendResult').textContent = (d.message || 'Sent') + (d.tx_hash ? ' · ' + d.tx_hash.slice(0,12) + '…' : '');
-        $('sendConfirmText').value = '';
-        renderTransferLog(d.transfers);
-        toast('Payment sent');
-        poll();
-      } else {
-        $('sendResult').textContent = d?.message || 'Send failed';
+      try {
+        const d = await postJson('/operator/send-funds', {
+          destination: dest,
+          asset,
+          amount,
+          destination_tag: destTag,
+          memo,
+          confirm_text: $('sendConfirmText').value,
+          confirm_engine_running: $('sendConfirmEngine').checked,
+        });
+        delete $('sendResult').dataset.busy;
+        if (d?.ok) {
+          $('sendResult').textContent = (d.message || 'Sent') + (d.tx_hash ? ' · ' + d.tx_hash.slice(0,12) + '…' : '');
+          $('sendConfirmText').value = '';
+          renderTransferLog(d.transfers);
+          toast('Payment sent');
+          poll();
+        } else {
+          const msg = d?.message || 'Send failed';
+          $('sendResult').textContent = msg;
+          toast(msg, true);
+        }
+      } catch (err) {
+        delete $('sendResult').dataset.busy;
+        const msg = 'Send failed: ' + (err && err.message ? err.message : err);
+        $('sendResult').textContent = msg;
+        toast(msg, true);
       }
     };
 

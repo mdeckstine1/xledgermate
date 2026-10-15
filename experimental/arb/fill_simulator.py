@@ -439,20 +439,15 @@ def live_fill_simulation_payload(
 
 
 def _load_soak_rows_for_replay(path: Path) -> List[Tuple[Any, Dict[str, Any]]]:
-    import json
     from datetime import datetime
+
+    from utils.jsonl_tail import tail_json_objects
 
     rows: List[Tuple[Any, Dict[str, Any]]] = []
     if not path.is_file():
         return rows
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    # Last ~24h at 60s polls is ~1440 rows; cap the read so HUD cannot OOM.
+    for row in tail_json_objects(path, 4000, max_bytes=12 * 1024 * 1024):
         if row.get("status") != "ok" or not row_has_fill_snapshot(row):
             continue
         ts = row.get("ts_utc")

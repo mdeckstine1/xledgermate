@@ -104,24 +104,9 @@ def append_clob_amm_record(record: Dict[str, Any], path: Path = CLOB_AMM_LOG) ->
 
 
 def tail_clob_amm_records(*, limit: int = 100, path: Path = CLOB_AMM_LOG) -> List[Dict[str, Any]]:
-    if not path.exists() or limit <= 0:
-        return []
-    try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return []
-    out: List[Dict[str, Any]] = []
-    for line in lines[-limit:]:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(row, dict):
-            out.append(row)
-    return out
+    from utils.jsonl_tail import tail_json_objects
+
+    return tail_json_objects(path, limit)
 
 
 def summarize_clob_amm_rows(

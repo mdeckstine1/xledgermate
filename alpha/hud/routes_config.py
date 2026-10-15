@@ -141,6 +141,13 @@ def register_config_routes(app: Any) -> None:
         confirm_engine_running = bool(body.get("confirm_engine_running"))
         raw_tag = body.get("destination_tag", body.get("memo_tag", body.get("dest_tag")))
         memo_text = body.get("memo")
+        logger.info(
+            "alpha_send_funds_request | dest=%s asset=%s amount=%s tag=%s",
+            destination,
+            asset,
+            amount,
+            raw_tag,
+        )
 
         if confirm_text != "SEND":
             return JSONResponse(

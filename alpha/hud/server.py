@@ -67,8 +67,8 @@ if app is not None:
     def _arb_monitor_background() -> None:
         from alpha.hud.arb_monitor import refresh_arb_snapshot
 
-        # Stagger first poll so HUD startup is not blocked on amm_info RPC.
-        time.sleep(12)
+        # Stay off the first ~90s so send/withdraw and the HUD stay up on a 4GB box.
+        time.sleep(90)
         while True:
             sleep_s = 60
             try:
@@ -76,6 +76,9 @@ if app is not None:
                 # Burst ~12s when dislocation / fill+ / actionable; else ~60s.
                 sleep_s = int(snap.get("poll_sleep_seconds") or 60)
                 sleep_s = max(10, min(120, sleep_s))
+            except MemoryError:
+                logger.error("arb_monitor_background | MemoryError — skipping arb poll")
+                sleep_s = 300
             except Exception as exc:
                 logger.warning("arb_monitor_background | %s", exc)
                 sleep_s = 60
