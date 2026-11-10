@@ -2,7 +2,7 @@
 
 from core.runtime_state import QuoteIntent
 from connectors.xrpl_connector import OpenOffer
-from engine.order_sync import plan_order_sync
+from engine.order_sync import filter_place_intents_after_cancel_failures, plan_order_sync
 
 
 def test_plan_keeps_matching_offer() -> None:
@@ -25,6 +25,26 @@ def test_plan_replaces_when_price_moves() -> None:
     assert plan.kept_count == 0
     assert plan.cancel_sequences == [7]
     assert len(plan.place_intents) == 1
+
+
+def test_cancel_failure_blocks_same_side_replacement_only() -> None:
+    intents = [
+        QuoteIntent(level=1, side="bid", price=1.30, size_xrp=50.0),
+        QuoteIntent(level=1, side="ask", price=1.34, size_xrp=50.0),
+    ]
+    offers = [
+        OpenOffer(sequence=7, side="bid", price=1.28, size_xrp=50.0),
+        OpenOffer(sequence=8, side="ask", price=1.36, size_xrp=50.0),
+    ]
+
+    filtered, blocked_sides = filter_place_intents_after_cancel_failures(
+        intents,
+        offers,
+        failed_cancel_sequences=[7],
+    )
+
+    assert blocked_sides == {"bid"}
+    assert [intent.side for intent in filtered] == ["ask"]
 
 
 def test_plan_keeps_competitive_touch_queue_when_intent_moves() -> None:
