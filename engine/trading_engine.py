@@ -24,7 +24,11 @@ from utils.book_visibility import (
 from utils.profile_recommendation import normalize_profile_recommendation
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
 from engine.order_manager import OrderManager
-from engine.order_sync import offers_off_touch, plan_order_sync
+from engine.order_sync import (
+    filter_place_intents_after_cancel_failures,
+    offers_off_touch,
+    plan_order_sync,
+)
 from monitoring.balance_logger import BalanceLogger
 from monitoring.csv_logger import CSVLogger
 from monitoring.fill_detection import (
@@ -1369,16 +1373,29 @@ class TradingEngine:
                 ),
                 preserve_touch_queue=join_touch,
             )
+            failed_cancel_sequences: List[int] = []
             for seq in plan.cancel_sequences:
                 try:
                     await self.connector.cancel_offer(seq)
                     cancelled += 1
                 except Exception as exc:
+                    failed_cancel_sequences.append(seq)
                     self.decision_log.add("execution", f"Cancel seq {seq} failed: {exc}")
-            to_place = plan.place_intents
+            to_place, blocked_sides = filter_place_intents_after_cancel_failures(
+                plan.place_intents,
+                open_offers,
+                failed_cancel_sequences,
+            )
             kept = plan.kept_count
             self._session_offers_kept += kept
             self._session_offers_cancelled += cancelled
+            if blocked_sides:
+                sides = "/".join(sorted(blocked_sides))
+                skipped = len(plan.place_intents) - len(to_place)
+                self.decision_log.add(
+                    "execution",
+                    f"Skipped {skipped} replacement offer(s) on {sides}: cancel failed.",
+                )
             if plan.kept_count or plan.cancel_sequences or to_place:
                 self.decision_log.add(
                     "execution",

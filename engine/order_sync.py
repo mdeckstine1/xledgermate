@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Set
+from typing import Iterable, List, Optional, Sequence, Set, Tuple
 
 from core.runtime_state import QuoteIntent
 from connectors.xrpl_connector import OpenOffer
@@ -140,6 +140,40 @@ def plan_order_sync(
         place_intents=place_intents,
         kept_count=len(matched_sequences),
     )
+
+
+def filter_place_intents_after_cancel_failures(
+    place_intents: Sequence[QuoteIntent],
+    open_offers: Sequence[OpenOffer],
+    failed_cancel_sequences: Iterable[int],
+) -> Tuple[List[QuoteIntent], Set[str]]:
+    """
+    Do not submit replacement quotes on a side whose old ledger offer failed to cancel.
+
+    A failed cancel can leave the original offer live. Placing a same-side replacement
+    in the same cycle can double exposure and leave stale quotes resting.
+    """
+    failed = {int(seq) for seq in failed_cancel_sequences}
+    if not failed:
+        return list(place_intents), set()
+
+    blocked_sides: Set[str] = set()
+    for offer in open_offers:
+        if int(offer.sequence) not in failed:
+            continue
+        side = (offer.side or "").strip().lower()
+        if side in {"bid", "ask"}:
+            blocked_sides.add(side)
+
+    if not blocked_sides:
+        return list(place_intents), set()
+
+    filtered = [
+        intent
+        for intent in place_intents
+        if (intent.side or "").strip().lower() not in blocked_sides
+    ]
+    return filtered, blocked_sides
 
 
 def find_offer_sequence_for_intent(

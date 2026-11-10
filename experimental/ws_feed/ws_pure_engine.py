@@ -21,7 +21,11 @@ from config.settings import BotConfig
 from connectors.xrpl_connector import XRPLConnector, XRPLNetworkConfig, is_trustworthy_rlusd_mid
 from core import DecisionLog, VERSION
 from core.runtime_state import QuoteIntent, RuntimeState, RuntimeStateStore
-from engine.order_sync import find_offer_sequence_for_intent, plan_order_sync
+from engine.order_sync import (
+    filter_place_intents_after_cancel_failures,
+    find_offer_sequence_for_intent,
+    plan_order_sync,
+)
 from experimental.ws_feed.engine_adapter_example import WSBookFeedAdapter
 from experimental.ws_feed.hud_intel_support import fetch_competitor_quoting_intel
 from core.wealth_metrics import compute_wealth_metrics
@@ -673,17 +677,31 @@ class WsPureTradingEngine:
                 f"WS refresh mode: tol={price_tol:.3f}% preserve_touch={preserve_touch}",
             )
         cancelled = 0
+        failed_cancel_sequences: List[int] = []
         for seq in cancel_sequences:
             self._offer_age.forget_sequence(seq)
             try:
                 await connector.cancel_offer(seq)
                 cancelled += 1
             except Exception as exc:
+                failed_cancel_sequences.append(seq)
                 self.decision_log.add("execution", f"Cancel seq {seq} failed: {exc}")
         placed = 0
         placed_intents: List[QuoteIntent] = []
         size_tol = float(getattr(config, "order_size_tolerance_xrp", 0.75))
-        for intent in plan.place_intents:
+        to_place, blocked_sides = filter_place_intents_after_cancel_failures(
+            plan.place_intents,
+            open_offers,
+            failed_cancel_sequences,
+        )
+        if blocked_sides:
+            sides = "/".join(sorted(blocked_sides))
+            skipped = len(plan.place_intents) - len(to_place)
+            self.decision_log.add(
+                "execution",
+                f"Skipped {skipped} replacement offer(s) on {sides}: cancel failed.",
+            )
+        for intent in to_place:
             try:
                 await connector.place_quote(intent)
                 placed += 1
