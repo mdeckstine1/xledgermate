@@ -144,6 +144,37 @@ def test_engine_analysis_bundle_starts_empty() -> None:
     assert eng._analysis_bundle["sample_history"] == []
 
 
+def test_ws_drawdown_baseline_resets_after_kill_clear() -> None:
+    from config.settings import BotConfig
+
+    class FakeKillSwitch:
+        def __init__(self) -> None:
+            self.active = False
+
+        def is_active(self) -> bool:
+            return self.active
+
+    eng = WsPureTradingEngine(BotConfig())
+    eng.kill_switch = FakeKillSwitch()
+    eng._prev_kill_active = True
+    eng.drawdown_monitor.max_drawdown_percent = 10.0
+    eng.drawdown_monitor.update_portfolio(100.0, 0.0, 1.0)
+    portfolio, marked = eng.drawdown_monitor.update_portfolio(85.0, 0.0, 1.0)
+
+    assert marked is True
+    assert eng.drawdown_monitor.is_kill_switch_triggered() is True
+
+    eng._reset_drawdown_baseline_after_kill_clear(
+        portfolio=portfolio,
+        drawdown_mark_applied=marked,
+    )
+
+    assert eng._prev_kill_active is False
+    assert eng.drawdown_monitor.daily_start_value == 85.0
+    assert eng.drawdown_monitor.get_drawdown_percent() == 0.0
+    assert eng.drawdown_monitor.is_kill_switch_triggered() is False
+
+
 def test_stale_quote_merged_into_sync_cancel_plan() -> None:
     """Stale sequences cancel even when preserve_touch_queue would keep them."""
     from datetime import datetime, timedelta, timezone

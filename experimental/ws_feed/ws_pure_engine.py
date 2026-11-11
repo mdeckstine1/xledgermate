@@ -237,9 +237,27 @@ class WsPureTradingEngine:
         self._reservation_crossed_after_ws_sample = False
         self._session_boot_utc = datetime.now(tz=timezone.utc).isoformat()
         self._analysis_bundle: Dict[str, Any] = {"sample_history": []}
+        self._prev_kill_active = False
 
     def stop(self) -> None:
         self._running = False
+
+    def _reset_drawdown_baseline_after_kill_clear(
+        self,
+        *,
+        portfolio: float,
+        drawdown_mark_applied: bool,
+    ) -> None:
+        """Match classic engine behavior: clearing a kill starts a fresh drawdown day."""
+        kill_active = self.kill_switch.is_active()
+        if self._prev_kill_active and not kill_active:
+            if drawdown_mark_applied and portfolio > 0:
+                self.drawdown_monitor.reset_baseline(portfolio)
+                self.decision_log.add(
+                    "profile",
+                    "Kill switch cleared — drawdown baseline reset.",
+                )
+        self._prev_kill_active = kill_active
 
     async def _build_connector(self) -> XRPLConnector:
         config = self.config
@@ -405,6 +423,7 @@ class WsPureTradingEngine:
         portfolio = portfolio_value_xrp(balance_xrp, balance_rlusd, mid or 0.0)
 
         if self.kill_switch.is_active():
+            self._prev_kill_active = True
             await self._cancel_if_live(connector, config, "Kill switch active")
             await self._persist_cycle(
                 config, mid, bb, ba, balance_xrp, balance_rlusd, portfolio, [], 0,
@@ -416,6 +435,10 @@ class WsPureTradingEngine:
         portfolio, marked = self.drawdown_monitor.update_portfolio(
             balance_xrp, balance_rlusd, mid
         )
+        self._reset_drawdown_baseline_after_kill_clear(
+            portfolio=portfolio,
+            drawdown_mark_applied=marked,
+        )
         drawdown_pct = self.drawdown_monitor.get_drawdown_percent()
         if (
             flags.drawdown_kill
@@ -424,6 +447,7 @@ class WsPureTradingEngine:
         ):
             reason = f"Daily portfolio drawdown {drawdown_pct:.2f}%"
             self.kill_switch.activate(reason)
+            self._prev_kill_active = True
             if config.telegram_enabled and flags.telegram_kill_alerts:
                 self.alerts.send_kill_switch_alert(drawdown_pct, reason)
             return
