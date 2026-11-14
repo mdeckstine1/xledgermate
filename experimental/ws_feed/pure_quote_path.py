@@ -566,11 +566,11 @@ class PureQuotePath:
             session_buy_capture_xrp=session_buy_capture_xrp,
             session_sell_capture_xrp=session_sell_capture_xrp,
             recent_fills=recent_fill_records,
-            reservation_allows_bid=allow_bid,
-            reservation_allows_ask=allow_ask,
+            reservation_allows_bid=allow_bid or inv_policy.pause_asks,
+            reservation_allows_ask=allow_ask or inv_policy.pause_bids,
         )
 
-        # v2.2.0 — Layer 5 is sole authority on side permissions (no inv/gate pause merge).
+        # Layer 5 remains the side authority; reservation inputs include hard rebalance sides.
         quote_bid = qd.bid.allowed
         quote_ask = qd.ask.allowed
         quote_posture = _quote_posture_label(
@@ -579,6 +579,10 @@ class PureQuotePath:
             allow_bid=allow_bid,
             allow_ask=allow_ask,
         )
+        if quote_bid and not allow_bid:
+            quote_posture = "bid_only_rebalance"
+        elif quote_ask and not allow_ask:
+            quote_posture = "ask_only_rebalance"
 
         l1_bid_size = (
             round(inv_policy.bid_size_xrp * qd.bid.size_mult, 4)

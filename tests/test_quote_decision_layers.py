@@ -161,6 +161,28 @@ def test_crowded_buy_bleed_does_not_boost_ask() -> None:
     assert qd.ask.allowed is True  # two-sided skim — ask on edge, not bleed-boosted
 
 
+def test_reservation_fallback_uses_viable_ask_when_bid_blocked() -> None:
+    """Neutral solo should use the reservation-allowed ask if chosen bid is blocked."""
+    inp = _solo_inputs(xrp_ratio=0.55, label="balanced")
+    inp.reservation_allows_bid = False
+    inp.reservation_allows_ask = True
+    qd = run_quote_decision_pipeline(inp)
+    assert qd.intent == QuoteIntent.SOLO_ACCUMULATE_ON_EDGE
+    assert qd.bid.allowed is False
+    assert qd.ask.allowed is True
+    assert qd.would_quote is True
+
+
+def test_reservation_fallback_does_not_override_patient_solo_toxic_stop() -> None:
+    inp = _solo_inputs(xrp_ratio=0.55, label="balanced")
+    inp.toxic_ratio_30s = 0.30
+    inp.reservation_allows_bid = False
+    inp.reservation_allows_ask = True
+    qd = run_quote_decision_pipeline(inp)
+    assert qd.intent == QuoteIntent.PATIENT_SOLO
+    assert qd.would_quote is False
+
+
 def test_compute_quoting_decision_adapter() -> None:
     qd = compute_quoting_decision(
         mid=1.10,
