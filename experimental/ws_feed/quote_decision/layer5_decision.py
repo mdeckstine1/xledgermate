@@ -84,6 +84,58 @@ def _base_permission(
     )
 
 
+def _maybe_apply_reservation_fallback(
+    *,
+    bid: SidePermission,
+    ask: SidePermission,
+    bid_intent_allowed: bool,
+    ask_intent_allowed: bool,
+    bid_edge: EdgeViability,
+    ask_edge: EdgeViability,
+    posture: PostureSnapshot,
+    inputs: CycleQuoteInputs,
+) -> tuple[SidePermission, SidePermission]:
+    """
+    If intent picked a side that reservation later blocks, use the opposite
+    reservation-allowed edge instead of zero-quoting an otherwise valid book.
+    """
+    if (
+        bid_intent_allowed
+        and not bid.allowed
+        and bid.block_reason == "reservation_blocks_side"
+        and not ask.allowed
+        and inputs.reservation_allows_ask
+        and ask_edge.viable
+    ):
+        ask = SidePermission(
+            allowed=True,
+            size_mult=edge_size_mult(
+                edge_bps=ask_edge.implied_edge_bps,
+                book_mode=posture.book.mode,
+            ),
+            implied_edge_bps=ask_edge.implied_edge_bps,
+            block_reason="",
+        )
+    if (
+        ask_intent_allowed
+        and not ask.allowed
+        and ask.block_reason == "reservation_blocks_side"
+        and not bid.allowed
+        and inputs.reservation_allows_bid
+        and bid_edge.viable
+    ):
+        bid = SidePermission(
+            allowed=True,
+            size_mult=edge_size_mult(
+                edge_bps=bid_edge.implied_edge_bps,
+                book_mode=posture.book.mode,
+            ),
+            implied_edge_bps=bid_edge.implied_edge_bps,
+            block_reason="",
+        )
+    return bid, ask
+
+
 def build_final_quoting_decision(
     inputs: CycleQuoteInputs,
     posture: PostureSnapshot,
@@ -95,6 +147,8 @@ def build_final_quoting_decision(
     """Merge all layers into the final quoting decision."""
     bid_ok, bid_block = _intent_allows_side(intent, side="bid", edge=bid_edge)
     ask_ok, ask_block = _intent_allows_side(intent, side="ask", edge=ask_edge)
+    raw_bid_edge = bid_edge
+    raw_ask_edge = ask_edge
 
     if not bid_ok and bid_block:
         bid_edge = EdgeViability(
@@ -125,6 +179,20 @@ def build_final_quoting_decision(
         posture=posture,
         reservation_ok=inputs.reservation_allows_ask,
     )
+    bid, ask = _maybe_apply_reservation_fallback(
+        bid=bid,
+        ask=ask,
+        bid_intent_allowed=bid_ok,
+        ask_intent_allowed=ask_ok,
+        bid_edge=raw_bid_edge,
+        ask_edge=raw_ask_edge,
+        posture=posture,
+        inputs=inputs,
+    )
+    if bid.allowed:
+        bid_edge = raw_bid_edge
+    if ask.allowed:
+        ask_edge = raw_ask_edge
 
     bid = merge_bleed_into_permission(
         bid,
