@@ -568,25 +568,17 @@ class PureQuotePath:
             recent_fills=recent_fill_records,
             reservation_allows_bid=allow_bid,
             reservation_allows_ask=allow_ask,
-            inventory_blocks_bid=inv_policy.pause_bids,
-            inventory_blocks_ask=inv_policy.pause_asks,
         )
 
         # v2.2.0 — Layer 5 is sole authority on side permissions (no inv/gate pause merge).
         quote_bid = qd.bid.allowed
         quote_ask = qd.ask.allowed
-        inventory_bid_rebalance = (
-            inv_policy.pause_asks and not inv_policy.pause_bids and quote_bid and not quote_ask
+        quote_posture = _quote_posture_label(
+            quote_bid=quote_bid,
+            quote_ask=quote_ask,
+            allow_bid=allow_bid,
+            allow_ask=allow_ask,
         )
-        if inventory_bid_rebalance:
-            quote_posture = "bid_only_rebalance"
-        else:
-            quote_posture = _quote_posture_label(
-                quote_bid=quote_bid,
-                quote_ask=quote_ask,
-                allow_bid=allow_bid,
-                allow_ask=allow_ask,
-            )
 
         l1_bid_size = (
             round(inv_policy.bid_size_xrp * qd.bid.size_mult, 4)

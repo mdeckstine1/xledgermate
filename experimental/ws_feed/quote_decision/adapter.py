@@ -65,8 +65,6 @@ def build_cycle_inputs(
     recent_fills: Optional[Sequence[Mapping[str, Any]]] = None,
     reservation_allows_bid: bool = True,
     reservation_allows_ask: bool = True,
-    inventory_blocks_bid: bool = False,
-    inventory_blocks_ask: bool = False,
 ) -> CycleQuoteInputs:
     ratio = _portfolio_xrp_ratio(
         xrp_balance=xrp_balance,
@@ -94,8 +92,6 @@ def build_cycle_inputs(
         recent_sells=sells,
         reservation_allows_bid=reservation_allows_bid,
         reservation_allows_ask=reservation_allows_ask,
-        inventory_blocks_bid=inventory_blocks_bid,
-        inventory_blocks_ask=inventory_blocks_ask,
     )
 
 
@@ -120,8 +116,6 @@ def compute_quoting_decision(
     recent_fills: Optional[Sequence[Mapping[str, Any]]] = None,
     reservation_allows_bid: bool = True,
     reservation_allows_ask: bool = True,
-    inventory_blocks_bid: bool = False,
-    inventory_blocks_ask: bool = False,
 ) -> QuotingDecision:
     """Public integration entry — call from pure_quote_path after G7 touch prices."""
     inputs = build_cycle_inputs(
@@ -144,8 +138,6 @@ def compute_quoting_decision(
         recent_fills=recent_fills,
         reservation_allows_bid=reservation_allows_bid,
         reservation_allows_ask=reservation_allows_ask,
-        inventory_blocks_bid=inventory_blocks_bid,
-        inventory_blocks_ask=inventory_blocks_ask,
     )
     return run_quote_decision_pipeline(inputs)
 

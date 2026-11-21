@@ -95,32 +95,6 @@ def build_final_quoting_decision(
     """Merge all layers into the final quoting decision."""
     bid_ok, bid_block = _intent_allows_side(intent, side="bid", edge=bid_edge)
     ask_ok, ask_block = _intent_allows_side(intent, side="ask", edge=ask_edge)
-    inventory_bid_only = inputs.inventory_blocks_ask and not inputs.inventory_blocks_bid
-
-    if inventory_bid_only:
-        if bid_edge.viable:
-            bid_ok = True
-            bid_block = ""
-        ask_ok = False
-        ask_block = "inventory_blocks_ask"
-    elif (
-        bid_ok
-        and not inputs.reservation_allows_bid
-        and not ask_ok
-        and inputs.reservation_allows_ask
-        and ask_edge.viable
-    ):
-        ask_ok = True
-        ask_block = ""
-    elif (
-        ask_ok
-        and not inputs.reservation_allows_ask
-        and not bid_ok
-        and inputs.reservation_allows_bid
-        and bid_edge.viable
-    ):
-        bid_ok = True
-        bid_block = ""
 
     if not bid_ok and bid_block:
         bid_edge = EdgeViability(
@@ -142,7 +116,7 @@ def build_final_quoting_decision(
         allowed=bid_ok,
         edge=bid_edge,
         posture=posture,
-        reservation_ok=inputs.reservation_allows_bid or inventory_bid_only,
+        reservation_ok=inputs.reservation_allows_bid,
     )
     ask = _base_permission(
         side="ask",
