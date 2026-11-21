@@ -28,6 +28,10 @@ def _solo_inputs(
     label: str = "balanced",
     buy_fills: tuple = (),
     sell_fills: tuple = (),
+    reservation_allows_bid: bool = True,
+    reservation_allows_ask: bool = True,
+    inventory_blocks_bid: bool = False,
+    inventory_blocks_ask: bool = False,
 ) -> CycleQuoteInputs:
     return CycleQuoteInputs(
         mid=mid,
@@ -43,8 +47,10 @@ def _solo_inputs(
         toxic_ratio_30s=0.05,
         recent_buys=buy_fills,
         recent_sells=sell_fills,
-        reservation_allows_bid=True,
-        reservation_allows_ask=True,
+        reservation_allows_bid=reservation_allows_bid,
+        reservation_allows_ask=reservation_allows_ask,
+        inventory_blocks_bid=inventory_blocks_bid,
+        inventory_blocks_ask=inventory_blocks_ask,
     )
 
 
@@ -159,6 +165,32 @@ def test_crowded_buy_bleed_does_not_boost_ask() -> None:
     qd = run_quote_decision_pipeline(inp)
     assert qd.bid.allowed is False
     assert qd.ask.allowed is True  # two-sided skim — ask on edge, not bleed-boosted
+
+
+def test_reservation_skew_uses_viable_allowed_side_when_solo_bid_blocked() -> None:
+    """Reservation outside touch should not zero-quote when the allowed side has edge."""
+    qd = run_quote_decision_pipeline(
+        _solo_inputs(reservation_allows_bid=False, reservation_allows_ask=True)
+    )
+    assert qd.bid.allowed is False
+    assert qd.bid.block_reason == "reservation_blocks_side"
+    assert qd.ask.allowed is True
+    assert qd.would_quote is True
+
+
+def test_inventory_bid_rebalance_overrides_reservation_skew_when_viable() -> None:
+    """Hard inventory ask block keeps the viable bid rebalance leg on-book."""
+    qd = run_quote_decision_pipeline(
+        _solo_inputs(
+            reservation_allows_bid=False,
+            reservation_allows_ask=True,
+            inventory_blocks_ask=True,
+        )
+    )
+    assert qd.bid.allowed is True
+    assert qd.ask.allowed is False
+    assert qd.ask.block_reason == "inventory_blocks_ask"
+    assert qd.would_quote is True
 
 
 def test_compute_quoting_decision_adapter() -> None:
